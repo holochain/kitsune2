@@ -204,3 +204,39 @@ impl OpId {
         OP_DISP.set(cb).is_ok()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn loc_zero_is_zero() {
+        assert_eq!(0, Id(bytes::Bytes::from_static(b"")).loc());
+    }
+
+    #[test]
+    fn loc_u32_equality() {
+        for u in [0, 42, 999, u32::MAX / 13, u32::MAX / 4, u32::MAX] {
+            assert_eq!(
+                u,
+                Id(bytes::Bytes::copy_from_slice(&u.to_le_bytes())).loc()
+            );
+        }
+    }
+
+    #[test]
+    fn loc_fixtures() {
+        const F: &[(&[u8], u32)] = &[
+            (b"hello", 1819043079),
+            (b"1", 49),
+            (b"asntoheunatoheuntahoeusth", 454101873),
+            (&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff], 4294901760),
+            (&[1, 2, 3, 230, 44, 77, 99, 82], 3026210605),
+            (&[42, 0, 0, 0, 99, 0, 0, 0], 73),
+        ];
+
+        for (b, res) in F.iter() {
+            assert_eq!(*res, Id(bytes::Bytes::from_static(b)).loc());
+        }
+    }
+}
