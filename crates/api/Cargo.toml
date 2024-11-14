@@ -12,5 +12,5 @@ edition = "2021"
 
 [dependencies]
 base64 = { workspace = true }
-bytes.workspace = true
+bytes = { workspace = true }
 serde = { workspace = true }

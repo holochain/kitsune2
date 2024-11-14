@@ -7,4 +7,7 @@
 pub mod id;
 pub use id::{AgentId, OpId, SpaceId};
 
+mod timestamp;
+pub use timestamp::*;
+
 pub mod agent;
