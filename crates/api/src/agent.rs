@@ -35,8 +35,10 @@ struct AgentInfoStringTimestamps {
 impl std::convert::TryFrom<AgentInfoStringTimestamps> for AgentInfo {
     type Error = std::io::Error;
     fn try_from(a: AgentInfoStringTimestamps) -> Result<Self, Self::Error> {
-        let created_at: i64 = a.created_at.parse().map_err(std::io::Error::other)?;
-        let expires_at: i64 = a.expires_at.parse().map_err(std::io::Error::other)?;
+        let created_at: i64 =
+            a.created_at.parse().map_err(std::io::Error::other)?;
+        let expires_at: i64 =
+            a.expires_at.parse().map_err(std::io::Error::other)?;
         Ok(Self {
             agent: a.agent,
             space: a.space,
@@ -63,7 +65,12 @@ impl From<AgentInfo> for AgentInfoStringTimestamps {
 
 /// Agent information.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", try_from = "AgentInfoStringTimestamps", into = "AgentInfoStringTimestamps")]
+#[serde(
+    rename_all = "camelCase",
+    tag = "type",
+    try_from = "AgentInfoStringTimestamps",
+    into = "AgentInfoStringTimestamps"
+)]
 pub struct AgentInfo {
     /// The agent id.
     pub agent: AgentId,
@@ -85,6 +92,17 @@ pub struct AgentInfo {
     pub metadata: AgentInfoMetadata,
 }
 
+/// Defines a type capable of cryptographic signatures.
+pub trait Signer {
+    /// Sign the encoded data, returning the resulting detached signature,
+    /// or error.
+    fn sign(
+        &self,
+        agent_info: &AgentInfo,
+        encoded: &str,
+    ) -> BoxFut<'_, std::io::Result<bytes::Bytes>>;
+}
+
 /// Signed agent information.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
@@ -102,6 +120,23 @@ pub struct AgentInfoSigned {
     /// It should either come from signing an [AgentInfo] or from serde.
     #[serde(skip)]
     _private: (),
+}
+
+impl AgentInfoSigned {
+    /// Generate a signed agent info by signing an agent info.
+    pub async fn sign<S: Signer>(
+        signer: &S,
+        info: AgentInfo,
+    ) -> std::io::Result<std::sync::Arc<Self>> {
+        let encoded = serde_json::to_string(&info)?;
+        let signature = signer.sign(&info, &encoded).await?;
+        Ok(std::sync::Arc::new(Self {
+            info,
+            encoded,
+            signature,
+            _private: (),
+        }))
+    }
 }
 
 impl std::ops::Deref for AgentInfoSigned {

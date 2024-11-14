@@ -4,6 +4,10 @@
 //!
 //! If you want to use Kitsune2 itself, please see the kitsune2 crate.
 
+/// Boxed future type.
+pub type BoxFut<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
 pub mod id;
 pub use id::{AgentId, OpId, SpaceId};
 
