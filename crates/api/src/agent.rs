@@ -6,7 +6,7 @@ use crate::*;
 /// This struct represents the extensibility of agent info,
 /// everything in here must be optional or provide a sane default.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub struct AgentInfoMetadata {
     /// If set, this indicates the primary url at which this agent may
     /// be reached. This should largely only be UNSET if this is a tombstone.
@@ -22,7 +22,7 @@ pub struct AgentInfoMetadata {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase")]
 struct AgentInfoStringTimestamps {
     agent: AgentId,
     space: SpaceId,
@@ -67,7 +67,6 @@ impl From<AgentInfo> for AgentInfoStringTimestamps {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(
     rename_all = "camelCase",
-    tag = "type",
     try_from = "AgentInfoStringTimestamps",
     into = "AgentInfoStringTimestamps"
 )]
@@ -105,12 +104,13 @@ pub trait Signer {
 
 /// Signed agent information.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub struct AgentInfoSigned {
     /// The decoded information associated with this agent.
     pub info: AgentInfo,
 
     /// The encoded information that was signed.
+    #[serde(skip)]
     pub encoded: String,
 
     /// The signature.
@@ -137,6 +137,11 @@ impl AgentInfoSigned {
             _private: (),
         }))
     }
+
+    /// Get the canonical json encoding of this signed agent info.
+    pub fn encode(&self) -> std::io::Result<String> {
+        serde_json::to_string(&self).map_err(std::convert::Into::into)
+    }
 }
 
 impl std::ops::Deref for AgentInfoSigned {
@@ -144,5 +149,40 @@ impl std::ops::Deref for AgentInfoSigned {
 
     fn deref(&self) -> &Self::Target {
         &self.info
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    pub struct TestSigner;
+
+    impl Signer for TestSigner {
+        fn sign(
+            &self,
+            _agent_info: &AgentInfo,
+            _encoded: &str,
+        ) -> BoxFut<'_, std::io::Result<bytes::Bytes>> {
+            Box::pin(
+                async move { Ok(bytes::Bytes::from_static(b"fake-signature")) },
+            )
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn happy_encode_decode() {
+        let enc = AgentInfoSigned::sign(&TestSigner, AgentInfo {
+            agent: AgentId(crate::id::Id(bytes::Bytes::from_static(b"test-agent"))),
+            space: SpaceId(crate::id::Id(bytes::Bytes::from_static(b"test-space"))),
+            created_at: Timestamp::now(),
+            expires_at: Timestamp::now() + std::time::Duration::from_secs(60 * 60 * 20),
+            is_tombstone: false,
+            metadata: AgentInfoMetadata {
+                url1: Some("test-url".into()),
+                storage_arc1: Some((42, u32::MAX / 13)),
+            },
+        }).await.unwrap().encode().unwrap();
+        println!("{enc}");
     }
 }
