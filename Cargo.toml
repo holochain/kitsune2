@@ -5,3 +5,9 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+# debugging is far easier when you can see short byte arrays
+# as base64 instead of decimal u8s.
+base64 = "0.22.1"
+# shallow-clone byte arrays is a solved problem.
+# bytes is the crate that solves it.
+bytes = "1.8.0"

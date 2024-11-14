@@ -3,3 +3,6 @@
 //! to define the api of those traits.
 //!
 //! If you want to use Kitsune2 itself, please see the kitsune2 crate.
+
+pub mod id;
+pub use id::{AgentId, OpId, SpaceId};
