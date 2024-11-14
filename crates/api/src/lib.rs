@@ -6,3 +6,5 @@
 
 pub mod id;
 pub use id::{AgentId, OpId, SpaceId};
+
+pub mod agent;

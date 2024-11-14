@@ -10,4 +10,6 @@ resolver = "2"
 base64 = "0.22.1"
 # shallow-clone byte arrays is a solved problem.
 # bytes is the crate that solves it.
-bytes = "1.8.0"
+bytes = { version = "1.8.0", features = ["serde"] }
+# kitsune types need to be serializable for network transmission.
+serde = { version = "1.0.215", features = ["derive"] }

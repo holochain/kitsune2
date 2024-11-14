@@ -18,7 +18,8 @@ macro_rules! imp_deref {
 /// In Kitsune2 these bytes should ONLY be the actual hash bytes
 /// or public key of the identity being tracked, without
 /// prefix or suffix.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct Id(pub bytes::Bytes);
 
 imp_deref!(Id, bytes::Bytes);
@@ -72,7 +73,8 @@ fn display(
 static AGENT_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
 /// Identifies an agent to be tracked as part of a Kitsune space.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct AgentId(pub Id);
 
 imp_deref!(AgentId, Id);
@@ -102,7 +104,8 @@ impl AgentId {
 static SPACE_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
 /// Identifies a space to be tracked by Kitsune.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct SpaceId(pub Id);
 
 imp_deref!(SpaceId, Id);
@@ -132,7 +135,8 @@ impl SpaceId {
 static OP_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
 /// Identifies an op to be tracked by Kitsune.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct OpId(pub Id);
 
 imp_deref!(OpId, Id);
