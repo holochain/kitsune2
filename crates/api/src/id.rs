@@ -95,10 +95,7 @@ impl AgentId {
     /// default impl will have been set and cannot be changed.
     /// Returns false if the default was unable to be set.
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
-        match AGENT_DISP.set(cb) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        AGENT_DISP.set(cb).is_ok()
     }
 }
 
@@ -128,10 +125,7 @@ impl SpaceId {
     /// default impl will have been set and cannot be changed.
     /// Returns false if the default was unable to be set.
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
-        match SPACE_DISP.set(cb) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        SPACE_DISP.set(cb).is_ok()
     }
 }
 
@@ -161,9 +155,6 @@ impl OpId {
     /// default impl will have been set and cannot be changed.
     /// Returns false if the default was unable to be set.
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
-        match OP_DISP.set(cb) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        OP_DISP.set(cb).is_ok()
     }
 }
