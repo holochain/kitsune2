@@ -25,6 +25,12 @@ imp_deref!(Id, bytes::Bytes);
 
 impl Id {
     /// Get the location u32 based off this Id.
+    ///
+    /// This is accomplished by directly xor-ing every successive 4 bytes
+    /// in the hash. It is okay if the hash len is not a multiple of 4,
+    /// it will stop with the ending byte of the hash.
+    ///
+    /// The remaining 4 bytes are then interpreted as a little-endian u32.
     //
     // Holochain previously would re-hash the hash, and then
     // xor to shrink down to a u32. This extra step is not needed
