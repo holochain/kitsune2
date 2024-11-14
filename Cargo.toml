@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "crates/kitsune2_api",
+  "crates/api",
 ]
 resolver = "2"
 
