@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/kitsune2_api",
+]
+resolver = "2"
+
+[workspace.dependencies]
