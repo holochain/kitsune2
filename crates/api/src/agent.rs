@@ -13,7 +13,7 @@
 //!   "title": "AgentInfoSigned",
 //!   "type": "object",
 //!   "properties": {
-//!     "agentInfo": { "type": "string", "required": true, "description": "json" },
+//!     "agentInfo": { "type": "string", "required": true, "description": "json AgentInfo" },
 //!     "signature": { "type": "string", "required": true, "description": "base64" }
 //!   }
 //! }
@@ -69,6 +69,13 @@
 //! By convention, absent other indications, the [AgentInfo::agent] property
 //! will be an ed25519 public key, and the [AgentInfoSigned::signature] will
 //! be an ed25519 signature.
+//!
+//! Future versions of this library may look for an optional "alg" property
+//! on the [AgentInfo] type before falling back to this usage of ed25519.
+//! These other algorithms may treat the [AgentInfo::agent] property as a
+//! hash of the public key instead of the public key itself, and find the
+//! public key instead on an "algPubKey" property. (Some post-quantum
+//! algorithms have rediculously long key material.)
 
 use crate::*;
 
@@ -93,6 +100,22 @@ pub trait Verifier {
         signature: &[u8],
     ) -> bool;
 }
+
+/// A basic definition of a storage arc compatible with the concept of
+/// storage and querying of items in a store that fall within that arc.
+///
+/// This is intentionally a type definition and NOT a struct to prevent
+/// the accumulation of functionality attached to it. This is intended
+/// to transmit the raw concept of the arc, and ensure that any complexity
+/// of its usage are hidden in the modules that need to use this raw data,
+/// e.g. any store or gossip modules.
+///
+/// - If None, this arc does not claim any coverage.
+/// - If Some, this arc is an inclusive range from the first loc to the second.
+/// - If the first bound is larger than the second, the claim wraps around
+///   the end of u32::MAX to the other side.
+/// - A full arc is represented by `Some((0, u32::MAX))`.
+pub type BasicArc = Option<(u32, u32)>;
 
 mod serde_string_timestamp {
     pub fn serialize<S>(
@@ -143,13 +166,8 @@ pub struct AgentInfo {
     /// be reached. This should largely only be UNSET if this is a tombstone.
     pub url: Option<String>,
 
-    /// If unset, this agent is claiming a zero storage arc,
-    /// that is, they are saying they store nothing.
-    /// If set, this indicates the inclusive bounds which this agent
-    /// claims they are an authority for storage. Note, if the first
-    /// bound is larger than the second bound, that means the claim wraps
-    /// around the end of u32::MAX to the other side.
-    pub storage_arc: Option<(u32, u32)>,
+    /// The arc over which this agent claims authority.
+    pub storage_arc: BasicArc,
 }
 
 /// Signed agent information.
