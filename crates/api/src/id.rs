@@ -75,13 +75,8 @@ impl Id {
     // distribution.
     pub fn loc(&self) -> u32 {
         let mut out = [0_u8; 4];
-        let mut i = 0;
-        for c in &self.0 {
-            out[i] ^= c;
-            i += 1;
-            if i > 3 {
-                i = 0;
-            }
+        for i in 0..self.0.len() {
+            out[i % 4] ^= self.0[i];
         }
         u32::from_le_bytes(out)
     }
