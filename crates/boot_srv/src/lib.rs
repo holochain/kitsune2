@@ -129,7 +129,7 @@
 /// - If the store count is >= MAX_INFOS, the server MUST delete the entry
 ///   at MAX_INFOS / 2 and then push the info onto the stack.
 ///
-/// #### 3. Rate Limiting
+/// #### 4. Rate Limiting
 ///
 /// Info count within a space is limited by the storage strategy above. But
 /// space count within a server is unbounded. While servers will likely want
