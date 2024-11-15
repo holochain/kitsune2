@@ -103,14 +103,14 @@ pub trait Signer {
 }
 
 /// Signed agent information.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
+// no, this is not non-exhaustive, we just want to prevent manual creation
+#[allow(clippy::manual_non_exhaustive)]
 pub struct AgentInfoSigned {
     /// The decoded information associated with this agent.
     pub info: AgentInfo,
 
     /// The encoded information that was signed.
-    #[serde(skip)]
     pub encoded: String,
 
     /// The signature.
@@ -118,7 +118,6 @@ pub struct AgentInfoSigned {
 
     /// Make sure this struct cannot be constructed manually.
     /// It should either come from signing an [AgentInfo] or from serde.
-    #[serde(skip)]
     _private: (),
 }
 
@@ -140,7 +139,18 @@ impl AgentInfoSigned {
 
     /// Get the canonical json encoding of this signed agent info.
     pub fn encode(&self) -> std::io::Result<String> {
-        serde_json::to_string(&self).map_err(std::convert::Into::into)
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Ref<'a> {
+            agent_info: &'a String,
+            #[serde(with = "crate::serde_bytes_base64")]
+            signature: &'a bytes::Bytes,
+        }
+        serde_json::to_string(&Ref {
+            agent_info: &self.encoded,
+            signature: &self.signature,
+        })
+        .map_err(std::convert::Into::into)
     }
 }
 
@@ -172,17 +182,29 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn happy_encode_decode() {
-        let enc = AgentInfoSigned::sign(&TestSigner, AgentInfo {
-            agent: AgentId(crate::id::Id(bytes::Bytes::from_static(b"test-agent"))),
-            space: SpaceId(crate::id::Id(bytes::Bytes::from_static(b"test-space"))),
-            created_at: Timestamp::now(),
-            expires_at: Timestamp::now() + std::time::Duration::from_secs(60 * 60 * 20),
-            is_tombstone: false,
-            metadata: AgentInfoMetadata {
-                url1: Some("test-url".into()),
-                storage_arc1: Some((42, u32::MAX / 13)),
+        let enc = AgentInfoSigned::sign(
+            &TestSigner,
+            AgentInfo {
+                agent: AgentId(crate::id::Id(bytes::Bytes::from_static(
+                    b"test-agent",
+                ))),
+                space: SpaceId(crate::id::Id(bytes::Bytes::from_static(
+                    b"test-space",
+                ))),
+                created_at: Timestamp::now(),
+                expires_at: Timestamp::now()
+                    + std::time::Duration::from_secs(60 * 60 * 20),
+                is_tombstone: false,
+                metadata: AgentInfoMetadata {
+                    url1: Some("test-url".into()),
+                    storage_arc1: Some((42, u32::MAX / 13)),
+                },
             },
-        }).await.unwrap().encode().unwrap();
+        )
+        .await
+        .unwrap()
+        .encode()
+        .unwrap();
         println!("{enc}");
     }
 }
