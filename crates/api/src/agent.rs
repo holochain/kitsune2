@@ -1,4 +1,74 @@
 //! Types dealing with agent metadata.
+//!
+//! [AgentInfo] and the wrapping [AgentInfoSigned] define a pattern for
+//! cryptographically verifiable declarations of network reachability.
+//!
+//! To facilitate ease of debugging (See our unit tests in this module!),
+//! the canonical encoding for this info is JSON
+//!
+//! #### Json Schemas
+//!
+//! ```json
+//! {
+//!   "title": "AgentInfoSigned",
+//!   "type": "object",
+//!   "properties": {
+//!     "agentInfo": { "type": "string", "required": true, "description": "json" },
+//!     "signature": { "type": "string", "required": true, "description": "base64" }
+//!   }
+//! }
+//! ```
+//!
+//! ```json
+//! {
+//!   "title": "AgentInfo",
+//!   "type": "object",
+//!   "properties": {
+//!     "agent": { "type": "string", "required": true, "description": "base64" },
+//!     "space": { "type": "string", "required": true, "description": "base64" },
+//!     "createdAt": {
+//!         "type": "string",
+//!         "required": true,
+//!         "description": "i64 micros since unix epoch"
+//!     },
+//!     "expiresAt": {
+//!         "type": "string",
+//!         "required": true,
+//!         "description": "i64 micros since unix epoch",
+//!     },
+//!     "isTombstone": { "type": "boolean", "required": true },
+//!     "url": { "type": "string", "description": "optional" },
+//!     "storageArc": {
+//!       "type": "array",
+//!       "description": "optional",
+//!       "items": [
+//!         {
+//!             "type": "number",
+//!             "required": true,
+//!             "description": "u32 arc start loc"
+//!         },
+//!         {
+//!             "type": "number",
+//!             "required": true,
+//!             "description": "u32 arc end loc"
+//!         }
+//!       ]
+//!     }
+//!   }
+//! }
+//! ```
+//!
+//! #### Cryptography
+//!
+//! This module and its data structures are designed to be agnostic to
+//! cryptography. It exposes the [Signer] and [Verifier] traits to allow
+//! implementors to choose the algorithm to be used.
+//!
+//! The underlying data structures, however, cannot be quite so agnostic.
+//!
+//! By convention, absent other indications, the [AgentInfo::agent] property
+//! will be an ed25519 public key, and the [AgentInfoSigned::signature] will
+//! be an ed25519 signature.
 
 use crate::*;
 
@@ -236,5 +306,23 @@ mod test {
         assert!(!dec.is_tombstone);
         assert_eq!(url, dec.url);
         assert_eq!(storage_arc, dec.storage_arc);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ignores_future_extension_fields() {
+        AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"test-url\",\"storageArc\":[42,330382099],\"fakeField\":\"bla\"}","signature":"ZmFrZS1zaWduYXR1cmU","fakeField2":"bla2"}"#).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn fills_in_default_fields() {
+        let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":"ZmFrZS1zaWduYXR1cmU"}"#).unwrap();
+        assert!(dec.url.is_none());
+        assert!(dec.storage_arc.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dies_with_invalid_signature() {
+        let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":""}"#).unwrap_err();
+        assert!(dec.to_string().contains("InvalidSignature"));
     }
 }
