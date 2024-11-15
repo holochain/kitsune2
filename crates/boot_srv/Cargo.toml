@@ -1,0 +1,13 @@
+[package]
+name = "kitsune2_boot_srv"
+version = "0.0.1-alpha"
+description = "p2p / dht communication framework api"
+license = "Apache-2.0"
+homepage = "https://github.com/holochain/kitsune2"
+documentation = "https://docs.rs/kitsune2_boot_srv"
+authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
+keywords = ["holochain", "holo", "p2p", "dht", "networking"]
+categories = ["network-programming"]
+edition = "2021"
+
+[dependencies]
