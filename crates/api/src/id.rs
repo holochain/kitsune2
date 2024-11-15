@@ -41,32 +41,17 @@ static ID_LOC: std::sync::OnceLock<LocCb> = std::sync::OnceLock::new();
 /// In Kitsune2 these bytes should ONLY be the actual hash bytes
 /// or public key of the identity being tracked, without
 /// prefix or suffix.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Id(pub bytes::Bytes);
-
-impl serde::Serialize for Id {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use base64::prelude::*;
-        serializer.serialize_str(&BASE64_URL_SAFE_NO_PAD.encode(&self.0))
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for Id {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use base64::prelude::*;
-        let s: &'de str = serde::Deserialize::deserialize(deserializer)?;
-        BASE64_URL_SAFE_NO_PAD
-            .decode(s)
-            .map(|v| Id(bytes::Bytes::copy_from_slice(&v)))
-            .map_err(serde::de::Error::custom)
-    }
-}
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct Id(#[serde(with = "crate::serde_bytes_base64")] pub bytes::Bytes);
 
 imp_deref!(Id, bytes::Bytes);
 imp_from!(Id, bytes::Bytes, b => Id(b));
