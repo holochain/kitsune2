@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/api",
+  "crates/boot_srv",
 ]
 resolver = "2"
 

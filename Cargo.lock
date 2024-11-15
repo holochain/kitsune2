@@ -34,6 +34,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kitsune2_boot_srv"
+version = "0.0.1-alpha"
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
