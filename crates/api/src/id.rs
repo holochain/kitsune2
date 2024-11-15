@@ -22,6 +22,19 @@ macro_rules! imp_from {
     };
 }
 
+/// The function signature for Id loc derivation.
+pub type LocCb = fn(&bytes::Bytes) -> u32;
+
+fn default_loc(b: &bytes::Bytes) -> u32 {
+    let mut out = [0_u8; 4];
+    for i in 0..b.len() {
+        out[i % 4] ^= b[i];
+    }
+    u32::from_le_bytes(out)
+}
+
+static ID_LOC: std::sync::OnceLock<LocCb> = std::sync::OnceLock::new();
+
 /// Base data identity type meant for newtyping.
 /// You probably want [AgentId] or [OpId].
 ///
@@ -74,11 +87,15 @@ impl Id {
     // distributed well enough, re-hashing it again doesn't improve
     // distribution.
     pub fn loc(&self) -> u32 {
-        let mut out = [0_u8; 4];
-        for i in 0..self.0.len() {
-            out[i % 4] ^= self.0[i];
-        }
-        u32::from_le_bytes(out)
+        ID_LOC.get_or_init(|| default_loc)(&self.0)
+    }
+
+    /// Set the location calculation implementation for all kitsune2 Ids
+    /// for the duration of this process. Note, if anything was calculated
+    /// earlier, the default impl will have been set and cannot be changed.
+    /// Returns false if the default was unable to be set.
+    pub fn set_global_loc_callback(cb: LocCb) -> bool {
+        ID_LOC.set(cb).is_ok()
     }
 }
 
