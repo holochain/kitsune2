@@ -12,6 +12,16 @@ macro_rules! imp_deref {
     };
 }
 
+macro_rules! imp_from {
+    ($a:ty, $b:ty, $i:ident => $e:expr) => {
+        impl From<$b> for $a {
+            fn from($i: $b) -> Self {
+                $e
+            }
+        }
+    };
+}
+
 /// Base data identity type meant for newtyping.
 /// You probably want [AgentId] or [OpId].
 ///
@@ -21,7 +31,32 @@ macro_rules! imp_deref {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(pub bytes::Bytes);
 
+impl serde::Serialize for Id {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use base64::prelude::*;
+        serializer.serialize_str(&BASE64_URL_SAFE_NO_PAD.encode(&self.0))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Id {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use base64::prelude::*;
+        let s: &'de str = serde::Deserialize::deserialize(deserializer)?;
+        BASE64_URL_SAFE_NO_PAD
+            .decode(s)
+            .map(|v| Id(bytes::Bytes::copy_from_slice(&v)))
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 imp_deref!(Id, bytes::Bytes);
+imp_from!(Id, bytes::Bytes, b => Id(b));
 
 impl Id {
     /// Get the location u32 based off this Id.
@@ -78,10 +113,21 @@ fn display(
 static AGENT_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
 /// Identifies an agent to be tracked as part of a Kitsune space.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct AgentId(pub Id);
 
 imp_deref!(AgentId, Id);
+imp_from!(AgentId, bytes::Bytes, b => AgentId(Id(b)));
+imp_from!(AgentId, Id, b => AgentId(b));
 
 impl std::fmt::Display for AgentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -108,10 +154,21 @@ impl AgentId {
 static SPACE_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
 /// Identifies a space to be tracked by Kitsune.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct SpaceId(pub Id);
 
 imp_deref!(SpaceId, Id);
+imp_from!(SpaceId, bytes::Bytes, b => SpaceId(Id(b)));
+imp_from!(SpaceId, Id, b => SpaceId(b));
 
 impl std::fmt::Display for SpaceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,10 +195,21 @@ impl SpaceId {
 static OP_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
 /// Identifies an op to be tracked by Kitsune.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct OpId(pub Id);
 
 imp_deref!(OpId, Id);
+imp_from!(OpId, bytes::Bytes, b => OpId(Id(b)));
+imp_from!(OpId, Id, b => OpId(b));
 
 impl std::fmt::Display for OpId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -197,6 +265,24 @@ mod test {
 
         for (b, res) in F.iter() {
             assert_eq!(*res, Id(bytes::Bytes::from_static(b)).loc());
+        }
+    }
+
+    #[test]
+    fn id_serde_fixtures() {
+        const F: &[(&[u8], &str)] = &[
+            (b"test-hash-1", "\"dGVzdC1oYXNoLTE\""),
+            (b"s", "\"cw\""),
+            (&[255, 255, 255, 255, 255, 255, 255], "\"_________w\""),
+            (b"here is a very long string here is a very long string here is a very long string here is a very long string here is a very long string here is a very long string here is a very long string here is a very long string ", "\"aGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcgaGVyZSBpcyBhIHZlcnkgbG9uZyBzdHJpbmcg\""),
+        ];
+
+        for (d, e) in F.iter() {
+            let r = serde_json::to_string(&Id(bytes::Bytes::from_static(d)))
+                .unwrap();
+            assert_eq!(e, &r);
+            let r: AgentId = serde_json::from_str(e).unwrap();
+            assert_eq!(d, &r.0 .0);
         }
     }
 }
