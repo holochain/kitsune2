@@ -13,3 +13,6 @@ base64 = "0.22.1"
 bytes = { version = "1.8.0", features = ["serde"] }
 # kitsune types need to be serializable for network transmission.
 serde = { version = "1.0.215", features = ["derive"] }
+# kitsune2 agent info is serialized as json to improve debugability of
+# bootstrapping. So, we need a json library.
+serde_json = "1.0.132"
