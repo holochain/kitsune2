@@ -24,12 +24,7 @@ pub struct Timestamp(i64);
 impl Timestamp {
     /// Construct a new timestamp of "now".
     pub fn now() -> Self {
-        Self(
-            std::time::SystemTime::now()
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .expect("invalid system clock")
-                .as_micros() as i64,
-        )
+        std::time::SystemTime::now().into()
     }
 
     /// Construct a timestamp from i64 microseconds since unix epoch.
