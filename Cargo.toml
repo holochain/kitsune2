@@ -12,8 +12,12 @@ base64 = "0.22.1"
 # shallow-clone byte arrays is a solved problem.
 # bytes is the crate that solves it.
 bytes = { version = "1.8.0", features = ["serde"] }
+# boot_srv uses this to determine worker thread count.
+num_cpus = "1.16.0"
 # kitsune types need to be serializable for network transmission.
 serde = { version = "1.0.215", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
 # bootstrapping. So, we need a json library.
 serde_json = "1.0.132"
+# this is used by boot_srv as the http server implementation.
+tiny_http = "0.12.0"
