@@ -81,7 +81,11 @@ fn worker(
     server: Arc<Server>,
 ) -> std::io::Result<()> {
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
-        let req = server.recv()?;
+        let req =
+            match server.recv_timeout(std::time::Duration::from_secs(1))? {
+                Some(req) => req,
+                None => continue,
+            };
 
         println!("req: {} {}", req.method(), req.url());
 

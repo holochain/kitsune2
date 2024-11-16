@@ -149,5 +149,8 @@
 #[cfg(doc)]
 pub mod spec {}
 
+mod store;
+pub use store::*;
+
 mod server;
 pub use server::*;

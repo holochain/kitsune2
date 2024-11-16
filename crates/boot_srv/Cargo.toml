@@ -11,5 +11,7 @@ categories = ["network-programming"]
 edition = "2021"
 
 [dependencies]
+ctrlc = { workspace = true }
 num_cpus = { workspace = true }
+tempfile = { workspace = true }
 tiny_http = { workspace = true }
