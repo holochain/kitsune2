@@ -117,6 +117,15 @@ pub trait Verifier {
 /// - A full arc is represented by `Some((0, u32::MAX))`.
 pub type BasicArc = Option<(u32, u32)>;
 
+/// An empty basic arc (`None`) is used for tombstone entries and for
+/// light-weight nodes that cannot affort the storage and bandwidth of being
+/// an authority.
+pub const BASIC_ARC_EMPTY: BasicArc = None;
+
+/// A full basic arc (`Some((0, u32::MAX))`) is used by nodes that wish to
+/// claim authority over the full DHT.
+pub const BASIC_ARC_FULL: BasicArc = Some((0, u32::MAX));
+
 mod serde_string_timestamp {
     pub fn serialize<S>(
         t: &crate::Timestamp,
