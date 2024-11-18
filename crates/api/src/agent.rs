@@ -67,7 +67,7 @@
 //! The underlying data structures, however, cannot be quite so agnostic.
 //!
 //! By convention, absent other indications, the [AgentInfo::agent] property
-//! will be an ed25519 public key, and the [AgentInfoSigned::signature] will
+//! will be an ed25519 public key, and the [AgentInfoSigned::get_signature] will
 //! be an ed25519 signature.
 //!
 //! Future versions of this library may look for an optional "alg" property
@@ -181,21 +181,15 @@ pub struct AgentInfo {
 
 /// Signed agent information.
 #[derive(Debug)]
-// no, this is not non-exhaustive, we just want to prevent manual creation
-#[allow(clippy::manual_non_exhaustive)]
 pub struct AgentInfoSigned {
     /// The decoded information associated with this agent.
-    pub agent_info: AgentInfo,
+    agent_info: AgentInfo,
 
     /// The encoded information that was signed.
-    pub encoded: String,
+    encoded: String,
 
     /// The signature.
-    pub signature: bytes::Bytes,
-
-    /// Make sure this struct cannot be constructed manually.
-    /// It should either come from signing an [AgentInfo] or from serde.
-    _private: (),
+    signature: bytes::Bytes,
 }
 
 impl AgentInfoSigned {
@@ -210,7 +204,6 @@ impl AgentInfoSigned {
             agent_info,
             encoded,
             signature,
-            _private: (),
         }))
     }
 
@@ -236,7 +229,6 @@ impl AgentInfoSigned {
             agent_info,
             encoded: v.agent_info,
             signature: v.signature,
-            _private: (),
         })
     }
 
@@ -254,6 +246,21 @@ impl AgentInfoSigned {
             signature: &self.signature,
         })
         .map_err(std::convert::Into::into)
+    }
+
+    /// Access the inner [AgentInfo] data. Note, you can instead just deref.
+    pub fn get_agent_info(&self) -> &AgentInfo {
+        self
+    }
+
+    /// Access the canonical encoded inner agent info.
+    pub fn get_encoded(&self) -> &str {
+        &self.encoded
+    }
+
+    /// Access the signature over the encoded inner agent info.
+    pub fn get_signature(&self) -> &bytes::Bytes {
+        &self.signature
     }
 }
 
