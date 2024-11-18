@@ -4,7 +4,7 @@
 //! cryptographically verifiable declarations of network reachability.
 //!
 //! To facilitate ease of debugging (See our unit tests in this module!),
-//! the canonical encoding for this info is JSON
+//! The canonical encoding for this info is JSON.
 //!
 //! #### Json Schemas
 //!
