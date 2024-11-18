@@ -17,4 +17,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1.41.1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
