@@ -22,23 +22,30 @@ pub struct StoreEntryRef {
 }
 
 impl StoreEntryRef {
-    /// Read the content of this entry.
-    pub fn read(&self) -> std::io::Result<Vec<u8>> {
+    /// Read the content of this entry. This will extend the provided
+    /// buffer with the bytes read from the store.
+    pub fn read(&self, buf: &mut Vec<u8>) -> std::io::Result<()> {
         use std::io::{Read, Seek};
         let mut reader = self.read_clone.reopen()?;
         reader.seek(std::io::SeekFrom::Start(self.offset))?;
 
-        let mut out = Vec::with_capacity(self.length);
+        buf.reserve(self.length);
 
         unsafe {
-            // We won't use this buffer unless it is fully written within this
-            // block, so it is safe to have it contain uninitialized bytes
-            // here for one line.
-            out.set_len(self.length);
-            reader.read_exact(&mut out)?;
+            let offset = buf.len();
+            buf.set_len(offset + self.length);
+
+            if let Err(err) =
+                reader.read_exact(&mut buf[offset..offset + self.length])
+            {
+                // On read error, undo the set_len.
+                buf.set_len(offset);
+
+                return Err(err);
+            }
         }
 
-        Ok(out)
+        Ok(())
     }
 }
 
@@ -47,16 +54,17 @@ pub struct Store {
     writer_pool: WriterPool,
 }
 
-impl Store {
-    /// Construct a new virtual memory store.
-    pub fn new() -> Self {
+impl Default for Store {
+    fn default() -> Self {
         Self {
             writer_pool: Arc::new(
                 Mutex::new(std::collections::VecDeque::new()),
             ),
         }
     }
+}
 
+impl Store {
     /// Write an entry to the virtual memory store, getting back
     /// a reference that will allow future reading.
     pub fn write(&self, content: &[u8]) -> std::io::Result<StoreEntryRef> {
@@ -96,13 +104,16 @@ mod test {
 
     #[test]
     fn happy_sanity() {
-        let s = Store::new();
+        let s = Store::default();
 
-        let hello = s.write(b"hello").unwrap();
-        let world = s.write(b"world").unwrap();
+        let hello = s.write(b"Hello ").unwrap();
+        let world = s.write(b"world!").unwrap();
 
-        assert_eq!(b"hello", hello.read().unwrap().as_slice());
-        assert_eq!(b"world", world.read().unwrap().as_slice());
+        let mut buf = Vec::new();
+        hello.read(&mut buf).unwrap();
+        world.read(&mut buf).unwrap();
+
+        assert_eq!(b"Hello world!", buf.as_slice());
     }
 
     #[test]
@@ -110,7 +121,7 @@ mod test {
         const COUNT: usize = 10;
         let mut all = Vec::with_capacity(COUNT);
 
-        let s = Arc::new(Store::new());
+        let s = Arc::new(Store::default());
         let b = Arc::new(std::sync::Barrier::new(COUNT));
 
         let (send, recv) = std::sync::mpsc::channel();
@@ -130,7 +141,8 @@ mod test {
 
         for _ in 0..COUNT {
             let (wrote, r) = recv.recv().unwrap();
-            let read = r.read().unwrap();
+            let mut read = Vec::new();
+            r.read(&mut read).unwrap();
             assert_eq!(wrote.as_bytes(), read);
         }
     }
