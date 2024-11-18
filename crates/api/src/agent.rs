@@ -75,7 +75,7 @@
 //! These other algorithms may treat the [AgentInfo::agent] property as a
 //! hash of the public key instead of the public key itself, and find the
 //! public key instead on an "algPubKey" property. (Some post-quantum
-//! algorithms have rediculously long key material.)
+//! algorithms have ridiculously long key material.)
 
 use crate::*;
 
@@ -118,7 +118,7 @@ pub trait Verifier {
 pub type BasicArc = Option<(u32, u32)>;
 
 /// An empty basic arc (`None`) is used for tombstone entries and for
-/// light-weight nodes that cannot affort the storage and bandwidth of being
+/// light-weight nodes that cannot afford the storage and bandwidth of being
 /// an authority.
 pub const BASIC_ARC_EMPTY: BasicArc = None;
 
@@ -306,7 +306,7 @@ mod test {
         let agent: AgentId = bytes::Bytes::from_static(b"test-agent").into();
         let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
         let now = Timestamp::from_micros(1731690797907204);
-        let later = Timestamp::from_micros(1731762797907204);
+        let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
         let url = Some("test-url".into());
         let storage_arc = Some((42, u32::MAX / 13));
 
