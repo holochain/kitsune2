@@ -149,8 +149,20 @@
 #[cfg(doc)]
 pub mod spec {}
 
+mod parse;
+
+// TODO - not pub
+pub use parse::*;
+
 mod store;
+
+// TODO - not pub
 pub use store::*;
+
+mod space;
+
+// TODO - not pub
+pub use space::*;
 
 mod server;
 pub use server::*;

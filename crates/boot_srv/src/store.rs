@@ -15,6 +15,7 @@ struct Writer {
 type WriterPool = Arc<Mutex<std::collections::VecDeque<Writer>>>;
 
 /// A reference to previously written data.
+#[derive(Clone)]
 pub struct StoreEntryRef {
     read_clone: Arc<tempfile::NamedTempFile>,
     offset: u64,
@@ -22,6 +23,12 @@ pub struct StoreEntryRef {
 }
 
 impl StoreEntryRef {
+    /// Get the length of data to be read.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
     /// Read the content of this entry. This will extend the provided
     /// buffer with the bytes read from the store.
     pub fn read(&self, buf: &mut Vec<u8>) -> std::io::Result<()> {
@@ -46,6 +53,13 @@ impl StoreEntryRef {
         }
 
         Ok(())
+    }
+
+    /// Parse this entry.
+    pub fn parse(&self) -> std::io::Result<crate::ParsedEntry> {
+        let mut tmp = Vec::with_capacity(self.length);
+        self.read(&mut tmp)?;
+        crate::ParsedEntry::from_slice(&tmp)
     }
 }
 
