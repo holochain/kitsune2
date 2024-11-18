@@ -22,7 +22,7 @@
 /// - `Base64Space` - base64UrlNoPad safe encoded string space id.
 /// - `Base64Sig` - base64UrlNoPad safe encoded string crypto signature.
 /// - `Json` - string containing json that can be decoded.
-/// - `I64` - string contaning an i64 number.
+/// - `I64` - string containing an i64 number.
 ///
 /// ```text
 /// AgentInfoSigned = { "agentInfo": Json, "signature": Base64Sig }
@@ -93,7 +93,7 @@
 ///
 /// ##### 3.1. The Future
 ///
-/// It is the intention to someday in the future to add a "trusted" strategy,
+/// It is the intention someday in the future to add a "trusted" strategy,
 /// that will be triggerd via a new api, perhaps `/registerTrust/Base64Space`.
 ///
 /// Even when that API is implemented, however, the default strategy defined
