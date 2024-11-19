@@ -7,6 +7,12 @@ use crate::store::*;
 #[derive(Clone)]
 pub struct SpaceMap(Arc<Mutex<HashMap<bytes::Bytes, Space>>>);
 
+impl Default for SpaceMap {
+    fn default() -> Self {
+        Self(Arc::new(Mutex::new(HashMap::new())))
+    }
+}
+
 impl SpaceMap {
     /// Read the content of a space.
     pub fn read(&self, space: &bytes::Bytes) -> std::io::Result<Vec<u8>> {
