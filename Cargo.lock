@@ -95,6 +95,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kitsune2_boot_srv"
+version = "0.0.1-alpha"
+
+[[package]]
 name = "libc"
 version = "0.2.162"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -109,10 +113,6 @@ dependencies = [
  "autocfg",
  "scopeguard",
 ]
-
-[[package]]
-name = "kitsune2_boot_srv"
-version = "0.0.1-alpha"
 
 [[package]]
 name = "memchr"
