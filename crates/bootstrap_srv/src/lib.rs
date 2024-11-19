@@ -1,20 +1,21 @@
 #![deny(missing_docs)]
-//! Kitsune2 boot server is an HTTP REST server for handling bootstrapping
+//! Kitsune2 bootstrap server is an HTTP REST server for handling bootstrapping
 //! discovery of peer network reachability in p2p applications.
 //!
-//! Despite being in the kitsune2 repo, `boot_srv` and `boot_cli` do not depend
-//! on any Kitsune2 crates. This is to ensure the bootstrapping functionality
-//! is well-defined, self-contained, easily testable in isolation, and
-//! usable for projects that don't choose to make use of Kitsune2 itself.
+//! Despite being in the kitsune2 repo, `bootstrap_srv` and `bootstrap_cli`
+//! do not depend on any Kitsune2 crates. This is to ensure the bootstrapping
+//! functionality is well-defined, self-contained, easily testable in
+//! isolation, and usable for projects that don't choose to make use of
+//! Kitsune2 itself.
 //!
-//! That being said, the boot server and client are designed to transfer the
-//! `AgentInfoSigned` data type defined in the `kitsune2_api` crate. Since
+//! That being said, the bootstrap server and client are designed to transfer
+//! the `AgentInfoSigned` data type defined in the `kitsune2_api` crate. Since
 //! the canonical encoding of that type is JSON, we just redefine a subset
 //! of the schema here, and only validate the parts required for bootstrapping.
 //!
 //! For additional details, please see the [spec].
 
-/// This is a documentation module containing the kitsune2_boot spec.
+/// This is a documentation module containing the kitsune2_bootstrap spec.
 ///
 /// #### 1. Types
 ///
@@ -54,18 +55,18 @@
 /// ListResponse = [ AgentInfoSigned, .. ]
 /// ```
 ///
-/// - `PUT /boot/<Base64Space>/<Base64Agent>`
+/// - `PUT /bootstrap/<Base64Space>/<Base64Agent>`
 ///   - Request Body: `AgentInfoSigned`
 ///   - Response Body: `OkResponse | ErrResponse`
-/// - `GET /boot/<Base64Space>`
+/// - `GET /bootstrap/<Base64Space>`
 ///   - Response Body: `ListResponse | ErrResponse`
 /// - `GET /health`
 ///   - Response Body: `OkResponse | ErrResponse`
 ///
-/// ##### 2.2. Publishing info to the boot server.
+/// ##### 2.2. Publishing info to the bootstrap server.
 ///
-/// A `PUT` on `/boot/<Base64Space>/<Base64Agent>` with an `AgentInfoSigned`
-/// json object as the request body.
+/// A `PUT` on `/bootstrap/<Base64Space>/<Base64Agent>` with an
+/// `AgentInfoSigned` json object as the request body.
 ///
 /// - The server MUST reject the request if the body is > 1024 bytes.
 /// - The server MUST reject the request if `createdAt` is not within
@@ -82,9 +83,9 @@
 /// - If `isTombstone` is `false`, the server MAY begin storing the info.
 ///   See section 3. on storage strategies below.
 ///
-/// ##### 2.3. Listing data stored on the boot server.
+/// ##### 2.3. Listing data stored on the bootstrap server.
 ///
-/// A `GET` on `/boot/<Base64Space>`.
+/// A `GET` on `/bootstrap/<Base64Space>`.
 ///
 /// - The server MUST respond with a complete list of stored infos.
 /// - If there are no infos stored at this space, the server MUST return
