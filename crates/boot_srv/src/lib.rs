@@ -71,6 +71,7 @@
 /// - The server MUST reject the request if `createdAt` is not within
 ///   3 minutes in either direction of the server time.
 /// - The server MUST reject the request if `expiresAt` is in the past.
+/// - The server MUST reject the request if `expiresAt <= createdAt`.
 /// - The server MUST reject the request if `signature` is invalid vs
 ///   the `agentInfo`.
 /// - If `isTombstone` is `true`, the server MUST delete any existing
