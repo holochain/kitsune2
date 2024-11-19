@@ -75,7 +75,8 @@
 /// - The server MUST reject the request if `signature` is invalid vs
 ///   the `agentInfo`.
 /// - If `isTombstone` is `true`, the server MUST delete any existing
-///   info being held.
+///   info being held matching the `space` and `agent` and with a `createdAt`
+///   less than the `createdAt` of the tombstone record.
 /// - If `isTombstone` is `false`, the server MAY begin storing the info.
 ///   See section 3. on storage strategies below.
 ///
