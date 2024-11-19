@@ -129,7 +129,8 @@
 /// and when any entries are removed, the indexes of any items after them
 /// will be decrimented.
 ///
-/// - The server SHOULD provide a configurable per-space max info count.
+/// - The server SHOULD allow setting the maximum number of infos that will be
+///   allowed in a single space.
 ///   For the duration of this document, that value will be called MAX_INFOS.
 ///   It is recommended to default that value to `32` to keep the maximum
 ///   response size from a request to around 32KiB.
