@@ -159,5 +159,18 @@
 ///   which result in space creation, and error with 429 if that frequency
 ///   is beyond a limit.
 /// - A server MAY make this limit configurable.
+///
+/// #### 5. Client Recommendations
+///
+/// - In the case of server unreachable or 500 error, a client should use
+///   an exponential backoff strategy to avoid stressing the server when
+///   it does come back online.
+/// - A client should poll the bootstrap server on an interval >= 5 minutes
+///   to balance getting new infos to avoid partitioning without worry
+///   of hitting the rate limit.
+/// - A client, in general, should set expiration to 20 minutes beyond
+///   the info creation time.
+/// - A client, in general, should re-publish a new info on a 15 minute
+///   interval.
 #[cfg(doc)]
 pub mod spec {}
