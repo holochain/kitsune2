@@ -59,7 +59,7 @@
 ///   - Response Body: `OkResponse | ErrResponse`
 /// - `GET /boot/Base64Space`
 ///   - Response Body: `ListResponse | ErrResponse`
-/// - `GET /`
+/// - `GET /health`
 ///   - Response Body: `OkResponse | ErrResponse`
 ///
 /// ##### 2.2. Publishing info to the boot server.
@@ -90,7 +90,7 @@
 ///
 /// ##### 2.4. Health check.
 ///
-/// A `GET` on `/`.
+/// A `GET` on `/health`.
 ///
 /// - The server, in general, SHOULD return `OkResponse` to this request.
 /// - The server MAY return `ErrResponse` for internal errors or some other
