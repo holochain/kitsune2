@@ -391,7 +391,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kitsune2_boot_srv"
+name = "kitsune2_bootstrap_srv"
 version = "0.0.1-alpha"
 dependencies = [
  "base64",

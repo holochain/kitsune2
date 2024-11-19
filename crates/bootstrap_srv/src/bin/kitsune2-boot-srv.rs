@@ -1,4 +1,4 @@
-use kitsune2_boot_srv::*;
+use kitsune2_bootstrap_srv::*;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]

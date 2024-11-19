@@ -1,28 +1,36 @@
 #![deny(missing_docs)]
-//! Kitsune2 boot server is an HTTP REST server for handling bootstrapping
+//! Kitsune2 bootstrap server is an HTTP REST server for handling bootstrapping
 //! discovery of peer network reachability in p2p applications.
 //!
-//! Despite being in the kitsune2 repo, `boot_srv` and `boot_cli` do not depend
-//! on any Kitsune2 crates. This is to ensure the bootstrapping functionality
-//! is well-defined, self-contained, easily testable in isolation, and
-//! usable for projects that don't choose to make use of Kitsune2 itself.
+//! Despite being in the kitsune2 repo, `bootstrap_srv` and `bootstrap_cli`
+//! do not depend on any Kitsune2 crates. This is to ensure the bootstrapping
+//! functionality is well-defined, self-contained, easily testable in
+//! isolation, and usable for projects that don't choose to make use of
+//! Kitsune2 itself.
 //!
-//! That being said, the boot server and client are designed to transfer the
-//! `AgentInfoSigned` data type defined in the `kitsune2_api` crate. Since
+//! That being said, the bootstrap server and client are designed to transfer
+//! the `AgentInfoSigned` data type defined in the `kitsune2_api` crate. Since
 //! the canonical encoding of that type is JSON, we just redefine a subset
 //! of the schema here, and only validate the parts required for bootstrapping.
 //!
 //! For additional details, please see the [spec].
 
-/// This is a documentation module containing the kitsune2_boot spec.
+/// This is a documentation module containing the kitsune2_bootstrap spec.
 ///
 /// #### 1. Types
 ///
-/// - `Base64Agent` - base64UrlNoPad safe encoded string agent id.
-/// - `Base64Space` - base64UrlNoPad safe encoded string space id.
-/// - `Base64Sig` - base64UrlNoPad safe encoded string crypto signature.
+/// All base64 in this spec uses: <https://datatracker.ietf.org/doc/html/rfc4648#section-5>
+///
+/// The url safe alphabet (with `-` and `_`) and no padding characters (`=`)
+/// added when encoding or required when decoding.
+///
+/// - `Base64Agent` - base64UrlSafeNoPad encoded string agent id.
+/// - `Base64Space` - base64UrlSafeNoPad encoded string space id.
+/// - `Base64Sig` - base64UrlSafeNoPad encoded string crypto signature.
 /// - `Json` - string containing json that can be decoded.
-/// - `I64` - string containing an i64 number.
+/// - `I64` - string containing an i64 number indicating the number of
+///           microseconds since the unix epoch. Since the unix epoch
+///           is canonically defined in UTC, the timestamp is also in UTC.
 ///
 /// ```text
 /// AgentInfoSigned = { "agentInfo": Json, "signature": Base64Sig }
@@ -47,33 +55,37 @@
 /// ListResponse = [ AgentInfoSigned, .. ]
 /// ```
 ///
-/// - `PUT /boot/Base64Space/Base64Agent`
+/// - `PUT /bootstrap/<Base64Space>/<Base64Agent>`
 ///   - Request Body: `AgentInfoSigned`
 ///   - Response Body: `OkResponse | ErrResponse`
-/// - `GET /boot/Base64Space`
+/// - `GET /bootstrap/<Base64Space>`
 ///   - Response Body: `ListResponse | ErrResponse`
-/// - `GET /`
+/// - `GET /health`
 ///   - Response Body: `OkResponse | ErrResponse`
 ///
-/// ##### 2.2. Publishing info to the boot server.
+/// ##### 2.2. Publishing info to the bootstrap server.
 ///
-/// A `PUT` on `/boot/Base64Space/Base64Agent` with an `AgentInfoSigned`
-/// json object as the request body.
+/// A `PUT` on `/bootstrap/<Base64Space>/<Base64Agent>` with an
+/// `AgentInfoSigned` json object as the request body.
 ///
 /// - The server MUST reject the request if the body is > 1024 bytes.
 /// - The server MUST reject the request if `createdAt` is not within
 ///   3 minutes in either direction of the server time.
 /// - The server MUST reject the request if `expiresAt` is in the past.
+/// - The server MUST reject the request if `expiresAt <= createdAt`.
+/// - The server MUST reject the request if `expiresAt - createdAt` is
+///   more than 30 minutes.
 /// - The server MUST reject the request if `signature` is invalid vs
 ///   the `agentInfo`.
 /// - If `isTombstone` is `true`, the server MUST delete any existing
-///   info being held.
+///   info being held matching the `space` and `agent` and with a `createdAt`
+///   less than the `createdAt` of the tombstone record.
 /// - If `isTombstone` is `false`, the server MAY begin storing the info.
 ///   See section 3. on storage strategies below.
 ///
-/// ##### 2.3. Listing data stored on the boot server.
+/// ##### 2.3. Listing data stored on the bootstrap server.
 ///
-/// A `GET` on `/boot/Base64Space`.
+/// A `GET` on `/bootstrap/<Base64Space>`.
 ///
 /// - The server MUST respond with a complete list of stored infos.
 /// - If there are no infos stored at this space, the server MUST return
@@ -83,7 +95,7 @@
 ///
 /// ##### 2.4. Health check.
 ///
-/// A `GET` on `/`.
+/// A `GET` on `/health`.
 ///
 /// - The server, in general, SHOULD return `OkResponse` to this request.
 /// - The server MAY return `ErrResponse` for internal errors or some other
@@ -118,9 +130,11 @@
 /// and when any entries are removed, the indexes of any items after them
 /// will be decrimented.
 ///
-/// - The server SHOULD provide a configurable per-space max info count.
+/// - The server SHOULD allow setting the maximum number of infos that will be
+///   allowed in a single space.
 ///   For the duration of this document, that value will be called MAX_INFOS.
-///   It is recommended to default that value to `32`.
+///   It is recommended to default that value to `32` to keep the maximum
+///   response size from a request to around 32KiB.
 /// - The server SHOULD delete expired infos periodically.
 /// - If the server is already storing an agent, and a `PUT` with a newer
 ///   `createdAt` arrives, the existing entry MUST be replaced.
@@ -146,6 +160,19 @@
 ///   which result in space creation, and error with 429 if that frequency
 ///   is beyond a limit.
 /// - A server MAY make this limit configurable.
+///
+/// #### 5. Client Recommendations
+///
+/// - In the case of server unreachable or 500 error, a client should use
+///   an exponential backoff strategy to avoid stressing the server when
+///   it does come back online.
+/// - A client should poll the bootstrap server on an interval >= 5 minutes
+///   to balance getting new infos to avoid partitioning without worry
+///   of hitting the rate limit.
+/// - A client, in general, should set expiration to 20 minutes beyond
+///   the info creation time.
+/// - A client, in general, should re-publish a new info on a 15 minute
+///   interval.
 #[cfg(doc)]
 pub mod spec {}
 
