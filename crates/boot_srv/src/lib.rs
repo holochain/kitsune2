@@ -22,7 +22,7 @@
 /// - `Base64Space` - base64UrlNoPad safe encoded string space id.
 /// - `Base64Sig` - base64UrlNoPad safe encoded string crypto signature.
 /// - `Json` - string containing json that can be decoded.
-/// - `I64` - string contaning an i64 number.
+/// - `I64` - string containing an i64 number.
 ///
 /// ```text
 /// AgentInfoSigned = { "agentInfo": Json, "signature": Base64Sig }
@@ -93,7 +93,7 @@
 ///
 /// ##### 3.1. The Future
 ///
-/// It is the intention to someday in the future to add a "trusted" strategy,
+/// It is the intention someday in the future to add a "trusted" strategy,
 /// that will be triggerd via a new api, perhaps `/registerTrust/Base64Space`.
 ///
 /// Even when that API is implemented, however, the default strategy defined
@@ -129,7 +129,7 @@
 /// - If the store count is >= MAX_INFOS, the server MUST delete the entry
 ///   at MAX_INFOS / 2 and then push the info onto the stack.
 ///
-/// #### 3. Rate Limiting
+/// #### 4. Rate Limiting
 ///
 /// Info count within a space is limited by the storage strategy above. But
 /// space count within a server is unbounded. While servers will likely want

@@ -29,3 +29,9 @@ serde_json = "1.0.132"
 tempfile = "3.14.0"
 # this is used by boot_srv as the http server implementation.
 tiny_http = "0.12.0"
+# --- dev-dependencies ---
+# The following workspace dependencies are used in crate dev-dependencies.
+# Please be careful to only include them in dev dependencies or move them
+# above this section.
+# --- dev-dependencies ---
+tokio = "1.41.1"
