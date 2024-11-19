@@ -54,17 +54,17 @@
 /// ListResponse = [ AgentInfoSigned, .. ]
 /// ```
 ///
-/// - `PUT /boot/Base64Space/Base64Agent`
+/// - `PUT /boot/<Base64Space>/<Base64Agent>`
 ///   - Request Body: `AgentInfoSigned`
 ///   - Response Body: `OkResponse | ErrResponse`
-/// - `GET /boot/Base64Space`
+/// - `GET /boot/<Base64Space>`
 ///   - Response Body: `ListResponse | ErrResponse`
 /// - `GET /health`
 ///   - Response Body: `OkResponse | ErrResponse`
 ///
 /// ##### 2.2. Publishing info to the boot server.
 ///
-/// A `PUT` on `/boot/Base64Space/Base64Agent` with an `AgentInfoSigned`
+/// A `PUT` on `/boot/<Base64Space>/<Base64Agent>` with an `AgentInfoSigned`
 /// json object as the request body.
 ///
 /// - The server MUST reject the request if the body is > 1024 bytes.
@@ -84,7 +84,7 @@
 ///
 /// ##### 2.3. Listing data stored on the boot server.
 ///
-/// A `GET` on `/boot/Base64Space`.
+/// A `GET` on `/boot/<Base64Space>`.
 ///
 /// - The server MUST respond with a complete list of stored infos.
 /// - If there are no infos stored at this space, the server MUST return
