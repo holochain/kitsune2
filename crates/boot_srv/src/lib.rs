@@ -131,7 +131,8 @@
 ///
 /// - The server SHOULD provide a configurable per-space max info count.
 ///   For the duration of this document, that value will be called MAX_INFOS.
-///   It is recommended to default that value to `32`.
+///   It is recommended to default that value to `32` to keep the maximum
+///   response size from a request to around 32KiB.
 /// - The server SHOULD delete expired infos periodically.
 /// - If the server is already storing an agent, and a `PUT` with a newer
 ///   `createdAt` arrives, the existing entry MUST be replaced.
