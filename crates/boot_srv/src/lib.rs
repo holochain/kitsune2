@@ -18,11 +18,18 @@
 ///
 /// #### 1. Types
 ///
-/// - `Base64Agent` - base64UrlNoPad safe encoded string agent id.
-/// - `Base64Space` - base64UrlNoPad safe encoded string space id.
-/// - `Base64Sig` - base64UrlNoPad safe encoded string crypto signature.
+/// All base64 in this spec uses: <https://datatracker.ietf.org/doc/html/rfc4648#section-5>
+///
+/// The url safe alphabet (with `-` and `_`) and no padding characters (`=`)
+/// added when encoding or required when decoding.
+///
+/// - `Base64Agent` - base64UrlSafeNoPad encoded string agent id.
+/// - `Base64Space` - base64UrlSafeNoPad encoded string space id.
+/// - `Base64Sig` - base64UrlSafeNoPad encoded string crypto signature.
 /// - `Json` - string containing json that can be decoded.
-/// - `I64` - string containing an i64 number.
+/// - `I64` - string containing an i64 number indicating the number of
+///           microseconds since the unix epoch. Since the unix epoch
+///           is canonically defined in UTC, the timestamp is also in UTC.
 ///
 /// ```text
 /// AgentInfoSigned = { "agentInfo": Json, "signature": Base64Sig }
