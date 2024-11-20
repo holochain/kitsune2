@@ -43,6 +43,13 @@ pub struct Config {
     /// - `testing = 10ms`
     /// - `production = 2s`
     pub request_listen_duration: std::time::Duration,
+
+    /// The address(es) at which to listen.
+    ///
+    /// Defaults:
+    /// - `testing = "127.0.0.1:0"`
+    /// - `production = "0.0.0.0:443"`
+    pub listen_address: std::net::SocketAddr,
 }
 
 impl Config {
@@ -52,6 +59,7 @@ impl Config {
             worker_thread_count: 2,
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_millis(10),
+            listen_address: ([127, 0, 0, 1], 0).into(),
         }
     }
 
@@ -61,6 +69,7 @@ impl Config {
             worker_thread_count: num_cpus::get() * 4,
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_secs(2),
+            listen_address: ([0, 0, 0, 0], 443).into(),
         }
     }
 }
@@ -73,6 +82,7 @@ impl Config {
 pub struct BootSrv {
     cont: Arc<std::sync::atomic::AtomicBool>,
     workers: Vec<std::thread::JoinHandle<std::io::Result<()>>>,
+    addr: std::net::SocketAddr,
 }
 
 impl Drop for BootSrv {
@@ -92,27 +102,48 @@ impl BootSrv {
 
         let space_map = crate::SpaceMap::default();
 
-        let server = Arc::new(
-            Server::http("0.0.0.0:8080").map_err(std::io::Error::other)?,
-        );
+        let sconf = ServerConfig {
+            addr: ConfigListenAddr::IP(vec![config.listen_address]),
+            // TODO
+            ssl: None,
+        };
+
+        let store = Arc::new(crate::Store::default());
+
+        let server =
+            Arc::new(Server::new(sconf).map_err(std::io::Error::other)?);
+
+        let addr = server.server_addr().to_ip().expect("BadAddress");
+        println!("Listening at {:?}", addr);
 
         let mut workers = Vec::with_capacity(config.worker_thread_count);
         for _ in 0..config.worker_thread_count {
             let config = config.clone();
             let cont = cont.clone();
+            let store = store.clone();
             let server = server.clone();
             let space_map = space_map.clone();
             workers.push(std::thread::spawn(move || {
-                worker(config, cont, server, space_map)
+                worker(config, cont, store, server, space_map)
             }));
         }
-        Ok(Self { cont, workers })
+        Ok(Self {
+            cont,
+            workers,
+            addr,
+        })
+    }
+
+    /// Get the bound listinging address of this server.
+    pub fn listen_addr(&self) -> std::net::SocketAddr {
+        self.addr
     }
 }
 
 fn worker(
     config: Arc<Config>,
     cont: Arc<std::sync::atomic::AtomicBool>,
+    store: Arc<crate::Store>,
     server: Arc<Server>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
@@ -138,6 +169,7 @@ fn worker(
         println!("req: {} {path:?}", req.method());
 
         let handler = Handler {
+            store: &store,
             space_map: &space_map,
             method: req.method().as_str().to_string(),
             path,
@@ -150,6 +182,7 @@ fn worker(
 }
 
 struct Handler<'lt> {
+    store: &'lt crate::Store,
     space_map: &'lt crate::SpaceMap,
     method: String,
     path: Vec<String>,
@@ -172,14 +205,23 @@ impl<'lt> Handler<'lt> {
 
     pub fn handle_inner(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
         if let Some(cmd) = self.path.pop() {
-            if &self.method == "GET" && &cmd == "boot" {
-                return self.handle_boot();
+            match (self.method.as_str(), cmd.as_str()) {
+                ("GET", "health") => {
+                    return Ok((200, b"{}".to_vec()));
+                }
+                ("GET", "bootstrap") => {
+                    return self.handle_boot_get();
+                }
+                ("PUT", "bootstrap") => {
+                    return self.handle_boot_put();
+                }
+                _ => (),
             }
         }
         Ok((400, b"{\"error\":\"bad request\"}".to_vec()))
     }
 
-    pub fn handle_boot(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
+    pub fn handle_boot_get(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
         use base64::prelude::*;
 
         let space = match self.path.pop() {
@@ -196,6 +238,45 @@ impl<'lt> Handler<'lt> {
         let res = self.space_map.read(&space)?;
 
         Ok((200, res))
+    }
+
+    pub fn handle_boot_put(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
+        use base64::prelude::*;
+
+        let space = match self.path.pop() {
+            Some(space) => space,
+            None => return Err(std::io::Error::other("InvalidSpace")),
+        };
+
+        let space = bytes::Bytes::copy_from_slice(
+            &BASE64_URL_SAFE_NO_PAD
+                .decode(space)
+                .map_err(std::io::Error::other)?,
+        );
+
+        let agent = match self.path.pop() {
+            Some(agent) => agent,
+            None => return Err(std::io::Error::other("InvalidAgent")),
+        };
+
+        let agent = bytes::Bytes::copy_from_slice(
+            &BASE64_URL_SAFE_NO_PAD
+                .decode(agent)
+                .map_err(std::io::Error::other)?,
+        );
+
+        let info_raw = self.read_body()?;
+        let info = crate::ParsedEntry::from_slice(&info_raw)?;
+        println!("{info:?}");
+
+        // TODO - validate!
+
+        let r = self.store.write(&info_raw)?;
+
+        // TODO max_entries from config
+        self.space_map.update(32, space, Some((info, r)));
+
+        Ok((200, b"{}".to_vec()))
     }
 
     pub fn read_body(&mut self) -> std::io::Result<Vec<u8>> {

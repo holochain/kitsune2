@@ -35,3 +35,4 @@ tiny_http = "0.12.0"
 # above this section.
 # --- dev-dependencies ---
 tokio = "1.41.1"
+ureq = "2.10.1"

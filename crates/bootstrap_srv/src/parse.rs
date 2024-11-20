@@ -1,4 +1,5 @@
 /// An entry with known content.
+#[derive(Debug)]
 pub struct ParsedEntry {
     /// agent
     pub agent: ed25519_dalek::VerifyingKey,

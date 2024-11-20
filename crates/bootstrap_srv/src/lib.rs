@@ -193,3 +193,6 @@ pub use space::*;
 
 mod server;
 pub use server::*;
+
+#[cfg(test)]
+mod test;
