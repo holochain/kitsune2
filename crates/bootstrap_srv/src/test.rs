@@ -15,6 +15,7 @@ struct DecodeAgent {
     is_tombstone: bool,
     encoded: String,
     signature: String,
+    test_prop: String,
 }
 
 impl<'de> serde::Deserialize<'de> for DecodeAgent {
@@ -39,6 +40,7 @@ impl<'de> serde::Deserialize<'de> for DecodeAgent {
             created_at: String,
             expires_at: String,
             is_tombstone: bool,
+            test_prop: String,
         }
 
         let inn: Inn = serde_json::from_str(&out.agent_info).unwrap();
@@ -51,72 +53,123 @@ impl<'de> serde::Deserialize<'de> for DecodeAgent {
             is_tombstone: inn.is_tombstone,
             encoded: out.agent_info,
             signature: out.signature,
+            test_prop: inn.test_prop,
         })
     }
 }
 
-struct PutInfo {
+#[derive(Debug)]
+struct PutInfoRes {
     info: String,
     agent: String,
 }
 
-fn put_info(
-    addr: std::net::SocketAddr,
-    space: &str,
-    agent_seed: &str,
-    created_at: i64,
-    expires_at: i64,
-    is_tombstone: bool,
-) -> PutInfo {
-    use base64::prelude::*;
-    use ed25519_dalek::*;
+struct PutInfo<'lt> {
+    pub addr: std::net::SocketAddr,
+    pub space: &'lt str,
+    pub space_url: &'lt str,
+    pub agent_seed: &'lt str,
+    pub agent_url: Option<&'lt str>,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub is_tombstone: bool,
+    pub signature: Option<&'lt str>,
+    pub test_prop: &'lt str,
+}
 
-    let seed: [u8; 32] = BASE64_URL_SAFE_NO_PAD
-        .decode(agent_seed)
-        .unwrap()
-        .try_into()
+impl<'lt> Default for PutInfo<'lt> {
+    fn default() -> Self {
+        let created_at = now();
+        let expires_at = created_at
+            + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
+        Self {
+            addr: ([0, 0, 0, 0], 0).into(),
+            space: S1,
+            space_url: S1,
+            agent_seed: K1,
+            agent_url: None,
+            created_at,
+            expires_at,
+            is_tombstone: false,
+            signature: None,
+            test_prop: "<none>",
+        }
+    }
+}
+
+impl<'lt> PutInfo<'lt> {
+    fn call(self) -> std::io::Result<PutInfoRes> {
+        use base64::prelude::*;
+        use ed25519_dalek::*;
+
+        let seed: [u8; 32] = BASE64_URL_SAFE_NO_PAD
+            .decode(self.agent_seed)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let sign = SigningKey::from_bytes(&seed);
+        let pk =
+            BASE64_URL_SAFE_NO_PAD.encode(VerifyingKey::from(&sign).as_bytes());
+
+        let agent_info = serde_json::to_string(&serde_json::json!({
+            "space": self.space,
+            "agent": pk,
+            "createdAt": self.created_at.to_string(),
+            "expiresAt": self.expires_at.to_string(),
+            "isTombstone": self.is_tombstone,
+            "testProp": self.test_prop,
+        }))
         .unwrap();
-    let sign = SigningKey::from_bytes(&seed);
-    let pk =
-        BASE64_URL_SAFE_NO_PAD.encode(VerifyingKey::from(&sign).as_bytes());
 
-    let agent_info = serde_json::to_string(&serde_json::json!({
-        "space": space,
-        "agent": pk,
-        "createdAt": created_at.to_string(),
-        "expiresAt": expires_at.to_string(),
-        "isTombstone": is_tombstone
-    }))
-    .unwrap();
+        let signature = BASE64_URL_SAFE_NO_PAD
+            .encode(&sign.sign(agent_info.as_bytes()).to_bytes());
 
-    let signature = BASE64_URL_SAFE_NO_PAD
-        .encode(&sign.sign(agent_info.as_bytes()).to_bytes());
-
-    let info = serde_json::to_string(&serde_json::json!({
-        "agentInfo": agent_info,
-        "signature": signature
-    }))
-    .unwrap();
-
-    let addr = format!("http://{:?}/bootstrap/{}/{}", addr, space, pk);
-    let res = ureq::put(&addr)
-        .send(std::io::Cursor::new(info.as_bytes()))
-        .unwrap()
-        .into_string()
+        let info = serde_json::to_string(&serde_json::json!({
+            "agentInfo": agent_info,
+            "signature": match self.signature {
+                Some(signature) => signature,
+                None => &signature,
+            }
+        }))
         .unwrap();
-    assert_eq!("{}", res);
 
-    PutInfo { info, agent: pk }
+        let addr = format!(
+            "http://{:?}/bootstrap/{}/{}",
+            self.addr,
+            self.space_url,
+            match self.agent_url {
+                Some(agent_url) => agent_url,
+                None => &pk,
+            },
+        );
+
+        match ureq::put(&addr).send_string(&info) {
+            Ok(res) => {
+                let res = res.into_string()?;
+                if res != "{}" {
+                    return Err(std::io::Error::other("InvalidResponse"));
+                }
+                Ok(PutInfoRes { info, agent: pk })
+            }
+            Err(ureq::Error::Status(status, res)) => {
+                let res = res.into_string()?;
+                Err(std::io::Error::other(format!("status {status}: {res}")))
+            }
+            Err(ureq::Error::Transport(err)) => Err(std::io::Error::other(err)),
+        }
+    }
 }
 
 #[test]
 fn happy_bootstrap_put_get() {
     let s = BootSrv::new(Config::testing()).unwrap();
 
-    let c = now();
-    let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
-
-    let PutInfo { info, .. } = put_info(s.listen_addr(), S1, K1, c, e, false);
+    let PutInfoRes { info, .. } = PutInfo {
+        addr: s.listen_addr(),
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addr(), S1);
     println!("{addr}");
@@ -151,10 +204,13 @@ fn happy_empty_server_bootstrap_get() {
 fn tombstone_will_not_put() {
     let s = BootSrv::new(Config::testing()).unwrap();
 
-    let c = now();
-    let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
-
-    let _ = put_info(s.listen_addr(), S1, K1, c, e, true);
+    let _ = PutInfo {
+        addr: s.listen_addr(),
+        is_tombstone: true,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addr(), S1);
     let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
@@ -167,33 +223,41 @@ fn tombstone_deletes_correct_agent() {
 
     // -- put agent1 -- //
 
-    let c = now();
-    let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
-
-    let PutInfo {
+    let PutInfoRes {
         info: info1,
         agent: agent1,
-    } = put_info(s.listen_addr(), S1, K1, c, e, false);
+    } = PutInfo {
+        addr: s.listen_addr(),
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
 
     // -- put agent2 -- //
 
-    let c = now();
-    let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
-
-    let PutInfo {
+    let PutInfoRes {
         info: info2,
         agent: agent2,
-    } = put_info(s.listen_addr(), S1, K2, c, e, false);
+    } = PutInfo {
+        addr: s.listen_addr(),
+        agent_seed: K2,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
 
     // -- tombstone agent1 -- //
 
-    let c = now();
-    let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
-
-    let PutInfo {
+    let PutInfoRes {
         info: info1_t,
         agent: agent1_t,
-    } = put_info(s.listen_addr(), S1, K1, c, e, true);
+    } = PutInfo {
+        addr: s.listen_addr(),
+        is_tombstone: true,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
 
     // -- validate test -- //
 
@@ -211,4 +275,200 @@ fn tombstone_deletes_correct_agent() {
     assert_eq!(1, res.len());
     let one = res.pop().unwrap();
     assert_eq!(one.agent, agent2);
+}
+
+#[test]
+fn reject_mismatch_agent_url() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        agent_url: Some("AAAA"),
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidAgent"));
+}
+
+#[test]
+fn reject_mismatch_space_url() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        space_url: "AAAA",
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidSpace"));
+}
+
+#[test]
+fn reject_old_created_at() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        created_at: 0,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidCreatedAt"));
+}
+
+#[test]
+fn reject_future_created_at() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        created_at: i64::MAX - 500,
+        expires_at: i64::MAX,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidCreatedAt"));
+}
+
+#[test]
+fn reject_expired() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let expires_at = crate::now() - 500;
+    let created_at = crate::now() - 1500;
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        created_at,
+        expires_at,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidExpiresAt"));
+}
+
+#[test]
+fn reject_expired_at_before_created_at() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let expires_at = crate::now() + 500;
+    let created_at = crate::now() + 1500;
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        created_at,
+        expires_at,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidExpiresAt"));
+}
+
+#[test]
+fn reject_expired_at_too_long() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let created_at = crate::now();
+    let expires_at =
+        created_at + std::time::Duration::from_secs(60 * 40).as_micros() as i64;
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        created_at,
+        expires_at,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidExpiresAt"));
+}
+
+#[test]
+fn reject_bad_sig() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        signature: Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    println!("{}", err.to_string());
+    assert!(err.to_string().contains("InvalidSignature"));
+}
+
+#[test]
+fn default_storage_rollover() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let addr = s.listen_addr();
+    let mut test_prop: u32 = 0;
+    let mut put_info = move || {
+        use base64::prelude::*;
+        let mut agent_seed = [0; 32];
+        agent_seed[..4].copy_from_slice(&test_prop.to_le_bytes());
+        let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(&agent_seed);
+        PutInfo {
+            addr,
+            agent_seed: &agent_seed,
+            test_prop: &format!("{test_prop}"),
+            ..Default::default()
+        }
+        .call()
+        .unwrap();
+        test_prop += 1;
+    };
+
+    let addr = s.listen_addr();
+    let get = move || {
+        let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+        let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+        let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+        res.into_iter().map(|m| m.test_prop).collect::<Vec<_>>()
+    };
+
+    for _ in 0..32 {
+        put_info();
+    }
+
+    let res = get();
+
+    assert_eq!(
+        res.as_slice(),
+        &[
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+            "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23",
+            "24", "25", "26", "27", "28", "29", "30", "31",
+        ]
+    );
+
+    for _ in 0..32 {
+        put_info();
+    }
+
+    let res = get();
+
+    assert_eq!(
+        res.as_slice(),
+        &[
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+            "13", "14", "15", "48", "49", "50", "51", "52", "53", "54", "55",
+            "56", "57", "58", "59", "60", "61", "62", "63",
+        ]
+    );
 }

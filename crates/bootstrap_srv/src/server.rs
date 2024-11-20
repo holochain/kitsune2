@@ -252,16 +252,14 @@ impl<'lt> Handler<'lt> {
 
         // validate created at is not older than 3 min ago
         if info.created_at
-            + (std::time::Duration::from_secs(60 * 3).as_micros() as i64)
-            < now
+            < now - (std::time::Duration::from_secs(60 * 3).as_micros() as i64)
         {
             return Err(std::io::Error::other("InvalidCreatedAt"));
         }
 
         // validate created at is less than 3 min in the future
         if info.created_at
-            - (std::time::Duration::from_secs(60 * 3).as_micros() as i64)
-            > now
+            > now + (std::time::Duration::from_secs(60 * 3).as_micros() as i64)
         {
             return Err(std::io::Error::other("InvalidCreatedAt"));
         }
@@ -286,7 +284,9 @@ impl<'lt> Handler<'lt> {
         // validate signature (do this at the end because it's more expensive
         info.agent
             .verify(info.encoded.as_bytes(), &info.signature)
-            .map_err(std::io::Error::other)?;
+            .map_err(|err| {
+                std::io::Error::other(format!("InvalidSignature: {err:?}"))
+            })?;
 
         let r = if info.is_tombstone {
             None
