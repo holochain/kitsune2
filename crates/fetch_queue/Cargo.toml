@@ -1,0 +1,18 @@
+[package]
+name = "kitsune2_fetch_queue"
+version = "0.0.1-alpha"
+description = "queue for fetching kitsune ops from peers"
+license = "Apache-2.0"
+homepage = "https://github.com/holochain/kitsune2"
+documentation = "https://docs.rs/kitsune2_fetch_queue"
+authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
+keywords = ["holochain", "holo", "p2p", "dht", "networking"]
+categories = ["network-programming"]
+edition = "2021"
+
+[dependencies]
+kitsune2_api = { path = "../api", version = "0.0.1-alpha" }
+
+[dev-dependencies]
+bytes = { workspace = true }
+rand = "0.8.5"

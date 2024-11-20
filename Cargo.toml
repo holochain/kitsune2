@@ -3,8 +3,10 @@ members = [
   "crates/api",
   "crates/bootstrap_srv",
   "crates/dht",
+  "crates/fetch_queue",
   "crates/memory",
 ]
+
 resolver = "2"
 
 [workspace.dependencies]
