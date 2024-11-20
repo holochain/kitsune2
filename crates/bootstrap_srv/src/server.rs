@@ -288,7 +288,11 @@ impl<'lt> Handler<'lt> {
             .verify(info.encoded.as_bytes(), &info.signature)
             .map_err(std::io::Error::other)?;
 
-        let r = self.store.write(&info_raw)?;
+        let r = if info.is_tombstone {
+            None
+        } else {
+            Some(self.store.write(&info_raw)?)
+        };
 
         // TODO max_entries from config
         self.space_map.update(32, space, Some((info, r)));

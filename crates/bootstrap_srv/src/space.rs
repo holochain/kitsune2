@@ -42,7 +42,7 @@ impl SpaceMap {
         &self,
         max_entries: usize,
         space: bytes::Bytes,
-        new_info: Option<(crate::ParsedEntry, StoreEntryRef)>,
+        new_info: Option<(crate::ParsedEntry, Option<StoreEntryRef>)>,
     ) {
         // minimize outer mutex lock time
         let space: Space = {
@@ -110,9 +110,15 @@ impl Space {
         // keep the mutext lock time to a minimum
         let list = self.readable.lock().unwrap().clone();
 
-        // plus commas + enclosing square brackets.
-        let len =
-            list.iter().map(StoreEntryRef::len).sum::<usize>() + list.len() + 1;
+        let mut len: usize = list.iter().map(StoreEntryRef::len).sum();
+
+        // plus square brackets
+        len += 2;
+
+        // plus commas
+        if !list.is_empty() {
+            len += list.len() - 1;
+        }
 
         let mut out = Vec::with_capacity(len);
 
@@ -142,7 +148,7 @@ impl Space {
     pub fn update(
         &self,
         max_entries: usize,
-        mut new_info: Option<(crate::ParsedEntry, StoreEntryRef)>,
+        mut new_info: Option<(crate::ParsedEntry, Option<StoreEntryRef>)>,
     ) {
         // get the current system time
         let now = std::time::SystemTime::now()
@@ -178,8 +184,12 @@ impl Space {
                     // can unwrap because this can only be true if is_some
                     let (new_p, new_s) = new_info.take().unwrap();
                     if new_p.created_at > parsed.created_at {
+                        if new_p.is_tombstone {
+                            return None;
+                        }
+
                         parsed = new_p;
-                        store = new_s;
+                        store = new_s.expect("RequireStoreRef");
                     }
                 }
 
@@ -195,14 +205,16 @@ impl Space {
         // if we still have a new info to add, it must not have matched
         // any existing ones
         if let Some((parsed, store)) = new_info {
-            // if we are full, follow the "default" strategy rule of
-            // deleting the half-way info
-            if list.len() >= max_entries {
-                list.remove(max_entries / 2);
-            }
+            if !parsed.is_tombstone {
+                // if we are full, follow the "default" strategy rule of
+                // deleting the half-way info
+                if list.len() >= max_entries {
+                    list.remove(max_entries / 2);
+                }
 
-            // push the new info onto the stack
-            list.push((parsed, store));
+                // push the new info onto the stack
+                list.push((parsed, store.expect("RequireStoreRef")));
+            }
         }
 
         // drop the parsed versions
