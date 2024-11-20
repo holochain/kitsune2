@@ -5,13 +5,6 @@ const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
 const K1: &str = "m-U7gdxW1A647O-4wkuCWOvtGGVfHEsxNScFKiL8-k8";
 const K2: &str = "v9I5GT3xVKPcaa4uyd2pcuJromf5zv1-OaahYOLBAWY";
 
-fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as i64
-}
-
 pub struct GenInfo {
     info: String,
     agent: String,
@@ -59,7 +52,7 @@ fn happy_bootstrap_put_get() {
     let s = BootSrv::new(Config::testing()).unwrap();
 
     let c = now();
-    let e = c + 72_000_000_000;
+    let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
     let GenInfo { info, agent } = gen_info(S1, K1, c, e, false);
 
     let addr = format!("http://{:?}/bootstrap/{}/{}", s.listen_addr(), S1, agent);
@@ -67,12 +60,24 @@ fn happy_bootstrap_put_get() {
     println!("{addr}: {info}");
 
     let res = ureq::put(&addr)
-        .send(std::io::Cursor::new(info.into_bytes()))
+        .send(std::io::Cursor::new(info.as_bytes()))
         .unwrap()
         .into_string()
         .unwrap();
     println!("{res}");
     assert_eq!("{}", res);
+
+    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addr(), S1);
+    println!("{addr}");
+    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    println!("{res}");
+
+    // make sure it is valid json and only contains one entry
+    let r: Vec<serde_json::Value> = serde_json::from_str(&res).unwrap();
+    assert_eq!(1, r.len());
+
+    // make sure that info byte-wise matches our put
+    assert_eq!(format!("[{info}]"), res);
 }
 
 #[test]

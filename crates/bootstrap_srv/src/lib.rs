@@ -176,6 +176,13 @@
 #[cfg(doc)]
 pub mod spec {}
 
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .expect("InvalidSystemTime")
+        .as_micros() as i64
+}
+
 mod parse;
 
 // TODO - not pub

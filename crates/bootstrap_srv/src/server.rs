@@ -203,7 +203,7 @@ impl<'lt> Handler<'lt> {
         }
     }
 
-    pub fn handle_inner(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
+    fn handle_inner(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
         if let Some(cmd) = self.path.pop() {
             match (self.method.as_str(), cmd.as_str()) {
                 ("GET", "health") => {
@@ -221,55 +221,63 @@ impl<'lt> Handler<'lt> {
         Ok((400, b"{\"error\":\"bad request\"}".to_vec()))
     }
 
-    pub fn handle_boot_get(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
-        use base64::prelude::*;
-
-        let space = match self.path.pop() {
-            Some(space) => space,
-            None => return Err(std::io::Error::other("InvalidSpace")),
-        };
-
-        let space = bytes::Bytes::copy_from_slice(
-            &BASE64_URL_SAFE_NO_PAD
-                .decode(space)
-                .map_err(std::io::Error::other)?,
-        );
+    fn handle_boot_get(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
+        let space = self.path_to_bytes()?;
 
         let res = self.space_map.read(&space)?;
 
         Ok((200, res))
     }
 
-    pub fn handle_boot_put(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
-        use base64::prelude::*;
+    fn handle_boot_put(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
+        use ed25519_dalek::*;
 
-        let space = match self.path.pop() {
-            Some(space) => space,
-            None => return Err(std::io::Error::other("InvalidSpace")),
-        };
+        let now = crate::now();
 
-        let space = bytes::Bytes::copy_from_slice(
-            &BASE64_URL_SAFE_NO_PAD
-                .decode(space)
-                .map_err(std::io::Error::other)?,
-        );
-
-        let agent = match self.path.pop() {
-            Some(agent) => agent,
-            None => return Err(std::io::Error::other("InvalidAgent")),
-        };
-
-        let agent = bytes::Bytes::copy_from_slice(
-            &BASE64_URL_SAFE_NO_PAD
-                .decode(agent)
-                .map_err(std::io::Error::other)?,
-        );
+        let space = self.path_to_bytes()?;
+        let agent = self.path_to_bytes()?;
 
         let info_raw = self.read_body()?;
         let info = crate::ParsedEntry::from_slice(&info_raw)?;
-        println!("{info:?}");
 
-        // TODO - validate!
+        // validate agent matches url path
+        if *agent != *info.agent.as_bytes() {
+            return Err(std::io::Error::other("InvalidAgent"));
+        }
+
+        // validate space matches url path
+        if space != info.space {
+            return Err(std::io::Error::other("InvalidSpace"));
+        }
+
+        // validate created at is not older than 3 min ago
+        if info.created_at + (std::time::Duration::from_secs(60 * 3).as_micros() as i64) < now {
+            return Err(std::io::Error::other("InvalidCreatedAt"));
+        }
+
+        // validate created at is less than 3 min in the future
+        if info.created_at - (std::time::Duration::from_secs(60 * 3).as_micros() as i64) > now {
+            return Err(std::io::Error::other("InvalidCreatedAt"));
+        }
+
+        // validate not expired
+        if info.expires_at < now {
+            return Err(std::io::Error::other("InvalidExpiresAt"));
+        }
+
+        // validate expires_at is not before (or equal to) created_at
+        if info.expires_at <= info.created_at {
+            return Err(std::io::Error::other("InvalidExpiresAt"));
+        }
+
+        // validate expires_at is not more than 30 min after created_at
+        if info.expires_at - info.created_at > (std::time::Duration::from_secs(60 * 30).as_micros() as i64) {
+            return Err(std::io::Error::other("InvalidExpiresAt"));
+        }
+
+        // validate signature (do this at the end because it's more expensive
+        info.agent.verify(info.encoded.as_bytes(), &info.signature)
+            .map_err(std::io::Error::other)?;
 
         let r = self.store.write(&info_raw)?;
 
@@ -279,8 +287,27 @@ impl<'lt> Handler<'lt> {
         Ok((200, b"{}".to_vec()))
     }
 
-    pub fn read_body(&mut self) -> std::io::Result<Vec<u8>> {
-        let mut buf = [0; 1024];
+    fn path_to_bytes(&mut self) -> std::io::Result<bytes::Bytes> {
+        use base64::prelude::*;
+
+        let p = match self.path.pop() {
+            Some(p) => p,
+            None => return Err(std::io::Error::other("InvalidPathSegment")),
+        };
+
+        Ok(bytes::Bytes::copy_from_slice(
+            &BASE64_URL_SAFE_NO_PAD
+                .decode(p)
+                .map_err(std::io::Error::other)?,
+        ))
+    }
+
+    fn read_body(&mut self) -> std::io::Result<Vec<u8>> {
+        // these are the same right now, but *could* be different
+        const MAX_INFO_SIZE: usize = 1024;
+        const READ_BUF_SIZE: usize = 1024;
+
+        let mut buf = [0; READ_BUF_SIZE];
         let mut out = Vec::new();
         loop {
             let read = match self.req.as_reader().read(&mut buf[..]) {
@@ -294,7 +321,7 @@ impl<'lt> Handler<'lt> {
                 return Ok(out);
             }
             out.extend_from_slice(&buf[..read]);
-            if out.len() > 1024 {
+            if out.len() > MAX_INFO_SIZE {
                 return Err(std::io::Error::other("InfoTooLarge"));
             }
         }
