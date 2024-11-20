@@ -1,7 +1,7 @@
 [package]
 name = "kitsune2_bootstrap_srv"
 version = "0.0.1-alpha"
-description = "p2p / dht communication framework api"
+description = "p2p / dht communication WAN discovery bootstrapping server"
 license = "Apache-2.0"
 homepage = "https://github.com/holochain/kitsune2"
 documentation = "https://docs.rs/kitsune2_bootstrap_srv"
