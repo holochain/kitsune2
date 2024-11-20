@@ -472,3 +472,60 @@ fn default_storage_rollover() {
         ]
     );
 }
+
+#[test]
+fn multi_thread_write_stress() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+    let addr = s.listen_addr();
+
+    // the testing config has 2 worker threads. Let's write at 8 times that.
+    const TCOUNT: u32 = 16;
+
+    // update the infos 8 times
+    const SCOUNT: u32 = 8;
+
+    let b = std::sync::Arc::new(std::sync::Barrier::new(TCOUNT as usize));
+    let mut all = Vec::with_capacity(TCOUNT as usize);
+
+    for a in 0..TCOUNT {
+        use base64::prelude::*;
+
+        let mut agent_seed = [0; 32];
+        agent_seed[..4].copy_from_slice(&a.to_le_bytes());
+        let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(&agent_seed);
+
+        let b = b.clone();
+
+        all.push(std::thread::spawn(move || {
+            for i in 0..SCOUNT {
+                b.wait();
+
+                PutInfo {
+                    addr,
+                    agent_seed: &agent_seed,
+                    test_prop: &format!("{i}"),
+                    ..Default::default()
+                }
+                .call()
+                .unwrap();
+            }
+        }));
+    }
+
+    for j in all {
+        j.join().unwrap();
+    }
+
+    let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+    let res = res.into_iter().map(|m| m.test_prop).collect::<Vec<_>>();
+
+    assert_eq!(
+        &[
+            "7", "7", "7", "7", "7", "7", "7", "7", "7", "7", "7", "7", "7",
+            "7", "7", "7"
+        ],
+        res.as_slice()
+    );
+}
