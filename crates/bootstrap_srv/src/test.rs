@@ -20,8 +20,8 @@ fn gen_info(s: &str, k: &str, c: i64, e: i64, t: bool) -> GenInfo {
         .try_into()
         .unwrap();
     let sign = SigningKey::from_bytes(&seed);
-    let pk = BASE64_URL_SAFE_NO_PAD
-        .encode(VerifyingKey::from(&sign).as_bytes());
+    let pk =
+        BASE64_URL_SAFE_NO_PAD.encode(VerifyingKey::from(&sign).as_bytes());
 
     let agent_info = serde_json::to_string(&serde_json::json!({
         "space": s,
@@ -55,7 +55,8 @@ fn happy_bootstrap_put_get() {
     let e = c + std::time::Duration::from_secs(60 * 20).as_micros() as i64;
     let GenInfo { info, agent } = gen_info(S1, K1, c, e, false);
 
-    let addr = format!("http://{:?}/bootstrap/{}/{}", s.listen_addr(), S1, agent);
+    let addr =
+        format!("http://{:?}/bootstrap/{}/{}", s.listen_addr(), S1, agent);
 
     println!("{addr}: {info}");
 
