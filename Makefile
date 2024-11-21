@@ -1,5 +1,6 @@
-# just a temporary Makefile so I can easily run the CI checks locally
-# until we come up with better release tooling
+# A temporary Makefile to hold a single source of truth for running CI
+# tasks both in automation and locally until we figure out better
+# release automation tools.
 
 .PHONY: all fmt clippy doc test
 
