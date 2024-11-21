@@ -184,19 +184,13 @@ fn now() -> i64 {
 }
 
 mod parse;
-
-// TODO - not pub
-pub use parse::*;
+use parse::*;
 
 mod store;
-
-// TODO - not pub
-pub use store::*;
+use store::*;
 
 mod space;
-
-// TODO - not pub
-pub use space::*;
+use space::*;
 
 mod server;
 pub use server::*;

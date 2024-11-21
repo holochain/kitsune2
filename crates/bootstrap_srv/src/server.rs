@@ -116,7 +116,7 @@ impl BootSrv {
         let addr = server.server_addr().to_ip().expect("BadAddress");
         println!("Listening at {:?}", addr);
 
-        let mut workers = Vec::with_capacity(config.worker_thread_count);
+        let mut workers = Vec::with_capacity(config.worker_thread_count + 1);
         for _ in 0..config.worker_thread_count {
             let config = config.clone();
             let cont = cont.clone();
@@ -127,6 +127,15 @@ impl BootSrv {
                 worker(config, cont, store, server, space_map)
             }));
         }
+
+        let maint_cont = cont.clone();
+        let maint_space_map = space_map.clone();
+
+        // also set up a worker for pruning expired infos
+        workers.push(std::thread::spawn(move || {
+            maint_worker(config, maint_cont, maint_space_map)
+        }));
+
         Ok(Self {
             cont,
             workers,
@@ -138,6 +147,29 @@ impl BootSrv {
     pub fn listen_addr(&self) -> std::net::SocketAddr {
         self.addr
     }
+}
+
+fn maint_worker(
+    config: Arc<Config>,
+    cont: Arc<std::sync::atomic::AtomicBool>,
+    space_map: crate::SpaceMap,
+) -> std::io::Result<()> {
+    const EXP_CHK_INTERVAL: std::time::Duration =
+        std::time::Duration::from_secs(10);
+
+    let mut last_check = std::time::Instant::now();
+
+    while cont.load(std::sync::atomic::Ordering::SeqCst) {
+        std::thread::sleep(config.request_listen_duration);
+
+        if last_check.elapsed() >= EXP_CHK_INTERVAL {
+            last_check = std::time::Instant::now();
+
+            space_map.update_all(config.max_entries_per_space);
+        }
+    }
+
+    Ok(())
 }
 
 fn worker(
@@ -169,6 +201,7 @@ fn worker(
         println!("req: {} {path:?}", req.method());
 
         let handler = Handler {
+            config: &config,
             store: &store,
             space_map: &space_map,
             method: req.method().as_str().to_string(),
@@ -182,6 +215,7 @@ fn worker(
 }
 
 struct Handler<'lt> {
+    config: &'lt Config,
     store: &'lt crate::Store,
     space_map: &'lt crate::SpaceMap,
     method: String,
@@ -294,8 +328,11 @@ impl<'lt> Handler<'lt> {
             Some(self.store.write(&info_raw)?)
         };
 
-        // TODO max_entries from config
-        self.space_map.update(32, space, Some((info, r)));
+        self.space_map.update(
+            self.config.max_entries_per_space,
+            space,
+            Some((info, r)),
+        );
 
         Ok((200, b"{}".to_vec()))
     }
