@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tiny_http::*;
 
-/// Configuration for running a BootSrv.
+/// Configuration for running a BootstrapSrv.
 #[derive(Debug)]
 pub struct Config {
     /// Worker thread count.
@@ -79,13 +79,13 @@ impl Config {
 /// This server is built to be direct, light-weight, and responsive.
 /// On the server-side, as one aspect toward accomplishing this,
 /// we are eschewing async code in favor of os thread workers.
-pub struct BootSrv {
+pub struct BootstrapSrv {
     cont: Arc<std::sync::atomic::AtomicBool>,
     workers: Vec<std::thread::JoinHandle<std::io::Result<()>>>,
     addr: std::net::SocketAddr,
 }
 
-impl Drop for BootSrv {
+impl Drop for BootstrapSrv {
     fn drop(&mut self) {
         self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
         for worker in self.workers.drain(..) {
@@ -94,28 +94,36 @@ impl Drop for BootSrv {
     }
 }
 
-impl BootSrv {
-    /// Construct a new BootSrv instance.
+impl BootstrapSrv {
+    /// Construct a new BootstrapSrv instance.
     pub fn new(config: Config) -> std::io::Result<Self> {
         let config = Arc::new(config);
+
+        // atomic flag for telling worker threads to shutdown
         let cont = Arc::new(std::sync::atomic::AtomicBool::new(true));
 
+        // synchronization type for managing infos in spaces
         let space_map = crate::SpaceMap::default();
 
+        // tiny_http configuration
         let sconf = ServerConfig {
             addr: ConfigListenAddr::IP(vec![config.listen_address]),
-            // TODO
+            // TODO make the server able to accept TLS certificates
             ssl: None,
         };
 
+        // virtual-memory-like file system storage for infos
         let store = Arc::new(crate::Store::default());
 
+        // start the actual http server
         let server =
             Arc::new(Server::new(sconf).map_err(std::io::Error::other)?);
 
+        // get the address that was assigned
         let addr = server.server_addr().to_ip().expect("BadAddress");
         println!("Listening at {:?}", addr);
 
+        // spawn our worker threads
         let mut workers = Vec::with_capacity(config.worker_thread_count + 1);
         for _ in 0..config.worker_thread_count {
             let config = config.clone();
@@ -128,10 +136,9 @@ impl BootSrv {
             }));
         }
 
+        // also set up a worker for pruning expired infos
         let maint_cont = cont.clone();
         let maint_space_map = space_map.clone();
-
-        // also set up a worker for pruning expired infos
         workers.push(std::thread::spawn(move || {
             maint_worker(config, maint_cont, maint_space_map)
         }));
@@ -198,8 +205,6 @@ fn worker(
             })
             .collect::<Vec<_>>();
 
-        println!("req: {} {path:?}", req.method());
-
         let handler = Handler {
             config: &config,
             store: &store,
@@ -224,6 +229,7 @@ struct Handler<'lt> {
 }
 
 impl<'lt> Handler<'lt> {
+    /// Wrap the handle call so we can respond to the client with errors.
     pub fn handle(mut self) -> std::io::Result<()> {
         match self.handle_inner() {
             Ok((status, body)) => self.respond(status, body),
@@ -237,6 +243,7 @@ impl<'lt> Handler<'lt> {
         }
     }
 
+    /// Dispatch to the correct handlers.
     fn handle_inner(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
         if let Some(cmd) = self.path.pop() {
             match (self.method.as_str(), cmd.as_str()) {
@@ -255,6 +262,7 @@ impl<'lt> Handler<'lt> {
         Ok((400, b"{\"error\":\"bad request\"}".to_vec()))
     }
 
+    /// Respond to a request for the agent infos within a space.
     fn handle_boot_get(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
         let space = self.path_to_bytes()?;
 
@@ -263,6 +271,7 @@ impl<'lt> Handler<'lt> {
         Ok((200, res))
     }
 
+    /// Validate an incoming agent info and put it in the store if appropriate.
     fn handle_boot_put(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
         use ed25519_dalek::*;
 
@@ -337,6 +346,7 @@ impl<'lt> Handler<'lt> {
         Ok((200, b"{}".to_vec()))
     }
 
+    /// Helper to get the next path segment as Bytes.
     fn path_to_bytes(&mut self) -> std::io::Result<bytes::Bytes> {
         use base64::prelude::*;
 
@@ -352,6 +362,7 @@ impl<'lt> Handler<'lt> {
         ))
     }
 
+    /// Read the body while respecting our max message size.
     fn read_body(&mut self) -> std::io::Result<Vec<u8>> {
         // these are the same right now, but *could* be different
         const MAX_INFO_SIZE: usize = 1024;
@@ -377,6 +388,7 @@ impl<'lt> Handler<'lt> {
         }
     }
 
+    /// Process the response.
     fn respond(self, status: u16, bytes: Vec<u8>) -> std::io::Result<()> {
         let len = bytes.len();
         self.req.respond(Response::new(

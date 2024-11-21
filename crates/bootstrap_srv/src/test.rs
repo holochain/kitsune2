@@ -122,7 +122,7 @@ impl<'lt> PutInfo<'lt> {
         .unwrap();
 
         let signature = BASE64_URL_SAFE_NO_PAD
-            .encode(&sign.sign(agent_info.as_bytes()).to_bytes());
+            .encode(sign.sign(agent_info.as_bytes()).to_bytes());
 
         let info = serde_json::to_string(&serde_json::json!({
             "agentInfo": agent_info,
@@ -162,7 +162,7 @@ impl<'lt> PutInfo<'lt> {
 
 #[test]
 fn happy_bootstrap_put_get() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let PutInfoRes { info, .. } = PutInfo {
         addr: s.listen_addr(),
@@ -186,7 +186,7 @@ fn happy_bootstrap_put_get() {
 
 #[test]
 fn happy_empty_server_health() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{:?}/health", s.listen_addr());
     let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
     assert_eq!("{}", res);
@@ -194,7 +194,7 @@ fn happy_empty_server_health() {
 
 #[test]
 fn happy_empty_server_bootstrap_get() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addr(), S1);
     let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
     assert_eq!("[]", res);
@@ -202,7 +202,7 @@ fn happy_empty_server_bootstrap_get() {
 
 #[test]
 fn tombstone_will_not_put() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let _ = PutInfo {
         addr: s.listen_addr(),
@@ -219,7 +219,7 @@ fn tombstone_will_not_put() {
 
 #[test]
 fn tombstone_old_is_ignored() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let _ = PutInfo {
         addr: s.listen_addr(),
@@ -246,7 +246,7 @@ fn tombstone_old_is_ignored() {
 
 #[test]
 fn tombstone_deletes_correct_agent() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     // -- put agent1 -- //
 
@@ -306,7 +306,7 @@ fn tombstone_deletes_correct_agent() {
 
 #[test]
 fn reject_mismatch_agent_url() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let err = PutInfo {
         addr: s.listen_addr(),
@@ -321,7 +321,7 @@ fn reject_mismatch_agent_url() {
 
 #[test]
 fn reject_mismatch_space_url() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let err = PutInfo {
         addr: s.listen_addr(),
@@ -336,7 +336,7 @@ fn reject_mismatch_space_url() {
 
 #[test]
 fn reject_old_created_at() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let err = PutInfo {
         addr: s.listen_addr(),
@@ -351,7 +351,7 @@ fn reject_old_created_at() {
 
 #[test]
 fn reject_future_created_at() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let err = PutInfo {
         addr: s.listen_addr(),
@@ -367,7 +367,7 @@ fn reject_future_created_at() {
 
 #[test]
 fn reject_expired() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let expires_at = crate::now() - 500;
     let created_at = crate::now() - 1500;
@@ -386,7 +386,7 @@ fn reject_expired() {
 
 #[test]
 fn reject_expired_at_before_created_at() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let expires_at = crate::now() + 500;
     let created_at = crate::now() + 1500;
@@ -405,7 +405,7 @@ fn reject_expired_at_before_created_at() {
 
 #[test]
 fn reject_expired_at_too_long() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let created_at = crate::now();
     let expires_at =
@@ -425,7 +425,7 @@ fn reject_expired_at_too_long() {
 
 #[test]
 fn reject_bad_sig() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let err = PutInfo {
         addr: s.listen_addr(),
@@ -435,13 +435,12 @@ fn reject_bad_sig() {
     .call()
     .unwrap_err();
 
-    println!("{}", err.to_string());
     assert!(err.to_string().contains("InvalidSignature"));
 }
 
 #[test]
 fn default_storage_rollover() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let addr = s.listen_addr();
     let mut test_prop: u32 = 0;
@@ -449,7 +448,7 @@ fn default_storage_rollover() {
         use base64::prelude::*;
         let mut agent_seed = [0; 32];
         agent_seed[..4].copy_from_slice(&test_prop.to_le_bytes());
-        let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(&agent_seed);
+        let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(agent_seed);
         PutInfo {
             addr,
             agent_seed: &agent_seed,
@@ -502,7 +501,7 @@ fn default_storage_rollover() {
 
 #[test]
 fn multi_thread_stress() {
-    let s = BootSrv::new(Config::testing()).unwrap();
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = s.listen_addr();
 
     let start = std::time::Instant::now();
@@ -544,7 +543,7 @@ fn multi_thread_stress() {
 
         let mut agent_seed = [0; 32];
         agent_seed[..4].copy_from_slice(&a.to_le_bytes());
-        let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(&agent_seed);
+        let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(agent_seed);
 
         let b = b.clone();
 

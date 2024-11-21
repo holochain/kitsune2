@@ -1,3 +1,31 @@
+//! This is a virtual-memory inspired tempfile store.
+//!
+//! ### Rationale
+//!
+//! - We don't need to persist anything in the store beyond a single
+//!   process invocation, because the infos are going to expire after
+//!   a matter of minutes anyways, and peers will continue to re-publish them.
+//! - We would like a server to be able to store more spaces and infos
+//!   than would reasonably fit in RAM.
+//!
+//! ### Implementation
+//!
+//! - Have a pool of tempfiles that can grow to match the worker thread
+//!   count if needed.
+//! - Have the ability to Clone (reopen) these tempfile handles.
+//! - Designate one file handle only per pool entry as writable.
+//! - All other handles will be readonly.
+//! - After writing an entry, return a reference with a readonly file handle
+//!   to the tempfile that was written to, and an offset/length to
+//!   allow readback of exactly the bytes written for that entry.
+//! - Once a tempfile reaches a certain size, drop the write handle and
+//!   open a new tempfile for writing.
+//! - The older read handles will persist the existence of the older tempfiles
+//!   until the last read reference is dropped, at which point the tempfile
+//!   will be cleaned up by the os.
+//! - We can trust these files will cycle through at a rate similar to the
+//!   max expiration time on the infos they contain (30 minutes).
+
 use std::sync::{Arc, Mutex};
 
 /// How large we should allow individual tempfiles to grow.

@@ -1,3 +1,5 @@
+//! The binary kitsune2-bootstrap-srv.
+
 use kitsune2_bootstrap_srv::*;
 
 #[derive(clap::Parser, Debug)]
@@ -12,6 +14,10 @@ pub struct Args {
     /// on a single given machine, you can set this "production" mode.
     #[arg(long)]
     pub production: bool,
+    // TODO - Implement the ability to specify TLS certificates
+    // TODO - Implement the ability to specify the listening address
+    // TODO - Implement the ability to override any other relevant
+    //        config params that we wish to expose
 }
 
 fn main() {
@@ -32,7 +38,7 @@ fn main() {
     })
     .unwrap();
 
-    let srv = BootSrv::new(config);
+    let srv = BootstrapSrv::new(config);
 
     let _ = recv.recv();
 
