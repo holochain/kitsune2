@@ -218,6 +218,33 @@ fn tombstone_will_not_put() {
 }
 
 #[test]
+fn tombstone_old_is_ignored() {
+    let s = BootSrv::new(Config::testing()).unwrap();
+
+    let _ = PutInfo {
+        addr: s.listen_addr(),
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
+
+    let _ = PutInfo {
+        addr: s.listen_addr(),
+        created_at: now()
+            - std::time::Duration::from_secs(60).as_micros() as i64,
+        is_tombstone: true,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
+
+    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addr(), S1);
+    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+    assert_eq!(1, res.len());
+}
+
+#[test]
 fn tombstone_deletes_correct_agent() {
     let s = BootSrv::new(Config::testing()).unwrap();
 
@@ -474,20 +501,45 @@ fn default_storage_rollover() {
 }
 
 #[test]
-fn multi_thread_write_stress() {
+fn multi_thread_stress() {
     let s = BootSrv::new(Config::testing()).unwrap();
     let addr = s.listen_addr();
 
-    // the testing config has 2 worker threads. Let's write at 8 times that.
-    const TCOUNT: u32 = 16;
+    let start = std::time::Instant::now();
+
+    // the testing config has 2 worker threads.
+    // Read and write with more than that.
+    const T_W_COUNT: u32 = 16;
+    const T_R_COUNT: u32 = 32;
+
+    // setup readers to just read as fast as possible,
+    // then end after the writers are done.
+
+    let w_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let mut all_r = Vec::with_capacity(T_R_COUNT as usize);
+
+    for _ in 0..T_R_COUNT {
+        let w_done = w_done.clone();
+
+        all_r.push(std::thread::spawn(move || {
+            while !w_done.load(std::sync::atomic::Ordering::SeqCst) {
+                let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+                let res =
+                    ureq::get(&addr).call().unwrap().into_string().unwrap();
+                let _: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+            }
+        }));
+    }
 
     // update the infos 8 times
     const SCOUNT: u32 = 8;
 
-    let b = std::sync::Arc::new(std::sync::Barrier::new(TCOUNT as usize));
-    let mut all = Vec::with_capacity(TCOUNT as usize);
+    let mut all_w = Vec::with_capacity(T_W_COUNT as usize);
 
-    for a in 0..TCOUNT {
+    let b = std::sync::Arc::new(std::sync::Barrier::new(T_W_COUNT as usize));
+
+    for a in 0..T_W_COUNT {
         use base64::prelude::*;
 
         let mut agent_seed = [0; 32];
@@ -496,7 +548,7 @@ fn multi_thread_write_stress() {
 
         let b = b.clone();
 
-        all.push(std::thread::spawn(move || {
+        all_w.push(std::thread::spawn(move || {
             for i in 0..SCOUNT {
                 b.wait();
 
@@ -512,7 +564,13 @@ fn multi_thread_write_stress() {
         }));
     }
 
-    for j in all {
+    for j in all_w {
+        j.join().unwrap();
+    }
+
+    w_done.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    for j in all_r {
         j.join().unwrap();
     }
 
@@ -528,4 +586,6 @@ fn multi_thread_write_stress() {
         ],
         res.as_slice()
     );
+
+    println!("multi_thread_stress in {}s", start.elapsed().as_secs_f64());
 }
