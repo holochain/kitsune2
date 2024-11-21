@@ -588,3 +588,57 @@ fn multi_thread_stress() {
 
     println!("multi_thread_stress in {}s", start.elapsed().as_secs_f64());
 }
+
+#[test]
+fn expiration_prune() {
+    let s = BootstrapSrv::new(Config {
+        prune_interval: std::time::Duration::from_millis(5),
+        ..Config::testing()
+    })
+    .unwrap();
+    let addr = s.listen_addr();
+    let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+
+    // -- the entry that WILL get pruned -- //
+
+    let created_at = crate::now();
+    let expires_at =
+        created_at + std::time::Duration::from_millis(500).as_micros() as i64;
+
+    let _ = PutInfo {
+        addr: s.listen_addr(),
+        created_at,
+        expires_at,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
+
+    // -- the entry that WILL NOT get pruned -- //
+
+    let created_at = crate::now();
+    let expires_at =
+        created_at + std::time::Duration::from_secs(60).as_micros() as i64;
+
+    let _ = PutInfo {
+        addr: s.listen_addr(),
+        agent_seed: K2,
+        created_at,
+        expires_at,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
+
+    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+
+    assert_eq!(2, res.len());
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+
+    assert_eq!(1, res.len());
+}

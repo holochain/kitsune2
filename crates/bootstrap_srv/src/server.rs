@@ -50,6 +50,17 @@ pub struct Config {
     /// - `testing = "127.0.0.1:0"`
     /// - `production = "0.0.0.0:443"`
     pub listen_address: std::net::SocketAddr,
+
+    /// The interval at which expired agents are purged from the cache.
+    /// This is a fairly expensive operation that requires iterating
+    /// through every registered space and loading all the infos off the disk,
+    /// so it should not be undertaken too frequently.
+    ///
+    /// Defaults:
+    ///
+    /// - `testing = 10s`
+    /// - `production = 60s`
+    pub prune_interval: std::time::Duration,
 }
 
 impl Config {
@@ -60,6 +71,7 @@ impl Config {
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_millis(10),
             listen_address: ([127, 0, 0, 1], 0).into(),
+            prune_interval: std::time::Duration::from_secs(10),
         }
     }
 
@@ -70,6 +82,7 @@ impl Config {
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_secs(2),
             listen_address: ([0, 0, 0, 0], 443).into(),
+            prune_interval: std::time::Duration::from_secs(60),
         }
     }
 }
@@ -161,15 +174,12 @@ fn maint_worker(
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
-    const EXP_CHK_INTERVAL: std::time::Duration =
-        std::time::Duration::from_secs(10);
-
     let mut last_check = std::time::Instant::now();
 
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
         std::thread::sleep(config.request_listen_duration);
 
-        if last_check.elapsed() >= EXP_CHK_INTERVAL {
+        if last_check.elapsed() >= config.prune_interval {
             last_check = std::time::Instant::now();
 
             space_map.update_all(config.max_entries_per_space);
