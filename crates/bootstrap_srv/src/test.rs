@@ -630,10 +630,20 @@ fn expiration_prune() {
     .call()
     .unwrap();
 
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
-    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
-
-    assert_eq!(2, res.len());
+    /*
+     * NOTE - we might be tempted to check that both entries got in there:
+     *
+     * ```
+     * let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+     * let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+     * assert_eq!(2, res.len());
+     * ```
+     *
+     * but the PUTs didn't error, and we have other tests for that.
+     *
+     * Windows is slow enough that the get will be flaky... sometimes the
+     * pruner will have already run on it.
+     */
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
