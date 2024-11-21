@@ -35,6 +35,18 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
+/// A single struct to hold all the API types.
+///
+/// This is for convenience when passing around the API.
+#[derive(Clone)]
+pub struct HostApi<E> {
+    /// The op store.
+    pub op_store: DynOpStore<E>,
+
+    /// The peer meta store.
+    pub peer_meta_store: DynPeerMetaStore<E>,
+}
+
 pub mod config;
 
 mod error;
@@ -47,3 +59,7 @@ mod timestamp;
 pub use timestamp::*;
 
 pub mod agent;
+pub mod op_store;
+pub use op_store::*;
+pub mod peer_meta_store;
+pub use peer_meta_store::*;
