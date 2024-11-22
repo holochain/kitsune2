@@ -11,3 +11,16 @@ categories = ["network-programming"]
 edition = "2021"
 
 [dependencies]
+base64 = { workspace = true }
+bytes = { workspace = true }
+clap = { workspace = true, features = ["derive", "wrap_help"] }
+ctrlc = { workspace = true }
+ed25519-dalek = { workspace = true }
+num_cpus = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tiny_http = { workspace = true }
+
+[dev-dependencies]
+ureq = { workspace = true }
