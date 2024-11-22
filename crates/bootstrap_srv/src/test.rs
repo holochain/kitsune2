@@ -73,6 +73,7 @@ struct PutInfo<'lt> {
     pub created_at: i64,
     pub expires_at: i64,
     pub is_tombstone: bool,
+    pub final_agent_pk: Option<&'lt str>,
     pub signature: Option<&'lt str>,
     pub test_prop: &'lt str,
 }
@@ -91,6 +92,7 @@ impl<'lt> Default for PutInfo<'lt> {
             created_at,
             expires_at,
             is_tombstone: false,
+            final_agent_pk: None,
             signature: None,
             test_prop: "<none>",
         }
@@ -113,7 +115,10 @@ impl<'lt> PutInfo<'lt> {
 
         let agent_info = serde_json::to_string(&serde_json::json!({
             "space": self.space,
-            "agent": pk,
+            "agent": match self.final_agent_pk {
+                Some(fapk) => fapk,
+                None => &pk,
+            },
             "createdAt": self.created_at.to_string(),
             "expiresAt": self.expires_at.to_string(),
             "isTombstone": self.is_tombstone,
@@ -137,9 +142,12 @@ impl<'lt> PutInfo<'lt> {
             "http://{:?}/bootstrap/{}/{}",
             self.addr,
             self.space_url,
-            match self.agent_url {
-                Some(agent_url) => agent_url,
-                None => &pk,
+            match self.final_agent_pk {
+                Some(fapk) => fapk,
+                None => match self.agent_url {
+                    Some(agent_url) => agent_url,
+                    None => &pk,
+                },
             },
         );
 
@@ -305,6 +313,57 @@ fn tombstone_deletes_correct_agent() {
 }
 
 #[test]
+fn reject_get_no_space() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let addr = format!("http://{:?}/bootstrap", s.listen_addr());
+    match ureq::get(&addr).call() {
+        Err(ureq::Error::Status(_status, err)) => {
+            let err = err.into_string().unwrap();
+
+            println!("{err:?}");
+
+            assert!(err.to_string().contains("InvalidPathSegment"));
+        }
+        oth => panic!("unexpected {oth:?}"),
+    }
+}
+
+#[test]
+fn reject_put_no_space() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let addr = format!("http://{:?}/bootstrap", s.listen_addr());
+    match ureq::put(&addr).call() {
+        Err(ureq::Error::Status(_status, err)) => {
+            let err = err.into_string().unwrap();
+
+            println!("{err:?}");
+
+            assert!(err.to_string().contains("InvalidPathSegment"));
+        }
+        oth => panic!("unexpected {oth:?}"),
+    }
+}
+
+#[test]
+fn reject_put_no_agent() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addr(), S1);
+    match ureq::put(&addr).call() {
+        Err(ureq::Error::Status(_status, err)) => {
+            let err = err.into_string().unwrap();
+
+            println!("{err:?}");
+
+            assert!(err.to_string().contains("InvalidPathSegment"));
+        }
+        oth => panic!("unexpected {oth:?}"),
+    }
+}
+
+#[test]
 fn reject_mismatch_agent_url() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
@@ -404,6 +463,25 @@ fn reject_expired_at_before_created_at() {
 }
 
 #[test]
+fn reject_expired_at_equals_created_at() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let expires_at = crate::now() + 500;
+    let created_at = expires_at;
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        created_at,
+        expires_at,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidExpiresAt"));
+}
+
+#[test]
 fn reject_expired_at_too_long() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
@@ -436,6 +514,22 @@ fn reject_bad_sig() {
     .unwrap_err();
 
     assert!(err.to_string().contains("InvalidSignature"));
+}
+
+#[test]
+fn reject_bad_agent_pub_key() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        // only 31 characters... and obviously the wrong key : )
+        final_agent_pk: Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InvalidAgentPubKey"));
 }
 
 #[test]
