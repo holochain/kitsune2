@@ -86,7 +86,7 @@ pub trait Signer {
         &self,
         agent_info: &AgentInfo,
         message: &[u8],
-    ) -> BoxFut<'_, std::io::Result<bytes::Bytes>>;
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>>;
 }
 
 /// Defines a type capable of cryptographic verification.
@@ -197,9 +197,13 @@ impl AgentInfoSigned {
     pub async fn sign<S: Signer>(
         signer: &S,
         agent_info: AgentInfo,
-    ) -> std::io::Result<std::sync::Arc<Self>> {
-        let encoded = serde_json::to_string(&agent_info)?;
-        let signature = signer.sign(&agent_info, encoded.as_bytes()).await?;
+    ) -> K2Result<std::sync::Arc<Self>> {
+        let encoded = serde_json::to_string(&agent_info)
+            .map_err(|e| K2Error::other_src("encoding agent_info", e))?;
+        let signature = signer
+            .sign(&agent_info, encoded.as_bytes())
+            .await
+            .map_err(|e| K2Error::other_src("signing agent_info", e))?;
         Ok(std::sync::Arc::new(Self {
             agent_info,
             encoded,
@@ -211,7 +215,7 @@ impl AgentInfoSigned {
     pub fn decode<V: Verifier>(
         verifier: &V,
         encoded: &[u8],
-    ) -> std::io::Result<Self> {
+    ) -> K2Result<std::sync::Arc<Self>> {
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Ref {
@@ -219,21 +223,23 @@ impl AgentInfoSigned {
             #[serde(with = "crate::serde_bytes_base64")]
             signature: bytes::Bytes,
         }
-        let v: Ref = serde_json::from_slice(encoded)?;
-        let agent_info: AgentInfo = serde_json::from_str(&v.agent_info)?;
+        let v: Ref = serde_json::from_slice(encoded)
+            .map_err(|e| K2Error::other_src("decoding agent_info", e))?;
+        let agent_info: AgentInfo = serde_json::from_str(&v.agent_info)
+            .map_err(|e| K2Error::other_src("decoding inner agent_info", e))?;
         if !verifier.verify(&agent_info, v.agent_info.as_bytes(), &v.signature)
         {
-            return Err(std::io::Error::other("InvalidSignature"));
+            return Err(K2Error::other("InvalidSignature"));
         }
-        Ok(AgentInfoSigned {
+        Ok(std::sync::Arc::new(Self {
             agent_info,
             encoded: v.agent_info,
             signature: v.signature,
-        })
+        }))
     }
 
     /// Get the canonical json encoding of this signed agent info.
-    pub fn encode(&self) -> std::io::Result<String> {
+    pub fn encode(&self) -> K2Result<String> {
         #[derive(serde::Serialize)]
         #[serde(rename_all = "camelCase")]
         struct Ref<'a> {
@@ -245,7 +251,7 @@ impl AgentInfoSigned {
             agent_info: &self.encoded,
             signature: &self.signature,
         })
-        .map_err(std::convert::Into::into)
+        .map_err(|e| K2Error::other_src("encoding agent_info", e))
     }
 
     /// Access the inner [AgentInfo] data. Note, you can instead just deref.
@@ -285,7 +291,7 @@ mod test {
             &self,
             _agent_info: &AgentInfo,
             _encoded: &[u8],
-        ) -> BoxFut<'_, std::io::Result<bytes::Bytes>> {
+        ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
             Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
         }
     }
