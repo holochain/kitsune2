@@ -50,7 +50,7 @@ pub enum K2Error {
     #[error("{ctx} (src: {src})")]
     Other {
         /// Any context associated with this error.
-        ctx: String,
+        ctx: Arc<str>,
 
         /// The inner error (if any).
         #[source]
@@ -68,7 +68,7 @@ impl K2Error {
         src: S,
     ) -> Self {
         Self::Other {
-            ctx: ctx.to_string(),
+            ctx: ctx.to_string().into_boxed_str().into(),
             src: DynInnerError::new(src),
         }
     }
@@ -76,7 +76,7 @@ impl K2Error {
     /// Construct an "other" error.
     pub fn other<C: std::fmt::Display>(ctx: C) -> Self {
         Self::Other {
-            ctx: ctx.to_string(),
+            ctx: ctx.to_string().into_boxed_str().into(),
             src: DynInnerError::default(),
         }
     }
@@ -117,5 +117,11 @@ mod test {
             "Other { ctx: \"foo\", src: Some(Custom { kind: Other, error: \"bar\" }) }",
             format!("{:?}", K2Error::other_src("foo", std::io::Error::other("bar"))).as_str(),
         );
+    }
+
+    #[test]
+    fn ensure_k2error_type_is_send_and_sync() {
+        fn ensure<T: std::fmt::Display + Send + Sync>(_t: T) {}
+        ensure(K2Error::other("bla"));
     }
 }
