@@ -12,7 +12,7 @@ base64 = "0.22.1"
 # shallow-clone byte arrays is a solved problem.
 # bytes is the crate that solves it.
 bytes = { version = "1.8.0", features = ["serde"] }
-# boot_srv for cli param parsing
+# bootstrap_srv for cli param parsing
 clap = "4.5.21"
 # bootstrap_srv uses this to make a best-effort to clean up tempfiles on shutdown.
 ctrlc = { version = "3.4.5", features = ["termination"] }
