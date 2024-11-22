@@ -35,6 +35,9 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
+mod error;
+pub use error::*;
+
 pub mod id;
 pub use id::{AgentId, OpId, SpaceId};
 

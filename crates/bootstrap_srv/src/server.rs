@@ -5,6 +5,16 @@ use std::sync::Arc;
 use crate::*;
 use tiny_http::*;
 
+/// Don't allow created_at to be greater or less than this far away from now.
+/// 3 minutes.
+const CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS: i64 =
+    std::time::Duration::from_secs(60 * 3).as_micros() as i64;
+
+/// Don't allow expires_at - created_at to be greater than this duration.
+/// 30 minutes.
+const EXPIRES_AT_DURATION_MAX_ALLOWED_MICROS: i64 =
+    std::time::Duration::from_secs(60 * 30).as_micros() as i64;
+
 /// An actual kitsune2_bootstrap_srv server instance.
 ///
 /// This server is built to be direct, light-weight, and responsive.
@@ -68,10 +78,10 @@ impl BootstrapSrv {
         }
 
         // also set up a worker for pruning expired infos
-        let maint_cont = cont.clone();
-        let maint_space_map = space_map.clone();
+        let prune_cont = cont.clone();
+        let prune_space_map = space_map.clone();
         workers.push(std::thread::spawn(move || {
-            maint_worker(config, maint_cont, maint_space_map)
+            prune_worker(config, prune_cont, prune_space_map)
         }));
 
         Ok(Self {
@@ -87,7 +97,7 @@ impl BootstrapSrv {
     }
 }
 
-fn maint_worker(
+fn prune_worker(
     config: Arc<Config>,
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
@@ -222,16 +232,12 @@ impl<'lt> Handler<'lt> {
         }
 
         // validate created at is not older than 3 min ago
-        if info.created_at
-            < now - (std::time::Duration::from_secs(60 * 3).as_micros() as i64)
-        {
+        if info.created_at < now - CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS {
             return Err(std::io::Error::other("InvalidCreatedAt"));
         }
 
         // validate created at is less than 3 min in the future
-        if info.created_at
-            > now + (std::time::Duration::from_secs(60 * 3).as_micros() as i64)
-        {
+        if info.created_at > now + CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS {
             return Err(std::io::Error::other("InvalidCreatedAt"));
         }
 
@@ -247,7 +253,7 @@ impl<'lt> Handler<'lt> {
 
         // validate expires_at is not more than 30 min after created_at
         if info.expires_at - info.created_at
-            > (std::time::Duration::from_secs(60 * 30).as_micros() as i64)
+            > EXPIRES_AT_DURATION_MAX_ALLOWED_MICROS
         {
             return Err(std::io::Error::other("InvalidExpiresAt"));
         }

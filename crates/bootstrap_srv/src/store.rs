@@ -7,6 +7,8 @@
 //!   a matter of minutes anyways, and peers will continue to re-publish them.
 //! - We would like a server to be able to store more spaces and infos
 //!   than would reasonably fit in RAM.
+//! - We would like to avoid use of an external database, to reduce
+//!   dependencies and ease deployment and testing.
 //!
 //! ### Implementation
 //!

@@ -3,9 +3,12 @@ use std::sync::{Arc, Mutex};
 
 use crate::store::*;
 
+/// The space identifier.
+pub type SpaceId = bytes::Bytes;
+
 /// A map of spaces.
 #[derive(Clone)]
-pub struct SpaceMap(Arc<Mutex<HashMap<bytes::Bytes, Space>>>);
+pub struct SpaceMap(Arc<Mutex<HashMap<SpaceId, Space>>>);
 
 impl Default for SpaceMap {
     fn default() -> Self {
@@ -15,7 +18,7 @@ impl Default for SpaceMap {
 
 impl SpaceMap {
     /// Read the content of a space.
-    pub fn read(&self, space: &bytes::Bytes) -> std::io::Result<Vec<u8>> {
+    pub fn read(&self, space: &SpaceId) -> std::io::Result<Vec<u8>> {
         // minimize outer mutex lock time
         let space = self.0.lock().unwrap().get(space).cloned();
 
@@ -41,7 +44,7 @@ impl SpaceMap {
     pub fn update(
         &self,
         max_entries: usize,
-        space: bytes::Bytes,
+        space: SpaceId,
         new_info: Option<(crate::ParsedEntry, Option<StoreEntryRef>)>,
     ) {
         // minimize outer mutex lock time
@@ -107,7 +110,7 @@ impl Default for Space {
 impl Space {
     /// Read the content of this space.
     pub fn read(&self) -> std::io::Result<Vec<u8>> {
-        // keep the mutext lock time to a minimum
+        // keep the mutex lock time to a minimum
         let list = self.readable.lock().unwrap().clone();
 
         let mut len: usize = list.iter().map(StoreEntryRef::len).sum();
