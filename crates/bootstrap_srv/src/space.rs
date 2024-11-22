@@ -107,7 +107,7 @@ impl Default for Space {
 impl Space {
     /// Read the content of this space.
     pub fn read(&self) -> std::io::Result<Vec<u8>> {
-        // keep the mutext lock time to a minimum
+        // keep the mutex lock time to a minimum
         let list = self.readable.lock().unwrap().clone();
 
         let mut len: usize = list.iter().map(StoreEntryRef::len).sum();
