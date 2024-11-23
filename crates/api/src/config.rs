@@ -1,5 +1,7 @@
 //! Types for use when configuring kitsune2 modules.
 
+use std::collections::BTreeMap;
+
 /// helper transcode function
 fn tc<S: serde::Serialize, D: serde::de::DeserializeOwned>(
     s: &S,
@@ -33,7 +35,7 @@ pub trait ModConfig:
 
 /// Kitsune configuration.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct Config(serde_json::Map<String, serde_json::Value>);
+pub struct Config(BTreeMap<String, serde_json::Value>);
 
 impl Config {
     /// When kitsune2 is generating a default or example configuration
