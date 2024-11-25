@@ -101,6 +101,11 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         slice_hash: Vec<u8>,
     ) -> BoxFuture<'_, Result<(), Self::Error>>;
 
+    ///
+    fn slice_hash_count(
+        &self,
+    ) -> BoxFuture<'_, Result<u64, Self::Error>>;
+
     /// Retrieve the hash of a time slice.
     fn retrieve_slice_hash(
         &self,

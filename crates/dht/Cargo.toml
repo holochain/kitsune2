@@ -12,6 +12,9 @@ edition = "2021"
 
 [dependencies]
 kitsune2_api = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 kitsune2_memory = { workspace = true }
+
+tokio = { workspace = true, features = ["macros", "rt"] }

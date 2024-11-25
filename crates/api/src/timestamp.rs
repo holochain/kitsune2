@@ -46,6 +46,36 @@ impl std::ops::Add<std::time::Duration> for Timestamp {
     }
 }
 
+impl std::ops::AddAssign<std::time::Duration> for Timestamp {
+    fn add_assign(&mut self, rhs: std::time::Duration) {
+        self.0 += rhs.as_micros() as i64;
+    }
+}
+
+impl std::ops::Sub<std::time::Duration> for Timestamp {
+    type Output = Result<Timestamp, ()>;
+
+    fn sub(self, rhs: std::time::Duration) -> Self::Output {
+        if self.0 < rhs.as_micros() as i64 {
+            Err(())
+        } else {
+            Ok(Timestamp(self.0 - rhs.as_micros() as i64))
+        }
+    }
+}
+
+impl std::ops::Sub for Timestamp {
+    type Output = Result<std::time::Duration, ()>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        if self.0 < rhs.0 {
+            Err(())
+        } else {
+            Ok(std::time::Duration::from_micros((self.0 - rhs.0) as u64))
+        }
+    }
+}
+
 impl From<std::time::SystemTime> for Timestamp {
     fn from(t: std::time::SystemTime) -> Self {
         Self(
