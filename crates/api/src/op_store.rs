@@ -40,49 +40,13 @@ impl PartialOrd for MetaOp {
     }
 }
 
-/// The response to a request for a bounded list of op hashes.
-///
-/// See [`OpStore::retrieve_op_hashes`].
-pub struct BoundedOpHashResponse {
-    /// The list of op ids.
-    pub op_ids: Vec<OpId>,
-
-    /// The timestamp of the last op in the list.
-    pub last_timestamp: Option<Timestamp>,
-}
-
-impl BoundedOpHashResponse {
-    /// Create an empty response.
-    pub fn empty() -> Self {
-        Self {
-            op_ids: Vec::with_capacity(0),
-            last_timestamp: None,
-        }
-    }
-}
-
 /// The API that a kitsune2 host must implement to provide data persistence for kitsune2.
 pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// Process incoming ops.
-    fn ingest_op_list(
+    fn store_op_list(
         &self,
         op_list: Vec<MetaOp>,
     ) -> BoxFuture<'_, K2Result<()>>;
-
-    /// Retrieve a batch of op ids from the host.
-    ///
-    /// The implementor is required to:
-    /// - Query a sorted list of ops
-    /// - Returns ops with a timestamp >= the provided timestamp
-    /// - Return as many ops as can fit within the provided limit_bytes, but no more.
-    ///
-    /// The return value is a tuple of the op ids and the timestamp of the last op in the batch.
-    /// A timestamp must be provided if the list is not empty.
-    fn retrieve_op_hashes(
-        &self,
-        timestamp: Timestamp,
-        limit_bytes: u32,
-    ) -> BoxFuture<'_, K2Result<BoundedOpHashResponse>>;
 
     /// Retrieve a batch of ops from the host by time range.
     fn retrieve_op_hashes_in_time_slice(
@@ -91,19 +55,17 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         end: Timestamp,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
-    /// Store the hash of a time slice.
+    /// Store the combined hash of a time slice.
     fn store_slice_hash(
         &self,
         slice_id: u64,
         slice_hash: Vec<u8>,
     ) -> BoxFuture<'_, K2Result<()>>;
 
-    ///
-    fn slice_hash_count(
-        &self,
-    ) -> BoxFuture<'_, K2Result<u64>>;
+    /// Count the number of stored time slices.
+    fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>>;
 
-    /// Retrieve the hash of a time slice.
+    /// Retrieve the combined hash of a time slice.
     fn retrieve_slice_hash(
         &self,
         slice_id: u64,

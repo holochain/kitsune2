@@ -1,6 +1,6 @@
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use kitsune2_api::{BoundedOpHashResponse, K2Result, MetaOp, OpId, OpStore, Timestamp};
+use kitsune2_api::{K2Result, MetaOp, OpId, OpStore, Timestamp};
 use std::collections::{BTreeSet, HashMap};
 use tokio::sync::RwLock;
 
@@ -22,7 +22,7 @@ pub struct Kitsune2MemoryOpStoreInner {
 }
 
 impl OpStore for Kitsune2MemoryOpStore {
-    fn ingest_op_list(
+    fn store_op_list(
         &self,
         op_list: Vec<MetaOp>,
     ) -> BoxFuture<'_, K2Result<()>> {
@@ -32,44 +32,6 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .op_list
                 .append(&mut op_list.into_iter().collect());
             Ok(())
-        }
-        .boxed()
-    }
-
-    fn retrieve_op_hashes(
-        &self,
-        timestamp: Timestamp,
-        limit_bytes: u32,
-    ) -> BoxFuture<'_, K2Result<BoundedOpHashResponse>>
-    {
-        async move {
-            let mut bytes = 0;
-            let self_lock = self.read().await;
-            let mut iter = self_lock.op_list.iter();
-
-            let first_op = iter.find(|op| op.timestamp >= timestamp);
-            let Some(op) = first_op else {
-                return Ok(BoundedOpHashResponse::empty());
-            };
-
-            let mut out = Vec::new();
-            bytes += op.op_data.len() as u32;
-            out.push(op.op_id.clone());
-            let mut last_timestamp = Some(op.timestamp);
-
-            for op in iter {
-                let op_bytes = op.op_data.len() as u32;
-                if bytes + op_bytes > limit_bytes {
-                    break;
-                }
-                bytes += op_bytes;
-                out.push(op.op_id.clone());
-                last_timestamp = Some(op.timestamp);
-            }
-            Ok(BoundedOpHashResponse {
-                op_ids: out,
-                last_timestamp,
-            })
         }
         .boxed()
     }
@@ -107,7 +69,8 @@ impl OpStore for Kitsune2MemoryOpStore {
     }
 
     fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>> {
-        async move { Ok(self.read().await.time_slice_hashes.len() as u64) }.boxed()
+        async move { Ok(self.read().await.time_slice_hashes.len() as u64) }
+            .boxed()
     }
 
     fn retrieve_slice_hash(

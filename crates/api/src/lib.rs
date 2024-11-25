@@ -42,9 +42,6 @@ pub(crate) mod serde_bytes_base64 {
 pub struct HostApi {
     /// The op store.
     pub op_store: DynOpStore,
-
-    /// The peer meta store.
-    pub peer_meta_store: DynPeerMetaStore,
 }
 
 pub mod config;
@@ -61,5 +58,3 @@ pub use timestamp::*;
 pub mod agent;
 pub mod op_store;
 pub use op_store::*;
-pub mod peer_meta_store;
-pub use peer_meta_store::*;

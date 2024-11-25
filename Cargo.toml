@@ -3,7 +3,6 @@ members = [
   "crates/api",
   "crates/bootstrap_srv",
   "crates/dht",
-  "crates/gossip",
   "crates/memory",
 ]
 resolver = "2"
