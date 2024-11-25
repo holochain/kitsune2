@@ -25,7 +25,7 @@ pub struct ParsedEntry {
 
 impl ParsedEntry {
     /// Parse entry from a slice.
-    pub fn from_slice(slice: &[u8]) -> std::io::Result<Self> {
+    pub fn try_from_slice(slice: &[u8]) -> std::io::Result<Self> {
         use base64::prelude::*;
 
         #[derive(serde::Deserialize)]

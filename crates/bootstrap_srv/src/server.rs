@@ -219,7 +219,7 @@ impl<'lt> Handler<'lt> {
         let agent = self.path_to_bytes()?;
 
         let info_raw = self.read_body()?;
-        let info = crate::ParsedEntry::from_slice(&info_raw)?;
+        let info = crate::ParsedEntry::try_from_slice(&info_raw)?;
 
         // validate agent matches url path
         if *agent != *info.agent.as_bytes() {
