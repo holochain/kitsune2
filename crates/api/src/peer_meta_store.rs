@@ -2,7 +2,7 @@
 //!
 //! This enables Kitsune2 to keep track of peer state and uptime etc. More docs to come :)
 
-use crate::{AgentId, Timestamp};
+use crate::{AgentId, K2Result, Timestamp};
 use futures::future::BoxFuture;
 use std::sync::Arc;
 
@@ -34,9 +34,6 @@ impl PeerMeta {
 ///
 /// Peer metadata is used between gossip rounds to keep track of peer state and uptime etc.
 pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
-    /// The error type for this op store.
-    type Error: std::error::Error;
-
     /// Get the metadata for a peer.
     ///
     /// If we haven't seen this peer before, return None.
@@ -44,7 +41,7 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
     fn get_peer_meta(
         &self,
         agent_id: AgentId,
-    ) -> BoxFuture<'_, Result<Option<PeerMeta>, Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<Option<PeerMeta>>>;
 
     /// Store metadata for a peer.
     ///
@@ -52,8 +49,8 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
     fn store_peer_meta(
         &self,
         peer_meta: PeerMeta,
-    ) -> BoxFuture<'_, Result<(), Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<()>>;
 }
 
 /// Trait-object version of the kitsune2 peer meta store.
-pub type DynPeerMetaStore<Error> = Arc<dyn PeerMetaStore<Error = Error>>;
+pub type DynPeerMetaStore = Arc<dyn PeerMetaStore>;
