@@ -583,6 +583,10 @@ fn default_storage_rollover() {
 
     let res = get();
 
+    // Agents put beyond MAX_STORAGE will be insert at MAX_STORAGE  / 2,
+    // replacing the existing agent at that place. That is here 32 / 2 = 16,
+    // so from 17 onward agents > 32 are replaced. With 32 agents this happens
+    // twice, first from 33-47 and then from 48-63.
     assert_eq!(
         res.as_slice(),
         &[
