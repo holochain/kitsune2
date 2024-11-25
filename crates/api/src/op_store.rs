@@ -1,6 +1,6 @@
 //! Kitsune2 op store types.
 
-use crate::{OpId, Timestamp};
+use crate::{K2Result, OpId, Timestamp};
 use futures::future::BoxFuture;
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -63,14 +63,11 @@ impl BoundedOpHashResponse {
 
 /// The API that a kitsune2 host must implement to provide data persistence for kitsune2.
 pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
-    /// The error type for this op store.
-    type Error: std::error::Error;
-
     /// Process incoming ops.
     fn ingest_op_list(
         &self,
         op_list: Vec<MetaOp>,
-    ) -> BoxFuture<'_, Result<(), Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Retrieve a batch of op ids from the host.
     ///
@@ -85,33 +82,33 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         &self,
         timestamp: Timestamp,
         limit_bytes: u32,
-    ) -> BoxFuture<'_, Result<BoundedOpHashResponse, Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<BoundedOpHashResponse>>;
 
     /// Retrieve a batch of ops from the host by time range.
     fn retrieve_op_hashes_in_time_slice(
         &self,
         start: Timestamp,
         end: Timestamp,
-    ) -> BoxFuture<'_, Result<Vec<OpId>, Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
     /// Store the hash of a time slice.
     fn store_slice_hash(
         &self,
         slice_id: u64,
         slice_hash: Vec<u8>,
-    ) -> BoxFuture<'_, Result<(), Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<()>>;
 
     ///
     fn slice_hash_count(
         &self,
-    ) -> BoxFuture<'_, Result<u64, Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<u64>>;
 
     /// Retrieve the hash of a time slice.
     fn retrieve_slice_hash(
         &self,
         slice_id: u64,
-    ) -> BoxFuture<'_, Result<Option<Vec<u8>>, Self::Error>>;
+    ) -> BoxFuture<'_, K2Result<Option<Vec<u8>>>>;
 }
 
 /// Trait-object version of kitsune2 op store.
-pub type DynOpStore<Error> = Arc<dyn OpStore<Error = Error>>;
+pub type DynOpStore = Arc<dyn OpStore>;

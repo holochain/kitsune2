@@ -6,9 +6,10 @@
 //! TODO: Design docs
 
 use crate::constant::UNIT_TIME;
-use kitsune2_api::{DynOpStore, Kitsune2InternalError, OpId, Timestamp};
+use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, Timestamp};
 use std::time::Duration;
 
+#[derive(Debug)]
 pub struct PartitionedTime {
     origin_timestamp: Timestamp,
     factor: u8,
@@ -18,6 +19,7 @@ pub struct PartitionedTime {
     next_update_at: Timestamp,
 }
 
+#[derive(Debug)]
 pub struct PartialBucket {
     /// The start timestamp of the time slice.
     ///
@@ -50,28 +52,27 @@ impl PartitionedTime {
         }
     }
 
-    pub async fn from_store<E: std::error::Error + 'static>(
+    pub async fn from_store(
         origin_timestamp: Timestamp,
         factor: u8,
-        store: DynOpStore<E>,
-    ) -> Result<Self, Kitsune2InternalError> {
+        store: DynOpStore,
+    ) -> K2Result<Self> {
         let mut pt = Self::new(origin_timestamp, factor);
 
         pt.full_buckets = store
             .slice_hash_count()
-            .await
-            .map_err(|e| Kitsune2InternalError::HostError(Box::new(e)))?;
+            .await?;
 
         // The end timestamp of the last full bucket
         let full_bucket_end_timestamp = pt.full_bucket_end_timestamp();
 
         // Given the time reserved by full buckets, how much time is left to partition into smaller buckets
         let mut recent_time = (Timestamp::now() - full_bucket_end_timestamp).map_err(|_| {
-            Kitsune2InternalError::other("Failed to calculate recent time, either the clock is is wrong or this is a bug")
+            K2Error::other("Failed to calculate recent time, either the clock is is wrong or this is a bug")
         })?;
 
         if pt.full_buckets > 0 && recent_time < pt.min_recent_time {
-            return Err(Kitsune2InternalError::other("Not enough recent time reserved, other the clock is is wrong or this is a bug"));
+            return Err(K2Error::other("Not enough recent time reserved, other the clock is is wrong or this is a bug"));
         }
 
         // Update the state for the current time. The stored buckets might be out of date.
@@ -80,20 +81,22 @@ impl PartitionedTime {
         Ok(pt)
     }
 
-    pub async fn update<E: std::error::Error + 'static>(
+    pub async fn update(
         &mut self,
-        store: DynOpStore<E>,
+        store: DynOpStore,
         current_time: Timestamp,
-    ) -> Result<(), Kitsune2InternalError> {
+    ) -> K2Result<()> {
         let mut full_bucket_end_timestamp = self.full_bucket_end_timestamp();
 
         let mut recent_time = (current_time - full_bucket_end_timestamp)
-            .map_err(|_| Kitsune2InternalError::other("Clock invalid"))?;
+            .map_err(|_| K2Error::other("Clock invalid"))?;
 
         let new_full_buckets_count = if recent_time > self.min_recent_time {
+            // Rely on integer rounding to get the correct number of full buckets
+            // that need adding.
             (recent_time - self.min_recent_time).as_secs()
-                / 2u32.pow(self.factor as u32) as u64
-                * UNIT_TIME.as_secs()
+                / (2u32.pow(self.factor as u32) as u64
+                * UNIT_TIME.as_secs())
         } else {
             0
         };
@@ -168,9 +171,9 @@ impl PartitionedTime {
         &self,
         current_time: Timestamp,
         mut start_at: Timestamp,
-    ) -> Result<Vec<(Timestamp, u8)>, Kitsune2InternalError> {
+    ) -> K2Result<Vec<(Timestamp, u8)>> {
         let mut recent_time = (current_time - start_at).map_err(|_| {
-            Kitsune2InternalError::other("Failed to calculate recent time, either the clock is is wrong or this is a bug")
+            K2Error::other("Failed to calculate recent time for partials, either the clock is is wrong or this is a bug")
         })?;
 
         let mut partials = Vec::new();
@@ -366,6 +369,8 @@ mod tests {
             PartitionedTime::from_store(origin_timestamp, factor, store)
                 .await
                 .unwrap();
+
+        println!("{:?}", pt);
 
         assert_eq!(factor as usize * 2, pt.partial_buckets.len());
 

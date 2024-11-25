@@ -1,7 +1,6 @@
-use crate::error::Kitsune2MemoryError;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use kitsune2_api::{BoundedOpHashResponse, MetaOp, OpId, OpStore, Timestamp};
+use kitsune2_api::{BoundedOpHashResponse, K2Result, MetaOp, OpId, OpStore, Timestamp};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -24,12 +23,10 @@ pub struct Kitsune2MemoryOpStoreInner {
 }
 
 impl OpStore for Kitsune2MemoryOpStore {
-    type Error = Kitsune2MemoryError;
-
     fn ingest_op_list(
         &self,
         op_list: Vec<MetaOp>,
-    ) -> BoxFuture<'_, Result<(), Self::Error>> {
+    ) -> BoxFuture<'_, K2Result<()>> {
         async move {
             self.write()
                 .await
@@ -44,7 +41,7 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         timestamp: Timestamp,
         limit_bytes: u32,
-    ) -> BoxFuture<'_, Result<BoundedOpHashResponse, Self::Error>>
+    ) -> BoxFuture<'_, K2Result<BoundedOpHashResponse>>
     {
         async move {
             let mut bytes = 0;
@@ -82,7 +79,7 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         start: Timestamp,
         end: Timestamp,
-    ) -> BoxFuture<'_, Result<Vec<OpId>, Self::Error>> {
+    ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
         async move {
             let self_lock = self.read().await;
             Ok(self_lock
@@ -99,7 +96,7 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         slice_id: u64,
         slice_hash: Vec<u8>,
-    ) -> BoxFuture<'_, Result<(), Self::Error>> {
+    ) -> BoxFuture<'_, K2Result<()>> {
         async move {
             self.write()
                 .await
@@ -110,14 +107,14 @@ impl OpStore for Kitsune2MemoryOpStore {
         .boxed()
     }
 
-    fn slice_hash_count(&self) -> BoxFuture<'_, Result<u64, Self::Error>> {
+    fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>> {
         async move { Ok(self.read().await.time_slice_hashes.len() as u64) }.boxed()
     }
 
     fn retrieve_slice_hash(
         &self,
         slice_id: u64,
-    ) -> BoxFuture<'_, Result<Option<Vec<u8>>, Self::Error>> {
+    ) -> BoxFuture<'_, K2Result<Option<Vec<u8>>>> {
         async move {
             Ok(self.read().await.time_slice_hashes.get(&slice_id).cloned())
         }

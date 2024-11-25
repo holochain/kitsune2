@@ -1,7 +1,6 @@
-use crate::Kitsune2MemoryError;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use kitsune2_api::{AgentId, PeerMeta, PeerMetaStore};
+use kitsune2_api::{AgentId, K2Result, PeerMeta, PeerMetaStore};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -25,12 +24,10 @@ pub struct Kitsune2MemoryPeerMetaStoreInner {
 }
 
 impl PeerMetaStore for Kitsune2MemoryPeerMetaStore {
-    type Error = Kitsune2MemoryError;
-
     fn get_peer_meta(
         &self,
         agent_id: AgentId,
-    ) -> BoxFuture<'_, Result<Option<PeerMeta>, Self::Error>> {
+    ) -> BoxFuture<'_, K2Result<Option<PeerMeta>>> {
         async move { Ok(self.read().await.peer_meta.get(&agent_id).cloned()) }
             .boxed()
     }
@@ -38,7 +35,7 @@ impl PeerMetaStore for Kitsune2MemoryPeerMetaStore {
     fn store_peer_meta(
         &self,
         peer_meta: PeerMeta,
-    ) -> BoxFuture<'_, Result<(), Self::Error>> {
+    ) -> BoxFuture<'_, K2Result<()>> {
         async move {
             self.write()
                 .await
