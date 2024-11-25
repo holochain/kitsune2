@@ -7,10 +7,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
-pub struct Kitsune2MemoryOpStore(pub Arc<RwLock<Kitsune2MemoryOpStoreInner>>);
+pub struct Kitsune2MemoryOpStore(pub RwLock<Kitsune2MemoryOpStoreInner>);
 
 impl std::ops::Deref for Kitsune2MemoryOpStore {
-    type Target = Arc<RwLock<Kitsune2MemoryOpStoreInner>>;
+    type Target = RwLock<Kitsune2MemoryOpStoreInner>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -108,6 +108,10 @@ impl OpStore for Kitsune2MemoryOpStore {
             Ok(())
         }
         .boxed()
+    }
+
+    fn slice_hash_count(&self) -> BoxFuture<'_, Result<u64, Self::Error>> {
+        async move { Ok(self.read().await.time_slice_hashes.len() as u64) }.boxed()
     }
 
     fn retrieve_slice_hash(

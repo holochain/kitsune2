@@ -1,1 +1,3 @@
-// pub const UNIT_TIME_MS: u64 = 5 * 60 * 1000; // 5 minutes
+use std::time::Duration;
+
+pub const UNIT_TIME: Duration = Duration::from_secs(15 * 60); // 5 minutes
