@@ -52,13 +52,6 @@ impl MemPeerStore {
 }
 
 impl peer_store::PeerStore for MemPeerStore {
-    /*
-    fn clear(&self) -> BoxFut<'_, K2Result<()>> {
-        self.0.lock().unwrap().clear();
-        Box::pin(async move { Ok(()) })
-    }
-    */
-
     fn insert(
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
@@ -80,33 +73,20 @@ impl peer_store::PeerStore for MemPeerStore {
         Box::pin(async move { Ok(r) })
     }
 
-    /*
-    fn get_many(&self, agent_list: Vec<AgentId>) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get_many(agent_list);
-        Box::pin(async move { Ok(r) })
-    }
-    */
-
-    fn query_by_time_and_arq(
+    fn get_overlapping_storage_arc(
         &self,
-        since: Timestamp,
-        until: Timestamp,
         arc: BasicArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self
-            .0
-            .lock()
-            .unwrap()
-            .query_by_time_and_arc(since, until, arc);
+        let r = self.0.lock().unwrap().get_overlapping_storage_arc(arc);
         Box::pin(async move { Ok(r) })
     }
 
-    fn query_by_location(
+    fn get_near_location(
         &self,
         loc: u32,
         limit: usize,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().query_by_location(loc, limit);
+        let r = self.0.lock().unwrap().get_near_location(loc, limit);
         Box::pin(async move { Ok(r) })
     }
 }
@@ -142,13 +122,6 @@ impl Inner {
         self.no_prune_until = inst_now + std::time::Duration::from_secs(10)
     }
 
-    /*
-    pub fn clear(&mut self) {
-        self.store.clear();
-        self.no_prune_until = std::time::Instant::now() + std::time::Duration::from_secs(10)
-    }
-    */
-
     pub fn insert(&mut self, agent_list: Vec<Arc<AgentInfoSigned>>) {
         self.check_prune();
 
@@ -181,22 +154,9 @@ impl Inner {
         self.store.values().cloned().collect()
     }
 
-    /*
-    fn get_many(&mut self, agent_list: Vec<AgentId>) -> Vec<Arc<AgentInfoSigned>> {
-        self.check_prune();
-
-        agent_list
-            .into_iter()
-            .filter_map(|agent| self.store.get(&agent).cloned())
-            .collect()
-    }
-    */
-
-    pub fn query_by_time_and_arc(
+    pub fn get_overlapping_storage_arc(
         &mut self,
-        since: Timestamp,
-        until: Timestamp,
-        _arc: BasicArc,
+        arc: BasicArc,
     ) -> Vec<Arc<AgentInfoSigned>> {
         self.check_prune();
 
@@ -207,29 +167,18 @@ impl Inner {
                     return None;
                 }
 
-                if info.created_at < since {
+                if !arcs_overlap(arc, info.storage_arc) {
                     return None;
                 }
-
-                if info.created_at > until {
-                    return None;
-                }
-
-                // TODO - fixme
-                /*
-                if !overlaps(arc, info.storage_arc) {
-                    return None;
-                }
-                */
 
                 Some(info.clone())
             })
             .collect()
     }
 
-    pub fn query_by_location(
+    pub fn get_near_location(
         &mut self,
-        basis: u32,
+        loc: u32,
         limit: usize,
     ) -> Vec<Arc<AgentInfoSigned>> {
         self.check_prune();
@@ -239,19 +188,21 @@ impl Inner {
             .values()
             .filter_map(|v| {
                 if !v.is_tombstone {
-                    Some((calc_dist(basis, v.storage_arc), v))
+                    if v.storage_arc.is_none() {
+                        // filter out zero arcs, they can't help us
+                        None
+                    } else {
+                        Some((calc_dist(loc, v.storage_arc), v))
+                    }
                 } else {
                     None
                 }
             })
             .collect();
 
-        if out.len() > 1 {
-            out.sort_by(|a, b| a.0.cmp(&b.0));
-        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
 
         out.into_iter()
-            .filter(|(dist, _)| *dist != u32::MAX) // Filter out Zero arcs
             .take(limit)
             .map(|(_, v)| v.clone())
             .collect()
@@ -265,25 +216,42 @@ fn calc_dist(loc: u32, arc: BasicArc) -> u32 {
     match arc {
         None => u32::MAX,
         Some((arc_start, arc_end)) => {
-            let loc = loc as u64;
-            let arc_start = arc_start as u64;
-            let mut arc_end = arc_end as u64;
-            if arc_end < arc_start {
-                arc_end += u32::MAX as u64 + 1;
-            }
-            let (d1, d2) = if loc >= arc_start && loc <= arc_end {
-                return 0;
-            } else if loc < arc_start {
-                (arc_start - loc, loc + u32::MAX as u64 + 1 - arc_end)
+            let (d1, d2) = if arc_start > arc_end {
+                // this arc wraps around the end of u32::MAX
+
+                if loc >= arc_start || loc <= arc_end {
+                    return 0;
+                } else {
+                    (loc - arc_end, arc_start - loc)
+                }
             } else {
-                // loc > arc_end
-                (loc - arc_end, u32::MAX as u64 + 1 - loc + arc_start)
+                // this arc does not wrap
+
+                if loc >= arc_start && loc <= arc_end {
+                    return 0;
+                } else if loc < arc_start {
+                    (arc_start - loc, u32::MAX - arc_end + loc + 1)
+                } else {
+                    (loc - arc_end, u32::MAX - loc + arc_start + 1)
+                }
             };
-            if d1 < d2 {
-                d1 as u32
-            } else {
-                d2 as u32
-            }
+            std::cmp::min(d1, d2)
+        }
+    }
+}
+
+/// Determine if any part of two arcs overlap.
+fn arcs_overlap(a: BasicArc, b: BasicArc) -> bool {
+    match (a, b) {
+        (None, _) | (_, None) => false,
+        (Some((a_beg, a_end)), Some((b_beg, b_end))) => {
+            // The only way for there to be overlap is if
+            // either of a's start or end points are within b
+            // or either of b's start or end points are within a
+            calc_dist(a_beg, Some((b_beg, b_end))) == 0
+                || calc_dist(a_end, Some((b_beg, b_end))) == 0
+                || calc_dist(b_beg, Some((a_beg, a_end))) == 0
+                || calc_dist(b_end, Some((a_beg, a_end))) == 0
         }
     }
 }
@@ -310,10 +278,38 @@ mod test {
             (1, u32::MAX, Some((0, 0))),
             (u32::MAX / 2, u32::MAX / 2, Some((0, 0))),
             (u32::MAX / 2 + 1, u32::MAX / 2, Some((u32::MAX, u32::MAX))),
+            (1, u32::MAX - 1, Some((u32::MAX, 1))),
+            (0, 0, Some((u32::MAX, 1))),
         ];
 
         for (dist, loc, arc) in F.iter() {
             assert_eq!(*dist, calc_dist(*loc, *arc));
+        }
+    }
+
+    #[test]
+    fn arcs_overlap_edge_cases() {
+        type DoOverlap = bool;
+        const F: &[(DoOverlap, BasicArc, BasicArc)] = &[
+            (false, Some((0, 0)), Some((1, 1))),
+            (false, Some((0, 0)), Some((u32::MAX, u32::MAX))),
+            (true, Some((0, 0)), Some((0, 0))),
+            (true, Some((u32::MAX, u32::MAX)), Some((u32::MAX, u32::MAX))),
+            (true, Some((u32::MAX, 0)), Some((0, 0))),
+            (true, Some((u32::MAX, 0)), Some((u32::MAX, u32::MAX))),
+            (true, Some((u32::MAX, 0)), Some((u32::MAX, u32::MAX))),
+            (true, Some((0, 3)), Some((1, 2))),
+            (true, Some((1, 2)), Some((0, 3))),
+            (true, Some((1, 3)), Some((2, 4))),
+            (true, Some((2, 4)), Some((1, 3))),
+            (true, Some((u32::MAX - 1, 1)), Some((u32::MAX, 0))),
+            (true, Some((u32::MAX, 0)), Some((u32::MAX - 1, 1))),
+            (true, Some((u32::MAX - 1, 0)), Some((u32::MAX, 1))),
+            (true, Some((u32::MAX, 1)), Some((u32::MAX - 1, 0))),
+        ];
+
+        for (do_overlap, a, b) in F.iter() {
+            assert_eq!(*do_overlap, arcs_overlap(*a, *b));
         }
     }
 
