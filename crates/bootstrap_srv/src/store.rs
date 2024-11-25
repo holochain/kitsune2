@@ -89,7 +89,7 @@ impl StoreEntryRef {
     pub fn parse(&self) -> std::io::Result<crate::ParsedEntry> {
         let mut tmp = Vec::with_capacity(self.length);
         self.read(&mut tmp)?;
-        crate::ParsedEntry::from_slice(&tmp)
+        crate::ParsedEntry::try_from_slice(&tmp)
     }
 }
 
