@@ -583,10 +583,10 @@ fn default_storage_rollover() {
 
     let res = get();
 
-    // Agents put beyond MAX_STORAGE will be insert at MAX_STORAGE  / 2,
-    // replacing the existing agent at that place. That is here 32 / 2 = 16,
-    // so from 17 onward agents > 32 are replaced. With 32 agents this happens
-    // twice, first from 33-47 and then from 48-63.
+    // Agents put beyond MAX_STORAGE will be cause the item at
+    // MAX_STORAGE  / 2 to be deleted, then the new put will be appended
+    // to the end. The deleted item here is 32 / 2 = index 16, so index 17
+    // onward will have the higher test_prop values as they rolled over.
     assert_eq!(
         res.as_slice(),
         &[
