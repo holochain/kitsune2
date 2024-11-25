@@ -394,6 +394,27 @@ fn reject_mismatch_space_url() {
 }
 
 #[test]
+fn reject_msg_too_long() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let mut long = String::new();
+
+    for _ in 0..1024 {
+        long.push('s');
+    }
+
+    let err = PutInfo {
+        addr: s.listen_addr(),
+        test_prop: &long,
+        ..Default::default()
+    }
+    .call()
+    .unwrap_err();
+
+    assert!(err.to_string().contains("InfoTooLarge"));
+}
+
+#[test]
 fn reject_old_created_at() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
