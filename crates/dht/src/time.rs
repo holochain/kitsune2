@@ -1,9 +1,40 @@
-//! Partition of time into intervals.
+//! Partition of time into slices.
 //!
-//! Provides an encapsulation for calculating time intervals which is consistent when computed
-//! by different nodes.
+//! Provides an encapsulation for calculating time slices that is consistent when computed
+//! by different nodes. This is used to group Kitsune2 op data into time slices for combined hashes.
+//! Giving multiple nodes the same time slice boundaries allows them to compute the same combined
+//! hashes, and therefore effectively communicate which of their time slices match and which do not.
 //!
-//! TODO: Design docs
+//! A time slice is defined to be an interval of time that is closed (inclusive) at the start and
+//! exclusive at the end. That is, the time slice includes the start timestamp but not the end.
+//!
+//! Time slices are partitioned into two types: full slices and partial slices. Full slices are
+//! always of a fixed size, while partial slices are of varying sizes. Full slices occupy
+//! historical time, while partial slices occupy recent time.
+//!
+//! The granularity of time slices is determined by the `factor` parameter. The chosen factor
+//! determines the size of time slices. Where 2^X means "two raised to the power of X", the size of
+//! a full time slice is 2^factor * [UNIT_TIME]. Partial time slices vary in size from
+//! 2^(factor - 1) * [UNIT_TIME] down to 2^0 * [UNIT_TIME] (i.e. [UNIT_TIME]). There is some
+//! amount of time left over that cannot be partitioned into smaller slices.
+//!
+//! Because recent time is expected to change more frequently, combined hashes for partial slices
+//! are stored in memory. Full slices are stored in the Kitsune2 op store.
+//!
+//! The algorithm for partitioning time is as follows:
+//!   - Reserve a minimum amount of recent time as a sum of possible partial slice sizes.
+//!   - Allocate as many full slices as possible.
+//!   - Partition the remaining time into smaller slices. If there is space for two slices of a
+//!     given size, then allocate two slices of that size. Otherwise, allocate one slice of that
+//!     size. Larger slices are allocated before smaller slices.
+//!
+//! As time progresses, the partitioning needs to be updated. This is done by calling the
+//! [PartitionedTime::update] method. The update method will:
+//!    - Run the partitioning algorithm to determine whether new full slices can be allocated and
+//!      how to partition the remaining time into partial slices.
+//!    - Store the combined hash of any new full slices in the Kitsune2 op store.
+//!    - Store the combined hash of any new partial slices in memory.
+//!    - Update the `next_update_at` field to the next time an update is required.
 
 use crate::constant::UNIT_TIME;
 use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, Timestamp};
@@ -18,13 +49,13 @@ pub struct PartitionedTime {
     origin_timestamp: Timestamp,
     /// The factor used to determine the size of the time slices.
     ///
-    /// The size of a time slice is 2**factor * [UNIT_TIME].
+    /// The size of a time slice is 2^factor * [UNIT_TIME].
     /// Partial slices are created for "recent time" and are created in decreasing sizes from
-    /// 2**factor * [UNIT_TIME] down to 2**0 * [UNIT_TIME].
+    /// 2^factor * [UNIT_TIME] down to 2^0 * [UNIT_TIME].
     factor: u8,
     /// The number of full time slices that have been stored.
     ///
-    /// These full slices are always of size 2**factor * [UNIT_TIME].
+    /// These full slices are always of size 2^factor * [UNIT_TIME].
     full_slices: u64,
     /// The partial slices, wish hashes stored in memory.
     ///
@@ -52,7 +83,7 @@ pub struct PartialSlice {
     ///
     /// This timestamp is included in the time slice.
     start: Timestamp,
-    /// Size is used in the formula 2**size * [UNIT_TIME].
+    /// Size is used in the formula 2^size * [UNIT_TIME].
     ///
     /// That means a 0 size translates to [UNIT_TIME], and a 1 size translates to 2*[UNIT_TIME].
     size: u8,
@@ -139,6 +170,14 @@ impl PartitionedTime {
         self.next_update_at
     }
 
+    /// Update the state of the [PartitionedTime] to the current time.
+    ///
+    /// This method will:
+    ///   - Check if there is space for any new full slices
+    ///   - Store the combined hash of any new full slices
+    ///   - Recompute the layout of partial slices. Each partial slice will have its hash computed
+    ///     or re-used.
+    ///   - Update the `next_update_at` field to the next time an update is required.
     pub async fn update(
         &mut self,
         store: DynOpStore,
