@@ -22,7 +22,7 @@ pub struct Kitsune2MemoryOpStoreInner {
 }
 
 impl OpStore for Kitsune2MemoryOpStore {
-    fn store_op_list(
+    fn process_incoming_ops(
         &self,
         op_list: Vec<MetaOp>,
     ) -> BoxFuture<'_, K2Result<()>> {

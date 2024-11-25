@@ -36,6 +36,15 @@
 //!    - Store the combined hash of any new partial slices in memory.
 //!    - Update the `next_update_at` field to the next time an update is required.
 //!
+//! As an example, consider a factor of 9. This means that full slices are 2^9 = 512 times the [UNIT_TIME].
+//! With a unit time of 15 minutes, that means full slices are 512 * 15 minutes = 7680 minutes = 128 hours.
+//! So every 5 days, a new full slice is created.
+//! The partial slices reserve at least 2^8 + 2^7 ... 2^0 = 519 times the [UNIT_TIME], so 519 * 15 minutes
+//! = 7785 minutes = 129.75 hours. That gives roughly 5 days of recent time.
+//!
+//! A lower factor allocates less recent time and more slices to be stored but is more granular when
+//! comparing time slices with another peer. A higher factor allocates more recent time and fewer
+//! slices to be stored but is less granular when comparing time slices with another peer.
 
 use crate::constant::UNIT_TIME;
 use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, Timestamp};
@@ -99,7 +108,7 @@ impl PartialSlice {
     fn end(&self) -> Timestamp {
         self.start
             + Duration::from_secs(
-                2u32.pow(self.size as u32) as u64 * UNIT_TIME.as_secs(),
+                (1u64 << self.size) * UNIT_TIME.as_secs(),
             )
     }
 }
@@ -176,11 +185,12 @@ impl PartitionedTime {
                 )
             })?;
 
+        // Check if there is enough time to allocate new full slices
         let new_full_slices_count = if recent_time > self.min_recent_time {
             // Rely on integer rounding to get the correct number of full slices
             // that need adding.
             (recent_time - self.min_recent_time).as_secs()
-                / (2u32.pow(self.factor as u32) as u64 * UNIT_TIME.as_secs())
+                / ((1u64 << self.factor) * UNIT_TIME.as_secs())
         } else {
             0
         };
@@ -192,7 +202,7 @@ impl PartitionedTime {
                     full_slices_end_timestamp,
                     full_slices_end_timestamp
                         + Duration::from_secs(
-                            i * 2u32.pow(self.factor as u32) as u64
+                            i * (1u64 << self.factor)
                                 * UNIT_TIME.as_secs(),
                         ),
                 )
@@ -209,7 +219,7 @@ impl PartitionedTime {
 
         full_slices_end_timestamp += Duration::from_secs(
             new_full_slices_count
-                * 2u32.pow(self.factor as u32) as u64
+                * (1u64 << self.factor)
                 * UNIT_TIME.as_secs(),
         );
 
@@ -233,7 +243,7 @@ impl PartitionedTime {
                 None => {
                     let end = start
                         + Duration::from_secs(
-                            2u32.pow(size as u32) as u64 * UNIT_TIME.as_secs(),
+                            (1u64 << size) * UNIT_TIME.as_secs(),
                         );
                     combine_op_hashes(
                         store
@@ -283,7 +293,7 @@ impl PartitionedTime {
     fn full_slice_end_timestamp(&self) -> Timestamp {
         let full_slices_duration = Duration::from_secs(
             self.full_slices
-                * 2u32.pow(self.factor as u32) as u64
+                * (1u64 << self.factor)
                 * UNIT_TIME.as_secs(),
         );
         self.origin_timestamp + full_slices_duration
@@ -308,7 +318,7 @@ impl PartitionedTime {
             // Starting from the largest slice size, if there's space for two of that slice size
             // then add two slices of that size, otherwise add one slice of that size
             let slice_size = Duration::from_secs(
-                2u32.pow(i as u32) as u64 * UNIT_TIME.as_secs(),
+                (1u64 << i) * UNIT_TIME.as_secs(),
             );
             let slice_count =
                 if recent_time > residual_duration_for_factor(i) + slice_size {
@@ -532,7 +542,7 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
-            .store_op_list(vec![
+            .process_incoming_ops(vec![
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
@@ -606,7 +616,7 @@ mod tests {
         // Store with no full slices stored
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
-            .store_op_list(vec![MetaOp {
+            .process_incoming_ops(vec![MetaOp {
                 op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                 timestamp: origin_timestamp,
                 op_data: vec![],
@@ -654,7 +664,7 @@ mod tests {
         // Store with no full slices stored
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
-            .store_op_list(vec![
+            .process_incoming_ops(vec![
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
@@ -712,7 +722,7 @@ mod tests {
         // Store with no full slices stored
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
-            .store_op_list(vec![
+            .process_incoming_ops(vec![
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
@@ -786,7 +796,7 @@ mod tests {
         // Store with no full slices stored
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
-            .store_op_list(vec![
+            .process_incoming_ops(vec![
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
@@ -856,7 +866,7 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store.store_slice_hash(0, vec![1; 64]).await.unwrap();
         store
-            .store_op_list(vec![
+            .process_incoming_ops(vec![
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
@@ -887,7 +897,7 @@ mod tests {
 
         // Store a new op which will currently be outside the last partial slice
         store
-            .store_op_list(vec![MetaOp {
+            .process_incoming_ops(vec![MetaOp {
                 op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
                 timestamp: Timestamp::now(),
                 op_data: vec![],
@@ -927,7 +937,7 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
-            .store_op_list(vec![
+            .process_incoming_ops(vec![
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
@@ -960,7 +970,7 @@ mod tests {
 
         // Store a new op, currently in the first partial slice, but will be in the next full slice.
         store
-            .store_op_list(vec![MetaOp {
+            .process_incoming_ops(vec![MetaOp {
                 op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
                 timestamp: pt.full_slice_end_timestamp(), // Start of the next full slice
                 op_data: vec![],

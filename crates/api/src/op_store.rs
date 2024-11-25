@@ -43,12 +43,18 @@ impl PartialOrd for MetaOp {
 /// The API that a kitsune2 host must implement to provide data persistence for kitsune2.
 pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// Process incoming ops.
-    fn store_op_list(
+    ///
+    /// Pass the incoming ops to the host for processing. The host is expected to store the ops
+    /// if it is able to process them.
+    fn process_incoming_ops(
         &self,
         op_list: Vec<MetaOp>,
     ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Retrieve a batch of ops from the host by time range.
+    ///
+    /// This must be the timestamp of the op, not the time that we saw the op or chose to store it.
+    /// The returned ops must be ordered by timestamp, ascending.
     fn retrieve_op_hashes_in_time_slice(
         &self,
         start: Timestamp,
@@ -66,6 +72,10 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>>;
 
     /// Retrieve the combined hash of a time slice.
+    ///
+    /// If the slice is not found, return None.
+    /// If the time slice is present, then it must be identical to what was stored by Kitsune2
+    /// using [Self::store_slice_hash].
     fn retrieve_slice_hash(
         &self,
         slice_id: u64,
