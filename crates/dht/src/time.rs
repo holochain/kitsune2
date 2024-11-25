@@ -10,17 +10,44 @@ use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, Timestamp};
 use std::time::Duration;
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone, PartialEq))]
 pub struct PartitionedTime {
+    /// The timestamp at which the time partitioning starts.
+    ///
+    /// This must be a constant among peers who need to compute the same time slices.
     origin_timestamp: Timestamp,
+    /// The factor used to determine the size of the time slices.
+    ///
+    /// The size of a time slice is 2**factor * [UNIT_TIME].
+    /// Partial slices are created for "recent time" and are created in decreasing sizes from
+    /// 2**factor * [UNIT_TIME] down to 2**0 * [UNIT_TIME].
     factor: u8,
-    full_buckets: u64,
-    partial_buckets: Vec<PartialBucket>,
+    /// The number of full time slices that have been stored.
+    ///
+    /// These full slices are always of size 2**factor * [UNIT_TIME].
+    full_slices: u64,
+    /// The partial slices, wish hashes stored in memory.
+    ///
+    /// Because these change every [UNIT_TIME], they are stored in memory.
+    partial_slices: Vec<PartialSlice>,
+    /// The minimum amount of time that must be reserved for recent time.
+    ///
+    /// The algorithm is free to allocate up to 2x this value as recent time. This allows for the
+    /// algorithm to create more slices that fill more of the recent time window.
     min_recent_time: Duration,
+    /// The timestamp at which the next update is required.
+    ///
+    /// After this time, there will be an excess amount of time that could be allocated into a
+    /// partial slice. The data structure is still usable but will get behind if
+    /// [PartitionedTime::update] is not called.
+    /// It is idempotent to call [PartitionedTime::update] more often than required, but it is not
+    /// efficient.
     next_update_at: Timestamp,
 }
 
 #[derive(Debug)]
-pub struct PartialBucket {
+#[cfg_attr(test, derive(Clone, PartialEq))]
+pub struct PartialSlice {
     /// The start timestamp of the time slice.
     ///
     /// This timestamp is included in the time slice.
@@ -33,17 +60,29 @@ pub struct PartialBucket {
     hash: bytes::Bytes,
 }
 
+impl PartialSlice {
+    /// The end timestamp of the time slice.
+    ///
+    /// This timestamp is not included in the time slice.
+    fn end(&self) -> Timestamp {
+        self.start
+            + Duration::from_secs(
+                2u32.pow(self.size as u32) as u64 * UNIT_TIME.as_secs(),
+            )
+    }
+}
+
 impl PartitionedTime {
     /// Private constructor, see [PartitionedTime::from_store].
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
-    /// state with full and partial buckets for the current time.
+    /// state with full and partial slices for the current time.
     fn new(origin_timestamp: Timestamp, factor: u8) -> Self {
         Self {
             origin_timestamp,
             factor,
-            full_buckets: 0,
-            partial_buckets: Vec::new(),
+            full_slices: 0,
+            partial_slices: Vec::new(),
             // This only changes based on the factor, which can't change at runtime,
             // so compute it on construction
             min_recent_time: residual_duration_for_factor(factor - 1),
@@ -52,6 +91,17 @@ impl PartitionedTime {
         }
     }
 
+    /// Create a new instance of [PartitionedTime] from the given store.
+    ///
+    /// The store is needed to check how many time slices were created last time this
+    /// [PartitionedTime] was updated, if any.
+    ///
+    /// The method will then update the state of the [PartitionedTime] to the current time.
+    /// It does this by checking that the construction of this [PartitionedTime] is consistent
+    /// and then calling [PartitionedTime::update].
+    ///
+    /// The resulting [PartitionedTime] will be consistent with the store and the current time.
+    /// It should be updated again after [PartitionedTime::next_update_at].
     pub async fn from_store(
         origin_timestamp: Timestamp,
         factor: u8,
@@ -59,26 +109,34 @@ impl PartitionedTime {
     ) -> K2Result<Self> {
         let mut pt = Self::new(origin_timestamp, factor);
 
-        pt.full_buckets = store
-            .slice_hash_count()
-            .await?;
+        pt.full_slices = store.slice_hash_count().await?;
 
-        // The end timestamp of the last full bucket
-        let full_bucket_end_timestamp = pt.full_bucket_end_timestamp();
+        // The end timestamp of the last full slice
+        let full_slice_end_timestamp = pt.full_slice_end_timestamp();
 
-        // Given the time reserved by full buckets, how much time is left to partition into smaller buckets
-        let mut recent_time = (Timestamp::now() - full_bucket_end_timestamp).map_err(|_| {
+        // Given the time reserved by full slices, how much time is left to partition into smaller slices
+        let recent_time = (Timestamp::now() - full_slice_end_timestamp).map_err(|_| {
             K2Error::other("Failed to calculate recent time, either the clock is is wrong or this is a bug")
         })?;
 
-        if pt.full_buckets > 0 && recent_time < pt.min_recent_time {
+        if pt.full_slices > 0 && recent_time < pt.min_recent_time {
             return Err(K2Error::other("Not enough recent time reserved, other the clock is is wrong or this is a bug"));
         }
 
-        // Update the state for the current time. The stored buckets might be out of date.
+        // Update the state for the current time. The stored slices might be out of date.
         pt.update(store, Timestamp::now()).await?;
 
         Ok(pt)
+    }
+
+    /// The timestamp at which the next update is required.
+    ///
+    /// See the field [PartitionedTime::next_update_at] for more information.
+    ///
+    /// This value is updated by [PartitionedTime::update], so you can check the next update time
+    /// after calling that method.
+    pub fn next_update_at(&self) -> Timestamp {
+        self.next_update_at
     }
 
     pub async fn update(
@@ -86,33 +144,58 @@ impl PartitionedTime {
         store: DynOpStore,
         current_time: Timestamp,
     ) -> K2Result<()> {
-        let mut full_bucket_end_timestamp = self.full_bucket_end_timestamp();
+        let mut full_slices_end_timestamp = self.full_slice_end_timestamp();
 
-        let mut recent_time = (current_time - full_bucket_end_timestamp)
-            .map_err(|_| K2Error::other("Clock invalid"))?;
+        let recent_time =
+            (current_time - full_slices_end_timestamp).map_err(|_| {
+                K2Error::other(
+                    "Current time is before the complete time slice boundary",
+                )
+            })?;
 
-        let new_full_buckets_count = if recent_time > self.min_recent_time {
-            // Rely on integer rounding to get the correct number of full buckets
+        let new_full_slices_count = if recent_time > self.min_recent_time {
+            // Rely on integer rounding to get the correct number of full slices
             // that need adding.
             (recent_time - self.min_recent_time).as_secs()
-                / (2u32.pow(self.factor as u32) as u64
-                * UNIT_TIME.as_secs())
+                / (2u32.pow(self.factor as u32) as u64 * UNIT_TIME.as_secs())
         } else {
             0
         };
 
-        full_bucket_end_timestamp += Duration::from_secs(
-            new_full_buckets_count
+        for i in 0..new_full_slices_count {
+            // Store the hash of the full slice
+            let op_hashes = store
+                .retrieve_op_hashes_in_time_slice(
+                    full_slices_end_timestamp,
+                    full_slices_end_timestamp
+                        + Duration::from_secs(
+                            i * 2u32.pow(self.factor as u32) as u64
+                                * UNIT_TIME.as_secs(),
+                        ),
+                )
+                .await?;
+
+            let hash = combine_op_hashes(op_hashes);
+
+            store
+                .store_slice_hash(self.full_slices, hash.to_vec())
+                .await?;
+
+            self.full_slices += 1;
+        }
+
+        full_slices_end_timestamp += Duration::from_secs(
+            new_full_slices_count
                 * 2u32.pow(self.factor as u32) as u64
                 * UNIT_TIME.as_secs(),
         );
 
         let new_partials =
-            self.layout_partials(current_time, full_bucket_end_timestamp)?;
-        let old_partials = std::mem::take(&mut self.partial_buckets);
+            self.layout_partials(current_time, full_slices_end_timestamp)?;
+        let old_partials = std::mem::take(&mut self.partial_slices);
 
         for (start, size) in new_partials.into_iter() {
-            // If this bucket didn't change, then we can reuse the hash
+            // If this slice didn't change, then we can reuse the hash
             let maybe_old_hash = old_partials.iter().find_map(|b| {
                 if b.start == start && b.size == size {
                     Some(b.hash.clone())
@@ -124,49 +207,47 @@ impl PartitionedTime {
             // Otherwise, we need to get the op hashes for this time slice and combine them
             let hash = match maybe_old_hash {
                 Some(h) => h,
-                None => store
-                    .retrieve_op_hashes_in_time_slice(
-                        start,
-                        start
-                            + Duration::from_secs(
-                                2u32.pow(size as u32) as u64
-                                    * UNIT_TIME.as_secs(),
-                            ),
+                None => {
+                    let end = start
+                        + Duration::from_secs(
+                            2u32.pow(size as u32) as u64 * UNIT_TIME.as_secs(),
+                        );
+                    combine_op_hashes(
+                        store
+                            .retrieve_op_hashes_in_time_slice(start, end)
+                            .await?,
                     )
-                    .await?
-                    .into_iter()
-                    .map(|x| x.0 .0)
-                    .reduce(|a, b| {
-                        a.iter().zip(b.iter()).map(|(a, b)| a ^ b).collect()
-                    })
-                    .unwrap_or_else(|| bytes::Bytes::new()),
+                }
             };
 
-            self.partial_buckets.push(PartialBucket {
-                start,
-                size,
-                hash,
-            })
+            self.partial_slices.push(PartialSlice { start, size, hash })
+        }
+
+        // There will be a small amount of time left over, which we can't partition into smaller
+        // slices. Some amount less than [UNIT_TIME] will be left over.
+        // Once that has elapsed up to the next [UNIT_TIME] boundary, we can update again.
+        if let Some(last_partial) = self.partial_slices.last() {
+            self.next_update_at = last_partial.end() + UNIT_TIME;
         }
 
         Ok(())
     }
 
-    /// The timestamp at which the last full bucket ends.
+    /// The timestamp at which the last full slice ends.
     ///
-    /// If there are no full buckets, then this is the origin timestamp.
-    fn full_bucket_end_timestamp(&self) -> Timestamp {
-        let full_buckets_duration = Duration::from_secs(
-            self.full_buckets
+    /// If there are no full slices, then this is the origin timestamp.
+    fn full_slice_end_timestamp(&self) -> Timestamp {
+        let full_slices_duration = Duration::from_secs(
+            self.full_slices
                 * 2u32.pow(self.factor as u32) as u64
                 * UNIT_TIME.as_secs(),
         );
-        self.origin_timestamp + full_buckets_duration
+        self.origin_timestamp + full_slices_duration
     }
 
-    /// Layout the partial buckets for the given time range.
+    /// Layout the partial slices for the given time range.
     ///
-    /// Tries to allocate as many large buckets as possible to fill the space.
+    /// Tries to allocate as many large slices as possible to fill the space.
     fn layout_partials(
         &self,
         current_time: Timestamp,
@@ -178,27 +259,26 @@ impl PartitionedTime {
 
         let mut partials = Vec::new();
 
-        // Now we want to partition the remaining time into smaller buckets
+        // Now we want to partition the remaining time into smaller slices
         for i in (0..self.factor).rev() {
-            // Starting from the largest bucket size, if there's space for two of that bucket size
-            // then add two buckets of that size, otherwise add one bucket of that size
-            let bucket_size = Duration::from_secs(
+            // Starting from the largest slice size, if there's space for two of that slice size
+            // then add two slices of that size, otherwise add one slice of that size
+            let slice_size = Duration::from_secs(
                 2u32.pow(i as u32) as u64 * UNIT_TIME.as_secs(),
             );
-            let bucket_count = if recent_time
-                > residual_duration_for_factor(i) + bucket_size
-            {
-                2
-            } else if recent_time > bucket_size {
-                1
-            } else {
-                continue;
-            };
+            let slice_count =
+                if recent_time > residual_duration_for_factor(i) + slice_size {
+                    2
+                } else if recent_time > slice_size {
+                    1
+                } else {
+                    continue;
+                };
 
-            for _ in 0..bucket_count {
+            for _ in 0..slice_count {
                 partials.push((start_at, i));
-                start_at += bucket_size;
-                recent_time -= bucket_size;
+                start_at += slice_size;
+                recent_time -= slice_size;
             }
         }
 
@@ -206,7 +286,7 @@ impl PartitionedTime {
     }
 }
 
-/// Computes what duration is required for a series of time buckets.
+/// Computes what duration is required for a series of time slices.
 ///
 /// The duration is computed as the sum of the powers of two from 0 to the factor, multiplied by
 /// the [UNIT_TIME].
@@ -214,8 +294,8 @@ impl PartitionedTime {
 /// Panics if the factor is greater than 53.
 /// Note that the maximum factor changes if the [UNIT_TIME] is changed.
 fn residual_duration_for_factor(factor: u8) -> Duration {
-    if factor > 63 {
-        panic!("Factor must be less than 64");
+    if factor >= 54 {
+        panic!("Factor must be less than 54");
     }
 
     let mut sum = 1;
@@ -233,7 +313,7 @@ fn residual_duration_for_factor(factor: u8) -> Duration {
 fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::Bytes {
     hashes
         .into_iter()
-        .map(|x| x.0.0)
+        .map(|x| x.0 .0)
         .reduce(|a, b| a.iter().zip(b.iter()).map(|(a, b)| a ^ b).collect())
         .unwrap_or_else(|| bytes::Bytes::new())
 }
@@ -241,7 +321,7 @@ fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kitsune2_api::OpStore;
+    use kitsune2_api::{MetaOp, OpStore};
     use kitsune2_memory::Kitsune2MemoryOpStore;
     use std::sync::Arc;
 
@@ -262,7 +342,7 @@ mod tests {
         );
     }
 
-    #[should_panic]
+    #[should_panic(expected = "Factor must be less than 54")]
     #[test]
     fn max_residual() {
         residual_duration_for_factor(54);
@@ -274,8 +354,8 @@ mod tests {
         let factor = 4;
         let pt = PartitionedTime::new(origin_timestamp, factor);
 
-        // Full buckets would have size 2^4 = 16, so we should reserve space for at last one
-        // of each smaller bucket size
+        // Full slices would have size 2^4 = 16, so we should reserve space for at least one
+        // of each smaller slice size
         assert_eq!((8 + 4 + 2 + 1) * UNIT_TIME, pt.min_recent_time);
     }
 
@@ -288,32 +368,50 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(0, pt.full_buckets);
-        assert!(pt.partial_buckets.is_empty());
+        assert_eq!(0, pt.full_slices);
+        assert!(pt.partial_slices.is_empty());
     }
 
     #[tokio::test]
-    async fn one_partial_bucket() {
-        let origin_timestamp = (Timestamp::now()
-            - Duration::from_secs(UNIT_TIME.as_secs() + 1))
-        .unwrap();
+    async fn one_partial_slice() {
+        let now = Timestamp::now();
+        let origin_timestamp =
+            (now - Duration::from_secs(UNIT_TIME.as_secs() + 1)).unwrap();
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
-        assert_eq!(0, pt.full_buckets);
-        assert_eq!(1, pt.partial_buckets.len());
-        assert_eq!(0, pt.partial_buckets[0].size);
-        assert_eq!(origin_timestamp, pt.partial_buckets[0].start);
+        // Should allocate no full slices and one partial
+        assert_eq!(0, pt.full_slices);
+        assert_eq!(1, pt.partial_slices.len());
+
+        // The partial should be:
+        //   - The minimum factor size, and
+        //   - start at the origin time
+        //   - end at the origin time + UNIT_TIME
+        assert_eq!(0, pt.partial_slices[0].size);
+        assert_eq!(origin_timestamp, pt.partial_slices[0].start);
+        assert_eq!(origin_timestamp + UNIT_TIME, pt.partial_slices[0].end());
+
+        // The next required update should be at the end of the partial slice
+        // plus another UNIT_TIME.
+        assert_eq!(origin_timestamp + 2 * UNIT_TIME, pt.next_update_at);
+
+        // Or to put it another way, UNIT_TIME - 1s from now
+        assert_eq!(
+            (now + UNIT_TIME - Duration::from_secs(1)).unwrap(),
+            pt.next_update_at
+        );
     }
 
     #[tokio::test]
-    async fn all_single_partial_buckets() {
+    async fn all_single_partial_slices() {
         let factor = 7;
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
+                // Enough time for all the partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
                     .min_recent_time
                     .as_secs()
@@ -325,39 +423,39 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(0, pt.full_buckets);
-        assert_eq!(factor as usize, pt.partial_buckets.len());
+        assert_eq!(0, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
 
-        validate_partial_buckets(&pt);
+        validate_partial_slices(&pt);
     }
 
     #[tokio::test]
-    async fn one_double_others_single_partial_bucket() {
+    async fn one_double_others_single_partial_slices() {
         let factor = 7;
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
                 PartitionedTime::new(Timestamp::now(), factor).min_recent_time.as_secs() +
-                // Add enough time to reserve a double bucket in the first spot
+                // Add enough time to reserve a double slice in the first spot
             2u32.pow(factor as u32 - 1) as u64 * UNIT_TIME.as_secs()
                 + 1,
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let mut pt =
-            PartitionedTime::from_store(origin_timestamp, factor, store)
-                .await
-                .unwrap();
+        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+            .await
+            .unwrap();
 
-        assert_eq!(factor as usize + 1, pt.partial_buckets.len());
+        assert_eq!(factor as usize + 1, pt.partial_slices.len());
 
-        validate_partial_buckets(&pt);
+        validate_partial_slices(&pt);
     }
 
     #[tokio::test]
-    async fn all_double_buckets() {
+    async fn all_double_slices() {
         let factor = 7;
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
+                // Enough time for two of each of the partial slices
                 2 * PartitionedTime::new(Timestamp::now(), factor)
                     .min_recent_time
                     .as_secs()
@@ -365,24 +463,65 @@ mod tests {
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let mut pt =
-            PartitionedTime::from_store(origin_timestamp, factor, store)
-                .await
-                .unwrap();
+        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+            .await
+            .unwrap();
 
-        println!("{:?}", pt);
+        assert_eq!(factor as usize * 2, pt.partial_slices.len());
 
-        assert_eq!(factor as usize * 2, pt.partial_buckets.len());
-
-        validate_partial_buckets(&pt);
+        validate_partial_slices(&pt);
     }
 
     #[tokio::test]
-    async fn full_buckets_with_single_bucket_partials() {
+    async fn hashes_are_combined_for_partial_slices() {
+        let factor = 7;
+        let now = Timestamp::now();
+        let origin_timestamp = (now
+            - Duration::from_secs(
+                // Enough time for all the partial slices
+                PartitionedTime::new(Timestamp::now(), factor)
+                    .min_recent_time
+                    .as_secs()
+                    + 1,
+            ))
+        .unwrap();
+
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .ingest_op_list(vec![
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
+
+        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+            .await
+            .unwrap();
+
+        assert_eq!(factor as usize, pt.partial_slices.len());
+        let last_partial = pt.partial_slices.last().unwrap();
+        assert_eq!(vec![7 ^ 23; 32], last_partial.hash);
+
+        validate_partial_slices(&pt);
+    }
+
+    #[tokio::test]
+    async fn full_slices_with_single_slice_partials() {
         let factor = 7;
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
-                // Two full buckets
+                // Two full slices
                 2 * 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for recent time
             PartitionedTime::new(Timestamp::now(), factor)
@@ -395,51 +534,454 @@ mod tests {
         store.store_slice_hash(0, vec![1; 64]).await.unwrap();
         store.store_slice_hash(1, vec![1; 64]).await.unwrap();
 
-        let mut pt =
-            PartitionedTime::from_store(origin_timestamp, factor, store)
-                .await
-                .unwrap();
+        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+            .await
+            .unwrap();
 
-        assert_eq!(2, pt.full_buckets);
-        assert_eq!(factor as usize, pt.partial_buckets.len());
+        assert_eq!(2, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
 
-        validate_partial_buckets(&pt);
+        validate_partial_slices(&pt);
     }
 
-    fn validate_partial_buckets(pt: &PartitionedTime) {
+    #[tokio::test]
+    async fn missing_full_slices_with_all_partials() {
+        let factor = 7;
+        let origin_timestamp = (Timestamp::now()
+            - Duration::from_secs(
+                // One full slice
+                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                // Enough time remaining for all the single partial slices
+            PartitionedTime::new(Timestamp::now(), factor)
+                .min_recent_time
+                .as_secs()
+                + 1,
+            ))
+        .unwrap();
+
+        // Store with no full slices stored
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .ingest_op_list(vec![MetaOp {
+                op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                timestamp: origin_timestamp,
+                op_data: vec![],
+                op_flags: Default::default(),
+            }])
+            .await
+            .unwrap();
+
+        let pt = PartitionedTime::from_store(
+            origin_timestamp,
+            factor,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // One full slice and all the partial slices should be created
+        assert_eq!(1, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
+
+        // The full slice should have been stored
+        assert_eq!(1, store.slice_hash_count().await.unwrap());
+        let full_slice_hash =
+            store.retrieve_slice_hash(0).await.unwrap().unwrap();
+        assert_eq!(vec![7; 32], full_slice_hash);
+
+        validate_partial_slices(&pt);
+    }
+
+    #[tokio::test]
+    async fn missing_full_slices_combines_hashes() {
+        let factor = 7;
+        let origin_timestamp = (Timestamp::now()
+            - Duration::from_secs(
+                // One full slice
+                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                // Enough time remaining for all the single partial slices
+                PartitionedTime::new(Timestamp::now(), factor)
+                    .min_recent_time
+                    .as_secs()
+                + 1,
+            ))
+        .unwrap();
+
+        // Store with no full slices stored
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .ingest_op_list(vec![
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
+
+        let pt = PartitionedTime::from_store(
+            origin_timestamp,
+            factor,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // One full slice and all the partial slices should be created
+        assert_eq!(1, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
+
+        // The full slice should have been stored
+        assert_eq!(1, store.slice_hash_count().await.unwrap());
+        let full_slice_hash =
+            store.retrieve_slice_hash(0).await.unwrap().unwrap();
+        // The hashes should be combined using XOR
+        assert_eq!(vec![7 ^ 23; 32], full_slice_hash);
+
+        validate_partial_slices(&pt);
+    }
+
+    #[tokio::test]
+    async fn compute_hashes_for_full_slices_and_partials() {
+        let factor = 7;
+        let now = Timestamp::now();
+        let origin_timestamp = (now
+            - Duration::from_secs(
+                // One full slice
+                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                // Enough time remaining for all the single partial slices
+                PartitionedTime::new(Timestamp::now(), factor)
+                    .min_recent_time
+                    .as_secs()
+                + 1,
+            ))
+        .unwrap();
+
+        // Store with no full slices stored
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .ingest_op_list(vec![
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
+
+        let pt = PartitionedTime::from_store(
+            origin_timestamp,
+            factor,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // One full slice and all the partial slices should be created
+        assert_eq!(1, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
+
+        // The full slice should have been stored
+        assert_eq!(1, store.slice_hash_count().await.unwrap());
+        let full_slice_hash =
+            store.retrieve_slice_hash(0).await.unwrap().unwrap();
+        // The hashes should be combined using XOR
+        assert_eq!(vec![7 ^ 23; 32], full_slice_hash);
+
+        // The last partial slice should have the combined hash of the two ops
+        let last_partial = pt.partial_slices.last().unwrap();
+        assert_eq!(vec![7 ^ 29; 32], last_partial.hash);
+
+        validate_partial_slices(&pt);
+    }
+
+    #[tokio::test]
+    async fn update_is_idempotent() {
+        let factor = 7;
+        let now = Timestamp::now();
+        let origin_timestamp = (now
+            - Duration::from_secs(
+                // One full slice
+                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                // Enough time remaining for all the single partial slices
+                PartitionedTime::new(Timestamp::now(), factor)
+                    .min_recent_time
+                    .as_secs()
+                + 1,
+            ))
+        .unwrap();
+
+        // Store with no full slices stored
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .ingest_op_list(vec![
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
+
+        let mut pt = PartitionedTime::from_store(
+            origin_timestamp,
+            factor,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Capture the initially created state
+        let pt_original = pt.clone();
+
+        // Update repeatedly, the state should not change
+        for i in 1..10 {
+            let call_at = now + Duration::from_secs(i);
+            assert!(call_at < pt.next_update_at());
+
+            pt.update(store.clone(), call_at).await.unwrap();
+
+            assert_eq!(pt_original, pt);
+        }
+    }
+
+    #[tokio::test]
+    async fn update_allocate_new_partial() {
+        let factor = 7;
+        let now = Timestamp::now();
+        let origin_timestamp = (now
+            - Duration::from_secs(
+                // One full slice
+                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                // Enough time remaining for all the single partial slices
+                PartitionedTime::new(Timestamp::now(), factor)
+                    .min_recent_time
+                    .as_secs()
+                + 1,
+            ))
+        .unwrap();
+
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store.store_slice_hash(0, vec![1; 64]).await.unwrap();
+        store
+            .ingest_op_list(vec![
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    timestamp: (now - UNIT_TIME).unwrap(),
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
+
+        let mut pt = PartitionedTime::from_store(
+            origin_timestamp,
+            factor,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(factor as usize, pt.partial_slices.len());
+        let last_partial = pt.partial_slices.last().unwrap();
+        assert_eq!(vec![7 ^ 29; 32], last_partial.hash);
+
+        // Store a new op which will currently be outside the last partial slice
+        store
+            .ingest_op_list(vec![MetaOp {
+                op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
+                timestamp: Timestamp::now(),
+                op_data: vec![],
+                op_flags: Default::default(),
+            }])
+            .await
+            .unwrap();
+
+        pt.update(store.clone(), Timestamp::now() + UNIT_TIME)
+            .await
+            .unwrap();
+
+        assert_eq!(factor as usize + 1, pt.partial_slices.len());
+
+        let second_last_partial = pt.partial_slices.iter().nth_back(1).unwrap();
+        assert_eq!(vec![7 ^ 29; 32], second_last_partial.hash);
+
+        let last_partial = pt.partial_slices.last().unwrap();
+        assert_eq!(vec![13; 32], last_partial.hash);
+    }
+
+    #[tokio::test]
+    async fn update_allocate_new_complete() {
+        let factor = 7;
+        let now = Timestamp::now();
+        let origin_timestamp = (now
+            - Duration::from_secs(
+                // One full slice
+                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                // Enough time remaining for all the single partial slices
+                PartitionedTime::new(Timestamp::now(), factor)
+                    .min_recent_time
+                    .as_secs()
+                + 1,
+            ))
+        .unwrap();
+
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .ingest_op_list(vec![
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+                MetaOp {
+                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    timestamp: origin_timestamp,
+                    op_data: vec![],
+                    op_flags: Default::default(),
+                },
+            ])
+            .await
+            .unwrap();
+
+        let mut pt = PartitionedTime::from_store(
+            origin_timestamp,
+            factor,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(1, pt.full_slices);
+        assert_eq!(
+            vec![7 ^ 23; 32],
+            store.retrieve_slice_hash(0).await.unwrap().unwrap()
+        );
+
+        // Store a new op, currently in the first partial slice, but will be in the next full slice.
+        store
+            .ingest_op_list(vec![MetaOp {
+                op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
+                timestamp: pt.full_slice_end_timestamp(), // Start of the next full slice
+                op_data: vec![],
+                op_flags: Default::default(),
+            }])
+            .await
+            .unwrap();
+
+        pt.update(
+            store.clone(),
+            Timestamp::now()
+                + Duration::from_secs(
+                    2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs(),
+                ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(2, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
+
+        assert_eq!(2, store.slice_hash_count().await.unwrap());
+        assert_eq!(
+            vec![7 ^ 23; 32],
+            store.retrieve_slice_hash(0).await.unwrap().unwrap()
+        );
+        assert_eq!(
+            vec![13; 32],
+            store.retrieve_slice_hash(1).await.unwrap().unwrap()
+        );
+    }
+
+    fn validate_partial_slices(pt: &PartitionedTime) {
         let mut start_at = pt.origin_timestamp
             + Duration::from_secs(
-                pt.full_buckets
+                pt.full_slices
                     * 2u32.pow(pt.factor as u32) as u64
                     * UNIT_TIME.as_secs(),
             );
-        for (i, bucket) in pt.partial_buckets.iter().enumerate() {
+        for (i, slice) in pt.partial_slices.iter().enumerate() {
             if i > 0 {
-                // Require that the bucket sizes are decreasing
-                // Not that the decrease is not strictly monotonic, as up to two buckets of the same
+                // Require that the slice sizes are decreasing
+                // Not that the decrease is not strictly monotonic, as up to two slices of the same
                 // size are permitted
                 assert!(
-                    pt.partial_buckets[i - 1].size >= pt.partial_buckets[i].size,
+                    pt.partial_slices[i - 1].size >= slice.size,
                     "factor must decrease"
                 );
             }
             if i > 1 {
                 // Two is fine, if there are 3 of one size then they should have been collapsed before
-                // the partial buckets can be considered in a valid state.
+                // the partial slices can be considered in a valid state.
                 assert!(
-                    pt.partial_buckets[i - 2].size != pt.partial_buckets[i - 1].size
-                        || pt.partial_buckets[i - 1].size
-                            != pt.partial_buckets[i].size,
-                    "no more than two buckets of the same size are permitted"
+                    pt.partial_slices[i - 2].size
+                        != pt.partial_slices[i - 1].size
+                        || pt.partial_slices[i - 1].size != slice.size,
+                    "no more than two slices of the same size are permitted"
                 );
             }
 
-            // Check that the buckets are
-            assert_eq!(start_at, pt.partial_buckets[i].start);
+            // Check that the slices are
+            assert_eq!(start_at, slice.start);
 
             start_at += Duration::from_secs(
-                2u32.pow(pt.partial_buckets[i].size as u32) as u64
-                    * UNIT_TIME.as_secs(),
+                2u32.pow(slice.size as u32) as u64 * UNIT_TIME.as_secs(),
             );
         }
     }

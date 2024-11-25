@@ -2,7 +2,6 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use kitsune2_api::{BoundedOpHashResponse, K2Result, MetaOp, OpId, OpStore, Timestamp};
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
