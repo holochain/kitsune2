@@ -91,7 +91,7 @@ impl BootstrapSrv {
         })
     }
 
-    /// Get the bound listinging address of this server.
+    /// Get the bound listening address of this server.
     pub fn listen_addr(&self) -> std::net::SocketAddr {
         self.addr
     }
