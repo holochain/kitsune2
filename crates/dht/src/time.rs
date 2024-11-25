@@ -107,9 +107,7 @@ impl PartialSlice {
     /// This timestamp is not included in the time slice.
     fn end(&self) -> Timestamp {
         self.start
-            + Duration::from_secs(
-                (1u64 << self.size) * UNIT_TIME.as_secs(),
-            )
+            + Duration::from_secs((1u64 << self.size) * UNIT_TIME.as_secs())
     }
 }
 
@@ -202,8 +200,7 @@ impl PartitionedTime {
                     full_slices_end_timestamp,
                     full_slices_end_timestamp
                         + Duration::from_secs(
-                            i * (1u64 << self.factor)
-                                * UNIT_TIME.as_secs(),
+                            i * (1u64 << self.factor) * UNIT_TIME.as_secs(),
                         ),
                 )
                 .await?;
@@ -218,9 +215,7 @@ impl PartitionedTime {
         }
 
         full_slices_end_timestamp += Duration::from_secs(
-            new_full_slices_count
-                * (1u64 << self.factor)
-                * UNIT_TIME.as_secs(),
+            new_full_slices_count * (1u64 << self.factor) * UNIT_TIME.as_secs(),
         );
 
         let new_partials =
@@ -292,9 +287,7 @@ impl PartitionedTime {
     /// If there are no full slices, then this is the origin timestamp.
     fn full_slice_end_timestamp(&self) -> Timestamp {
         let full_slices_duration = Duration::from_secs(
-            self.full_slices
-                * (1u64 << self.factor)
-                * UNIT_TIME.as_secs(),
+            self.full_slices * (1u64 << self.factor) * UNIT_TIME.as_secs(),
         );
         self.origin_timestamp + full_slices_duration
     }
@@ -317,9 +310,8 @@ impl PartitionedTime {
         for i in (0..self.factor).rev() {
             // Starting from the largest slice size, if there's space for two of that slice size
             // then add two slices of that size, otherwise add one slice of that size
-            let slice_size = Duration::from_secs(
-                (1u64 << i) * UNIT_TIME.as_secs(),
-            );
+            let slice_size =
+                Duration::from_secs((1u64 << i) * UNIT_TIME.as_secs());
             let slice_count =
                 if recent_time > residual_duration_for_factor(i) + slice_size {
                     2
@@ -369,7 +361,7 @@ fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::Bytes {
         .into_iter()
         .map(|x| x.0 .0)
         .reduce(|a, b| a.iter().zip(b.iter()).map(|(a, b)| a ^ b).collect())
-        .unwrap_or_else(|| bytes::Bytes::new())
+        .unwrap_or_else(bytes::Bytes::new)
 }
 
 #[cfg(test)]
