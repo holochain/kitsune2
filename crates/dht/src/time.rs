@@ -124,6 +124,10 @@ impl PartitionedTime {
     ///
     /// The resulting [PartitionedTime] will be consistent with the store and the current time.
     /// It should be updated again after [PartitionedTime::next_update_at].
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if factor >= 54.
     pub async fn from_store(
         origin_timestamp: Timestamp,
         factor: u8,
