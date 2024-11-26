@@ -285,7 +285,7 @@ impl<'lt> Handler<'lt> {
             return Err(std::io::Error::other("InvalidExpiresAt"));
         }
 
-        // validate signature (do this at the end because it's more expensive
+        // validate signature (do this at the end because it's more expensive)
         info.agent
             .verify(info.encoded.as_bytes(), &info.signature)
             .map_err(|err| {
