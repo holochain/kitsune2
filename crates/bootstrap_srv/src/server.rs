@@ -15,6 +15,15 @@ const CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS: i64 =
 const EXPIRES_AT_DURATION_MAX_ALLOWED_MICROS: i64 =
     std::time::Duration::from_secs(60 * 30).as_micros() as i64;
 
+/// Print out a message if this thread dies.
+struct ThreadGuard(&'static str);
+
+impl Drop for ThreadGuard {
+    fn drop(&mut self) {
+        eprintln!("{}", self.0);
+    }
+}
+
 /// An actual kitsune2_bootstrap_srv server instance.
 ///
 /// This server is built to be direct, light-weight, and responsive.
@@ -116,6 +125,8 @@ fn prune_worker(
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
+    let _g = ThreadGuard("WARN: prune_worker thread has ended");
+
     let mut last_check = std::time::Instant::now();
 
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
@@ -138,6 +149,8 @@ fn worker(
     server: Arc<Server>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
+    let _g = ThreadGuard("WARN: worker thread has ended");
+
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
         let req = match server.recv_timeout(config.request_listen_duration)? {
             Some(req) => req,
