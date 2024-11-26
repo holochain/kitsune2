@@ -60,7 +60,7 @@ impl Config {
     /// to extract a module config. Note that this config is loaded from
     /// disk and can be edited by humans, so the serialization on the module
     /// config should be tolerant to missing properties, setting sane defaults.
-    /// A module may choose to warn about missing or extraneous properties.
+    /// A module may choose to warn about missing properties and should warn about extraneous properties.
     pub fn get_module_config<M: ModConfig>(
         &self,
         module_name: &str,
