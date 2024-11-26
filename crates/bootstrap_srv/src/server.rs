@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::*;
 use tiny_http::*;
 
-/// Don't allow created_at to be greater or less than this far away from now.
+/// Don't allow created_at to be greater than this far away from now.
 /// 3 minutes.
 const CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS: i64 =
     std::time::Duration::from_secs(60 * 3).as_micros() as i64;
