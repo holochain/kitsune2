@@ -67,7 +67,7 @@ pub struct PartitionedTime {
     ///
     /// These full slices are always of size 2^factor * [UNIT_TIME].
     full_slices: u64,
-    /// The partial slices, wish hashes stored in memory.
+    /// The partial slices, with hashes stored in memory.
     ///
     /// Because these change every [UNIT_TIME], they are stored in memory.
     partial_slices: Vec<PartialSlice>,
