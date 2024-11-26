@@ -1,12 +1,17 @@
 //! Types for use when configuring kitsune2 modules.
 
+use crate::*;
 use std::collections::BTreeMap;
 
 /// helper transcode function
 fn tc<S: serde::Serialize, D: serde::de::DeserializeOwned>(
     s: &S,
-) -> std::io::Result<D> {
-    Ok(serde_json::from_str(&serde_json::to_string(s)?)?)
+) -> K2Result<D> {
+    serde_json::from_str(
+        &serde_json::to_string(s)
+            .map_err(|e| K2Error::other_src("encode", e))?,
+    )
+    .map_err(|e| K2Error::other_src("decode", e))
 }
 
 /// Denotes a type used to configure a specific kitsune2 module.
@@ -46,9 +51,9 @@ impl Config {
     pub fn add_default_module_config<M: ModConfig>(
         &mut self,
         module_name: String,
-    ) -> std::io::Result<()> {
+    ) -> K2Result<()> {
         if self.0.contains_key(&module_name) {
-            return Err(std::io::Error::other(format!(
+            return Err(K2Error::other(format!(
                 "Refusing to overwrite conflicting module name: {module_name}"
             )));
         }
@@ -62,11 +67,11 @@ impl Config {
     /// to extract a module config. Note that this config is loaded from
     /// disk and can be edited by humans, so the serialization on the module
     /// config should be tolerant to missing properties, setting sane defaults.
-    /// A module may choose to warn about missing or extraneous properties.
+    /// A module may choose to warn about missing properties and should warn about extraneous properties.
     pub fn get_module_config<M: ModConfig>(
         &self,
         module_name: &str,
-    ) -> std::io::Result<M> {
+    ) -> K2Result<M> {
         self.0
             .get(module_name)
             .map(tc)
