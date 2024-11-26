@@ -279,7 +279,9 @@ impl PartitionedTime {
             full_slices: 0,
             partial_slices: Vec::new(),
             // This only changes based on the factor, which can't change at runtime,
-            // so compute it on construction
+            // so compute it on construction.
+            // Note that `- 1` is because the first partial slice is half the size of a full slice,
+            // so we actually want to calculate to `factor - 1`.
             min_recent_time: residual_duration_for_factor(factor - 1),
             // Immediately requires an update, any time in the past will do
             next_update_at: Timestamp::from_micros(0),
@@ -361,11 +363,22 @@ fn residual_duration_for_factor(factor: u8) -> Duration {
 /// Requires that the op hashes are already ordered.
 /// If the input is empty, then the output is an empty byte array.
 fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::Bytes {
-    hashes
-        .into_iter()
-        .map(|x| x.0 .0)
-        .reduce(|a, b| a.iter().zip(b.iter()).map(|(a, b)| a ^ b).collect())
-        .unwrap_or_else(bytes::Bytes::new)
+    let mut out = if let Some(first) = hashes.first() {
+        bytes::BytesMut::zeroed(first.0.len())
+    } else {
+        // `Bytes::new` does not allocate, so if there was no input, then return an empty
+        // byte array without allocating.
+        return bytes::Bytes::new();
+    };
+
+    let iter = hashes.into_iter().map(|x| x.0 .0);
+    for hash in iter {
+        for (out_byte, hash_byte) in out.iter_mut().zip(hash.iter()) {
+            *out_byte ^= hash_byte;
+        }
+    }
+
+    out.freeze()
 }
 
 #[cfg(test)]

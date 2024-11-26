@@ -35,14 +35,6 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
-/// A single struct to hold all the API types.
-///
-/// This is for convenience when passing around the API.
-#[derive(Clone)]
-pub struct HostApi {
-    /// The op store.
-    pub op_store: DynOpStore,
-}
 
 pub mod config;
 
