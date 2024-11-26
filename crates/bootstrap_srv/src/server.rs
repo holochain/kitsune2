@@ -28,10 +28,7 @@ pub struct BootstrapSrv {
 
 impl Drop for BootstrapSrv {
     fn drop(&mut self) {
-        self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
-        for worker in self.workers.drain(..) {
-            let _ = worker.join().expect("Failure shutting down worker thread");
-        }
+        let _ = self.shutdown();
     }
 }
 
@@ -89,6 +86,23 @@ impl BootstrapSrv {
             workers,
             addr,
         })
+    }
+
+    /// Shutdown the server, returning an error result if any
+    /// of the worker threads had panicked.
+    pub fn shutdown(&mut self) -> std::io::Result<()> {
+        let mut is_err = false;
+        self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
+        for worker in self.workers.drain(..) {
+            if worker.join().is_err() {
+                is_err = true;
+            }
+        }
+        if is_err {
+            Err(std::io::Error::other("Failure shutting down worker thread"))
+        } else {
+            Ok(())
+        }
     }
 
     /// Get the bound listening address of this server.
