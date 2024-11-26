@@ -1023,7 +1023,7 @@ mod tests {
                 );
             }
 
-            // Check that the slices are
+            // Check that the slices start at the correct time.
             assert_eq!(start_at, slice.start);
 
             start_at += Duration::from_secs(
