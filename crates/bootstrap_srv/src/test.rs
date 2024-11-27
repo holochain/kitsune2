@@ -625,19 +625,20 @@ fn multi_thread_stress() {
 
     let start = std::time::Instant::now();
 
-    // the testing config has 2 worker threads.
+    // the testing config has a small number worker threads (currently 2).
     // Read and write with more than that.
-    const T_W_COUNT: u32 = 16;
-    const T_R_COUNT: u32 = 32;
+    let worker_count = Config::testing().worker_thread_count as u32;
+    let t_w_count = worker_count * 8;
+    let t_r_count = worker_count * 16;
 
     // setup readers to just read as fast as possible,
     // then end after the writers are done.
 
     let w_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    let mut all_r = Vec::with_capacity(T_R_COUNT as usize);
+    let mut all_r = Vec::with_capacity(t_r_count as usize);
 
-    for _ in 0..T_R_COUNT {
+    for _ in 0..t_r_count {
         let w_done = w_done.clone();
 
         all_r.push(std::thread::spawn(move || {
@@ -653,11 +654,11 @@ fn multi_thread_stress() {
     // update the infos 8 times
     const SCOUNT: u32 = 8;
 
-    let mut all_w = Vec::with_capacity(T_W_COUNT as usize);
+    let mut all_w = Vec::with_capacity(t_w_count as usize);
 
-    let b = std::sync::Arc::new(std::sync::Barrier::new(T_W_COUNT as usize));
+    let b = std::sync::Arc::new(std::sync::Barrier::new(t_w_count as usize));
 
-    for a in 0..T_W_COUNT {
+    for a in 0..t_w_count {
         use base64::prelude::*;
 
         let mut agent_seed = [0; 32];
