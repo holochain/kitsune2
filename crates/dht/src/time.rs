@@ -39,8 +39,8 @@
 //! As an example, consider a factor of 9. This means that full slices are 2^9 = 512 times the [UNIT_TIME].
 //! With a unit time of 15 minutes, that means full slices are 512 * 15 minutes = 7680 minutes = 128 hours.
 //! So every 5 days, a new full slice is created.
-//! The partial slices reserve at least 2^8 + 2^7 ... 2^0 = 519 times the [UNIT_TIME], so 519 * 15 minutes
-//! = 7785 minutes = 129.75 hours. That gives roughly 5 days of recent time.
+//! The partial slices reserve at least 2^8 + 2^7 ... 2^0 = 511 times the [UNIT_TIME], so 511 * 15 minutes
+//! = 7685 minutes = 127.75 hours. That gives roughly 5 days of recent time.
 //!
 //! A lower factor allocates less recent time and more slices to be stored but is more granular when
 //! comparing time slices with another peer. A higher factor allocates more recent time and fewer
