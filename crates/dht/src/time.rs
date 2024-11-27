@@ -142,7 +142,7 @@ impl PartitionedTime {
 
         // Given the time reserved by full slices, how much time is left to partition into smaller slices
         let recent_time = (Timestamp::now() - full_slice_end_timestamp).map_err(|_| {
-            K2Error::other("Failed to calculate recent time, either the clock is is wrong or this is a bug")
+            K2Error::other("Failed to calculate recent time, either the clock is wrong or this is a bug")
         })?;
 
         if pt.full_slices > 0 && recent_time < pt.min_recent_time {
