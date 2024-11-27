@@ -271,6 +271,31 @@ fn fixture_get_near_location() {
         .build()]);
     }
 
+    // these should not be returned because they are invalid.
+    s.insert(vec![
+        AgentBuild {
+            storage_arc: Some(None),
+            url: Some(Some("zero-arc".into())),
+            ..Default::default()
+        }
+        .build(),
+        AgentBuild {
+            is_tombstone: Some(true),
+            url: Some(Some("tombstone".into())),
+            ..Default::default()
+        }
+        .build(),
+        AgentBuild {
+            expires_at: Some(Timestamp::from_micros(
+                Timestamp::now().as_micros()
+                    - std::time::Duration::from_secs(10).as_micros() as i64,
+            )),
+            url: Some(Some("expired".into())),
+            ..Default::default()
+        }
+        .build(),
+    ]);
+
     const F: &[(&[&str], u32)] = &[
         (&["0", "1", "7", "2", "6", "3", "5", "4"], 0),
         (&["0", "1", "7", "2", "6", "3", "5", "4"], u32::MAX),
