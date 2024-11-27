@@ -6,7 +6,7 @@
 //! hashes, and therefore effectively communicate which of their time slices match and which do not.
 //!
 //! A time slice is defined to be an interval of time that is closed at the start and
-//! open at the end. That is, an interval [start, end)` where:
+//! open at the end. That is, an interval `[start, end)` where:
 //! - `start` is included in the time slice (inclusive bound)
 //! - `end` is not included in the time slice (exclusive bound)
 //!
