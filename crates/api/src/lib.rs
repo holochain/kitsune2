@@ -39,6 +39,7 @@ pub mod agent;
 pub mod builder;
 pub mod config;
 pub mod peer_store;
+pub mod space;
 
 mod error;
 pub use error::*;

@@ -571,6 +571,7 @@ name = "kitsune2"
 version = "0.0.1-alpha"
 dependencies = [
  "bytes",
+ "ed25519-dalek",
  "kitsune2_api",
  "serde",
  "serde_json",

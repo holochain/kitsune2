@@ -60,6 +60,7 @@ impl AgentBuild {
             signature: "".into(),
         })
         .unwrap();
+        #[derive(Debug)]
         struct V;
         impl Verifier for V {
             fn verify(&self, _i: &AgentInfo, _m: &[u8], _s: &[u8]) -> bool {
