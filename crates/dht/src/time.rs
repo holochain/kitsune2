@@ -305,7 +305,7 @@ impl PartitionedTime {
         mut start_at: Timestamp,
     ) -> K2Result<Vec<(Timestamp, u8)>> {
         let mut recent_time = (current_time - start_at).map_err(|_| {
-            K2Error::other("Failed to calculate recent time for partials, either the clock is is wrong or this is a bug")
+            K2Error::other("Failed to calculate recent time for partials, either the clock is wrong or this is a bug")
         })?;
 
         let mut partials = Vec::new();
