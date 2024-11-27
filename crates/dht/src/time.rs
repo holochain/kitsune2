@@ -19,9 +19,9 @@
 //! amount of time left over that cannot be partitioned into smaller slices.
 //!
 //! > Note: The factor is used with durations and the code needs to be able to do arithmetic with
-//!   it, so the factor has a maximum value of 53. The factor also has a minimum value of 1,
-//!   though values lower than 4 are effectively meaningless. Consider choosing a factor that
-//!   results in a meaningful split between recent time and historical, full slices.
+//! > it, so the factor has a maximum value of 53. The factor also has a minimum value of 1,
+//! > though values lower than 4 are effectively meaningless. Consider choosing a factor that
+//! > results in a meaningful split between recent time and historical, full slices.
 //!
 //! Because recent time is expected to change more frequently, combined hashes for partial slices
 //! are stored in memory. Full slices are stored in the Kitsune2 op store.
@@ -185,7 +185,8 @@ impl PartitionedTime {
         current_time: Timestamp,
     ) -> K2Result<()> {
         // Check if there is enough time to allocate new full slices
-        self.update_full_slice_hashes(store.clone(), current_time).await?;
+        self.update_full_slice_hashes(store.clone(), current_time)
+            .await?;
 
         // Check if there is enough time to allocate new partial slices
         self.update_partials(store.clone(), current_time).await?;
@@ -268,7 +269,11 @@ impl PartitionedTime {
     /// This method will use [PartitionedTime::layout_full_slices] to determine how many new full
     /// slices should be allocated. It will then fetch the op hashes for each full slice and
     /// combine them into a single hash. That combined hash is then stored on the host.
-    async fn update_full_slice_hashes(&mut self, store: DynOpStore, current_time: Timestamp) -> K2Result<()> {
+    async fn update_full_slice_hashes(
+        &mut self,
+        store: DynOpStore,
+        current_time: Timestamp,
+    ) -> K2Result<()> {
         let new_full_slices_count = self.layout_full_slices(current_time)?;
 
         let mut full_slices_end_timestamp = self.full_slice_end_timestamp();
@@ -343,7 +348,11 @@ impl PartitionedTime {
     /// There is an optimization here to re-use the combined hash if the slice hasn't changed.
     /// That makes the function slightly cheaper to call, when we expect most partial slices to be
     /// stable, especially the larger ones that require more ops to be fetched.
-    async fn update_partials(&mut self, store: DynOpStore, current_time: Timestamp) -> K2Result<()> {
+    async fn update_partials(
+        &mut self,
+        store: DynOpStore,
+        current_time: Timestamp,
+    ) -> K2Result<()> {
         let full_slices_end_timestamp = self.full_slice_end_timestamp();
         let new_partials =
             self.layout_partials(current_time, full_slices_end_timestamp)?;
@@ -365,8 +374,8 @@ impl PartitionedTime {
                 None => {
                     let end = start
                         + Duration::from_secs(
-                        (1u64 << size) * UNIT_TIME.as_secs(),
-                    );
+                            (1u64 << size) * UNIT_TIME.as_secs(),
+                        );
                     combine_op_hashes(
                         store
                             .retrieve_op_hashes_in_time_slice(start, end)
@@ -531,11 +540,7 @@ mod tests {
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
                 // Enough time for all the partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
-                    .as_secs()
-                    + 1,
+                min_recent_time(factor).as_secs() + 1,
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
@@ -555,9 +560,9 @@ mod tests {
         let factor = 7;
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
-                PartitionedTime::new(Timestamp::now(), factor).unwrap().min_recent_time.as_secs() +
+                min_recent_time(factor).as_secs() +
                 // Add enough time to reserve a double slice in the first spot
-            2u32.pow(factor as u32 - 1) as u64 * UNIT_TIME.as_secs()
+            (1u64 << (factor - 1)) * UNIT_TIME.as_secs()
                 + 1,
             ))
         .unwrap();
@@ -578,11 +583,7 @@ mod tests {
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
                 // Enough time for two of each of the partial slices
-                2 * PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
-                    .as_secs()
-                    + 1,
+                2 * min_recent_time(factor).as_secs() + 1,
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
@@ -603,11 +604,7 @@ mod tests {
         let origin_timestamp = (now
             - Duration::from_secs(
                 // Enough time for all the partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
-                    .as_secs()
-                    + 1,
+                min_recent_time(factor).as_secs() + 1,
             ))
         .unwrap();
 
@@ -646,11 +643,9 @@ mod tests {
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
                 // Two full slices
-                2 * 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                2 * full_slice_duration(factor).as_secs() +
                 // Enough time remaining for recent time
-            PartitionedTime::new(Timestamp::now(), factor)
-                .unwrap()
-                .min_recent_time
+                min_recent_time(factor)
                 .as_secs()
                 + 1,
             ))
@@ -676,11 +671,9 @@ mod tests {
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
                 // One full slice
-                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                full_slice_duration(factor).as_secs() +
                 // Enough time remaining for all the single partial slices
-            PartitionedTime::new(Timestamp::now(), factor)
-                .unwrap()
-                .min_recent_time
+                min_recent_time(factor)
                 .as_secs()
                 + 1,
             ))
@@ -724,11 +717,9 @@ mod tests {
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
                 // One full slice
-                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                full_slice_duration(factor).as_secs() +
                 // Enough time remaining for all the single partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
+                min_recent_time(factor)
                     .as_secs()
                 + 1,
             ))
@@ -781,11 +772,9 @@ mod tests {
         let origin_timestamp = (now
             - Duration::from_secs(
                 // One full slice
-                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                full_slice_duration(factor).as_secs() +
                 // Enough time remaining for all the single partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
+                min_recent_time(factor)
                     .as_secs()
                 + 1,
             ))
@@ -852,11 +841,9 @@ mod tests {
         let origin_timestamp = (now
             - Duration::from_secs(
                 // One full slice
-                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                full_slice_duration(factor).as_secs() +
                 // Enough time remaining for all the single partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
+                min_recent_time(factor)
                     .as_secs()
                 + 1,
             ))
@@ -919,12 +906,10 @@ mod tests {
         let origin_timestamp = (now
             - Duration::from_secs(
                 // One full slice
-                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                full_slice_duration(factor).as_secs() +
                 // Enough time remaining for all the single partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
-                    .as_secs()
+                min_recent_time(factor)
+                .as_secs()
                 + 1,
             ))
         .unwrap();
@@ -989,11 +974,9 @@ mod tests {
         let origin_timestamp = (now
             - Duration::from_secs(
                 // One full slice
-                2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
+                full_slice_duration(factor).as_secs() +
                 // Enough time remaining for all the single partial slices
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
+                min_recent_time(factor)
                     .as_secs()
                 + 1,
             ))
@@ -1069,13 +1052,7 @@ mod tests {
         let factor = 7;
         let now = Timestamp::now();
         let origin_timestamp = (now
-            - Duration::from_secs(
-                PartitionedTime::new(Timestamp::now(), factor)
-                    .unwrap()
-                    .min_recent_time
-                    .as_secs()
-                    + 1,
-            ))
+            - Duration::from_secs(min_recent_time(factor).as_secs() + 1))
         .unwrap();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
@@ -1143,9 +1120,7 @@ mod tests {
     fn validate_partial_slices(pt: &PartitionedTime) {
         let mut start_at = pt.origin_timestamp
             + Duration::from_secs(
-                pt.full_slices
-                    * 2u32.pow(pt.factor as u32) as u64
-                    * UNIT_TIME.as_secs(),
+                pt.full_slices * full_slice_duration(pt.factor).as_secs(),
             );
         for (i, slice) in pt.partial_slices.iter().enumerate() {
             if i > 0 {
@@ -1171,9 +1146,20 @@ mod tests {
             // Check that the slices start at the correct time.
             assert_eq!(start_at, slice.start);
 
-            start_at += Duration::from_secs(
-                2u32.pow(slice.size as u32) as u64 * UNIT_TIME.as_secs(),
-            );
+            start_at +=
+                Duration::from_secs((1u64 << slice.size) * UNIT_TIME.as_secs());
         }
+    }
+
+    fn min_recent_time(factor: u8) -> Duration {
+        PartitionedTime::new(Timestamp::now(), factor)
+            .unwrap()
+            .min_recent_time
+    }
+
+    fn full_slice_duration(factor: u8) -> Duration {
+        PartitionedTime::new(Timestamp::now(), factor)
+            .unwrap()
+            .full_slice_duration
     }
 }
