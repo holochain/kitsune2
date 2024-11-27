@@ -46,7 +46,7 @@ impl OpStore for Kitsune2MemoryOpStore {
             Ok(self_lock
                 .op_list
                 .iter()
-                .filter(|op| op.timestamp >= start && op.timestamp <= end)
+                .filter(|op| op.timestamp >= start && op.timestamp < end)
                 .map(|op| op.op_id.clone())
                 .collect())
         }
