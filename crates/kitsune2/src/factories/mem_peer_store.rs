@@ -32,6 +32,15 @@ impl MemPeerStoreConfig {
 }
 
 /// A production-ready memory-based peer store factory.
+///
+/// This stores peer info in an in-memory hash map by [kitsune2_api::AgentId].
+/// The more complex `get_*` functions do aditional filtering at call time.
+///
+/// Legacy Holochain/Kitsune stored peer info in a database, but the frequency
+/// with which it was queried resulted in the need for a memory cache anyways.
+/// For Kitsune2 we're doing away with the persistance step to start with,
+/// and just keeping the peer store in memory. Since the infos expire after
+/// a matter of minutes anyways, there isn't often any use to persisting.
 #[derive(Debug)]
 pub struct MemPeerStoreFactory {}
 
