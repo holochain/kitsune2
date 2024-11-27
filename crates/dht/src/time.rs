@@ -124,11 +124,7 @@ impl PartitionedTime {
     ///
     /// The resulting [PartitionedTime] will be consistent with the store and the current time.
     /// It should be updated again after [PartitionedTime::next_update_at].
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if factor >= 54.
-    pub async fn from_store(
+    pub async fn try_from_store(
         origin_timestamp: Timestamp,
         factor: u8,
         store: DynOpStore,
@@ -268,7 +264,7 @@ impl PartitionedTime {
 
 // Private methods
 impl PartitionedTime {
-    /// Private constructor, see [PartitionedTime::from_store].
+    /// Private constructor, see [PartitionedTime::try_from_store].
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
     /// state with full and partial slices for the current time.
@@ -438,7 +434,7 @@ mod tests {
         let origin_timestamp = Timestamp::now();
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -453,7 +449,7 @@ mod tests {
             (now - Duration::from_secs(UNIT_TIME.as_secs() + 1)).unwrap();
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -494,7 +490,7 @@ mod tests {
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -516,7 +512,7 @@ mod tests {
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -539,7 +535,7 @@ mod tests {
             ))
         .unwrap();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -582,7 +578,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -612,7 +608,7 @@ mod tests {
         store.store_slice_hash(0, vec![1; 64]).await.unwrap();
         store.store_slice_hash(1, vec![1; 64]).await.unwrap();
 
-        let pt = PartitionedTime::from_store(origin_timestamp, factor, store)
+        let pt = PartitionedTime::try_from_store(origin_timestamp, factor, store)
             .await
             .unwrap();
 
@@ -650,7 +646,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::from_store(
+        let pt = PartitionedTime::try_from_store(
             origin_timestamp,
             factor,
             store.clone(),
@@ -707,7 +703,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::from_store(
+        let pt = PartitionedTime::try_from_store(
             origin_timestamp,
             factor,
             store.clone(),
@@ -778,7 +774,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::from_store(
+        let pt = PartitionedTime::try_from_store(
             origin_timestamp,
             factor,
             store.clone(),
@@ -853,7 +849,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut pt = PartitionedTime::from_store(
+        let mut pt = PartitionedTime::try_from_store(
             origin_timestamp,
             factor,
             store.clone(),
@@ -912,7 +908,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut pt = PartitionedTime::from_store(
+        let mut pt = PartitionedTime::try_from_store(
             origin_timestamp,
             factor,
             store.clone(),
@@ -984,7 +980,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut pt = PartitionedTime::from_store(
+        let mut pt = PartitionedTime::try_from_store(
             origin_timestamp,
             factor,
             store.clone(),
