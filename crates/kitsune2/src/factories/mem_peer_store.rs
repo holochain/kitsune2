@@ -4,12 +4,32 @@ use kitsune2_api::{agent::*, config::*, peer_store::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+const MOD_NAME: &str = "MemPeerStore";
+
 /// Configuration parameters for [MemPeerStoreFactory]
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MemPeerStoreConfig {}
+pub struct MemPeerStoreConfig {
+    /// The interval in seconds at which expired infos will be pruned.
+    /// Default: 10s.
+    pub prune_interval_secs: u32,
+}
+
+impl Default for MemPeerStoreConfig {
+    fn default() -> Self {
+        Self {
+            prune_interval_secs: 10,
+        }
+    }
+}
 
 impl ModConfig for MemPeerStoreConfig {}
+
+impl MemPeerStoreConfig {
+    fn prune_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.prune_interval_secs as u64)
+    }
+}
 
 /// A production-ready memory-based peer store factory.
 #[derive(Debug)]
@@ -24,14 +44,21 @@ impl MemPeerStoreFactory {
 }
 
 impl PeerStoreFactory for MemPeerStoreFactory {
-    fn default_config(&self, _config: &mut Config) {}
+    fn default_config(&self, config: &mut Config) -> K2Result<()> {
+        config
+            .add_default_module_config::<MemPeerStoreConfig>(MOD_NAME.into())?;
+        Ok(())
+    }
 
     fn create(
         &self,
-        _builder: Arc<builder::Builder>,
+        builder: Arc<builder::Builder>,
     ) -> BoxFut<'static, K2Result<DynPeerStore>> {
         Box::pin(async move {
-            let out: DynPeerStore = Arc::new(MemPeerStore::new());
+            let config = builder
+                .config
+                .get_module_config::<MemPeerStoreConfig>(MOD_NAME)?;
+            let out: DynPeerStore = Arc::new(MemPeerStore::new(config));
             Ok(out)
         })
     }
@@ -46,8 +73,8 @@ impl std::fmt::Debug for MemPeerStore {
 }
 
 impl MemPeerStore {
-    pub fn new() -> Self {
-        Self(Mutex::new(Inner::new(std::time::Instant::now())))
+    pub fn new(config: MemPeerStoreConfig) -> Self {
+        Self(Mutex::new(Inner::new(config, std::time::Instant::now())))
     }
 }
 
@@ -92,15 +119,21 @@ impl peer_store::PeerStore for MemPeerStore {
 }
 
 struct Inner {
+    config: MemPeerStoreConfig,
     store: HashMap<AgentId, Arc<AgentInfoSigned>>,
     no_prune_until: std::time::Instant,
 }
 
 impl Inner {
-    pub fn new(now_inst: std::time::Instant) -> Self {
+    pub fn new(
+        config: MemPeerStoreConfig,
+        now_inst: std::time::Instant,
+    ) -> Self {
+        let no_prune_until = now_inst + config.prune_interval();
         Self {
+            config,
             store: HashMap::new(),
-            no_prune_until: now_inst + std::time::Duration::from_secs(10),
+            no_prune_until,
         }
     }
 
@@ -109,7 +142,7 @@ impl Inner {
 
         // we only care about not looping on the order of tight cpu cycles
         // even a couple seconds gets us away from this.
-        self.no_prune_until = now_inst + std::time::Duration::from_secs(10)
+        self.no_prune_until = now_inst + self.config.prune_interval()
     }
 
     fn check_prune(&mut self) {

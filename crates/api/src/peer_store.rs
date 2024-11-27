@@ -50,7 +50,7 @@ pub type DynPeerStore = Arc<dyn PeerStore>;
 pub trait PeerStoreFactory: 'static + Send + Sync + std::fmt::Debug {
     /// Help the builder construct a default config from the chosen
     /// module factories.
-    fn default_config(&self, config: &mut config::Config);
+    fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
     /// Construct a peer store instance.
     fn create(

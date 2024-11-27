@@ -20,10 +20,12 @@ impl Builder {
     /// Construct a default config given the configured module factories.
     /// Note, this should be called before freezing the Builder instance
     /// in an Arc<>.
-    pub fn set_default_config(&mut self) {
+    pub fn set_default_config(&mut self) -> K2Result<()> {
         let Self { config, peer_store } = self;
 
-        peer_store.default_config(config);
+        peer_store.default_config(config)?;
+
+        Ok(())
     }
 
     /// This will generate an actual kitsune instance.

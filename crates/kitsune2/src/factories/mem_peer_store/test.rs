@@ -1,6 +1,11 @@
 use super::*;
 use kitsune2_api::id::Id;
 
+#[inline(always)]
+fn create() -> Inner {
+    Inner::new(MemPeerStoreConfig::default(), std::time::Instant::now())
+}
+
 const AGENT_1: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent1")));
 const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
 const SPACE_1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space1")));
@@ -121,14 +126,14 @@ fn arcs_overlap_edge_cases() {
 
 #[test]
 fn empty_store() {
-    let mut s = Inner::new(std::time::Instant::now());
+    let mut s = create();
 
     assert_eq!(0, s.get_all().len());
 }
 
 #[test]
 fn prune_prunes_only_expired_agents() {
-    let mut s = Inner::new(std::time::Instant::now());
+    let mut s = create();
 
     s.insert(vec![
         AgentBuild {
@@ -155,7 +160,7 @@ fn prune_prunes_only_expired_agents() {
 
 #[test]
 fn happy_get() {
-    let mut s = Inner::new(std::time::Instant::now());
+    let mut s = create();
 
     s.insert(vec![AgentBuild {
         agent: Some(AGENT_1),
@@ -169,7 +174,7 @@ fn happy_get() {
 
 #[test]
 fn happy_get_all() {
-    let mut s = Inner::new(std::time::Instant::now());
+    let mut s = create();
 
     s.insert(vec![
         AgentBuild {
@@ -227,7 +232,7 @@ fn fixture_get_overlapping_storage_arc() {
     ];
 
     for (exp, q, arc_list) in F.iter() {
-        let mut s = Inner::new(std::time::Instant::now());
+        let mut s = create();
 
         for (arc_name, arc) in arc_list.iter() {
             s.insert(vec![AgentBuild {
@@ -252,7 +257,7 @@ fn fixture_get_overlapping_storage_arc() {
 
 #[test]
 fn fixture_get_near_location() {
-    let mut s = Inner::new(std::time::Instant::now());
+    let mut s = create();
 
     for idx in 0..8 {
         let loc = (u32::MAX / 8) * idx;
