@@ -620,14 +620,15 @@ fn default_storage_rollover() {
 
 #[test]
 fn multi_thread_stress() {
-    let s = BootstrapSrv::new(Config::testing()).unwrap();
+    let config = Config::testing();
+    let s = BootstrapSrv::new(config).unwrap();
     let addr = s.listen_addr();
 
     let start = std::time::Instant::now();
 
     // the testing config has a small number worker threads (currently 2).
     // Read and write with more than that.
-    let worker_count = Config::testing().worker_thread_count as u32;
+    let worker_count = config.worker_thread_count as u32;
     let t_w_count = worker_count * 8;
     let t_r_count = worker_count * 16;
 
