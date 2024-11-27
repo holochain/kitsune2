@@ -18,6 +18,11 @@
 //! 2^(factor - 1) * [UNIT_TIME] down to 2^0 * [UNIT_TIME] (i.e. [UNIT_TIME]). There is some
 //! amount of time left over that cannot be partitioned into smaller slices.
 //!
+//! > Note: The factor is used with durations and the code needs to be able to do arithmetic with
+//!   it, so the factor has a maximum value of 53. The factor also has a minimum value of 1,
+//!   though values lower than 4 are effectively meaningless. Consider choosing a factor that
+//!   results in a meaningful split between recent time and historical, full slices.
+//!
 //! Because recent time is expected to change more frequently, combined hashes for partial slices
 //! are stored in memory. Full slices are stored in the Kitsune2 op store.
 //!
