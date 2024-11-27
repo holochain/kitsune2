@@ -34,7 +34,8 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
 
     /// Get a list of agents sorted by nearness to a target basis location.
-    /// If the
+    /// Offline (tombstoned) agents, and agents with zero arcs are not
+    /// included in the returned list.
     fn get_near_location(
         &self,
         loc: u32,
