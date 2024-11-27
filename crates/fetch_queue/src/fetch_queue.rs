@@ -18,21 +18,12 @@ impl FetchQueueT for FetchQueue {
         });
         self.sources.insert(source);
     }
-}
 
-impl FetchQueue {
-    pub fn new() -> Self {
-        Self {
-            ops: Vec::new(),
-            sources: HashSet::new(),
-        }
-    }
-
-    pub fn get_ops_to_fetch(&self) -> Vec<OpId> {
+    fn get_ops_to_fetch(&self) -> Vec<OpId> {
         self.ops.clone()
     }
 
-    pub fn get_random_source(&self) -> Option<AgentId> {
+    fn get_random_source(&self) -> Option<AgentId> {
         if self.sources.is_empty() {
             None
         } else {
@@ -43,9 +34,14 @@ impl FetchQueue {
                 .map(|agent_id| agent_id.clone())
         }
     }
+}
 
-    pub fn is_empty(&self) -> bool {
-        self.ops.is_empty()
+impl FetchQueue {
+    pub fn new() -> Self {
+        Self {
+            ops: Vec::new(),
+            sources: HashSet::new(),
+        }
     }
 }
 
