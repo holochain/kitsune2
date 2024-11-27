@@ -146,7 +146,7 @@ impl PartitionedTime {
         })?;
 
         if pt.full_slices > 0 && recent_time < pt.min_recent_time {
-            return Err(K2Error::other("Not enough recent time reserved, either the clock is is wrong or this is a bug"));
+            return Err(K2Error::other("Not enough recent time reserved, either the clock is wrong or this is a bug"));
         }
 
         // Update the state for the current time. The stored slices might be out of date.
