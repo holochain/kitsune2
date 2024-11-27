@@ -24,7 +24,10 @@
 //!   open a new tempfile for writing.
 //! - The older read handles will persist the existence of the older tempfiles
 //!   until the last read reference is dropped, at which point the tempfile
-//!   will be cleaned up by the os.
+//!   will be cleaned up by the os. The drop impls on the
+//!   [tempfile::NamedTempFile] instances themselves will attempt the cleanup.
+//!   If we find some systems (looking at you Windows...) fail to do the
+//!   cleanup, we can add something more explicit in our code here.
 //! - We can trust these files will cycle through at a rate similar to the
 //!   max expiration time on the infos they contain (30 minutes).
 

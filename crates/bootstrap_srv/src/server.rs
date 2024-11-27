@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::*;
 use tiny_http::*;
 
-/// Don't allow created_at to be greater or less than this far away from now.
+/// Don't allow created_at to be greater than this far away from now.
 /// 3 minutes.
 const CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS: i64 =
     std::time::Duration::from_secs(60 * 3).as_micros() as i64;
@@ -14,6 +14,15 @@ const CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS: i64 =
 /// 30 minutes.
 const EXPIRES_AT_DURATION_MAX_ALLOWED_MICROS: i64 =
     std::time::Duration::from_secs(60 * 30).as_micros() as i64;
+
+/// Print out a message if this thread dies.
+struct ThreadGuard(&'static str);
+
+impl Drop for ThreadGuard {
+    fn drop(&mut self) {
+        eprintln!("{}", self.0);
+    }
+}
 
 /// An actual kitsune2_bootstrap_srv server instance.
 ///
@@ -28,10 +37,7 @@ pub struct BootstrapSrv {
 
 impl Drop for BootstrapSrv {
     fn drop(&mut self) {
-        self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
-        for worker in self.workers.drain(..) {
-            let _ = worker.join().expect("Failure shutting down worker thread");
-        }
+        let _ = self.shutdown();
     }
 }
 
@@ -91,6 +97,23 @@ impl BootstrapSrv {
         })
     }
 
+    /// Shutdown the server, returning an error result if any
+    /// of the worker threads had panicked.
+    pub fn shutdown(&mut self) -> std::io::Result<()> {
+        let mut is_err = false;
+        self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
+        for worker in self.workers.drain(..) {
+            if worker.join().is_err() {
+                is_err = true;
+            }
+        }
+        if is_err {
+            Err(std::io::Error::other("Failure shutting down worker thread"))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Get the bound listening address of this server.
     pub fn listen_addr(&self) -> std::net::SocketAddr {
         self.addr
@@ -102,6 +125,8 @@ fn prune_worker(
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
+    let _g = ThreadGuard("WARN: prune_worker thread has ended");
+
     let mut last_check = std::time::Instant::now();
 
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
@@ -124,6 +149,8 @@ fn worker(
     server: Arc<Server>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
+    let _g = ThreadGuard("WARN: worker thread has ended");
+
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
         let req = match server.recv_timeout(config.request_listen_duration)? {
             Some(req) => req,
@@ -258,7 +285,7 @@ impl<'lt> Handler<'lt> {
             return Err(std::io::Error::other("InvalidExpiresAt"));
         }
 
-        // validate signature (do this at the end because it's more expensive
+        // validate signature (do this at the end because it's more expensive)
         info.agent
             .verify(info.encoded.as_bytes(), &info.signature)
             .map_err(|err| {

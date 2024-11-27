@@ -1,4 +1,4 @@
-/// An entry with known content.
+/// An entry with known content: [crate::spec#1-types].
 #[derive(Debug)]
 pub struct ParsedEntry {
     /// agent
