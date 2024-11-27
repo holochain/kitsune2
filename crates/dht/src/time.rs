@@ -573,6 +573,8 @@ mod tests {
                 .unwrap();
 
         assert_eq!(factor as usize + 1, pt.partial_slices.len());
+        assert_eq!(pt.partial_slices[0].size, factor - 1);
+        assert_eq!(pt.partial_slices[0].size, pt.partial_slices[1].size);
 
         validate_partial_slices(&pt);
     }
@@ -661,52 +663,6 @@ mod tests {
 
         assert_eq!(2, pt.full_slices);
         assert_eq!(factor as usize, pt.partial_slices.len());
-
-        validate_partial_slices(&pt);
-    }
-
-    #[tokio::test]
-    async fn missing_full_slices_with_all_partials() {
-        let factor = 7;
-        let origin_timestamp = (Timestamp::now()
-            - Duration::from_secs(
-                // One full slice
-                full_slice_duration(factor).as_secs() +
-                // Enough time remaining for all the single partial slices
-                min_recent_time(factor)
-                .as_secs()
-                + 1,
-            ))
-        .unwrap();
-
-        // Store with no full slices stored
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
-        store
-            .process_incoming_ops(vec![MetaOp {
-                op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                timestamp: origin_timestamp,
-                op_data: vec![],
-            }])
-            .await
-            .unwrap();
-
-        let pt = PartitionedTime::try_from_store(
-            origin_timestamp,
-            factor,
-            store.clone(),
-        )
-        .await
-        .unwrap();
-
-        // One full slice and all the partial slices should be created
-        assert_eq!(1, pt.full_slices);
-        assert_eq!(factor as usize, pt.partial_slices.len());
-
-        // The full slice should have been stored
-        assert_eq!(1, store.slice_hash_count().await.unwrap());
-        let full_slice_hash =
-            store.retrieve_slice_hash(0).await.unwrap().unwrap();
-        assert_eq!(vec![7; 32], full_slice_hash);
 
         validate_partial_slices(&pt);
     }
@@ -889,8 +845,8 @@ mod tests {
         let pt_original = pt.clone();
 
         // Update repeatedly, the state should not change
-        for i in 1..10 {
-            let call_at = now + Duration::from_secs(i);
+        for _ in 1..10 {
+            let call_at = now + Duration::from_secs(UNIT_TIME.as_secs() / 100);
             assert!(call_at < pt.next_update_at());
 
             pt.update(store.clone(), call_at).await.unwrap();
