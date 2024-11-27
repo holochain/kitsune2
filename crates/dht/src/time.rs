@@ -474,8 +474,8 @@ mod tests {
             .unwrap();
     }
 
-    #[tokio::test]
-    async fn new() {
+    #[test]
+    fn new() {
         let origin_timestamp = Timestamp::now();
         let factor = 4;
         let pt = PartitionedTime::new(origin_timestamp, factor).unwrap();
