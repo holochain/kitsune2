@@ -184,76 +184,11 @@ impl PartitionedTime {
         store: DynOpStore,
         current_time: Timestamp,
     ) -> K2Result<()> {
-        let mut full_slices_end_timestamp = self.full_slice_end_timestamp();
-
-        let recent_time =
-            (current_time - full_slices_end_timestamp).map_err(|_| {
-                K2Error::other(
-                    "Current time is before the complete time slice boundary",
-                )
-            })?;
-
         // Check if there is enough time to allocate new full slices
-        let new_full_slices_count = if recent_time > self.min_recent_time {
-            // Rely on integer rounding to get the correct number of full slices
-            // that need adding.
-            (recent_time - self.min_recent_time).as_secs()
-                / (self.full_slice_duration.as_secs())
-        } else {
-            0
-        };
+        self.update_full_slice_hashes(store.clone(), current_time).await?;
 
-        for _ in 0..new_full_slices_count {
-            // Store the hash of the full slice
-            let op_hashes = store
-                .retrieve_op_hashes_in_time_slice(
-                    full_slices_end_timestamp,
-                    full_slices_end_timestamp + self.full_slice_duration,
-                )
-                .await?;
-
-            let hash = combine_op_hashes(op_hashes);
-
-            store
-                .store_slice_hash(self.full_slices, hash.to_vec())
-                .await?;
-
-            self.full_slices += 1;
-            full_slices_end_timestamp += self.full_slice_duration;
-        }
-
-        let new_partials =
-            self.layout_partials(current_time, full_slices_end_timestamp)?;
-        let old_partials = std::mem::take(&mut self.partial_slices);
-
-        for (start, size) in new_partials.into_iter() {
-            // If this slice didn't change, then we can reuse the hash
-            let maybe_old_hash = old_partials.iter().find_map(|b| {
-                if b.start == start && b.size == size {
-                    Some(b.hash.clone())
-                } else {
-                    None
-                }
-            });
-
-            // Otherwise, we need to get the op hashes for this time slice and combine them
-            let hash = match maybe_old_hash {
-                Some(h) => h,
-                None => {
-                    let end = start
-                        + Duration::from_secs(
-                            (1u64 << size) * UNIT_TIME.as_secs(),
-                        );
-                    combine_op_hashes(
-                        store
-                            .retrieve_op_hashes_in_time_slice(start, end)
-                            .await?,
-                    )
-                }
-            };
-
-            self.partial_slices.push(PartialSlice { start, size, hash })
-        }
+        // Check if there is enough time to allocate new partial slices
+        self.update_partials(store.clone(), current_time).await?;
 
         // There will be a small amount of time left over, which we can't partition into smaller
         // slices. Some amount less than [UNIT_TIME] will be left over.
@@ -301,6 +236,64 @@ impl PartitionedTime {
         self.origin_timestamp + full_slices_duration
     }
 
+    /// Figure out how many new full slices need to be allocated.
+    ///
+    /// This is done by checking how many full slices fit between the current end of the last
+    /// full slice and the current time. While also accounting for the minimum recent time.
+    fn layout_full_slices(&self, current_time: Timestamp) -> K2Result<u64> {
+        let full_slices_end_timestamp = self.full_slice_end_timestamp();
+
+        let recent_time =
+            (current_time - full_slices_end_timestamp).map_err(|_| {
+                K2Error::other(
+                    "Current time is before the complete time slice boundary",
+                )
+            })?;
+
+        // Check if there is enough time to allocate new full slices
+        let new_full_slices_count = if recent_time > self.min_recent_time {
+            // Rely on integer rounding to get the correct number of full slices
+            // that need adding.
+            (recent_time - self.min_recent_time).as_secs()
+                / (self.full_slice_duration.as_secs())
+        } else {
+            0
+        };
+
+        Ok(new_full_slices_count)
+    }
+
+    /// Update full slice hashes for the current time.
+    ///
+    /// This method will use [PartitionedTime::layout_full_slices] to determine how many new full
+    /// slices should be allocated. It will then fetch the op hashes for each full slice and
+    /// combine them into a single hash. That combined hash is then stored on the host.
+    async fn update_full_slice_hashes(&mut self, store: DynOpStore, current_time: Timestamp) -> K2Result<()> {
+        let new_full_slices_count = self.layout_full_slices(current_time)?;
+
+        let mut full_slices_end_timestamp = self.full_slice_end_timestamp();
+        for _ in 0..new_full_slices_count {
+            // Store the hash of the full slice
+            let op_hashes = store
+                .retrieve_op_hashes_in_time_slice(
+                    full_slices_end_timestamp,
+                    full_slices_end_timestamp + self.full_slice_duration,
+                )
+                .await?;
+
+            let hash = combine_op_hashes(op_hashes);
+
+            store
+                .store_slice_hash(self.full_slices, hash.to_vec())
+                .await?;
+
+            self.full_slices += 1;
+            full_slices_end_timestamp += self.full_slice_duration;
+        }
+
+        Ok(())
+    }
+
     /// Layout the partial slices for the given time range.
     ///
     /// Tries to allocate as many large slices as possible to fill the space.
@@ -339,6 +332,53 @@ impl PartitionedTime {
         }
 
         Ok(partials)
+    }
+
+    /// Update the partial slices for the current time.
+    ///
+    /// This method will use [PartitionedTime::layout_partials] to determine how to partition
+    /// recent time into partial slices. It will then fetch the op hashes for each partial slice
+    /// and combine them into a single hash. That combined hash is then stored in memory.
+    ///
+    /// There is an optimization here to re-use the combined hash if the slice hasn't changed.
+    /// That makes the function slightly cheaper to call, when we expect most partial slices to be
+    /// stable, especially the larger ones that require more ops to be fetched.
+    async fn update_partials(&mut self, store: DynOpStore, current_time: Timestamp) -> K2Result<()> {
+        let full_slices_end_timestamp = self.full_slice_end_timestamp();
+        let new_partials =
+            self.layout_partials(current_time, full_slices_end_timestamp)?;
+        let old_partials = std::mem::take(&mut self.partial_slices);
+
+        for (start, size) in new_partials.into_iter() {
+            // If this slice didn't change, then we can reuse the hash
+            let maybe_old_hash = old_partials.iter().find_map(|b| {
+                if b.start == start && b.size == size {
+                    Some(b.hash.clone())
+                } else {
+                    None
+                }
+            });
+
+            // Otherwise, we need to get the op hashes for this time slice and combine them
+            let hash = match maybe_old_hash {
+                Some(h) => h,
+                None => {
+                    let end = start
+                        + Duration::from_secs(
+                        (1u64 << size) * UNIT_TIME.as_secs(),
+                    );
+                    combine_op_hashes(
+                        store
+                            .retrieve_op_hashes_in_time_slice(start, end)
+                            .await?,
+                    )
+                }
+            };
+
+            self.partial_slices.push(PartialSlice { start, size, hash })
+        }
+
+        Ok(())
     }
 }
 
