@@ -618,13 +618,11 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await
@@ -695,7 +693,6 @@ mod tests {
                 op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                 timestamp: origin_timestamp,
                 op_data: vec![],
-                op_flags: Default::default(),
             }])
             .await
             .unwrap();
@@ -745,13 +742,11 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await
@@ -804,25 +799,21 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await
@@ -879,25 +870,21 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await
@@ -950,13 +937,11 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
                     timestamp: (now - UNIT_TIME).unwrap(),
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await
@@ -980,7 +965,6 @@ mod tests {
                 op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
                 timestamp: Timestamp::now(),
                 op_data: vec![],
-                op_flags: Default::default(),
             }])
             .await
             .unwrap();
@@ -1022,13 +1006,11 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await
@@ -1054,7 +1036,6 @@ mod tests {
                 op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
                 timestamp: pt.full_slice_end_timestamp(), // Start of the next full slice
                 op_data: vec![],
-                op_flags: Default::default(),
             }])
             .await
             .unwrap();
@@ -1116,13 +1097,11 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
                     timestamp: origin_timestamp,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 // Store two new ops at the origin timestamp plus one full time slice,
                 // to go into the second complete slice
@@ -1130,13 +1109,11 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::from(vec![11; 32])),
                     timestamp: origin_timestamp + pt.full_slice_duration,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
                 MetaOp {
                     op_id: OpId::from(bytes::Bytes::from(vec![37; 32])),
                     timestamp: origin_timestamp + pt.full_slice_duration,
                     op_data: vec![],
-                    op_flags: Default::default(),
                 },
             ])
             .await

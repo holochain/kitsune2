@@ -23,9 +23,6 @@ pub struct MetaOp {
 
     /// The actual op data.
     pub op_data: Vec<u8>,
-
-    /// Crdt-style add-only opaque implementor-use flags.
-    pub op_flags: std::collections::HashSet<String>,
 }
 
 impl Ord for MetaOp {
