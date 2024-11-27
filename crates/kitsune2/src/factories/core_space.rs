@@ -35,29 +35,37 @@ impl SpaceFactory for CoreSpaceFactory {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
+        _handler: DynSpaceHandler,
+        _space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
             let config = builder
                 .config
                 .get_module_config::<CoreSpaceConfig>(MOD_NAME)?;
-            let out: DynSpace = Arc::new(CoreSpace::new(config));
+            let peer_store = builder.peer_store.create(builder.clone()).await?;
+            let out: DynSpace = Arc::new(CoreSpace::new(config, peer_store));
             Ok(out)
         })
     }
 }
 
 #[derive(Debug)]
-struct CoreSpace;
+struct CoreSpace {
+    peer_store: peer_store::DynPeerStore,
+}
 
 impl CoreSpace {
-    pub fn new(_config: CoreSpaceConfig) -> Self {
-        Self
+    pub fn new(
+        _config: CoreSpaceConfig,
+        peer_store: peer_store::DynPeerStore,
+    ) -> Self {
+        Self { peer_store }
     }
 }
 
 impl Space for CoreSpace {
     fn peer_store(&self) -> &peer_store::DynPeerStore {
-        todo!()
+        &self.peer_store
     }
 
     fn local_agent_join(
@@ -68,6 +76,14 @@ impl Space for CoreSpace {
     }
 
     fn local_agent_leave(&self, _local_agent: id::AgentId) -> BoxFut<'_, ()> {
+        Box::pin(async move { todo!() })
+    }
+
+    fn send_message(
+        &self,
+        _peer: AgentId,
+        _data: bytes::Bytes,
+    ) -> BoxFut<'_, ()> {
         Box::pin(async move { todo!() })
     }
 }
