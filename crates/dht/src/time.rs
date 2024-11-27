@@ -133,7 +133,7 @@ impl PartitionedTime {
         factor: u8,
         store: DynOpStore,
     ) -> K2Result<Self> {
-        let mut pt = Self::new(origin_timestamp, factor);
+        let mut pt = Self::new(origin_timestamp, factor)?;
 
         pt.full_slices = store.slice_hash_count().await?;
 
@@ -272,8 +272,8 @@ impl PartitionedTime {
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
     /// state with full and partial slices for the current time.
-    fn new(origin_timestamp: Timestamp, factor: u8) -> Self {
-        Self {
+    fn new(origin_timestamp: Timestamp, factor: u8) -> K2Result<Self> {
+        Ok(Self {
             origin_timestamp,
             factor,
             full_slices: 0,
@@ -282,10 +282,10 @@ impl PartitionedTime {
             // so compute it on construction.
             // Note that `- 1` is because the first partial slice is half the size of a full slice,
             // so we actually want to calculate to `factor - 1`.
-            min_recent_time: residual_duration_for_factor(factor - 1),
+            min_recent_time: residual_duration_for_factor(factor - 1)?,
             // Immediately requires an update, any time in the past will do
             next_update_at: Timestamp::from_micros(0),
-        }
+        })
     }
 
     /// The timestamp at which the last full slice ends.
@@ -318,14 +318,15 @@ impl PartitionedTime {
             // then add two slices of that size, otherwise add one slice of that size
             let slice_size =
                 Duration::from_secs((1u64 << i) * UNIT_TIME.as_secs());
-            let slice_count =
-                if recent_time > residual_duration_for_factor(i) + slice_size {
-                    2
-                } else if recent_time > slice_size {
-                    1
-                } else {
-                    continue;
-                };
+            let slice_count = if recent_time
+                > residual_duration_for_factor(i)? + slice_size
+            {
+                2
+            } else if recent_time > slice_size {
+                1
+            } else {
+                continue;
+            };
 
             for _ in 0..slice_count {
                 partials.push((start_at, i));
@@ -343,11 +344,13 @@ impl PartitionedTime {
 /// The duration is computed as the sum of the powers of two from 0 to the factor, multiplied by
 /// the [UNIT_TIME].
 ///
-/// Panics if the factor is greater than 53.
+/// Returns an error if the factor is 54 or higher, as that would overflow the duration.
 /// Note that the maximum factor changes if the [UNIT_TIME] is changed.
-fn residual_duration_for_factor(factor: u8) -> Duration {
+fn residual_duration_for_factor(factor: u8) -> K2Result<Duration> {
     if factor >= 54 {
-        panic!("Factor must be less than 54");
+        return Err(K2Error::other(
+            "Time partitioning factor must be less than 54",
+        ));
     }
 
     let mut sum = 1;
@@ -355,7 +358,7 @@ fn residual_duration_for_factor(factor: u8) -> Duration {
         sum |= 1u64 << i;
     }
 
-    Duration::from_secs(sum * UNIT_TIME.as_secs())
+    Ok(Duration::from_secs(sum * UNIT_TIME.as_secs()))
 }
 
 /// Combine a series of op hashes into a single hash.
@@ -390,32 +393,40 @@ mod tests {
 
     #[test]
     fn residual() {
-        assert_eq!(UNIT_TIME, residual_duration_for_factor(0));
-        assert_eq!((2 + 1) * UNIT_TIME, residual_duration_for_factor(1));
-        assert_eq!((4 + 2 + 1) * UNIT_TIME, residual_duration_for_factor(2));
+        assert_eq!(UNIT_TIME, residual_duration_for_factor(0).unwrap());
+        assert_eq!(
+            (2 + 1) * UNIT_TIME,
+            residual_duration_for_factor(1).unwrap()
+        );
+        assert_eq!(
+            (4 + 2 + 1) * UNIT_TIME,
+            residual_duration_for_factor(2).unwrap()
+        );
         assert_eq!(
             (32 + 16 + 8 + 4 + 2 + 1) * UNIT_TIME,
-            residual_duration_for_factor(5)
+            residual_duration_for_factor(5).unwrap()
         );
 
         let mask = 0b1111111111000000u16;
         assert_eq!(
             Duration::from_secs(!((mask as u64) << 48) * UNIT_TIME.as_secs()),
-            residual_duration_for_factor(53)
+            residual_duration_for_factor(53).unwrap()
         );
     }
 
-    #[should_panic(expected = "Factor must be less than 54")]
+    #[should_panic(expected = "Time partitioning factor must be less than 54")]
     #[test]
     fn max_residual() {
-        residual_duration_for_factor(54);
+        residual_duration_for_factor(54)
+            .map_err(|e| e.to_string())
+            .unwrap();
     }
 
     #[tokio::test]
     async fn new() {
         let origin_timestamp = Timestamp::now();
         let factor = 4;
-        let pt = PartitionedTime::new(origin_timestamp, factor);
+        let pt = PartitionedTime::new(origin_timestamp, factor).unwrap();
 
         // Full slices would have size 2^4 = 16, so we should reserve space for at least one
         // of each smaller slice size
@@ -476,6 +487,7 @@ mod tests {
             - Duration::from_secs(
                 // Enough time for all the partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                     + 1,
@@ -497,7 +509,7 @@ mod tests {
         let factor = 7;
         let origin_timestamp = (Timestamp::now()
             - Duration::from_secs(
-                PartitionedTime::new(Timestamp::now(), factor).min_recent_time.as_secs() +
+                PartitionedTime::new(Timestamp::now(), factor).unwrap().min_recent_time.as_secs() +
                 // Add enough time to reserve a double slice in the first spot
             2u32.pow(factor as u32 - 1) as u64 * UNIT_TIME.as_secs()
                 + 1,
@@ -520,6 +532,7 @@ mod tests {
             - Duration::from_secs(
                 // Enough time for two of each of the partial slices
                 2 * PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                     + 1,
@@ -543,6 +556,7 @@ mod tests {
             - Duration::from_secs(
                 // Enough time for all the partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                     + 1,
@@ -588,6 +602,7 @@ mod tests {
                 2 * 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for recent time
             PartitionedTime::new(Timestamp::now(), factor)
+                .unwrap()
                 .min_recent_time
                 .as_secs()
                 + 1,
@@ -616,6 +631,7 @@ mod tests {
                 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for all the single partial slices
             PartitionedTime::new(Timestamp::now(), factor)
+                .unwrap()
                 .min_recent_time
                 .as_secs()
                 + 1,
@@ -664,6 +680,7 @@ mod tests {
                 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for all the single partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                 + 1,
@@ -722,6 +739,7 @@ mod tests {
                 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for all the single partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                 + 1,
@@ -796,6 +814,7 @@ mod tests {
                 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for all the single partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                 + 1,
@@ -866,6 +885,7 @@ mod tests {
                 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for all the single partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                 + 1,
@@ -938,6 +958,7 @@ mod tests {
                 2u32.pow(factor as u32) as u64 * UNIT_TIME.as_secs() +
                 // Enough time remaining for all the single partial slices
                 PartitionedTime::new(Timestamp::now(), factor)
+                    .unwrap()
                     .min_recent_time
                     .as_secs()
                 + 1,
