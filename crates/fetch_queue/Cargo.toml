@@ -12,7 +12,7 @@ edition = "2021"
 
 [dependencies]
 kitsune2_api = { path = "../api", version = "0.0.1-alpha" }
-
-[dev-dependencies]
 bytes = { workspace = true }
+futures = { workspace = true }
 rand = "0.8.5"
+tokio = { workspace = true, features = ["full"] }
