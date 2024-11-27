@@ -47,7 +47,7 @@ impl std::fmt::Debug for MemPeerStore {
 
 impl MemPeerStore {
     pub fn new() -> Self {
-        Self(Mutex::new(Inner::new()))
+        Self(Mutex::new(Inner::new(std::time::Instant::now())))
     }
 }
 
@@ -97,29 +97,30 @@ struct Inner {
 }
 
 impl Inner {
-    pub fn new() -> Self {
+    pub fn new(now_inst: std::time::Instant) -> Self {
         Self {
             store: HashMap::new(),
-            no_prune_until: std::time::Instant::now()
-                + std::time::Duration::from_secs(10),
+            no_prune_until: now_inst + std::time::Duration::from_secs(10),
         }
+    }
+
+    fn do_prune(&mut self, now_inst: std::time::Instant, now_ts: Timestamp) {
+        self.store.retain(|_, v| v.expires_at > now_ts);
+
+        // we only care about not looping on the order of tight cpu cycles
+        // even a couple seconds gets us away from this.
+        self.no_prune_until = now_inst + std::time::Duration::from_secs(10)
     }
 
     fn check_prune(&mut self) {
         // use an instant here even though we have to create a Timestamp::now()
         // below, because it's faster to query than SystemTime if we're aborting
-        let inst_now = std::time::Instant::now();
-        if self.no_prune_until > inst_now {
+        let now_inst = std::time::Instant::now();
+        if self.no_prune_until > now_inst {
             return;
         }
 
-        let now = Timestamp::now();
-
-        self.store.retain(|_, v| v.expires_at > now);
-
-        // we only care about not looping on the order of tight cpu cycles
-        // even a couple seconds gets us away from this.
-        self.no_prune_until = inst_now + std::time::Duration::from_secs(10)
+        self.do_prune(now_inst, Timestamp::now());
     }
 
     pub fn insert(&mut self, agent_list: Vec<Arc<AgentInfoSigned>>) {
@@ -200,6 +201,8 @@ impl Inner {
             })
             .collect();
 
+        eprintln!("@@@@@-@@@@@ {out:#?}");
+
         out.sort_by(|a, b| a.0.cmp(&b.0));
 
         out.into_iter()
@@ -257,67 +260,4 @@ fn arcs_overlap(a: BasicArc, b: BasicArc) -> bool {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn dist_edge_cases() {
-        type Dist = u32;
-        type Loc = u32;
-        const F: &[(Dist, Loc, BasicArc)] = &[
-            (u32::MAX, 0, None),
-            (0, 0, Some((0, 1))),
-            (0, u32::MAX, Some((u32::MAX - 1, u32::MAX))),
-            (1, 0, Some((1, 2))),
-            (1, u32::MAX, Some((0, 1))),
-            (1, 0, Some((u32::MAX - 1, u32::MAX))),
-            (0, 0, Some((u32::MAX, 0))),
-            (1, 1, Some((u32::MAX, 0))),
-            (1, u32::MAX - 1, Some((u32::MAX, 0))),
-            (1, 0, Some((u32::MAX, u32::MAX))),
-            (1, u32::MAX, Some((0, 0))),
-            (u32::MAX / 2, u32::MAX / 2, Some((0, 0))),
-            (u32::MAX / 2 + 1, u32::MAX / 2, Some((u32::MAX, u32::MAX))),
-            (1, u32::MAX - 1, Some((u32::MAX, 1))),
-            (0, 0, Some((u32::MAX, 1))),
-        ];
-
-        for (dist, loc, arc) in F.iter() {
-            assert_eq!(*dist, calc_dist(*loc, *arc));
-        }
-    }
-
-    #[test]
-    fn arcs_overlap_edge_cases() {
-        type DoOverlap = bool;
-        const F: &[(DoOverlap, BasicArc, BasicArc)] = &[
-            (false, Some((0, 0)), Some((1, 1))),
-            (false, Some((0, 0)), Some((u32::MAX, u32::MAX))),
-            (true, Some((0, 0)), Some((0, 0))),
-            (true, Some((u32::MAX, u32::MAX)), Some((u32::MAX, u32::MAX))),
-            (true, Some((u32::MAX, 0)), Some((0, 0))),
-            (true, Some((u32::MAX, 0)), Some((u32::MAX, u32::MAX))),
-            (true, Some((u32::MAX, 0)), Some((u32::MAX, u32::MAX))),
-            (true, Some((0, 3)), Some((1, 2))),
-            (true, Some((1, 2)), Some((0, 3))),
-            (true, Some((1, 3)), Some((2, 4))),
-            (true, Some((2, 4)), Some((1, 3))),
-            (true, Some((u32::MAX - 1, 1)), Some((u32::MAX, 0))),
-            (true, Some((u32::MAX, 0)), Some((u32::MAX - 1, 1))),
-            (true, Some((u32::MAX - 1, 0)), Some((u32::MAX, 1))),
-            (true, Some((u32::MAX, 1)), Some((u32::MAX - 1, 0))),
-        ];
-
-        for (do_overlap, a, b) in F.iter() {
-            assert_eq!(*do_overlap, arcs_overlap(*a, *b));
-        }
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn empty_store() {
-        let b = crate::default_builder().build();
-        let s = b.peer_store.create(b.clone()).await.unwrap();
-
-        assert_eq!(0, s.get_all().await.unwrap().len());
-    }
-}
+mod test;
