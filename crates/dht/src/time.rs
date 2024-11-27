@@ -5,8 +5,10 @@
 //! Giving multiple nodes the same time slice boundaries allows them to compute the same combined
 //! hashes, and therefore effectively communicate which of their time slices match and which do not.
 //!
-//! A time slice is defined to be an interval of time that is closed (inclusive) at the start and
-//! exclusive at the end. That is, the time slice includes the start timestamp but not the end.
+//! A time slice is defined to be an interval of time that is closed at the start and
+//! open at the end. That is, an interval [start, end)` where:
+//! - `start` is included in the time slice (inclusive bound)
+//! - `end` is not included in the time slice (exclusive bound)
 //!
 //! Time slices are partitioned into two types: full slices and partial slices. Full slices are
 //! always of a fixed size, while partial slices are of varying sizes. Full slices occupy
