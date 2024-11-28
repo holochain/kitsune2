@@ -689,8 +689,10 @@ dependencies = [
 name = "kitsune2_dht"
 version = "0.0.1-alpha"
 dependencies = [
+ "bytes",
  "kitsune2_api",
  "kitsune2_memory",
+ "tokio",
 ]
 
 [[package]]
