@@ -20,7 +20,10 @@ impl FetchQueueT for FetchQueue {
     }
 
     fn get_ops_to_fetch(&self) -> Vec<OpId> {
-        self.ops.clone()
+        // OpIds are appended to the vector, so the most recently added ones are at the end.
+        // Fetches should prioritize the more recently op ids, as they have a higher chance
+        // of being available.
+        self.ops.clone().into_iter().rev().collect()
     }
 
     fn get_random_source(&self) -> Option<AgentId> {
@@ -60,7 +63,10 @@ mod tests {
         let source = random_agent_id();
         fetch_queue.add_ops(op_list_1.clone(), source);
 
-        assert_eq!(fetch_queue.get_ops_to_fetch(), op_list_1);
+        assert_eq!(
+            fetch_queue.get_ops_to_fetch(),
+            op_list_1.clone().into_iter().rev().collect::<Vec<_>>()
+        );
 
         let op_list_2 = create_op_list(2);
         let source = random_agent_id();
@@ -71,6 +77,7 @@ mod tests {
             op_list_1
                 .into_iter()
                 .chain(op_list_2.into_iter())
+                .rev()
                 .collect::<Vec<_>>()
         );
     }

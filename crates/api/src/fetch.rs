@@ -26,18 +26,3 @@ pub trait FetchTaskT {
     /// Spawn a new fetch task, backed by a fetch queue.
     fn spawn(&self, fetch_queue: DynFetchQueue);
 }
-
-/// Configuration for [`FetchTaskT`].
-pub struct FetchTaskConfig {
-    /// How long to pause after sending a fetch request, before the next attempt.
-    pub pause_between_runs: u64, // in ms
-}
-
-impl FetchTaskConfig {
-    /// Default fetch task config.
-    pub fn default() -> Self {
-        Self {
-            pause_between_runs: 1000 * 5, // 5 seconds
-        }
-    }
-}
