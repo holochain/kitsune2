@@ -35,6 +35,8 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
+pub mod config;
+
 mod error;
 pub use error::*;
 
