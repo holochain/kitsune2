@@ -31,10 +31,7 @@ impl FetchQueueT for FetchQueue {
             None
         } else {
             let mut rng = rand::thread_rng();
-            self.sources
-                .iter()
-                .choose(&mut rng)
-                .map(|agent_id| agent_id.clone())
+            self.sources.iter().choose(&mut rng).cloned()
         }
     }
 }
@@ -45,6 +42,12 @@ impl FetchQueue {
             ops: Vec::new(),
             sources: HashSet::new(),
         }
+    }
+}
+
+impl Default for FetchQueue {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

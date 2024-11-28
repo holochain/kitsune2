@@ -10,9 +10,9 @@ pub struct FetchTaskConfig {
     pub max_ops_to_request: usize,
 }
 
-impl FetchTaskConfig {
+impl Default for FetchTaskConfig {
     /// Default fetch task config.
-    pub fn default() -> Self {
+    fn default() -> Self {
         Self {
             pause_between_runs: 1000 * 5, // 5 seconds
             max_ops_to_request: 100,
@@ -20,6 +20,7 @@ impl FetchTaskConfig {
     }
 }
 
+#[derive(Default)]
 pub struct FetchTask {
     config: FetchTaskConfig,
 }
@@ -33,11 +34,11 @@ impl FetchTaskT for FetchTask {
                 let ops = fetch_queue.get_ops_to_fetch();
                 // Do not attempt to fetch if there are no ops to be fetched.
                 if !ops.is_empty() {
-                    let batch_to_fetch = ops
+                    let _batch_to_fetch = ops
                         .into_iter()
                         .take(max_ops_to_request)
                         .collect::<Vec<_>>();
-                    if let Some(source) = fetch_queue.get_random_source() {
+                    if let Some(_source) = fetch_queue.get_random_source() {
                         todo!()
                     } else {
                         eprintln!("no sources to fetch from in fetch queue");
@@ -47,13 +48,5 @@ impl FetchTaskT for FetchTask {
                     .await;
             }
         });
-    }
-}
-
-impl FetchTask {
-    pub fn new() -> Self {
-        Self {
-            config: FetchTaskConfig::default(),
-        }
     }
 }
