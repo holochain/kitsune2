@@ -36,11 +36,11 @@ impl MemPeerStoreConfig {
 /// This stores peer info in an in-memory hash map by [kitsune2_api::AgentId].
 /// The more complex `get_*` functions do aditional filtering at call time.
 ///
-/// Legacy Holochain/Kitsune stored peer info in a database, but the frequency
-/// with which it was queried resulted in the need for a memory cache anyways.
-/// For Kitsune2 we're doing away with the persistance step to start with,
-/// and just keeping the peer store in memory. Since the infos expire after
-/// a matter of minutes anyways, there isn't often any use to persisting.
+// Legacy Holochain/Kitsune stored peer info in a database, but the frequency
+// with which it was queried resulted in the need for a memory cache anyways.
+// For Kitsune2 we're doing away with the persistance step to start with,
+// and just keeping the peer store in memory. Since the infos expire after
+// a matter of minutes anyways, there isn't often any use to persisting.
 #[derive(Debug)]
 pub struct MemPeerStoreFactory {}
 
@@ -255,6 +255,36 @@ impl Inner {
 /// Get the min distance from a location to an arc in a wrapping u32 space.
 /// This function will only return 0 if the location is covered by the arc.
 /// This function will return u32::MAX if the arc is not set.
+///
+/// All possible cases:
+///
+/// s = arc_start
+/// e = arc_end
+/// l = location
+///
+/// Arc wraps around, loc >= arc_start
+/// |----e-----------s--l--|
+/// 0                          u32::MAX
+///
+/// Arc wraps around, loc <= arc_end
+/// |-l--e-----------s-----|
+/// 0                          u32::MAX
+///
+/// Arc wraps around, loc outside of arc
+/// |----e----l------s-----|
+/// 0                          u32::MAX
+///
+/// Arc does not wrap around, loc inside of arc
+/// |---------s--l---e-----|
+/// 0                          u32::MAX
+///
+/// Arc does not wrap around, loc < arc_start
+/// |-----l---s------e-----|
+/// 0                          u32::MAX
+///
+/// Arc does not wrap around, loc > arc_end
+/// |---------s------e--l--|
+/// 0                          u32::MAX
 fn calc_dist(loc: u32, arc: BasicArc) -> u32 {
     match arc {
         None => u32::MAX,

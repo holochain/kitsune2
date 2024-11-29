@@ -28,7 +28,7 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     /// to gossip (and also the local agent). If there are multiple
     /// local agents in this space, you'll need to call this function
     /// multiple times and union the results.
-    fn get_overlapping_storage_arc(
+    fn get_by_overlapping_storage_arc(
         &self,
         arc: agent::BasicArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
