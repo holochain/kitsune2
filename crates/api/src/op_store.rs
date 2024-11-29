@@ -62,7 +62,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn store_slice_hash(
         &self,
         slice_id: u64,
-        slice_hash: Vec<u8>,
+        slice_hash: bytes::Bytes,
     ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Count the number of stored time slices.
@@ -76,7 +76,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn retrieve_slice_hash(
         &self,
         slice_id: u64,
-    ) -> BoxFuture<'_, K2Result<Option<Vec<u8>>>>;
+    ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
 }
 
 /// Trait-object version of kitsune2 op store.

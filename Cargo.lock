@@ -699,9 +699,9 @@ dependencies = [
 name = "kitsune2_memory"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "futures",
  "kitsune2_api",
- "thiserror",
  "tokio",
 ]
 

@@ -228,7 +228,7 @@ impl PartitionedTime {
 
     /// The timestamp at which the last full slice ends.
     ///
-    /// If there are no full slices, then this is the origin timestamp.
+    /// If there are no full slices, then this is the constant [UNIX_TIMESTAMP].
     fn full_slice_end_timestamp(&self) -> Timestamp {
         let full_slices_duration = Duration::from_secs(
             self.full_slices * self.full_slice_duration.as_secs(),
@@ -287,9 +287,7 @@ impl PartitionedTime {
 
             let hash = combine_op_hashes(op_hashes);
 
-            store
-                .store_slice_hash(self.full_slices, hash.to_vec())
-                .await?;
+            store.store_slice_hash(self.full_slices, hash).await?;
 
             self.full_slices += 1;
             full_slices_end_timestamp += self.full_slice_duration;
@@ -511,8 +509,8 @@ mod tests {
 
         // The partial should be:
         //   - The minimum factor size, and
-        //   - start at the origin time
-        //   - end at the origin time + UNIT_TIME
+        //   - start at the UNIX_TIMESTAMP
+        //   - end at the UNIX_TIMESTAMP+ UNIT_TIME
         assert_eq!(0, pt.partial_slices[0].size);
         assert_eq!(UNIX_TIMESTAMP, pt.partial_slices[0].start);
         assert_eq!(UNIX_TIMESTAMP + UNIT_TIME, pt.partial_slices[0].end());
@@ -631,8 +629,8 @@ mod tests {
                 + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        store.store_slice_hash(0, vec![1; 64]).await.unwrap();
-        store.store_slice_hash(1, vec![1; 64]).await.unwrap();
+        store.store_slice_hash(0, vec![1; 64].into()).await.unwrap();
+        store.store_slice_hash(1, vec![1; 64].into()).await.unwrap();
 
         let pt = PartitionedTime::try_from_store(factor, current_time, store)
             .await
@@ -842,7 +840,7 @@ mod tests {
             );
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        store.store_slice_hash(0, vec![1; 64]).await.unwrap();
+        store.store_slice_hash(0, vec![1; 64].into()).await.unwrap();
         store
             .process_incoming_ops(vec![
                 MetaOp {
@@ -1035,6 +1033,56 @@ mod tests {
             vec![11 ^ 37; 32],
             store.retrieve_slice_hash(1).await.unwrap().unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn compression_all_empty_slices_at_current_time() {
+        let factor = 7;
+        let current_time = Timestamp::now();
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+
+        let mut pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Quick calculation of how many full slices we can fit into the current time, leaving space
+        // for the minimum recent time.
+        // Something like 15k full slices at the time of writing.
+        assert_eq!(
+            (current_time.as_micros() as u128 - pt.min_recent_time.as_micros())
+                / (pt.full_slice_duration.as_micros()),
+            pt.full_slices as u128
+        );
+
+        let slice_hash_count = store.slice_hash_count().await.unwrap();
+        // Should be nothing stored, because we haven't ever created any data.
+        assert_eq!(0, slice_hash_count);
+
+        // Getting some partial slice that doesn't have any data stored will just return `None`
+        let some_slice_hash =
+            store.retrieve_slice_hash(5203984823).await.unwrap();
+        assert!(some_slice_hash.is_none());
+
+        // Now insert an op at the current time
+        store
+            .process_incoming_ops(vec![MetaOp {
+                op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
+                timestamp: Timestamp::now(),
+                op_data: vec![],
+            }])
+            .await
+            .unwrap();
+        // and compute the new state in the future
+        pt.update(Timestamp::now() + 2 * pt.full_slice_duration, store.clone())
+            .await
+            .unwrap();
+
+        // Then a single full slice should have been created
+        assert!(store.slice_hash_count().await.unwrap() > 15_000);
     }
 
     fn validate_partial_slices(pt: &PartitionedTime) {
