@@ -43,7 +43,7 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// receiving messages and exchanging dht information.
     /// Before the agent is actually removed a tombstone agent info will
     /// be generated and sent to the bootstrap server. A best effort will
-    /// be made to publish this tomstone to peers in the space as well.
+    /// be made to publish this tombstone to peers in the space as well.
     fn local_agent_leave(&self, local_agent: id::AgentId) -> BoxFut<'_, ()>;
 
     /// Send a message to a remote peer. The future returned from this
