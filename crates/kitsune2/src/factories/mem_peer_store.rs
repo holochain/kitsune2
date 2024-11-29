@@ -168,9 +168,11 @@ impl Inner {
     pub fn insert(&mut self, agent_list: Vec<Arc<AgentInfoSigned>>) {
         self.check_prune();
 
+        let now = Timestamp::now();
+
         for agent in agent_list {
             // Don't insert expired infos.
-            if agent.expires_at < Timestamp::now() {
+            if agent.expires_at < now {
                 continue;
             }
 
