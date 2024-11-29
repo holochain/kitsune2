@@ -1,7 +1,7 @@
 [package]
-name = "kitsune2_api"
+name = "kitsune2_dht"
 version = "0.0.1-alpha"
-description = "p2p / dht communication framework api"
+description = "The DHT model for kitsune2"
 license = "Apache-2.0"
 homepage = "https://github.com/holochain/kitsune2"
 documentation = "https://docs.rs/kitsune2_api"
@@ -11,12 +11,10 @@ categories = ["network-programming"]
 edition = "2021"
 
 [dependencies]
-base64 = { workspace = true }
+kitsune2_api = { workspace = true }
 bytes = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-futures = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
+kitsune2_memory = { workspace = true }
+
+tokio = { workspace = true, features = ["macros", "rt"] }
