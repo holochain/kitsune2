@@ -26,8 +26,6 @@ clap = "4.5.21"
 ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
-# internal dependency
-kitsune2_api = { version = "0.0.1-alpha", path = "crates/api" }
 # bootstrap_srv uses this to determine worker thread count.
 num_cpus = "1.16.0"
 # kitsune types need to be serializable for network transmission.

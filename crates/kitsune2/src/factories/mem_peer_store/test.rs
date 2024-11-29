@@ -199,7 +199,7 @@ fn happy_get_all() {
 }
 
 #[test]
-fn fixture_get_overlapping_storage_arc() {
+fn fixture_get_by_overlapping_storage_arc() {
     const fn u32f(f: f64) -> u32 {
         (u32::MAX as f64 * f) as u32
     }
@@ -244,7 +244,7 @@ fn fixture_get_overlapping_storage_arc() {
         }
 
         let mut got = s
-            .get_overlapping_storage_arc(*q)
+            .get_by_overlapping_storage_arc(*q)
             .into_iter()
             .map(|info| info.url.as_ref().unwrap().clone())
             .collect::<Vec<_>>();
