@@ -2,27 +2,23 @@
 
 use std::sync::Arc;
 
-use crate::{AgentId, OpId};
+use crate::{AgentId, BoxFut, K2Result, OpId};
 
 /// Trait for implementing a fetch queue for managing ops
 /// to be fetched from other agents.
-pub trait FetchQueueT: 'static + Send + Sync {
+pub trait FetchQueue: 'static + Send + Sync {
     /// Add op ids to be fetched to the queue.
     fn add_ops(&mut self, op_list: Vec<OpId>, source: AgentId);
-
-    /// Get a list of op ids to be fetched.
-    fn get_ops_to_fetch(&self) -> Vec<OpId>;
-
-    /// Get a random agent that holds the ops to be fetched.
-    fn get_random_source(&self) -> Option<AgentId>;
 }
 
-/// Trait-object fetch queue instance.
-pub type DynFetchQueue = Arc<dyn FetchQueueT>;
+/// Trait object [FetchQueue].
+pub type DynFetchQueue = Arc<dyn FetchQueue>;
 
-/// Trait for implementing a fetch task that periodically attempts to
-/// send op fetch requests to another agent.
-pub trait FetchTaskT {
-    /// Spawn a new fetch task, backed by a fetch queue.
-    fn spawn(&self, fetch_queue: DynFetchQueue);
+/// A factory for creating FetchQueue instances.
+pub trait FetchQueueFactory: 'static + Send + Sync + std::fmt::Debug {
+    /// Construct a fetch queue instance.
+    fn create(&self) -> BoxFut<'static, K2Result<DynFetchQueue>>;
 }
+
+/// Trait object [FetchQueueFactory].
+pub type DynFetchQueueFactory = Arc<dyn FetchQueueFactory>;

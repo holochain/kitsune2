@@ -1,15 +1,28 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
-use kitsune2_api::{fetch::FetchQueueT, AgentId, OpId};
-use rand::seq::IteratorRandom;
+use kitsune2_api::{
+    fetch::{
+        DynFetchQueue, DynFetchQueueFactory, FetchQueue, FetchQueueFactory,
+    },
+    AgentId, BoxFut, K2Result, OpId,
+};
 
 #[derive(Debug)]
-pub struct FetchQueue {
+struct Q {
     ops: Vec<OpId>,
     sources: HashSet<AgentId>,
 }
 
-impl FetchQueueT for FetchQueue {
+impl Q {
+    fn new() -> Self {
+        Self {
+            ops: Vec::new(),
+            sources: HashSet::new(),
+        }
+    }
+}
+
+impl FetchQueue for Q {
     fn add_ops(&mut self, op_list: Vec<OpId>, source: AgentId) {
         op_list.into_iter().for_each(|op| {
             if !self.ops.contains(&op) {
@@ -18,36 +31,20 @@ impl FetchQueueT for FetchQueue {
         });
         self.sources.insert(source);
     }
+}
 
-    fn get_ops_to_fetch(&self) -> Vec<OpId> {
-        // OpIds are appended to the vector, so the most recently added ones are at the end.
-        // Fetches should prioritize the more recently op ids, as they have a higher chance
-        // of being available.
-        self.ops.clone().into_iter().rev().collect()
-    }
+#[derive(Debug)]
+pub struct QFactory {}
 
-    fn get_random_source(&self) -> Option<AgentId> {
-        if self.sources.is_empty() {
-            None
-        } else {
-            let mut rng = rand::thread_rng();
-            self.sources.iter().choose(&mut rng).cloned()
-        }
+impl QFactory {
+    fn create() -> DynFetchQueueFactory {
+        Arc::new(Self {})
     }
 }
 
-impl FetchQueue {
-    pub fn new() -> Self {
-        Self {
-            ops: Vec::new(),
-            sources: HashSet::new(),
-        }
-    }
-}
-
-impl Default for FetchQueue {
-    fn default() -> Self {
-        Self::new()
+impl FetchQueueFactory for QFactory {
+    fn create(&self) -> BoxFut<'static, K2Result<DynFetchQueue>> {
+        Box::pin(async move { Arc::new(Q::new()) })
     }
 }
 
@@ -57,7 +54,7 @@ mod tests {
     use kitsune2_api::{id::Id, AgentId, OpId};
     use rand::Rng;
 
-    use crate::fetch_queue::{FetchQueue, FetchQueueT};
+    use crate::fetch_queue::FetchQueue;
 
     #[test]
     fn add_ops() {
