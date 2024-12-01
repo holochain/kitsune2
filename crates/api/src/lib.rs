@@ -46,6 +46,8 @@ pub use id::{AgentId, OpId, SpaceId};
 mod timestamp;
 pub use timestamp::*;
 
+pub mod builder;
+
 pub mod agent;
 
 pub mod fetch;

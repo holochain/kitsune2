@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::{AgentId, BoxFut, K2Result, OpId};
+use crate::{builder, config, AgentId, BoxFut, K2Result, OpId};
 
 /// Trait for implementing a fetch queue for managing ops
 /// to be fetched from other agents.
@@ -16,8 +16,15 @@ pub type DynFetchQueue = Arc<dyn FetchQueue>;
 
 /// A factory for creating FetchQueue instances.
 pub trait FetchQueueFactory: 'static + Send + Sync + std::fmt::Debug {
+    /// Help the builder construct a default config from the chosen
+    /// module factories.
+    fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
+
     /// Construct a fetch queue instance.
-    fn create(&self) -> BoxFut<'static, K2Result<DynFetchQueue>>;
+    fn create(
+        &self,
+        builder: Arc<builder::Builder>,
+    ) -> BoxFut<'static, K2Result<DynFetchQueue>>;
 }
 
 /// Trait object [FetchQueueFactory].

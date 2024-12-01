@@ -11,4 +11,3 @@
 //! fetching is executed by the fetch task.
 
 pub mod fetch_queue;
-pub mod fetch_task;
