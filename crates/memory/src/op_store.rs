@@ -88,8 +88,16 @@ impl OpStore for Kitsune2MemoryOpStore {
     /// peers.
     fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>> {
         // +1 to convert from a 0-based index to a count
-        async move { Ok(self.read().await.time_slice_hashes.highest_stored_id.map(|id| id + 1).unwrap_or_default()) }
-            .boxed()
+        async move {
+            Ok(self
+                .read()
+                .await
+                .time_slice_hashes
+                .highest_stored_id
+                .map(|id| id + 1)
+                .unwrap_or_default())
+        }
+        .boxed()
     }
 
     /// Retrieve the hash of a time slice.

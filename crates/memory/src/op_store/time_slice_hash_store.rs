@@ -232,7 +232,9 @@ impl TimeSliceHashStore {
             }
         }
 
-        if highest_stored_id != 0 && highest_stored_id != self.highest_stored_id.unwrap() {
+        if highest_stored_id != 0
+            && highest_stored_id != self.highest_stored_id.unwrap()
+        {
             println!(
                 "highest_stored_id does not match: {} != {:?}",
                 highest_stored_id, self.highest_stored_id
