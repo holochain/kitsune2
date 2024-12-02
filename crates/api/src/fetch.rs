@@ -8,7 +8,11 @@ use crate::{builder, config, AgentId, BoxFut, K2Result, OpId};
 /// to be fetched from other agents.
 pub trait FetchQueue: 'static + Send + Sync {
     /// Add op ids to be fetched to the queue.
-    fn add_ops(&mut self, op_list: Vec<OpId>, source: AgentId);
+    fn add_ops(
+        &mut self,
+        op_list: Vec<OpId>,
+        source: AgentId,
+    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait object [FetchQueue].

@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
+use indexmap::IndexMap;
 use kitsune2_api::{
     builder,
     config::ModConfig,
     fetch::{
         DynFetchQueue, DynFetchQueueFactory, FetchQueue, FetchQueueFactory,
     },
+    tx::Tx,
     AgentId, BoxFut, K2Result, OpId,
 };
+use tokio::sync::Mutex;
 
 const MOD_NAME: &str = "FetchQueue";
 
@@ -17,6 +20,8 @@ const MOD_NAME: &str = "FetchQueue";
 pub struct QConfig {
     /// How many parallel fetch requests for actual data we should have at once. Default: 2.  
     parallel_request_count: u8,
+    /// Duration in ms to pause between fetch loop iterations. Default: 100.
+    fetch_loop_pause: u64,
     /// Max hash count to request from one peer at a time. Default: 16.  
     max_hash_count: u8,
     /// Max byte count that we want to get in a single request. Default: 10MiB.  
@@ -30,6 +35,7 @@ impl Default for QConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
+            fetch_loop_pause: 100, // in ms
             max_hash_count: 16,
             max_byte_count: 10 * 1024,
         }
@@ -42,6 +48,9 @@ impl QConfig {
     pub fn parallel_request_count(&self) -> u8 {
         self.parallel_request_count
     }
+    pub fn fetch_loop_pause(&self) -> u64 {
+        self.fetch_loop_pause
+    }
     pub fn max_hash_count(&self) -> u8 {
         self.max_hash_count
     }
@@ -50,29 +59,97 @@ impl QConfig {
     }
 }
 
+type DynTx = Arc<Mutex<dyn Tx>>;
+
 #[derive(Debug)]
-struct Q(Inner);
+struct Q(Arc<Mutex<Inner>>);
 
 impl Q {
     fn new(config: QConfig) -> Self {
-        Self(Inner::new(config))
+        Self(Arc::new(Mutex::new(Inner::new(config))))
+    }
+
+    pub fn spawn_fetch_loop(&self, tx: DynTx) {
+        tokio::spawn({
+            let inner = self.0.clone();
+            let tx = tx.clone();
+            async move {
+                loop {
+                    let mut inner = inner.lock().await;
+                    let QConfig {
+                        parallel_request_count,
+                        max_hash_count,
+                        max_byte_count,
+                        fetch_loop_pause,
+                    } = inner.config;
+                    let num_requests = if parallel_request_count
+                        > inner.current_request_count
+                    {
+                        parallel_request_count - inner.current_request_count
+                    } else {
+                        0
+                    };
+
+                    for _ in 0..num_requests {
+                        let mut key_to_remove = None;
+                        if let Some((source, op_list)) = inner.state.first_mut()
+                        {
+                            let num_elements =
+                                (max_hash_count as usize).min(op_list.len());
+                            let ops_batch: Vec<_> =
+                                op_list.drain(0..num_elements).collect();
+                            tokio::spawn(tx.lock().await.send_op_request(
+                                source.clone(),
+                                ops_batch,
+                                max_byte_count,
+                            ));
+                            if num_elements < max_hash_count as usize {
+                                key_to_remove = Some(source.clone());
+                            }
+                        }
+
+                        if let Some(key) = key_to_remove {
+                            inner.state.shift_remove_entry(&key);
+                        }
+                    }
+
+                    drop(inner);
+
+                    tokio::time::sleep(Duration::from_millis(fetch_loop_pause))
+                        .await;
+                }
+            }
+        });
     }
 }
 
 impl FetchQueue for Q {
-    fn add_ops(&mut self, op_list: Vec<OpId>, source: AgentId) {
-        todo!()
+    fn add_ops(
+        &mut self,
+        op_list: Vec<OpId>,
+        source: AgentId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            self.0.lock().await.state.insert(source, op_list);
+            Ok(())
+        })
     }
 }
 
 #[derive(Debug)]
 struct Inner {
     config: QConfig,
+    state: IndexMap<AgentId, Vec<OpId>>,
+    current_request_count: u8,
 }
 
 impl Inner {
     fn new(config: QConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            state: IndexMap::new(),
+            current_request_count: 0,
+        }
     }
 }
 
@@ -107,38 +184,4 @@ impl FetchQueueFactory for QFactory {
 }
 
 #[cfg(test)]
-mod tests {
-    use bytes::Bytes;
-    use kitsune2_api::{id::Id, AgentId, OpId};
-    use rand::Rng;
-
-    use crate::fetch_queue::FetchQueue;
-
-    #[test]
-    fn add_ops() {}
-
-    fn random_id() -> Id {
-        let mut rng = rand::thread_rng();
-        let mut bytes = [0u8; 32];
-        rng.fill(&mut bytes);
-        let bytes = Bytes::from(bytes.to_vec());
-        Id(bytes)
-    }
-
-    fn random_op_id() -> OpId {
-        OpId(random_id())
-    }
-
-    fn random_agent_id() -> AgentId {
-        AgentId(random_id())
-    }
-
-    fn create_op_list(num_ops: u16) -> Vec<OpId> {
-        let mut ops = Vec::new();
-        for _ in 0..num_ops {
-            let op = random_op_id();
-            ops.push(op.clone());
-        }
-        ops
-    }
-}
+mod test;
