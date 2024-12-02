@@ -22,11 +22,11 @@ message K2Proto {
 
     // This message is preflight data.
     //
-    // The implementor is responsible
-    // for encoding any module-specific requirements within the data
-    // payload of this message type. For example, if peers are required
-    // to include the "dht_v1" module to communicate with each other,
-    // they should reject preflight to peers that do not include that module.
+    // The implementor is responsible for encoding any module-specific
+    // requirements within the data payload of this message type.
+    // For example, if peers are required to include the "dht_v1" module
+    // to communicate with each other, they should reject preflight to
+    // peers that do not include that module.
     TY_PREFLIGHT = 1;
 
     // This is a notification or fire-and-forget message from a peer.
