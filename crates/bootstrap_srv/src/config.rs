@@ -1,7 +1,7 @@
 //! config types.
 
 /// Configuration for running a BootstrapSrv.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Config {
     /// Worker thread count.
     ///

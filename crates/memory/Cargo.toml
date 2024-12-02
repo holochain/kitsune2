@@ -1,0 +1,13 @@
+[package]
+name = "kitsune2_memory"
+description = "In memory implementation of the kitsune2 api for testing or demonstration"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kitsune2_api = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+
+# Note that this is a dev dependency, which means that this crate should also be considered a dev dependency!
+tokio = { workspace = true, features = ["sync"] }

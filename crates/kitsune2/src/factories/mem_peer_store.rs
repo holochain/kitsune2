@@ -35,12 +35,12 @@ impl MemPeerStoreConfig {
 ///
 /// This stores peer info in an in-memory hash map by [kitsune2_api::AgentId].
 /// The more complex `get_*` functions do aditional filtering at call time.
-///
-/// Legacy Holochain/Kitsune stored peer info in a database, but the frequency
-/// with which it was queried resulted in the need for a memory cache anyways.
-/// For Kitsune2 we're doing away with the persistance step to start with,
-/// and just keeping the peer store in memory. Since the infos expire after
-/// a matter of minutes anyways, there isn't often any use to persisting.
+//
+// Legacy Holochain/Kitsune stored peer info in a database, but the frequency
+// with which it was queried resulted in the need for a memory cache anyways.
+// For Kitsune2 we're doing away with the persistance step to start with,
+// and just keeping the peer store in memory. Since the infos expire after
+// a matter of minutes anyways, there isn't often any use to persisting.
 #[derive(Debug)]
 pub struct MemPeerStoreFactory {}
 
@@ -109,11 +109,11 @@ impl peer_store::PeerStore for MemPeerStore {
         Box::pin(async move { Ok(r) })
     }
 
-    fn get_overlapping_storage_arc(
+    fn get_by_overlapping_storage_arc(
         &self,
         arc: BasicArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get_overlapping_storage_arc(arc);
+        let r = self.0.lock().unwrap().get_by_overlapping_storage_arc(arc);
         Box::pin(async move { Ok(r) })
     }
 
@@ -168,9 +168,11 @@ impl Inner {
     pub fn insert(&mut self, agent_list: Vec<Arc<AgentInfoSigned>>) {
         self.check_prune();
 
+        let now = Timestamp::now();
+
         for agent in agent_list {
             // Don't insert expired infos.
-            if agent.expires_at < Timestamp::now() {
+            if agent.expires_at < now {
                 continue;
             }
 
@@ -197,7 +199,7 @@ impl Inner {
         self.store.values().cloned().collect()
     }
 
-    pub fn get_overlapping_storage_arc(
+    pub fn get_by_overlapping_storage_arc(
         &mut self,
         arc: BasicArc,
     ) -> Vec<Arc<AgentInfoSigned>> {
@@ -255,6 +257,39 @@ impl Inner {
 /// Get the min distance from a location to an arc in a wrapping u32 space.
 /// This function will only return 0 if the location is covered by the arc.
 /// This function will return u32::MAX if the arc is not set.
+///
+/// All possible cases:
+///
+/// ```text
+/// s = arc_start
+/// e = arc_end
+/// l = location
+///
+/// Arc wraps around, loc >= arc_start
+///
+/// |----e-----------s--l--|
+/// 0                      u32::MAX
+///
+/// Arc wraps around, loc <= arc_end
+/// |-l--e-----------s-----|
+/// 0                      u32::MAX
+///
+/// Arc wraps around, loc outside of arc
+/// |----e----l------s-----|
+/// 0                      u32::MAX
+///
+/// Arc does not wrap around, loc inside of arc
+/// |---------s--l---e-----|
+/// 0                      u32::MAX
+///
+/// Arc does not wrap around, loc < arc_start
+/// |-----l---s------e-----|
+/// 0                      u32::MAX
+///
+/// Arc does not wrap around, loc > arc_end
+/// |---------s------e--l--|
+/// 0                      u32::MAX
+/// ```
 fn calc_dist(loc: u32, arc: BasicArc) -> u32 {
     match arc {
         None => u32::MAX,
@@ -284,6 +319,31 @@ fn calc_dist(loc: u32, arc: BasicArc) -> u32 {
 }
 
 /// Determine if any part of two arcs overlap.
+///
+/// All possible cases (though note the arcs can also wrap around u32::MAX):
+///
+/// ```text
+/// a = a_start
+/// A = a_end
+/// b = b_start
+/// B = b_end
+///
+/// The tail of a..A overlaps the head of b..B
+///
+/// |---a--b-A--B---|
+///
+/// The tail of b..B overlaps the head of a..A
+///
+/// |---b--a-B--A---|
+///
+/// b..B is fully contained by a..A
+///
+/// |---a--b-B--A---|
+///
+/// a..A is fully contained by b..B
+///
+/// |---b--a-A--B---|
+/// ```
 fn arcs_overlap(a: BasicArc, b: BasicArc) -> bool {
     match (a, b) {
         (None, _) | (_, None) => false,
