@@ -2,7 +2,7 @@
 members = [
   "crates/api",
   "crates/bootstrap_srv",
-  "crates/kitsune2",
+  "crates/core",
   "crates/dht",
   "crates/memory",
 ]
