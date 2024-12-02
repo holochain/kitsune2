@@ -13,10 +13,15 @@ edition = "2021"
 [dependencies]
 base64 = { workspace = true }
 bytes = { workspace = true }
+prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true }
+protobuf-src = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
