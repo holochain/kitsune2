@@ -438,8 +438,8 @@ fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kitsune2_api::{MetaOp, OpStore};
-    use kitsune2_memory::Kitsune2MemoryOpStore;
+    use kitsune2_api::OpStore;
+    use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
     use std::sync::Arc;
 
     #[test]
@@ -593,16 +593,20 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
             .process_incoming_ops(vec![
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();
@@ -661,16 +665,20 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
             .process_incoming_ops(vec![
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();
@@ -714,26 +722,34 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
             .process_incoming_ops(vec![
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![11; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();
@@ -759,7 +775,7 @@ mod tests {
 
         // The last partial slice should have the combined hash of the two ops
         let last_partial = pt.partial_slices.last().unwrap();
-        assert_eq!(vec![7 ^ 29; 32], last_partial.hash);
+        assert_eq!(vec![11 ^ 29; 32], last_partial.hash);
 
         validate_partial_slices(&pt);
     }
@@ -781,26 +797,34 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
             .process_incoming_ops(vec![
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();
@@ -845,16 +869,20 @@ mod tests {
         store.store_slice_hash(0, vec![1; 64].into()).await.unwrap();
         store
             .process_incoming_ops(vec![
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![29; 32])),
-                    timestamp: (current_time - UNIT_TIME).unwrap(),
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();
@@ -873,11 +901,13 @@ mod tests {
 
         // Store a new op which will currently be outside the last partial slice
         store
-            .process_incoming_ops(vec![MetaOp {
-                op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
-                timestamp: current_time,
-                op_data: vec![],
-            }])
+            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::from(vec![13; 32])),
+                current_time,
+                vec![],
+            )
+            .try_into()
+            .unwrap()])
             .await
             .unwrap();
 
@@ -910,16 +940,20 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
             .process_incoming_ops(vec![
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();
@@ -940,11 +974,13 @@ mod tests {
 
         // Store a new op, currently in the first partial slice, but will be in the next full slice.
         store
-            .process_incoming_ops(vec![MetaOp {
-                op_id: OpId::from(bytes::Bytes::from(vec![13; 32])),
-                timestamp: pt.full_slice_end_timestamp(), // Start of the next full slice
-                op_data: vec![],
-            }])
+            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::from(vec![13; 32])),
+                pt.full_slice_end_timestamp(), // Start of the next full slice
+                vec![],
+            )
+            .try_into()
+            .unwrap()])
             .await
             .unwrap();
 
@@ -993,28 +1029,36 @@ mod tests {
         store
             .process_incoming_ops(vec![
                 // Store two new ops at the unix timestamp, to go into the first complete slice
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    timestamp: UNIX_TIMESTAMP,
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![23; 32])),
+                    UNIX_TIMESTAMP,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
                 // Store two new ops at the unix timestamp plus one full time slice,
                 // to go into the second complete slice
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![11; 32])),
-                    timestamp: UNIX_TIMESTAMP + pt.full_slice_duration,
-                    op_data: vec![],
-                },
-                MetaOp {
-                    op_id: OpId::from(bytes::Bytes::from(vec![37; 32])),
-                    timestamp: UNIX_TIMESTAMP + pt.full_slice_duration,
-                    op_data: vec![],
-                },
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![11; 32])),
+                    UNIX_TIMESTAMP + pt.full_slice_duration,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::from(vec![37; 32])),
+                    UNIX_TIMESTAMP + pt.full_slice_duration,
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
             ])
             .await
             .unwrap();

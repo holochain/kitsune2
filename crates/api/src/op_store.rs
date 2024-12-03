@@ -22,7 +22,7 @@ pub struct MetaOp {
 /// This is the basic unit of data that the host is expected to store. Whether that storage is
 /// persistent may depend on the use-case. While Kitsune is holding references by hash, the host
 /// is expected to store the actual data.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StoredOp {
     /// The id of the op.
     pub op_id: OpId,
@@ -39,6 +39,12 @@ pub struct StoredOp {
 impl Ord for StoredOp {
     fn cmp(&self, other: &Self) -> Ordering {
         (&self.timestamp, &self.op_id).cmp(&(&other.timestamp, &other.op_id))
+    }
+}
+
+impl PartialOrd for StoredOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

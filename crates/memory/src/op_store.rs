@@ -17,12 +17,36 @@ pub struct Kitsune2MemoryOp {
     pub payload: Vec<u8>,
 }
 
+impl Kitsune2MemoryOp {
+    pub fn new(op_id: OpId, timestamp: Timestamp, payload: Vec<u8>) -> Self {
+        Self {
+            op_id,
+            timestamp,
+            payload,
+        }
+    }
+}
+
 impl From<Kitsune2MemoryOp> for StoredOp {
     fn from(value: Kitsune2MemoryOp) -> Self {
         StoredOp {
             op_id: value.op_id,
             timestamp: value.timestamp,
         }
+    }
+}
+
+impl TryFrom<Kitsune2MemoryOp> for MetaOp {
+    type Error = K2Error;
+
+    fn try_from(value: Kitsune2MemoryOp) -> K2Result<Self> {
+        let op_data = serde_json::to_vec(&value).map_err(|e| {
+            K2Error::other_src("Failed to serialize Kitsune2MemoryOp", e)
+        })?;
+        Ok(MetaOp {
+            op_id: value.op_id,
+            op_data,
+        })
     }
 }
 
