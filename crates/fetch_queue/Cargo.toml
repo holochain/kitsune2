@@ -13,10 +13,15 @@ edition = "2021"
 [dependencies]
 kitsune2_api = { path = "../api", version = "0.0.1-alpha" }
 bytes = { workspace = true }
-serde = { workspace = true }
 indexmap = "2.7.0"
-tokio = { workspace = true, features = ["rt"] }
+serde = { workspace = true }
+rand = "0.8.5"
+tokio = { workspace = true, features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
 
 [dev-dependencies]
-rand = "0.8.5"
-tokio = { workspace = true, features = ["full"] }

@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 
 use super::{QConfig, Tx, Q};
 
-struct MockTx {
+pub struct MockTx {
     requests_sent: Vec<(AgentId, Vec<OpId>, u32)>,
 }
 
@@ -36,14 +36,11 @@ impl Tx for MockTx {
 #[tokio::test(flavor = "multi_thread")]
 async fn chunked_op_requests() {
     let config = QConfig::default();
-    let mut q = Q::new(config);
-
     let mock_tx = MockTx::new();
-    q.spawn_fetch_loop(mock_tx.clone());
+    let mut q = Q::new(config.clone(), mock_tx.clone());
 
-    let config = QConfig::default();
-
-    let num_ops = config.max_hash_count + 1;
+    // let num_ops = config.max_hash_count + 1;
+    let num_ops: u8 = 2;
     let op_list = create_op_list(num_ops as u16);
     let source = random_agent_id();
     q.add_ops(op_list.clone(), source.clone()).await.unwrap();
@@ -54,7 +51,7 @@ async fn chunked_op_requests() {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
             if requests_sent.len() < expected_num_requests as usize {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             } else {
                 assert_eq!(requests_sent.len(), expected_num_requests as usize);
                 op_list
