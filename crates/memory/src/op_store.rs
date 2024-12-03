@@ -92,7 +92,7 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .read()
                 .await
                 .time_slice_hashes
-                .highest_stored_id
+                .highest_stored_id()
                 .map(|id| id + 1)
                 .unwrap_or_default())
         }

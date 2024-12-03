@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(Clone))]
 pub(super) struct TimeSliceHashStore {
-    pub(super) highest_stored_id: Option<u64>,
     inner: BTreeMap<u64, bytes::Bytes>,
 }
 
@@ -31,16 +30,6 @@ impl TimeSliceHashStore {
             return Err(K2Error::other("Cannot insert empty combined hash"));
         }
 
-        match &mut self.highest_stored_id {
-            Some(id) if slice_id > *id => {
-                *id = slice_id;
-            }
-            None => {
-                self.highest_stored_id = Some(slice_id);
-            }
-            _ => {}
-        }
-
         self.inner.insert(slice_id, hash);
 
         Ok(())
@@ -48,6 +37,10 @@ impl TimeSliceHashStore {
 
     pub(super) fn get(&self, slice_id: u64) -> Option<bytes::Bytes> {
         self.inner.get(&slice_id).cloned()
+    }
+
+    pub fn highest_stored_id(&self) -> Option<u64> {
+        self.inner.iter().last().map(|(id, _)| *id)
     }
 }
 
@@ -59,7 +52,7 @@ mod tests {
     fn create_empty() {
         let store = TimeSliceHashStore::default();
 
-        assert_eq!(None, store.highest_stored_id);
+        assert_eq!(None, store.highest_stored_id());
         assert!(store.inner.is_empty());
     }
 
@@ -82,7 +75,7 @@ mod tests {
             bytes::Bytes::from_static(&[1, 2, 3]),
             store.get(100).unwrap()
         );
-        assert_eq!(Some(100), store.highest_stored_id);
+        assert_eq!(Some(100), store.highest_stored_id());
     }
 
     #[test]
@@ -106,7 +99,7 @@ mod tests {
             bytes::Bytes::from_static(&[3, 4, 5]),
             store.get(115).unwrap()
         );
-        assert_eq!(Some(115), store.highest_stored_id);
+        assert_eq!(Some(115), store.highest_stored_id());
     }
 
     #[test]
@@ -131,7 +124,7 @@ mod tests {
             bytes::Bytes::from_static(&[3, 4, 5]),
             store.get(102).unwrap()
         );
-        assert_eq!(Some(102), store.highest_stored_id);
+        assert_eq!(Some(102), store.highest_stored_id());
     }
 
     #[test]
