@@ -11,6 +11,10 @@ pub struct Builder {
     /// This can be loaded from disk or modified before freezing the builder.
     pub config: crate::config::Config,
 
+    /// The [peer_store::PeerStoreFactory] to be used for creating
+    /// [peer_store::PeerStore] instances.
+    pub peer_store: peer_store::DynPeerStoreFactory,
+
     /// The [fetch::FetchQueueFactory] to be used for creating
     /// [fetch::FetchQueue] instances.
     pub fetch_queue: fetch::DynFetchQueueFactory,
@@ -23,18 +27,19 @@ impl Builder {
     pub fn set_default_config(&mut self) -> K2Result<()> {
         let Self {
             config,
+            peer_store,
             fetch_queue,
         } = self;
 
-        fetch_queue.default_config(config)?;
+        peer_store.default_config(config)?;
 
         Ok(())
     }
 
     /// This will generate an actual kitsune instance.
-    /// TODO - the result type of this build function is temporarilly
-    ///        an Arc of the builder itself. Once we have the Kitsune
-    ///        factory, this will produce an actual Kitsune instance.
+    // TODO - the result type of this build function is temporarilly
+    //        an Arc of the builder itself. Once we have the Kitsune
+    //        factory, this will produce an actual Kitsune instance.
     pub fn build(self) -> Arc<Self> {
         Arc::new(self)
     }

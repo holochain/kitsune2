@@ -684,6 +684,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "540654e97a3f4470a492cd30ff187bc95d89557a903a2bbf112e2fae98104ef2"
 
 [[package]]
+name = "kitsune2"
+version = "0.0.1-alpha"
+dependencies = [
+ "bytes",
+ "kitsune2_api",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kitsune2_api"
 version = "0.0.1-alpha"
 dependencies = [

@@ -35,7 +35,10 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
+pub mod agent;
+pub mod builder;
 pub mod config;
+pub mod peer_store;
 
 mod error;
 pub use error::*;
@@ -45,10 +48,6 @@ pub use id::{AgentId, OpId, SpaceId};
 
 mod timestamp;
 pub use timestamp::*;
-
-pub mod builder;
-
-pub mod agent;
 
 pub mod fetch;
 
