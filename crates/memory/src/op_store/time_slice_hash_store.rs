@@ -61,7 +61,10 @@ mod tests {
         let mut store = TimeSliceHashStore::default();
 
         let e = store.insert(100, bytes::Bytes::new()).unwrap_err();
-        assert_eq!("Cannot insert empty combined hash (src: None)", e.to_string());
+        assert_eq!(
+            "Cannot insert empty combined hash (src: None)",
+            e.to_string()
+        );
     }
 
     #[test]
