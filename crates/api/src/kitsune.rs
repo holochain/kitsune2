@@ -7,15 +7,30 @@ use std::sync::Arc;
 pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
     /// Gather preflight data to send to a new opening connection.
     /// Returning an Err result will close this connection.
-    fn preflight_gather(&self, peer_url: String) -> K2Result<bytes::Bytes>;
+    ///
+    /// The default implementation sends an empty preflight message.
+    fn preflight_gather_outgoing(
+        &self,
+        peer_url: String,
+    ) -> K2Result<bytes::Bytes> {
+        drop(peer_url);
+        Ok(bytes::Bytes::new())
+    }
 
     /// Validate preflight data sent by a remote peer on a new connection.
     /// Returning an Err result will close this connection.
-    fn preflight_validate(
+    ///
+    /// The default implementation ignores the preflight data,
+    /// and considers it valid.
+    fn preflight_validate_incoming(
         &self,
         peer_url: String,
         data: bytes::Bytes,
-    ) -> K2Result<()>;
+    ) -> K2Result<()> {
+        drop(peer_url);
+        drop(data);
+        Ok(())
+    }
 
     /// Kitsune would like to construct a space. Provide a handler.
     fn create_space(
