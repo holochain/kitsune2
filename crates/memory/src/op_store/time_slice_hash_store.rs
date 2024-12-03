@@ -85,94 +85,91 @@ impl TimeSliceHashStore {
             _ => {}
         }
 
-        let mut handled = false;
-        for (i, slice_hash) in self.inner.iter().cloned().enumerate() {
+        let found = self.inner.iter().enumerate().rfind(|(_, slice_hash)| {
             match slice_hash {
-                SliceHash::Single { id, .. } => {
-                    if id == slice_id {
-                        // We're overwriting any existing value with a new non-empty value.
-                        if let SliceHash::Single {
-                            hash: existing_hash,
-                            ..
-                        } = &mut self.inner[i]
-                        {
-                            *existing_hash = hash;
-                        }
-
-                        handled = true;
-                        break;
-                    }
-                }
+                SliceHash::Single { id, .. } => *id == slice_id,
                 SliceHash::Block { id, count, .. } => {
-                    if id <= slice_id && slice_id <= id + count {
-                        // Completely contained within a compressed block so we need to split the
-                        // block into two.
-
-                        if slice_id == id {
-                            // Special case for inserting at the start of the block.
-
-                            // We're overwriting the first value in the block.
-                            self.inner[i] =
-                                SliceHash::Single { id: slice_id, hash };
-
-                            if count > 1 {
-                                self.inner.insert(
-                                    i + 1,
-                                    SliceHash::Block {
-                                        id: slice_id + 1,
-                                        count: count - 1,
-                                    },
-                                );
-                            }
-                        } else if slice_id == id + count {
-                            // Special case for inserting at the end of the block.
-
-                            // We're overwriting the last value in the block.
-                            self.inner[i] =
-                                SliceHash::Single { id: slice_id, hash };
-
-                            if count > 1 {
-                                self.inner.insert(
-                                    i,
-                                    SliceHash::Block {
-                                        id,
-                                        count: count - 1,
-                                    },
-                                );
-                            }
-                        } else {
-                            // Otherwise we're inserting in the middle of a block.
-
-                            // Contained within a compressed block but not empty, so we need
-                            // to split the block into two.
-                            let lower_block = SliceHash::Block {
-                                id,
-                                count: slice_id - id - 1,
-                            };
-                            let upper_block = SliceHash::Block {
-                                id: slice_id + 1,
-                                count: count - (slice_id - id) - 1,
-                            };
-
-                            // We're going to do one overwrite and two inserts.
-                            self.inner.reserve(2);
-                            self.inner[i] = lower_block;
-                            self.inner.insert(
-                                i + 1,
-                                SliceHash::Single { id: slice_id, hash },
-                            );
-                            self.inner.insert(i + 2, upper_block);
-                        }
-
-                        handled = true;
-                        break;
-                    }
+                    *id <= slice_id && slice_id <= *id + *count
                 }
             }
-        }
+        });
 
-        if !handled {
-            return Err(K2Error::other("Did not know how to insert hash"));
+        let (i, slice_hash) = match found {
+            Some((i, slice_hash)) => (i, slice_hash.clone()),
+            None => {
+                return Err(K2Error::other("Did not know how to insert hash"))
+            }
+        };
+
+        match slice_hash {
+            SliceHash::Single { .. } => {
+                // We're overwriting any existing value with a new non-empty value.
+                if let SliceHash::Single {
+                    hash: existing_hash,
+                    ..
+                } = &mut self.inner[i]
+                {
+                    *existing_hash = hash;
+                }
+            }
+            SliceHash::Block { id, count, .. } => {
+                // Completely contained within a compressed block so we need to split the
+                // block into two.
+
+                if slice_id == id {
+                    // Special case for inserting at the start of the block.
+
+                    // We're overwriting the first value in the block.
+                    self.inner[i] = SliceHash::Single { id: slice_id, hash };
+
+                    if count > 1 {
+                        self.inner.insert(
+                            i + 1,
+                            SliceHash::Block {
+                                id: slice_id + 1,
+                                count: count - 1,
+                            },
+                        );
+                    }
+                } else if slice_id == id + count {
+                    // Special case for inserting at the end of the block.
+
+                    // We're overwriting the last value in the block.
+                    self.inner[i] = SliceHash::Single { id: slice_id, hash };
+
+                    if count > 1 {
+                        self.inner.insert(
+                            i,
+                            SliceHash::Block {
+                                id,
+                                count: count - 1,
+                            },
+                        );
+                    }
+                } else {
+                    // Otherwise we're inserting in the middle of a block.
+
+                    // Contained within a compressed block but not empty, so we need
+                    // to split the block into two.
+                    let lower_block = SliceHash::Block {
+                        id,
+                        count: slice_id - id - 1,
+                    };
+                    let upper_block = SliceHash::Block {
+                        id: slice_id + 1,
+                        count: count - (slice_id - id) - 1,
+                    };
+
+                    // We're going to do one overwrite and two inserts.
+                    self.inner.reserve(2);
+                    self.inner[i] = lower_block;
+                    self.inner.insert(
+                        i + 1,
+                        SliceHash::Single { id: slice_id, hash },
+                    );
+                    self.inner.insert(i + 2, upper_block);
+                }
+            }
         }
 
         Ok(())
@@ -293,7 +290,6 @@ mod tests {
     #[should_panic(expected = "Cannot insert empty combined hash")]
     fn insert_empty_hash_into_empty() {
         let mut store = TimeSliceHashStore::new();
-        let original = store.clone();
 
         store.insert(100, bytes::Bytes::new()).unwrap();
     }
