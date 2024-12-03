@@ -10,6 +10,9 @@ use tokio::sync::RwLock;
 
 pub mod time_slice_hash_store;
 
+/// This is a stub implementation of an op that will be serialized
+/// via serde_json (with inefficient encoding of the payload) to be
+/// used for testing purposes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kitsune2MemoryOp {
     pub op_id: OpId,
