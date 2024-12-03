@@ -19,15 +19,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
 
-[build-dependencies]
-prost-build = { workspace = true }
-protoc-prebuilt = { workspace = true, optional = true }
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
-
-[features]
-default = []
-
-# fetch a prebuilt/vendored protoc for use in builting the protocol bindings
-use_protoc_prebuilt = ["dep:protoc-prebuilt"]

@@ -5,6 +5,7 @@ members = [
   "crates/kitsune2",
   "crates/dht",
   "crates/memory",
+  "crates/tool_proto_build",
 ]
 resolver = "2"
 
@@ -43,13 +44,13 @@ tempfile = "3.14.0"
 thiserror = "2.0.3"
 # this is used by bootstrap_srv as the http server implementation.
 tiny_http = "0.12.0"
-# --- build-dependencies ---
-# The following workspace dependencies are thus-far only used in build-deps.
+# --- tool-dependencies ---
+# The following workspace dependencies are thus-far only used in unpublished
+# tools and so are not needed in any true dependency trees.
 # Please be careful to only include them in build dependencies or move them
 # above this section.
-# --- build-dependencies ---
+# --- tool-dependencies ---
 prost-build = "0.13.3"
-protoc-prebuilt = "0.3.0"
 # --- dev-dependencies ---
 # The following workspace dependencies are used in crate dev-dependencies.
 # Please be careful to only include them in dev dependencies or move them
