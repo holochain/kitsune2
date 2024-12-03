@@ -49,10 +49,11 @@ impl Builder {
     }
 
     /// This will generate an actual kitsune instance.
-    // TODO - the result type of this build function is temporarilly
-    //        an Arc of the builder itself. Once we have the Kitsune
-    //        factory, this will produce an actual Kitsune instance.
-    pub fn build(self) -> Arc<Self> {
-        Arc::new(self)
+    pub async fn build(
+        self,
+        handler: kitsune::DynKitsuneHandler,
+    ) -> K2Result<kitsune::DynKitsune> {
+        let builder = Arc::new(self);
+        builder.kitsune.create(builder.clone(), handler).await
     }
 }
