@@ -12,6 +12,7 @@ edition = "2021"
 
 [dependencies]
 bytes = { workspace = true }
+ed25519-dalek = { workspace = true }
 kitsune2_api = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
