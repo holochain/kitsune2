@@ -78,9 +78,9 @@ impl OpStore for Kitsune2MemoryOpStore {
 
     /// Retrieve the count of time slice hashes stored.
     ///
-    /// Note that this is not the number of hashes that have been provided at unique `slice_id`s.
-    /// Start from time slice id 0 and count up to the highest stored id. This value should be the
-    /// count based on the highest stored id.
+    /// Note that this is not the total number of hashes of a time slice at a unique `slice_id`.
+    /// This value is the count, based on the highest stored id, starting from time slice id 0 and counting up to the highest stored id. In other words it is the id of the most recent time slice plus 1.
+    ///
     /// This value is easier to compare between peers because it ignores sync progress. A simple
     /// count cannot tell the difference between a peer that has synced the first 4 time slices,
     /// and a peer who has synced the first 3 time slices and created one recent one. However,
