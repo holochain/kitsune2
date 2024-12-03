@@ -5,7 +5,7 @@ use kitsune2_api::{
     K2Error, K2Result, MetaOp, OpId, OpStore, StoredOp, Timestamp,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use tokio::sync::RwLock;
 
 pub mod time_slice_hash_store;
@@ -66,7 +66,7 @@ impl std::ops::Deref for Kitsune2MemoryOpStore {
 
 #[derive(Debug, Default)]
 pub struct Kitsune2MemoryOpStoreInner {
-    op_list: BTreeMap<OpId, Kitsune2MemoryOp>,
+    op_list: HashMap<OpId, Kitsune2MemoryOp>,
     time_slice_hashes: TimeSliceHashStore,
 }
 
