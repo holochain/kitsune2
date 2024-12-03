@@ -3,7 +3,7 @@ use kitsune2_api::{K2Error, K2Result};
 /// In-memory store for time slice hashes.
 ///
 /// The inner store will look something like this:
-/// `[ Block_0_3, Single_3_ABC, Block_4_2, Single_6_DEF ]`
+/// `[ Block(0, 3), Single(3, [a, b, c]), Block(4, 2), Single(6, [d, e, f]) ]`
 ///
 /// Consecutive sequences of empty hashes are compressed into a single block. A block
 /// contains at least 1 hash.
