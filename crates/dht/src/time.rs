@@ -512,7 +512,7 @@ mod tests {
         // The partial should be:
         //   - The minimum factor size, and
         //   - start at the UNIX_TIMESTAMP
-        //   - end at the UNIX_TIMESTAMP+ UNIT_TIME
+        //   - end at the UNIX_TIMESTAMP + UNIT_TIME
         assert_eq!(0, pt.partial_slices[0].size);
         assert_eq!(UNIX_TIMESTAMP, pt.partial_slices[0].start);
         assert_eq!(UNIX_TIMESTAMP + UNIT_TIME, pt.partial_slices[0].end());
