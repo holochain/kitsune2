@@ -21,7 +21,7 @@ futures = { workspace = true }
 
 [build-dependencies]
 prost-build = { workspace = true }
-protobuf-src = { workspace = true }
+protoc-prebuilt = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
