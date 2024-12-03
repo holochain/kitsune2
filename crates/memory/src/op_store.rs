@@ -1,5 +1,4 @@
 use crate::op_store::time_slice_hash_store::TimeSliceHashStore;
-use crate::time_slice_hash_store::SliceHash;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use kitsune2_api::{K2Result, MetaOp, OpId, OpStore, Timestamp};
@@ -109,14 +108,7 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         slice_id: u64,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
-        async move {
-            Ok(self.read().await.time_slice_hashes.get(slice_id).and_then(
-                |x| match x {
-                    SliceHash::Single { hash, .. } => Some(hash.clone()),
-                    SliceHash::Block { .. } => None,
-                },
-            ))
-        }
-        .boxed()
+        async move { Ok(self.read().await.time_slice_hashes.get(slice_id)) }
+            .boxed()
     }
 }
