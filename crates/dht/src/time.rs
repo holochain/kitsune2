@@ -793,7 +793,6 @@ mod tests {
                 + 1,
             );
 
-        // Store with no full slices stored
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         store
             .process_incoming_ops(vec![
@@ -805,21 +804,7 @@ mod tests {
                 .try_into()
                 .unwrap(),
                 Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .try_into()
-                .unwrap(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    (current_time - UNIT_TIME).unwrap(),
-                    vec![],
-                )
-                .try_into()
-                .unwrap(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![29; 32])),
+                    OpId::from(bytes::Bytes::from(vec![11; 32])),
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
