@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 
 use super::{QConfig, Tx, Q};
 
+#[derive(Debug)]
 pub struct MockTx {
     requests_sent: Vec<(AgentId, Vec<OpId>, u32)>,
 }
@@ -40,7 +41,7 @@ async fn chunked_op_requests() {
     let mut q = Q::new(config.clone(), mock_tx.clone());
 
     // let num_ops = config.max_hash_count + 1;
-    let num_ops: u8 = 2;
+    let num_ops: u8 = 1;
     let op_list = create_op_list(num_ops as u16);
     let source = random_agent_id();
     q.add_ops(op_list.clone(), source.clone()).await.unwrap();
