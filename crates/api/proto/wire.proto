@@ -36,6 +36,9 @@ message K2Proto {
 
     // This is a module communication.
     //
+    // Most of Kitsune2's communications will likely proceed between
+    // Kitsune2's modules.
+    //
     // This type requires that a "space" be specified.
     // This type requires that a "module" be specified.
     TY_MODULE = 3;
@@ -44,18 +47,27 @@ message K2Proto {
     // or context specified in the data payload.
     //
     // We may add additional specific disconnect codes in the future.
-    TY_DISCONNECT_GENERAL = 900;
+    TY_DISCONNECT = 15;
   }
 
   // The type of this message.
-  optional Ty ty = 1;
+  Ty ty = 1;
 
   // The payload or content of this message.
-  optional bytes data = 2;
+  bytes data = 2;
 
   // If the Ty requires that a space be specified, this is it.
+  //
+  // Kitsune is divided up into multiple dht "spaces" and peers
+  // join and communicate over these spaces. These bytes identify
+  // the space within which this message is communicating.
   optional bytes space = 3;
 
   // If the Ty requires a module impl be specified, this is it.
+  //
+  // Modules include specific sub-protocols to communicate with each other,
+  // so those messages must be routed to the correct module.
+  //
+  // This string is the module routing info. E.g. "gossip", "fetch", "sharding".
   optional string module = 4;
 }

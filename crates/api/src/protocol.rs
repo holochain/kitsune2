@@ -11,8 +11,8 @@ mod test {
         use prost::Message;
 
         let m = K2Proto {
-            ty: Some(k2_proto::Ty::Module as i32),
-            data: Some(bytes::Bytes::from_static(b"a")),
+            ty: k2_proto::Ty::Module as i32,
+            data: bytes::Bytes::from_static(b"a"),
             space: Some(bytes::Bytes::from_static(b"b")),
             module: Some("c".into()),
         };
@@ -20,8 +20,8 @@ mod test {
         let m_enc = m.encode_to_vec();
 
         let d = K2Proto {
-            ty: Some(k2_proto::Ty::DisconnectGeneral as i32),
-            data: Some(bytes::Bytes::from_static(b"d")),
+            ty: k2_proto::Ty::Disconnect as i32,
+            data: bytes::Bytes::from_static(b"d"),
             space: None,
             module: None,
         };
