@@ -1085,8 +1085,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Then a single full slice should have been created
+        // Then a single full slice should have been created as the current time
         assert!(store.slice_hash_count().await.unwrap() > 15_000);
+        // and the count should match the number of full slices that the time partition claims to
+        // have created.
+        assert_eq!(store.slice_hash_count().await.unwrap(), pt.full_slices);
     }
 
     fn validate_partial_slices(pt: &PartitionedTime) {
