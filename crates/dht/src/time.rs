@@ -1069,6 +1069,8 @@ mod tests {
             store.retrieve_slice_hash(5203984823).await.unwrap();
         assert!(some_slice_hash.is_none());
 
+        println!("Full slices: {}", store.slice_hash_count().await.unwrap());
+
         // Now insert an op at the current time
         store
             .process_incoming_ops(vec![MetaOp {

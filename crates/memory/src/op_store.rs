@@ -81,10 +81,14 @@ impl OpStore for Kitsune2MemoryOpStore {
     /// Note that this is not the number of hashes that have been provided at unique `slice_id`s.
     /// Start from time slice id 0 and count up to the highest stored id. This value should be the
     /// count based on the highest stored id.
-    /// This value is easier to compare between peers because it tracks an absolute number of time
-    /// slices that have had a slice hash computed and stored. The number of stored hashes would
-    /// only be comparable if the earliest point that data has been seen for is known between two
-    /// peers.
+    /// This value is easier to compare between peers because it ignores sync progress. A simple
+    /// count cannot tell the difference between a peer that has synced the first 4 time slices,
+    /// and a peer who has synced the first 3 time slices and created one recent one. However,
+    /// using the highest stored id shows the difference to be 4 and say 300 respectively.
+    /// Equally, the literal count is more useful if the DHT contains a large amount of data and
+    /// a peer might allocate a recent full slice before completing its initial sync. That situation
+    /// could be created by a configuration that chooses small time-slices. However, in the general
+    /// case, the highest stored id is more useful.
     fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>> {
         // +1 to convert from a 0-based index to a count
         async move {

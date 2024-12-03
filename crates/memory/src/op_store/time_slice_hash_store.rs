@@ -57,11 +57,11 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Cannot insert empty combined hash")]
     fn insert_empty_hash_into_empty() {
         let mut store = TimeSliceHashStore::default();
 
-        store.insert(100, bytes::Bytes::new()).unwrap();
+        let e = store.insert(100, bytes::Bytes::new()).unwrap_err();
+        assert_eq!("Cannot insert empty combined hash (src: None)", e.to_string());
     }
 
     #[test]
