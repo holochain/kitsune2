@@ -287,7 +287,9 @@ impl PartitionedTime {
 
             let hash = combine_op_hashes(op_hashes);
 
-            store.store_slice_hash(self.full_slices, hash).await?;
+            if !hash.is_empty() {
+                store.store_slice_hash(self.full_slices, hash).await?;
+            }
 
             self.full_slices += 1;
             full_slices_end_timestamp += self.full_slice_duration;
