@@ -16,7 +16,7 @@ pub struct Builder {
     pub verifier: agent::DynVerifier,
 
     /// The [kitsune::KitsuneFactory] to be used for creating
-    /// [kitsune::Kitsune] kitsune-level kitsune2 module instances.
+    /// [kitsune::Kitsune] module instances.
     pub kitsune: kitsune::DynKitsuneFactory,
 
     /// The [space::SpaceFactory] to be used for creating
