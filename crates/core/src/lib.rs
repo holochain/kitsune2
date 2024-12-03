@@ -40,12 +40,15 @@ impl agent::Verifier for Ed25519Verifier {
 /// Construct a production-ready default builder.
 ///
 /// - `verifier` - The default verifier is [Ed25519Verifier].
+/// - `kitsune` - The default top-level kitsune module is
+///               [factories::CoreKitsuneFactory].
 /// - `space` - The default space module is [factories::CoreSpaceFactory].
 /// - `peer_store` - The default peer store is [factories::MemPeerStoreFactory].
 pub fn default_builder() -> Builder {
     Builder {
         config: Config::default(),
         verifier: std::sync::Arc::new(Ed25519Verifier),
+        kitsune: factories::CoreKitsuneFactory::create(),
         space: factories::CoreSpaceFactory::create(),
         peer_store: factories::MemPeerStoreFactory::create(),
     }

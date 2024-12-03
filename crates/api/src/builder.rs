@@ -15,6 +15,10 @@ pub struct Builder {
     /// The [agent::Verifier] to use for this Kitsune2 instance.
     pub verifier: agent::DynVerifier,
 
+    /// The [kitsune::KitsuneFactory] to be used for creating
+    /// [kitsune::Kitsune] kitsune-level kitsune2 module instances.
+    pub kitsune: kitsune::DynKitsuneFactory,
+
     /// The [space::SpaceFactory] to be used for creating
     /// [space::Space] instances.
     pub space: space::DynSpaceFactory,
@@ -32,10 +36,12 @@ impl Builder {
         let Self {
             config,
             verifier: _,
+            kitsune,
             space,
             peer_store,
         } = self;
 
+        kitsune.default_config(config)?;
         space.default_config(config)?;
         peer_store.default_config(config)?;
 
