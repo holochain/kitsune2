@@ -34,6 +34,41 @@ impl Transport for MockTransport {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn parallel_request_count_is_not_exeeded() {
+    let config = Kitsune2FetchConfig {
+        parallel_request_count: 1,
+        parallel_request_pause: 10000, // 10 seconds
+        ..Default::default()
+    };
+    let mock_tx = MockTransport::new();
+    let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
+
+    let op_list = create_op_list(2);
+    let source = random_agent_id();
+    fetch.add_ops(op_list, source).await.unwrap();
+
+    // Wait until some request has been sent.
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let requests_sent = mock_tx.lock().await.requests_sent.clone();
+            if requests_sent.len() == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            } else {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    let requests_sent = mock_tx.lock().await.requests_sent.clone();
+    assert_eq!(
+        requests_sent.len(),
+        config.parallel_request_count() as usize
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn multi_op_fetch_from_one_agent() {
     let config = Kitsune2FetchConfig::default();
     let mock_tx = MockTransport::new();

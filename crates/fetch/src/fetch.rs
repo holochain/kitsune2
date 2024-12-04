@@ -48,6 +48,8 @@ const MOD_NAME: &str = "Fetch";
 pub struct Kitsune2FetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     parallel_request_count: u8,
+    /// Duration in ms to pause when parallel request count is reached. Default: 10.
+    parallel_request_pause: u64,
     /// Duration in ms to sleep when idle. Default: 1000.
     fetch_loop_sleep: u64,
 }
@@ -56,7 +58,8 @@ impl Default for Kitsune2FetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            fetch_loop_sleep: 1000, // in ms
+            parallel_request_pause: 10,
+            fetch_loop_sleep: 1000,
         }
     }
 }
@@ -66,6 +69,9 @@ impl ModConfig for Kitsune2FetchConfig {}
 impl Kitsune2FetchConfig {
     pub fn parallel_request_count(&self) -> u8 {
         self.parallel_request_count
+    }
+    pub fn parallel_request_pause(&self) -> u64 {
+        self.parallel_request_pause
     }
     pub fn fetch_loop_pause(&self) -> u64 {
         self.fetch_loop_sleep
@@ -145,6 +151,7 @@ impl Inner {
             async move {
                 let Kitsune2FetchConfig {
                     parallel_request_count,
+                    parallel_request_pause,
                     fetch_loop_sleep: fetch_loop_pause,
                 } = inner.config;
 
@@ -191,7 +198,10 @@ impl Inner {
                     if (*current_request_count.lock().await)
                         == parallel_request_count
                     {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        tokio::time::sleep(Duration::from_millis(
+                            parallel_request_pause,
+                        ))
+                        .await;
                     } else if inner.ops.lock().await.is_empty() {
                         // Sleep if there are no more ops to fetch.
                         // Sleep is canceled by newly added ops.
