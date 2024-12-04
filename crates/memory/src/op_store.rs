@@ -1,11 +1,57 @@
 use crate::op_store::time_slice_hash_store::TimeSliceHashStore;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use kitsune2_api::{K2Result, MetaOp, OpId, OpStore, Timestamp};
-use std::collections::BTreeSet;
+use kitsune2_api::{
+    K2Error, K2Result, MetaOp, OpId, OpStore, StoredOp, Timestamp,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::sync::RwLock;
 
 pub mod time_slice_hash_store;
+
+/// This is a stub implementation of an op that will be serialized
+/// via serde_json (with inefficient encoding of the payload) to be
+/// used for testing purposes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Kitsune2MemoryOp {
+    pub op_id: OpId,
+    pub timestamp: Timestamp,
+    pub payload: Vec<u8>,
+}
+
+impl Kitsune2MemoryOp {
+    pub fn new(op_id: OpId, timestamp: Timestamp, payload: Vec<u8>) -> Self {
+        Self {
+            op_id,
+            timestamp,
+            payload,
+        }
+    }
+}
+
+impl From<Kitsune2MemoryOp> for StoredOp {
+    fn from(value: Kitsune2MemoryOp) -> Self {
+        StoredOp {
+            op_id: value.op_id,
+            timestamp: value.timestamp,
+        }
+    }
+}
+
+impl TryFrom<Kitsune2MemoryOp> for MetaOp {
+    type Error = K2Error;
+
+    fn try_from(value: Kitsune2MemoryOp) -> K2Result<Self> {
+        let op_data = serde_json::to_vec(&value).map_err(|e| {
+            K2Error::other_src("Failed to serialize Kitsune2MemoryOp", e)
+        })?;
+        Ok(MetaOp {
+            op_id: value.op_id,
+            op_data,
+        })
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Kitsune2MemoryOpStore(pub RwLock<Kitsune2MemoryOpStoreInner>);
@@ -20,7 +66,7 @@ impl std::ops::Deref for Kitsune2MemoryOpStore {
 
 #[derive(Debug, Default)]
 pub struct Kitsune2MemoryOpStoreInner {
-    op_list: BTreeSet<MetaOp>,
+    op_list: HashMap<OpId, Kitsune2MemoryOp>,
     time_slice_hashes: TimeSliceHashStore,
 }
 
@@ -30,10 +76,19 @@ impl OpStore for Kitsune2MemoryOpStore {
         op_list: Vec<MetaOp>,
     ) -> BoxFuture<'_, K2Result<()>> {
         async move {
-            self.write()
-                .await
-                .op_list
-                .append(&mut op_list.into_iter().collect());
+            let ops_to_add = op_list
+                .iter()
+                .map(|op| -> serde_json::Result<(OpId, Kitsune2MemoryOp)> {
+                    Ok((
+                        op.op_id.clone(),
+                        serde_json::from_slice(op.op_data.as_slice())?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>().map_err(|e| {
+                K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
+            })?;
+
+            self.write().await.op_list.extend(ops_to_add);
             Ok(())
         }
         .boxed()
@@ -49,8 +104,8 @@ impl OpStore for Kitsune2MemoryOpStore {
             Ok(self_lock
                 .op_list
                 .iter()
-                .filter(|op| op.timestamp >= start && op.timestamp < end)
-                .map(|op| op.op_id.clone())
+                .filter(|(_, op)| op.timestamp >= start && op.timestamp < end)
+                .map(|(op_id, _)| op_id.clone())
                 .collect())
         }
         .boxed()

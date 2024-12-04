@@ -11,3 +11,5 @@ bytes = { workspace = true }
 
 # Note that this is a dev dependency, which means that this crate should also be considered a dev dependency!
 tokio = { workspace = true, features = ["sync"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
