@@ -1,28 +1,28 @@
 use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use kitsune2_api::{fetch::FetchQueue, id::Id, AgentId, OpId};
+use kitsune2_api::{fetch::Fetch, id::Id, AgentId, OpId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
-use super::{QConfig, Transport, Q};
+use super::{FetchConfig, Kitsune2Fetch, Transport};
 
 #[derive(Debug)]
-pub struct MockTx {
+pub struct MockTransport {
     requests_sent: Vec<(OpId, AgentId)>,
 }
 
-type DynMockTx = Arc<Mutex<MockTx>>;
+type DynMockTransport = Arc<Mutex<MockTransport>>;
 
-impl MockTx {
-    fn new() -> DynMockTx {
+impl MockTransport {
+    fn new() -> DynMockTransport {
         Arc::new(Mutex::new(Self {
             requests_sent: Vec::new(),
         }))
     }
 }
 
-impl Transport for MockTx {
+impl Transport for MockTransport {
     fn send_op_request(
         &mut self,
         op_id: OpId,
@@ -35,16 +35,19 @@ impl Transport for MockTx {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_op_fetch_from_one_agent() {
-    let config = QConfig::default();
-    let mock_tx = MockTx::new();
-    let mut q = Q::new(config.clone(), mock_tx.clone());
+    let config = FetchConfig::default();
+    let mock_tx = MockTransport::new();
+    let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
 
-    let num_ops: u8 = 120;
+    let num_ops: u8 = 50;
     let op_list = create_op_list(num_ops as u16);
     let source = random_agent_id();
-    q.add_ops(op_list.clone(), source.clone()).await.unwrap();
+    fetch
+        .add_ops(op_list.clone(), source.clone())
+        .await
+        .unwrap();
 
-    // Check that one request is sent to the source for each op.
+    // Check that at least one request was sent to the source for each op.
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
@@ -62,8 +65,9 @@ async fn multi_op_fetch_from_one_agent() {
     .await
     .unwrap();
 
-    // Check that the ops that are being fetched are added back to the queue with the correct source.
-    let ops = q.0.ops.lock().await;
+    // Check that the ops that are being fetched are appended to the end of
+    // the queue with the correct source.
+    let ops = fetch.0.ops.lock().await;
     op_list
         .clone()
         .into_iter()

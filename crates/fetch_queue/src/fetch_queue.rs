@@ -39,9 +39,7 @@ use indexmap::IndexMap;
 use kitsune2_api::{
     builder,
     config::ModConfig,
-    fetch::{
-        DynFetchQueue, DynFetchQueueFactory, FetchQueue, FetchQueueFactory,
-    },
+    fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     tx::Transport,
     AgentId, BoxFut, K2Error, K2Result, OpId,
 };
@@ -55,14 +53,14 @@ const MOD_NAME: &str = "Fetch";
 /// Configuration parameters for [Q]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct QConfig {
-    /// How many parallel fetch requests for actual data we should have at once. Default: 2.  
+pub struct FetchConfig {
+    /// How many parallel op fetch requests can be made at once. Default: 2.  
     parallel_request_count: u8,
     /// Duration in ms to sleep when idle. Default: 1000.
     fetch_loop_sleep: u64,
 }
 
-impl Default for QConfig {
+impl Default for FetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
@@ -71,9 +69,9 @@ impl Default for QConfig {
     }
 }
 
-impl ModConfig for QConfig {}
+impl ModConfig for FetchConfig {}
 
-impl QConfig {
+impl FetchConfig {
     pub fn parallel_request_count(&self) -> u8 {
         self.parallel_request_count
     }
@@ -86,15 +84,15 @@ impl QConfig {
 type DynTransport = Arc<Mutex<dyn Transport>>;
 
 #[derive(Debug)]
-struct Q(Inner);
+struct Kitsune2Fetch(Inner);
 
-impl Q {
-    fn new(config: QConfig, transport: DynTransport) -> Self {
+impl Kitsune2Fetch {
+    fn new(config: FetchConfig, transport: DynTransport) -> Self {
         Self(Inner::spawn_fetch_task(config, transport))
     }
 }
 
-impl FetchQueue for Q {
+impl Fetch for Kitsune2Fetch {
     fn add_ops(
         &mut self,
         op_list: Vec<OpId>,
@@ -108,7 +106,7 @@ impl FetchQueue for Q {
             });
             drop(ops);
 
-            // Immediately start fetching ops from agent in case the fetch loop is pausing.
+            // Wake up fetch task in case it is sleeping.
             self.0
                 .fetch_request_tx
                 .send(())
@@ -121,7 +119,7 @@ impl FetchQueue for Q {
 
 #[derive(Clone, Debug)]
 struct Inner {
-    config: QConfig,
+    config: FetchConfig,
     // An `IndexMap` is used to retain order of insertion and have the ability to look up elements
     // by key. Ops may be added redundantly to the map with different sources to fetch from, so
     // the map is keyed by op and agent id together.
@@ -133,8 +131,11 @@ struct Inner {
 }
 
 impl Inner {
-    pub fn spawn_fetch_task(config: QConfig, transport: DynTransport) -> Self {
-        // Create a channel to send fetch requests to the loop.
+    pub fn spawn_fetch_task(
+        config: FetchConfig,
+        transport: DynTransport,
+    ) -> Self {
+        // Create a channel to wake up sleeping loop.
         let (fetch_request_tx, mut fetch_request_rx) =
             tokio::sync::mpsc::channel::<()>(1);
 
@@ -150,7 +151,7 @@ impl Inner {
             let inner = inner.clone();
 
             async move {
-                let QConfig {
+                let FetchConfig {
                     parallel_request_count,
                     fetch_loop_sleep: fetch_loop_pause,
                 } = inner.config;
@@ -160,9 +161,11 @@ impl Inner {
                     if parallel_request_count
                         > (*current_request_count.lock().await)
                     {
-                        let elem = inner.ops.lock().await.shift_remove_index(0);
-                        if let Some(((op_id, agent_id), ())) = elem {
-                            // A new request is going to be made.
+                        // Pop first element from the start of the queue and release lock on map.
+                        let first_elem =
+                            inner.ops.lock().await.shift_remove_index(0);
+                        if let Some(((op_id, agent_id), ())) = first_elem {
+                            // Register new request.
                             (*inner.current_request_count.lock().await) += 1;
                             tokio::spawn({
                                 let tx = transport.clone();
@@ -198,8 +201,8 @@ impl Inner {
                     {
                         tokio::time::sleep(Duration::from_millis(10)).await;
                     } else if inner.ops.lock().await.is_empty() {
-                        // Pause if there are no more ops to fetch.
-                        // Pause is canceled by newly added ops.
+                        // Sleep if there are no more ops to fetch.
+                        // Sleep is canceled by newly added ops.
                         select! {
                             _ = tokio::time::sleep(Duration::from_millis(
                                 fetch_loop_pause,
@@ -216,30 +219,31 @@ impl Inner {
 }
 
 #[derive(Debug)]
-pub struct QFactory {}
+pub struct Kitsune2FetchFactory {}
 
-impl QFactory {
-    pub fn create() -> DynFetchQueueFactory {
+impl Kitsune2FetchFactory {
+    pub fn create() -> DynFetchFactory {
         Arc::new(Self {})
     }
 }
 
-impl FetchQueueFactory for QFactory {
+impl FetchFactory for Kitsune2FetchFactory {
     fn default_config(
         &self,
         config: &mut kitsune2_api::config::Config,
     ) -> K2Result<()> {
-        config.add_default_module_config::<QConfig>(MOD_NAME.to_string())?;
+        config
+            .add_default_module_config::<FetchConfig>(MOD_NAME.to_string())?;
         Ok(())
     }
 
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-    ) -> BoxFut<'static, K2Result<DynFetchQueue>> {
+    ) -> BoxFut<'static, K2Result<DynFetch>> {
         #[derive(Debug)]
-        struct TxPlaceholder;
-        impl Transport for TxPlaceholder {
+        struct TransportPlaceholder;
+        impl Transport for TransportPlaceholder {
             fn send_op_request(
                 &mut self,
                 _op_id: OpId,
@@ -248,11 +252,11 @@ impl FetchQueueFactory for QFactory {
                 Box::pin(async move { todo!() })
             }
         }
-        let tx = Arc::new(Mutex::new(TxPlaceholder));
+        let tx = Arc::new(Mutex::new(TransportPlaceholder));
 
         Box::pin(async move {
             let config = builder.config.get_module_config(MOD_NAME)?;
-            let out: DynFetchQueue = Arc::new(Q::new(config, tx));
+            let out: DynFetch = Arc::new(Kitsune2Fetch::new(config, tx));
             Ok(out)
         })
     }

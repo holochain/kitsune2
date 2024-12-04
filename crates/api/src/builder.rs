@@ -17,7 +17,7 @@ pub struct Builder {
 
     /// The [fetch::FetchQueueFactory] to be used for creating
     /// [fetch::FetchQueue] instances.
-    pub fetch_queue: fetch::DynFetchQueueFactory,
+    pub fetch_queue: fetch::DynFetchFactory,
 }
 
 impl Builder {

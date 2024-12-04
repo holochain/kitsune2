@@ -1,13 +1,12 @@
-//! Kitsune2 fetch queue types.
+//! Kitsune2 fetch types.
 
 use std::sync::Arc;
 
 use crate::{builder, config, AgentId, BoxFut, K2Result, OpId};
 
-/// Trait for implementing a fetch queue for managing ops
-/// to be fetched from other agents.
-pub trait FetchQueue: 'static + Send + Sync {
-    /// Add op ids to be fetched to the queue.
+/// Trait for implementing a fetch module to fetch ops from other agents.
+pub trait Fetch: 'static + Send + Sync {
+    /// Add op ids to be fetched.
     fn add_ops(
         &mut self,
         op_list: Vec<OpId>,
@@ -15,21 +14,21 @@ pub trait FetchQueue: 'static + Send + Sync {
     ) -> BoxFut<'_, K2Result<()>>;
 }
 
-/// Trait object [FetchQueue].
-pub type DynFetchQueue = Arc<dyn FetchQueue>;
+/// Trait object [Fetch].
+pub type DynFetch = Arc<dyn Fetch>;
 
-/// A factory for creating FetchQueue instances.
-pub trait FetchQueueFactory: 'static + Send + Sync + std::fmt::Debug {
+/// A factory for creating Fetch instances.
+pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
     /// Help the builder construct a default config from the chosen
     /// module factories.
     fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
-    /// Construct a fetch queue instance.
+    /// Construct a fetch instance.
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-    ) -> BoxFut<'static, K2Result<DynFetchQueue>>;
+    ) -> BoxFut<'static, K2Result<DynFetch>>;
 }
 
-/// Trait object [FetchQueueFactory].
-pub type DynFetchQueueFactory = Arc<dyn FetchQueueFactory>;
+/// Trait object [FetchFactory].
+pub type DynFetchFactory = Arc<dyn FetchFactory>;
