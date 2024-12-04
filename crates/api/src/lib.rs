@@ -38,6 +38,7 @@ pub(crate) mod serde_bytes_base64 {
 pub mod agent;
 pub mod builder;
 pub mod config;
+pub mod kitsune;
 pub mod peer_store;
 pub mod space;
 
