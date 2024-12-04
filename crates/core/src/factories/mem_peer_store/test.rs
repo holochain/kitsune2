@@ -10,10 +10,15 @@ const AGENT_1: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent1")));
 const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
 const SPACE_1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space1")));
 
+/// Sneak some test-data into the url field (as the peer id)
+/// this will let us validate store actions when we extract
+/// it again later via [unsneak_url].
 fn sneak_url(s: &str) -> Url {
     Url::from_str(format!("ws://a.b:80/{s}")).unwrap()
 }
 
+/// Extract some test-data from the url field (from the peer id)
+/// that was put in via the [sneak_url] function.
 fn unsneak_url(u: &Url) -> String {
     u.peer_id().unwrap().into()
 }
