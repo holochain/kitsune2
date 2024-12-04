@@ -1,37 +1,29 @@
-//! The fetch queue is a Kitsune2 module for tracking ops that need to be fetched from peers
-//! and sending fetch requests to them.
+//! Fetch is a Kitsune2 module for fetching ops from peers.
 //!
-//! The fetch queue holds sets of ops and sources where to fetch ops from. Sending fetch
-//! requests to peers is executed by a fetch task.
+//! In particular it tracks which ops need to be fetched from which agents,
+//! sends fetch requests and processes incoming responses to these requests.
+//! It consists of multiple parts:
+//! - Data object that tracks op and agent ids in memory
+//! - Fetch task that requests tracked ops from agents
+//! - Incoming op task that processes incoming responses to op requests by
+//!     - persisting ops to the data store
+//!     - removing op ids from in-memory data object
 //!
-//! Purpose: Keep track of ops to be fetched from which agents, send fetch requests and process incoming fetch responses.
-
-//! - Fetch data store which stores ops
-//! - Task that requests ops from agents
-//! - Task that processes incoming responses to these requests
-//!     - persist ops into data store
-//!     - remove op hashes from in-memory data store
+//! ### Data object [`Kitsune2Fetch`]
 //!
-//! Components:
-//! - Fetch queue: Data structure to record ops by hash
-//! - Fetch task: To poll the fetch queue and do fetch requests
-//! ~~- Fetch response queue: To manage parallel incoming fetch requests and getting op data to respond with~~
-//! ~~- Fetch response task: Reads the response queue~~
-//!
-//! ### Fetch data object
-//!
-//! - Each op hash has a list of agents who have told us they are holding that data.
-//! - There is one public method `add_ops` which takes a list of ops and a source (agent id).
-//! - New ops are added to the end of the queue.
+//! - Exposes public method [`Kitsune2Fetch::add_ops`] that takes a list of ops and an agent id.
+//! - Stores pairs of (op id, agent id) in the order that ops have been added.
 //!
 //! ### Fetch task
 //!
-//! First iteration method:
-//! - Pop individual op/agent pairs from the queue and send a request for them
-//! - Append popped item to the end of the queue
-//! - Put unresponsive peers on a backoff/cool-down list
-//! - incoming op is written to the data store
-//! - once persisted successfully, op is removed from the fetch data object
+//! - Pops pairs of (op id, agent id) pairs from the beginning of the queue and requests the op from the agent.
+//! - Appends popped element to the end of the queue.
+//! - Put unresponsive peers on a back-off list.
+//!
+//! ### Incoming op task
+//!
+//! - Incoming op is written to the data store.
+//! - Once persisted successfully, op is removed from the data object.
 
 use std::{sync::Arc, time::Duration};
 
@@ -53,14 +45,14 @@ const MOD_NAME: &str = "Fetch";
 /// Configuration parameters for [Q]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FetchConfig {
+pub struct Kitsune2FetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     parallel_request_count: u8,
     /// Duration in ms to sleep when idle. Default: 1000.
     fetch_loop_sleep: u64,
 }
 
-impl Default for FetchConfig {
+impl Default for Kitsune2FetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
@@ -69,9 +61,9 @@ impl Default for FetchConfig {
     }
 }
 
-impl ModConfig for FetchConfig {}
+impl ModConfig for Kitsune2FetchConfig {}
 
-impl FetchConfig {
+impl Kitsune2FetchConfig {
     pub fn parallel_request_count(&self) -> u8 {
         self.parallel_request_count
     }
@@ -87,7 +79,7 @@ type DynTransport = Arc<Mutex<dyn Transport>>;
 struct Kitsune2Fetch(Inner);
 
 impl Kitsune2Fetch {
-    fn new(config: FetchConfig, transport: DynTransport) -> Self {
+    fn new(config: Kitsune2FetchConfig, transport: DynTransport) -> Self {
         Self(Inner::spawn_fetch_task(config, transport))
     }
 }
@@ -119,7 +111,7 @@ impl Fetch for Kitsune2Fetch {
 
 #[derive(Clone, Debug)]
 struct Inner {
-    config: FetchConfig,
+    config: Kitsune2FetchConfig,
     // An `IndexMap` is used to retain order of insertion and have the ability to look up elements
     // by key. Ops may be added redundantly to the map with different sources to fetch from, so
     // the map is keyed by op and agent id together.
@@ -132,7 +124,7 @@ struct Inner {
 
 impl Inner {
     pub fn spawn_fetch_task(
-        config: FetchConfig,
+        config: Kitsune2FetchConfig,
         transport: DynTransport,
     ) -> Self {
         // Create a channel to wake up sleeping loop.
@@ -151,7 +143,7 @@ impl Inner {
             let inner = inner.clone();
 
             async move {
-                let FetchConfig {
+                let Kitsune2FetchConfig {
                     parallel_request_count,
                     fetch_loop_sleep: fetch_loop_pause,
                 } = inner.config;
@@ -232,8 +224,9 @@ impl FetchFactory for Kitsune2FetchFactory {
         &self,
         config: &mut kitsune2_api::config::Config,
     ) -> K2Result<()> {
-        config
-            .add_default_module_config::<FetchConfig>(MOD_NAME.to_string())?;
+        config.add_default_module_config::<Kitsune2FetchConfig>(
+            MOD_NAME.to_string(),
+        )?;
         Ok(())
     }
 

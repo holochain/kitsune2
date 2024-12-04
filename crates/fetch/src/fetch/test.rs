@@ -5,7 +5,7 @@ use kitsune2_api::{fetch::Fetch, id::Id, AgentId, OpId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
-use super::{FetchConfig, Kitsune2Fetch, Transport};
+use super::{Kitsune2Fetch, Kitsune2FetchConfig, Transport};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -35,7 +35,7 @@ impl Transport for MockTransport {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_op_fetch_from_one_agent() {
-    let config = FetchConfig::default();
+    let config = Kitsune2FetchConfig::default();
     let mock_tx = MockTransport::new();
     let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
 
