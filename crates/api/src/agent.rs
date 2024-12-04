@@ -78,6 +78,7 @@
 //! algorithms have ridiculously long key material.)
 
 use crate::*;
+use std::sync::Arc;
 
 /// Defines a type capable of cryptographic signatures.
 pub trait Signer {
@@ -90,7 +91,7 @@ pub trait Signer {
 }
 
 /// Defines a type capable of cryptographic verification.
-pub trait Verifier {
+pub trait Verifier: std::fmt::Debug {
     /// Verify the provided detached signature over the provided message.
     /// Returns `true` if the signature is valid.
     fn verify(
@@ -100,6 +101,19 @@ pub trait Verifier {
         signature: &[u8],
     ) -> bool;
 }
+
+/// Trait-object [Verifier].
+pub type DynVerifier = Arc<dyn Verifier + 'static + Send + Sync>;
+
+/// A "Local" agent is an agent that is connected to the local Kitsune2 node,
+/// and is able to sign messages and agent infos.
+pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
+    /// The [AgentId] of this local agent.
+    fn agent(&self) -> &AgentId;
+}
+
+/// Trait-object [LocalAgent].
+pub type DynLocalAgent = Arc<dyn LocalAgent>;
 
 /// A basic definition of a storage arc compatible with the concept of
 /// storage and querying of items in a store that fall within that arc.
@@ -284,6 +298,7 @@ mod test {
 
     const SIG: &[u8] = b"fake-signature";
 
+    #[derive(Debug)]
     struct TestCrypto;
 
     impl Signer for TestCrypto {

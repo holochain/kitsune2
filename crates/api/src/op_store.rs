@@ -13,25 +13,36 @@ pub struct MetaOp {
     /// The id of the op.
     pub op_id: OpId,
 
-    /// The creation timestamp of the op.
-    ///
-    /// This must be the same for everyone who sees this op.
-    ///
-    /// The host must reject the op if the timestamp does not agree with any timestamps inside the
-    /// op data.
-    pub timestamp: Timestamp,
-
     /// The actual op data.
     pub op_data: Vec<u8>,
 }
 
-impl Ord for MetaOp {
+/// An op that has been stored by the Kitsune host.
+///
+/// This is the basic unit of data that the host is expected to store. Whether that storage is
+/// persistent may depend on the use-case. While Kitsune is holding references by hash, the host
+/// is expected to store the actual data.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct StoredOp {
+    /// The id of the op.
+    pub op_id: OpId,
+
+    /// The creation timestamp of the op.
+    ///
+    /// This must be the same for everyone who sees this op.
+    ///
+    /// Note that this means any op implementation must include a consistent timestamp in the op
+    /// data so that it can be provided back to Kitsune.
+    pub timestamp: Timestamp,
+}
+
+impl Ord for StoredOp {
     fn cmp(&self, other: &Self) -> Ordering {
         (&self.timestamp, &self.op_id).cmp(&(&other.timestamp, &other.op_id))
     }
 }
 
-impl PartialOrd for MetaOp {
+impl PartialOrd for StoredOp {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -62,7 +73,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn store_slice_hash(
         &self,
         slice_id: u64,
-        slice_hash: Vec<u8>,
+        slice_hash: bytes::Bytes,
     ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Count the number of stored time slices.
@@ -76,7 +87,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn retrieve_slice_hash(
         &self,
         slice_id: u64,
-    ) -> BoxFuture<'_, K2Result<Option<Vec<u8>>>>;
+    ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
 }
 
 /// Trait-object version of kitsune2 op store.

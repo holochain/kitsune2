@@ -2,10 +2,11 @@
 members = [
   "crates/api",
   "crates/bootstrap_srv",
-  "crates/kitsune2",
+  "crates/core",
   "crates/dht",
   "crates/fetch_queue",
   "crates/memory",
+  "crates/tool_proto_build",
 ]
 
 resolver = "2"
@@ -30,6 +31,8 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 ed25519-dalek = "2.1.1"
 # bootstrap_srv uses this to determine worker thread count.
 num_cpus = "1.16.0"
+# api uses this for the kitsune2 wire protocol.
+prost = "0.13.3"
 # kitsune types need to be serializable for network transmission.
 serde = { version = "1.0.215", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
@@ -43,6 +46,13 @@ tempfile = "3.14.0"
 thiserror = "2.0.3"
 # this is used by bootstrap_srv as the http server implementation.
 tiny_http = "0.12.0"
+# --- tool-dependencies ---
+# The following workspace dependencies are thus-far only used in unpublished
+# tools and so are not needed in any true dependency trees.
+# Please be careful to only include them in build dependencies or move them
+# above this section.
+# --- tool-dependencies ---
+prost-build = "0.13.3"
 # --- dev-dependencies ---
 # The following workspace dependencies are used in crate dev-dependencies.
 # Please be careful to only include them in dev dependencies or move them

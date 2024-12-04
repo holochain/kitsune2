@@ -38,7 +38,9 @@ pub(crate) mod serde_bytes_base64 {
 pub mod agent;
 pub mod builder;
 pub mod config;
+pub mod kitsune;
 pub mod peer_store;
+pub mod space;
 
 mod error;
 pub use error::*;
@@ -53,5 +55,7 @@ pub mod fetch;
 
 pub mod op_store;
 pub use op_store::*;
+
+pub mod protocol;
 
 pub mod tx;
