@@ -8,3 +8,6 @@ pub use core_space::*;
 
 mod mem_peer_store;
 pub use mem_peer_store::*;
+
+mod stub_transport;
+pub use stub_transport::*;
