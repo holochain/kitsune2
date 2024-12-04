@@ -10,6 +10,14 @@ const AGENT_1: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent1")));
 const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
 const SPACE_1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space1")));
 
+fn sneak_url(s: &str) -> Url {
+    Url::from_str(format!("ws://a.b:80/{s}")).unwrap()
+}
+
+fn unsneak_url(u: &Url) -> String {
+    u.peer_id().unwrap().into()
+}
+
 #[derive(Debug, Default)]
 struct AgentBuild {
     pub agent: Option<AgentId>,
@@ -17,7 +25,7 @@ struct AgentBuild {
     pub created_at: Option<Timestamp>,
     pub expires_at: Option<Timestamp>,
     pub is_tombstone: Option<bool>,
-    pub url: Option<Option<String>>,
+    pub url: Option<Option<Url>>,
     pub storage_arc: Option<BasicArc>,
 }
 
@@ -238,7 +246,7 @@ fn fixture_get_by_overlapping_storage_arc() {
         for (arc_name, arc) in arc_list.iter() {
             s.insert(vec![AgentBuild {
                 storage_arc: Some(*arc),
-                url: Some(Some((*arc_name).into())),
+                url: Some(Some(sneak_url(arc_name))),
                 ..Default::default()
             }
             .build()]);
@@ -247,7 +255,7 @@ fn fixture_get_by_overlapping_storage_arc() {
         let mut got = s
             .get_by_overlapping_storage_arc(*q)
             .into_iter()
-            .map(|info| info.url.as_ref().unwrap().clone())
+            .map(|info| unsneak_url(info.url.as_ref().unwrap()))
             .collect::<Vec<_>>();
 
         got.sort();
@@ -266,7 +274,7 @@ fn fixture_get_near_location() {
             // for simplicity have agents claim arcs of len 1
             storage_arc: Some(Some((loc, loc))),
             // set the url to the idx for matching
-            url: Some(Some(idx.to_string())),
+            url: Some(Some(sneak_url(&idx.to_string()))),
             ..Default::default()
         }
         .build()]);
@@ -276,13 +284,13 @@ fn fixture_get_near_location() {
     s.insert(vec![
         AgentBuild {
             storage_arc: Some(None),
-            url: Some(Some("zero-arc".into())),
+            url: Some(Some(sneak_url("zero-arc"))),
             ..Default::default()
         }
         .build(),
         AgentBuild {
             is_tombstone: Some(true),
-            url: Some(Some("tombstone".into())),
+            url: Some(Some(sneak_url("tombstone"))),
             ..Default::default()
         }
         .build(),
@@ -291,7 +299,7 @@ fn fixture_get_near_location() {
                 Timestamp::now().as_micros()
                     - std::time::Duration::from_secs(10).as_micros() as i64,
             )),
-            url: Some(Some("expired".into())),
+            url: Some(Some(sneak_url("expired"))),
             ..Default::default()
         }
         .build(),
@@ -307,7 +315,7 @@ fn fixture_get_near_location() {
         let got = s
             .get_near_location(*loc, 42)
             .into_iter()
-            .map(|info| info.url.as_ref().unwrap().clone())
+            .map(|info| unsneak_url(info.url.as_ref().unwrap()))
             .collect::<Vec<_>>();
         assert_eq!(exp, &got.as_slice());
     }

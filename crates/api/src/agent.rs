@@ -187,7 +187,7 @@ pub struct AgentInfo {
 
     /// If set, this indicates the primary url at which this agent may
     /// be reached. This should largely only be UNSET if this is a tombstone.
-    pub url: Option<String>,
+    pub url: Option<Url>,
 
     /// The arc over which this agent claims authority.
     pub storage_arc: BasicArc,
@@ -328,7 +328,7 @@ mod test {
         let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
         let now = Timestamp::from_micros(1731690797907204);
         let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
-        let url = Some("test-url".into());
+        let url = Some(Url::from_str("ws://test.com:80/test-url").unwrap());
         let storage_arc = Some((42, u32::MAX / 13));
 
         let enc = AgentInfoSigned::sign(
@@ -349,7 +349,7 @@ mod test {
         .unwrap();
 
         assert_eq!(
-            r#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"test-url\",\"storageArc\":[42,330382099]}","signature":"ZmFrZS1zaWduYXR1cmU"}"#,
+            r#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"ws://test.com:80/test-url\",\"storageArc\":[42,330382099]}","signature":"ZmFrZS1zaWduYXR1cmU"}"#,
             enc
         );
 
@@ -365,7 +365,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn ignores_future_extension_fields() {
-        AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"test-url\",\"storageArc\":[42,330382099],\"fakeField\":\"bla\"}","signature":"ZmFrZS1zaWduYXR1cmU","fakeField2":"bla2"}"#).unwrap();
+        AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"ws://test.com:80/test-url\",\"storageArc\":[42,330382099],\"fakeField\":\"bla\"}","signature":"ZmFrZS1zaWduYXR1cmU","fakeField2":"bla2"}"#).unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
