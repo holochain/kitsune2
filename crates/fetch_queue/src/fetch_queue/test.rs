@@ -5,11 +5,11 @@ use kitsune2_api::{fetch::FetchQueue, id::Id, AgentId, OpId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
-use super::{QConfig, Tx, Q};
+use super::{QConfig, Transport, Q};
 
 #[derive(Debug)]
 pub struct MockTx {
-    requests_sent: Vec<(AgentId, Vec<OpId>, u32)>,
+    requests_sent: Vec<(OpId, AgentId)>,
 }
 
 type DynMockTx = Arc<Mutex<MockTx>>;
@@ -22,57 +22,52 @@ impl MockTx {
     }
 }
 
-impl Tx for MockTx {
+impl Transport for MockTx {
     fn send_op_request(
         &mut self,
-        source: AgentId,
-        op_list: Vec<OpId>,
-        max_byte_count: u32,
+        op_id: OpId,
+        dest: AgentId,
     ) -> kitsune2_api::BoxFut<'static, kitsune2_api::K2Result<()>> {
-        self.requests_sent.push((source, op_list, max_byte_count));
+        self.requests_sent.push((op_id, dest));
         Box::pin(async move { Ok(()) })
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn chunked_op_requests() {
+async fn multi_op_fetch_from_one_agent() {
     let config = QConfig::default();
     let mock_tx = MockTx::new();
     let mut q = Q::new(config.clone(), mock_tx.clone());
 
-    // let num_ops = config.max_hash_count + 1;
-    let num_ops: u8 = 1;
+    let num_ops: u8 = 120;
     let op_list = create_op_list(num_ops as u16);
     let source = random_agent_id();
     q.add_ops(op_list.clone(), source.clone()).await.unwrap();
 
-    let expected_num_requests = num_ops.div_ceil(config.max_hash_count);
-
+    // Check that one request is sent to the source for each op.
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
-            if requests_sent.len() < expected_num_requests as usize {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+            if requests_sent.len() < num_ops as usize {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             } else {
-                assert_eq!(requests_sent.len(), expected_num_requests as usize);
-                op_list
-                    .clone()
-                    .chunks(config.max_hash_count as usize)
-                    .enumerate()
-                    .for_each(|(index, op_ids)| {
-                        assert_eq!(requests_sent[index].0, source);
-                        assert_eq!(requests_sent[index].1, op_ids);
-                        assert_eq!(
-                            requests_sent[index].2,
-                            QConfig::default().max_byte_count
-                        );
-                    });
+                assert!(requests_sent.len() >= num_ops as usize);
+                op_list.clone().into_iter().for_each(|op_id| {
+                    assert!(requests_sent.contains(&(op_id, source.clone(),)));
+                });
                 break;
             }
         }
     })
     .await
     .unwrap();
+
+    // Check that the ops that are being fetched are added back to the queue with the correct source.
+    let ops = q.0.ops.lock().await;
+    op_list
+        .clone()
+        .into_iter()
+        .for_each(|op_id| assert!(ops.contains_key(&(op_id, source.clone()))));
 }
 
 fn random_id() -> Id {

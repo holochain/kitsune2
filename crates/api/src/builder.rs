@@ -32,6 +32,7 @@ impl Builder {
         } = self;
 
         peer_store.default_config(config)?;
+        fetch_queue.default_config(config)?;
 
         Ok(())
     }

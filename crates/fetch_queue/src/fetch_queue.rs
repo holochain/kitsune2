@@ -3,17 +3,46 @@
 //!
 //! The fetch queue holds sets of ops and sources where to fetch ops from. Sending fetch
 //! requests to peers is executed by a fetch task.
+//!
+//! Purpose: Keep track of ops to be fetched from which agents, send fetch requests and process incoming fetch responses.
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+//! - Fetch data store which stores ops
+//! - Task that requests ops from agents
+//! - Task that processes incoming responses to these requests
+//!     - persist ops into data store
+//!     - remove op hashes from in-memory data store
+//!
+//! Components:
+//! - Fetch queue: Data structure to record ops by hash
+//! - Fetch task: To poll the fetch queue and do fetch requests
+//! ~~- Fetch response queue: To manage parallel incoming fetch requests and getting op data to respond with~~
+//! ~~- Fetch response task: Reads the response queue~~
+//!
+//! ### Fetch data object
+//!
+//! - Each op hash has a list of agents who have told us they are holding that data.
+//! - There is one public method `add_ops` which takes a list of ops and a source (agent id).
+//! - New ops are added to the end of the queue.
+//!
+//! ### Fetch task
+//!
+//! First iteration method:
+//! - Pop individual op/agent pairs from the queue and send a request for them
+//! - Append popped item to the end of the queue
+//! - Put unresponsive peers on a backoff/cool-down list
+//! - incoming op is written to the data store
+//! - once persisted successfully, op is removed from the fetch data object
 
-use indexmap::{map::Entry, IndexMap};
+use std::{sync::Arc, time::Duration};
+
+use indexmap::IndexMap;
 use kitsune2_api::{
     builder,
     config::ModConfig,
     fetch::{
         DynFetchQueue, DynFetchQueueFactory, FetchQueue, FetchQueueFactory,
     },
-    tx::Tx,
+    tx::Transport,
     AgentId, BoxFut, K2Error, K2Result, OpId,
 };
 use tokio::{
@@ -21,7 +50,7 @@ use tokio::{
     sync::{mpsc::Sender, Mutex},
 };
 
-const MOD_NAME: &str = "FetchQueue";
+const MOD_NAME: &str = "Fetch";
 
 /// Configuration parameters for [Q]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -29,24 +58,15 @@ const MOD_NAME: &str = "FetchQueue";
 pub struct QConfig {
     /// How many parallel fetch requests for actual data we should have at once. Default: 2.  
     parallel_request_count: u8,
-    /// Duration in ms to pause between fetch loop iterations. Default: 100.
-    fetch_loop_pause: u64,
-    /// Max hash count to request from one peer at a time. Default: 16.  
-    max_hash_count: u8,
-    /// Max byte count that we want to get in a single request. Default: 10MiB.  
-    /// This will be sent to the remote as part of the request. If the data of the requested ops  
-    /// is larger than this amount, they will send back as the ACK the count of hashes  
-    /// that they will be responding with that is under this byte count.  
-    max_byte_count: u32,
+    /// Duration in ms to sleep when idle. Default: 1000.
+    fetch_loop_sleep: u64,
 }
 
 impl Default for QConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            fetch_loop_pause: 100, // in ms
-            max_hash_count: 16,
-            max_byte_count: 10 * 1024,
+            fetch_loop_sleep: 1000, // in ms
         }
     }
 }
@@ -58,25 +78,19 @@ impl QConfig {
         self.parallel_request_count
     }
     pub fn fetch_loop_pause(&self) -> u64 {
-        self.fetch_loop_pause
-    }
-    pub fn max_hash_count(&self) -> u8 {
-        self.max_hash_count
-    }
-    pub fn max_byte_count(&self) -> u32 {
-        self.max_byte_count
+        self.fetch_loop_sleep
     }
 }
 
 // TODO: Temporary trait object of a transport module to facilitate unit tests.
-type DynTx = Arc<Mutex<dyn Tx>>;
+type DynTransport = Arc<Mutex<dyn Transport>>;
 
 #[derive(Debug)]
 struct Q(Inner);
 
 impl Q {
-    fn new(config: QConfig, tx: DynTx) -> Self {
-        Self(Inner::spawn(config, tx))
+    fn new(config: QConfig, transport: DynTransport) -> Self {
+        Self(Inner::spawn_fetch_task(config, transport))
     }
 }
 
@@ -90,21 +104,11 @@ impl FetchQueue for Q {
             // Add ops to map.
             let mut ops = self.0.ops.lock().await;
             op_list.clone().into_iter().for_each(|op_id| {
-                match ops.entry(op_id) {
-                    Entry::Occupied(mut o) => {
-                        let agent_ids = o.get_mut();
-                        agent_ids.insert(source.clone());
-                    }
-                    Entry::Vacant(v) => {
-                        let mut agent_ids = HashSet::new();
-                        agent_ids.insert(source.clone());
-                        v.insert(agent_ids);
-                    }
-                }
+                ops.insert((op_id, source.clone()), ());
             });
             drop(ops);
 
-            // Immediately fetch op list from agent.
+            // Immediately start fetching ops from agent in case the fetch loop is pausing.
             self.0
                 .fetch_request_tx
                 .send(())
@@ -118,63 +122,84 @@ impl FetchQueue for Q {
 #[derive(Clone, Debug)]
 struct Inner {
     config: QConfig,
-    ops: Arc<Mutex<IndexMap<OpId, HashSet<AgentId>>>>,
+    // An `IndexMap` is used to retain order of insertion and have the ability to look up elements
+    // by key. Ops may be added redundantly to the map with different sources to fetch from, so
+    // the map is keyed by op and agent id together.
+    // The value field could be used to track number of attempts for example.
+    ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
     current_request_count: Arc<Mutex<u8>>,
+    // A sender to wake up a sleeping fetch task.
     fetch_request_tx: Sender<()>,
-    tx: DynTx,
 }
 
 impl Inner {
-    pub fn spawn(config: QConfig, tx: DynTx) -> Self {
+    pub fn spawn_fetch_task(config: QConfig, transport: DynTransport) -> Self {
         // Create a channel to send fetch requests to the loop.
         let (fetch_request_tx, mut fetch_request_rx) =
-            tokio::sync::mpsc::channel::<()>(20);
+            tokio::sync::mpsc::channel::<()>(1);
 
         let inner = Self {
             config,
             ops: Arc::new(Mutex::new(IndexMap::new())),
             current_request_count: Arc::new(Mutex::new(0)),
             fetch_request_tx,
-            tx,
         };
 
         tokio::spawn({
-            let ops = inner.ops.clone();
             let current_request_count = inner.current_request_count.clone();
             let inner = inner.clone();
 
             async move {
                 let QConfig {
                     parallel_request_count,
-                    max_hash_count: _,
-                    fetch_loop_pause,
-                    ..
+                    fetch_loop_sleep: fetch_loop_pause,
                 } = inner.config;
 
                 loop {
-                    println!(
-                        "current request count {}",
-                        current_request_count.lock().await
-                    );
-
                     // Send new request if parallel request count is not reached.
                     if parallel_request_count
                         > (*current_request_count.lock().await)
                     {
-                        let _ = inner.clone().send_request().await;
+                        let elem = inner.ops.lock().await.shift_remove_index(0);
+                        if let Some(((op_id, agent_id), ())) = elem {
+                            // A new request is going to be made.
+                            (*inner.current_request_count.lock().await) += 1;
+                            tokio::spawn({
+                                let tx = transport.clone();
+                                let op_id = op_id.clone();
+                                let agent_id = agent_id.clone();
+                                let current_request_count =
+                                    inner.current_request_count.clone();
+                                async move {
+                                    let result = tx
+                                        .lock()
+                                        .await
+                                        .send_op_request(op_id, agent_id)
+                                        .await;
+                                    println!("result from thread after sending request {result:?}");
+
+                                    // Request is complete, reduce request count.
+                                    (*current_request_count.lock().await) -= 1;
+                                }
+                            });
+
+                            // Push op and source back to the end of the queue.
+                            inner
+                                .ops
+                                .lock()
+                                .await
+                                .insert((op_id, agent_id), ());
+                        }
                     }
 
-                    println!(
-                        "current request count now {} parallel request count {}",
-                        current_request_count.lock().await
-                        , parallel_request_count
-                    );
-                    // Pause if parallel request count is reached or ops is empty.
-                    // Pause can be canceled by ops being added.
+                    // Pause if maximum parallel request count is reached.
                     if (*current_request_count.lock().await)
                         == parallel_request_count
-                        || ops.lock().await.is_empty()
                     {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    } else if inner.ops.lock().await.is_empty() {
+                        // Pause if there are no more ops to fetch.
+                        // Pause is canceled by newly added ops.
                         select! {
                             _ = tokio::time::sleep(Duration::from_millis(
                                 fetch_loop_pause,
@@ -187,53 +212,6 @@ impl Inner {
         });
 
         inner
-    }
-
-    fn get_op_id_list_for_agent(
-        &self,
-        agent_id: &AgentId,
-    ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
-        Box::pin(async move {
-            let ops = self.ops.lock().await;
-            Ok(vec![])
-        })
-    }
-
-    fn send_request(&self) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move {
-            if let Some((op_id, agent_ids)) =
-                self.ops.lock().await.shift_remove_index(0)
-            {
-                println!("op id is {op_id} and agent id {agent_ids:?}");
-                if let Some(agent_id) = agent_ids.iter().last() {
-                    let ops_batch =
-                        self.get_op_id_list_for_agent(agent_id).await?;
-
-                    (*self.current_request_count.lock().await) += 1;
-                    tokio::spawn({
-                        let tx = self.tx.clone();
-                        let agent_id = agent_id.clone();
-                        let current_request_count =
-                            self.current_request_count.clone();
-                        let max_byte_count = self.config.max_byte_count;
-                        async move {
-                            let result = tx
-                                .lock()
-                                .await
-                                .send_op_request(
-                                    agent_id,
-                                    ops_batch,
-                                    max_byte_count,
-                                )
-                                .await;
-                            println!("result from thread after sending request {result:?}");
-                            (*current_request_count.lock().await) -= 1;
-                        }
-                    });
-                }
-            }
-            Ok(())
-        })
     }
 }
 
@@ -261,12 +239,11 @@ impl FetchQueueFactory for QFactory {
     ) -> BoxFut<'static, K2Result<DynFetchQueue>> {
         #[derive(Debug)]
         struct TxPlaceholder;
-        impl Tx for TxPlaceholder {
+        impl Transport for TxPlaceholder {
             fn send_op_request(
                 &mut self,
+                _op_id: OpId,
                 _source: AgentId,
-                _op_list: Vec<OpId>,
-                _max_byte_count: u32,
             ) -> BoxFut<'static, K2Result<()>> {
                 Box::pin(async move { todo!() })
             }
