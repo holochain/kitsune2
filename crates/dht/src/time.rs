@@ -1101,11 +1101,13 @@ mod tests {
 
         // Now insert an op at the current time
         store
-            .process_incoming_ops(vec![MetaOp {
-                op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                timestamp: (Timestamp::now() - pt.full_slice_duration).unwrap(),
-                op_data: vec![],
-            }])
+            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::from(vec![7; 32])),
+                (Timestamp::now() - pt.full_slice_duration).unwrap(),
+                vec![],
+            )
+            .try_into()
+            .unwrap()])
             .await
             .unwrap();
         // and compute the new state in the future

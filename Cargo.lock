@@ -714,6 +714,8 @@ dependencies = [
  "bytes",
  "futures",
  "kitsune2_api",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
