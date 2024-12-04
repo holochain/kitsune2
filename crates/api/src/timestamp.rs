@@ -21,6 +21,11 @@
 #[serde(transparent)]
 pub struct Timestamp(i64);
 
+/// The unix epoch timestamp.
+///
+/// Since the Timestamp is microseconds from the unix epoch, this is the zero value.
+pub const UNIX_TIMESTAMP: Timestamp = Timestamp(0);
+
 impl Timestamp {
     /// Construct a new timestamp of "now".
     pub fn now() -> Self {

@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package kitsune2.wire;
+
+// A Kitsune2 wire protocol message.
+//
+// This is the top-level encoding
+// that will be transferred between Kitsune2 peers. Most communications
+// between peers to make Kitsune2 actually function will be encoded
+// separately inside the payload of TY_MODULE type messages.
+message K2Proto {
+  // Enumeration of the types of messages that can be sent between peers.
+  //
+  // We are using this enum field to distinguish between top-level messages,
+  // rather than protobuf's oneof because of the downsides of upgrading oneofs.
+  enum Ty {
+    // The "UNSPECIFIED" type for future message types.
+    //
+    // In general, peers should ignore unspecified messages, but
+    // should still count them toward any ratelimiting metrics.
+    TY_UNSPECIFIED = 0;
+
+    // This message is preflight data.
+    //
+    // The implementor is responsible for encoding any module-specific
+    // requirements within the data payload of this message type.
+    // For example, if peers are required to include the "dht_v1" module
+    // to communicate with each other, they should reject preflight to
+    // peers that do not include that module.
+    TY_PREFLIGHT = 1;
+
+    // This is a notification or fire-and-forget message from a peer.
+    //
+    // This type requires that a "space" be specified.
+    TY_NOTIFY = 2;
+
+    // This is a module communication.
+    //
+    // Most of Kitsune2's communications will likely proceed between
+    // Kitsune2's modules.
+    //
+    // This type requires that a "space" be specified.
+    // This type requires that a "module" be specified.
+    TY_MODULE = 3;
+
+    // This message indicates a general disconnect, with the reason
+    // or context specified in the data payload.
+    //
+    // We may add additional specific disconnect codes in the future.
+    TY_DISCONNECT = 15;
+  }
+
+  // The type of this message.
+  Ty ty = 1;
+
+  // The payload or content of this message.
+  bytes data = 2;
+
+  // If the Ty requires that a space be specified, this is it.
+  //
+  // Kitsune is divided up into multiple dht "spaces" and peers
+  // join and communicate over these spaces. These bytes identify
+  // the space within which this message is communicating.
+  optional bytes space = 3;
+
+  // If the Ty requires a module impl be specified, this is it.
+  //
+  // Modules include specific sub-protocols to communicate with each other,
+  // so those messages must be routed to the correct module.
+  //
+  // This string is the module routing info. E.g. "gossip", "fetch", "sharding".
+  optional string module = 4;
+}
