@@ -1050,6 +1050,7 @@ mod tests {
         )
         .await
         .unwrap();
+        let initial_full_slices_count = pt.full_slices;
 
         // Quick calculation of how many full slices we can fit into the current time, leaving space
         // for the minimum recent time.
@@ -1069,27 +1070,25 @@ mod tests {
             store.retrieve_slice_hash(5203984823).await.unwrap();
         assert!(some_slice_hash.is_none());
 
-        println!("Full slices: {}", store.slice_hash_count().await.unwrap());
-
         // Now insert an op at the current time
         store
             .process_incoming_ops(vec![MetaOp {
                 op_id: OpId::from(bytes::Bytes::from(vec![7; 32])),
-                timestamp: Timestamp::now(),
+                timestamp: (Timestamp::now() - pt.full_slice_duration).unwrap(),
                 op_data: vec![],
             }])
             .await
             .unwrap();
         // and compute the new state in the future
-        pt.update(Timestamp::now() + 2 * pt.full_slice_duration, store.clone())
+        pt.update(Timestamp::now() + pt.full_slice_duration, store.clone())
             .await
             .unwrap();
 
-        // Then a single full slice should have been created as the current time
+        // Then a single full slice should have been created at the current time
         assert!(store.slice_hash_count().await.unwrap() > 15_000);
         // and the count should match the number of full slices that the time partition claims to
         // have created.
-        assert_eq!(store.slice_hash_count().await.unwrap(), pt.full_slices);
+        assert_eq!(store.slice_hash_count().await.unwrap(), initial_full_slices_count + 1);
     }
 
     fn validate_partial_slices(pt: &PartitionedTime) {
