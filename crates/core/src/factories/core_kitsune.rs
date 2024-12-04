@@ -107,3 +107,50 @@ impl Kitsune for CoreKitsune {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn happy_space_construct() {
+        use kitsune2_api::{kitsune::*, space::*, *};
+        use std::sync::Arc;
+
+        #[derive(Debug)]
+        struct S;
+
+        impl SpaceHandler for S {
+            fn incoming_message(
+                &self,
+                _peer: AgentId,
+                _data: bytes::Bytes,
+            ) -> K2Result<()> {
+                // this test is a bit of a stub for now until we have the
+                // transport module implemented and can send/receive messages.
+                Ok(())
+            }
+        }
+
+        #[derive(Debug)]
+        struct K;
+
+        impl KitsuneHandler for K {
+            fn create_space(
+                &self,
+                _space: SpaceId,
+            ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+                Box::pin(async move {
+                    let s: DynSpaceHandler = Arc::new(S);
+                    Ok(s)
+                })
+            }
+        }
+
+        let k: DynKitsuneHandler = Arc::new(K);
+
+        let k = crate::default_builder().build(k).await.unwrap();
+
+        k.space(bytes::Bytes::from_static(b"space1").into())
+            .await
+            .unwrap();
+    }
+}
