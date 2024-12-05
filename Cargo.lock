@@ -757,7 +757,9 @@ dependencies = [
  "bytes",
  "ed25519-dalek",
  "futures",
+ "indexmap",
  "kitsune2_api",
+ "rand",
  "serde",
  "serde_json",
  "tokio",
@@ -770,18 +772,6 @@ dependencies = [
  "bytes",
  "kitsune2_api",
  "kitsune2_memory",
- "tokio",
-]
-
-[[package]]
-name = "kitsune2_fetch"
-version = "0.0.1-alpha"
-dependencies = [
- "bytes",
- "indexmap",
- "kitsune2_api",
- "rand",
- "serde",
  "tokio",
 ]
 

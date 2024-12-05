@@ -4,7 +4,6 @@ members = [
   "crates/bootstrap_srv",
   "crates/core",
   "crates/dht",
-  "crates/fetch",
   "crates/memory",
   "crates/tool_proto_build",
 ]

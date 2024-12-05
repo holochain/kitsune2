@@ -14,9 +14,18 @@ edition = "2021"
 bytes = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
+indexmap = "2.7.0"
 kitsune2_api = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
 
 [dev-dependencies]
+rand = "0.8.5"
 tokio = { workspace = true, features = ["full"] }

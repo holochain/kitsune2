@@ -5,7 +5,7 @@ use kitsune2_api::{fetch::Fetch, id::Id, AgentId, OpId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
-use super::{Kitsune2Fetch, Kitsune2FetchConfig, Transport};
+use super::{CoreFetch, CoreFetchConfig, Transport};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -34,14 +34,14 @@ impl Transport for MockTransport {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn parallel_request_count_is_not_exeeded() {
-    let config = Kitsune2FetchConfig {
+async fn parallel_request_count_is_not_exceeded() {
+    let config = CoreFetchConfig {
         parallel_request_count: 1,
         parallel_request_pause: 10000, // 10 seconds to be certain that no other request is sent during the test
         ..Default::default()
     };
     let mock_tx = MockTransport::new();
-    let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
+    let mut fetch = CoreFetch::new(config.clone(), mock_tx.clone());
 
     let op_list = create_op_list(2);
     let source = random_agent_id();
@@ -52,7 +52,7 @@ async fn parallel_request_count_is_not_exeeded() {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
             if requests_sent.is_empty() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(20)).await;
             } else {
                 break;
             }
@@ -70,9 +70,9 @@ async fn parallel_request_count_is_not_exeeded() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_one_agent() {
-    let config = Kitsune2FetchConfig::default();
+    let config = CoreFetchConfig::default();
     let mock_tx = MockTransport::new();
-    let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
+    let mut fetch = CoreFetch::new(config.clone(), mock_tx.clone());
 
     let num_ops: u8 = 50;
     let op_list = create_op_list(num_ops as u16);
@@ -111,12 +111,12 @@ async fn happy_multi_op_fetch_from_one_agent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_multiple_agents() {
-    let config = Kitsune2FetchConfig {
+    let config = CoreFetchConfig {
         parallel_request_count: 5,
         ..Default::default()
     };
     let mock_tx = MockTransport::new();
-    let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
+    let mut fetch = CoreFetch::new(config.clone(), mock_tx.clone());
 
     let op_list_1 = create_op_list(10);
     let source_1 = random_agent_id();

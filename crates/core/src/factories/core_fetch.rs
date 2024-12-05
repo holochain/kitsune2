@@ -2,6 +2,7 @@
 //!
 //! In particular it tracks which ops need to be fetched from which agents,
 //! sends fetch requests and processes incoming responses to these requests.
+//!
 //! It consists of multiple parts:
 //! - Data object that tracks op and agent ids in memory
 //! - Fetch task that requests tracked ops from agents
@@ -45,7 +46,7 @@ const MOD_NAME: &str = "Fetch";
 /// Configuration parameters for [Q]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Kitsune2FetchConfig {
+pub struct CoreFetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     parallel_request_count: u8,
     /// Duration in ms to pause when parallel request count is reached. Default: 10.
@@ -54,7 +55,7 @@ pub struct Kitsune2FetchConfig {
     fetch_loop_sleep: u64,
 }
 
-impl Default for Kitsune2FetchConfig {
+impl Default for CoreFetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
@@ -64,15 +65,18 @@ impl Default for Kitsune2FetchConfig {
     }
 }
 
-impl ModConfig for Kitsune2FetchConfig {}
+impl ModConfig for CoreFetchConfig {}
 
-impl Kitsune2FetchConfig {
+impl CoreFetchConfig {
+    /// Get parallel request count.
     pub fn parallel_request_count(&self) -> u8 {
         self.parallel_request_count
     }
+    /// Get parallel request pause interval.
     pub fn parallel_request_pause(&self) -> u64 {
         self.parallel_request_pause
     }
+    /// Get fetch loop pause interval.
     pub fn fetch_loop_pause(&self) -> u64 {
         self.fetch_loop_sleep
     }
@@ -82,15 +86,15 @@ impl Kitsune2FetchConfig {
 type DynTransport = Arc<Mutex<dyn Transport>>;
 
 #[derive(Debug)]
-struct Kitsune2Fetch(Inner);
+struct CoreFetch(Inner);
 
-impl Kitsune2Fetch {
-    fn new(config: Kitsune2FetchConfig, transport: DynTransport) -> Self {
+impl CoreFetch {
+    fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
         Self(Inner::spawn_fetch_task(config, transport))
     }
 }
 
-impl Fetch for Kitsune2Fetch {
+impl Fetch for CoreFetch {
     fn add_ops(
         &mut self,
         op_list: Vec<OpId>,
@@ -117,7 +121,7 @@ impl Fetch for Kitsune2Fetch {
 
 #[derive(Clone, Debug)]
 struct Inner {
-    config: Kitsune2FetchConfig,
+    config: CoreFetchConfig,
     // An `IndexMap` is used to retain order of insertion and have the ability to look up elements
     // by key efficiently. Ops may be added redundantly to the map with different sources to fetch from, so
     // the map is keyed by op and agent id together.
@@ -130,7 +134,7 @@ struct Inner {
 
 impl Inner {
     pub fn spawn_fetch_task(
-        config: Kitsune2FetchConfig,
+        config: CoreFetchConfig,
         transport: DynTransport,
     ) -> Self {
         // Create a channel to wake up sleeping loop.
@@ -149,7 +153,7 @@ impl Inner {
             let inner = inner.clone();
 
             async move {
-                let Kitsune2FetchConfig {
+                let CoreFetchConfig {
                     parallel_request_count,
                     parallel_request_pause,
                     fetch_loop_sleep: fetch_loop_pause,
@@ -223,21 +227,23 @@ impl Inner {
     }
 }
 
+/// A production-ready fetch module.
 #[derive(Debug)]
-pub struct Kitsune2FetchFactory {}
+pub struct CoreFetchFactory {}
 
-impl Kitsune2FetchFactory {
+impl CoreFetchFactory {
+    /// Construct a new CoreFetchFactory.
     pub fn create() -> DynFetchFactory {
         Arc::new(Self {})
     }
 }
 
-impl FetchFactory for Kitsune2FetchFactory {
+impl FetchFactory for CoreFetchFactory {
     fn default_config(
         &self,
         config: &mut kitsune2_api::config::Config,
     ) -> K2Result<()> {
-        config.add_default_module_config::<Kitsune2FetchConfig>(
+        config.add_default_module_config::<CoreFetchConfig>(
             MOD_NAME.to_string(),
         )?;
         Ok(())
@@ -262,7 +268,7 @@ impl FetchFactory for Kitsune2FetchFactory {
 
         Box::pin(async move {
             let config = builder.config.get_module_config(MOD_NAME)?;
-            let out: DynFetch = Arc::new(Kitsune2Fetch::new(config, tx));
+            let out: DynFetch = Arc::new(CoreFetch::new(config, tx));
             Ok(out)
         })
     }
