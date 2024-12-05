@@ -440,6 +440,7 @@ mod tests {
     use super::*;
     use kitsune2_api::OpStore;
     use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
+    use kitsune2_test_utils::enable_tracing;
     use std::sync::Arc;
 
     #[test]
@@ -1068,6 +1069,8 @@ mod tests {
 
     #[tokio::test]
     async fn compression_all_empty_slices_at_current_time() {
+        enable_tracing();
+
         let factor = 7;
         let current_time = Timestamp::now();
         let store = Arc::new(Kitsune2MemoryOpStore::default());

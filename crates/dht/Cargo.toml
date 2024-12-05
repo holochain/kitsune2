@@ -16,5 +16,6 @@ bytes = { workspace = true }
 
 [dev-dependencies]
 kitsune2_memory = { workspace = true }
+kitsune2_test_utils = { workspace = true }
 
 tokio = { workspace = true, features = ["macros", "rt"] }
