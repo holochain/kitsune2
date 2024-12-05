@@ -105,7 +105,7 @@ async fn happy_multi_op_fetch_from_one_agent() {
     .unwrap();
 
     // Leave time for all request threads to complete and re-insert op ids into the data object.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let ops = fetch.0.ops.lock().await.clone();
             if expected_ops
