@@ -33,7 +33,7 @@ use kitsune2_api::{
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     tx::Transport,
-    AgentId, BoxFut, K2Error, K2Result, OpId,
+    AgentId, BoxFut, K2Result, OpId,
 };
 use tokio::{
     select,
@@ -105,11 +105,11 @@ impl Fetch for Kitsune2Fetch {
             drop(ops);
 
             // Wake up fetch task in case it is sleeping.
-            self.0
-                .fetch_request_tx
-                .send(())
-                .await
-                .map_err(|err| K2Error::other(err))?;
+            // self.0
+            //     .fetch_request_tx
+            //     .send(())
+            //     .await
+            //     .map_err(|err| K2Error::other(err))?;
             Ok(())
         })
     }
@@ -119,7 +119,7 @@ impl Fetch for Kitsune2Fetch {
 struct Inner {
     config: Kitsune2FetchConfig,
     // An `IndexMap` is used to retain order of insertion and have the ability to look up elements
-    // by key. Ops may be added redundantly to the map with different sources to fetch from, so
+    // by key efficiently. Ops may be added redundantly to the map with different sources to fetch from, so
     // the map is keyed by op and agent id together.
     // The value field could be used to track number of attempts for example.
     ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
@@ -166,31 +166,34 @@ impl Inner {
                         if let Some(((op_id, agent_id), ())) = first_elem {
                             // Register new request.
                             (*inner.current_request_count.lock().await) += 1;
+
+                            // Make new request in a separate task.
                             tokio::spawn({
                                 let tx = transport.clone();
                                 let op_id = op_id.clone();
                                 let agent_id = agent_id.clone();
                                 let current_request_count =
                                     inner.current_request_count.clone();
+                                let ops = inner.ops.clone();
                                 async move {
-                                    let result = tx
+                                    let _ = tx
                                         .lock()
                                         .await
-                                        .send_op_request(op_id, agent_id)
+                                        .send_op_request(
+                                            op_id.clone(),
+                                            agent_id.clone(),
+                                        )
                                         .await;
-                                    println!("result from thread after sending request {result:?}");
 
                                     // Request is complete, reduce request count.
                                     (*current_request_count.lock().await) -= 1;
+
+                                    // Push op and source back to the end of the queue.
+                                    ops.lock()
+                                        .await
+                                        .insert((op_id, agent_id), ());
                                 }
                             });
-
-                            // Push op and source back to the end of the queue.
-                            inner
-                                .ops
-                                .lock()
-                                .await
-                                .insert((op_id, agent_id), ());
                         }
                     }
 

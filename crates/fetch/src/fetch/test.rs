@@ -37,7 +37,7 @@ impl Transport for MockTransport {
 async fn parallel_request_count_is_not_exeeded() {
     let config = Kitsune2FetchConfig {
         parallel_request_count: 1,
-        parallel_request_pause: 10000, // 10 seconds
+        parallel_request_pause: 10000, // 10 seconds to be certain that no other request is sent during the test
         ..Default::default()
     };
     let mock_tx = MockTransport::new();
@@ -69,7 +69,7 @@ async fn parallel_request_count_is_not_exeeded() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn multi_op_fetch_from_one_agent() {
+async fn happy_multi_op_fetch_from_one_agent() {
     let config = Kitsune2FetchConfig::default();
     let mock_tx = MockTransport::new();
     let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
@@ -107,6 +107,75 @@ async fn multi_op_fetch_from_one_agent() {
         .clone()
         .into_iter()
         .for_each(|op_id| assert!(ops.contains_key(&(op_id, source.clone()))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn happy_multi_op_fetch_from_multiple_agents() {
+    let config = Kitsune2FetchConfig {
+        parallel_request_count: 5,
+        ..Default::default()
+    };
+    let mock_tx = MockTransport::new();
+    let mut fetch = Kitsune2Fetch::new(config.clone(), mock_tx.clone());
+
+    let op_list_1 = create_op_list(10);
+    let source_1 = random_agent_id();
+    let op_list_2 = create_op_list(20);
+    let source_2 = random_agent_id();
+    let op_list_3 = create_op_list(30);
+    let source_3 = random_agent_id();
+    let total_ops = op_list_1.len() + op_list_2.len() + op_list_3.len();
+
+    fetch
+        .add_ops(op_list_1.clone(), source_1.clone())
+        .await
+        .unwrap();
+    fetch
+        .add_ops(op_list_2.clone(), source_2.clone())
+        .await
+        .unwrap();
+    fetch
+        .add_ops(op_list_3.clone(), source_3.clone())
+        .await
+        .unwrap();
+
+    // Check that at least one request was sent for each op.
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let requests_sent = mock_tx.lock().await.requests_sent.clone();
+            if requests_sent.len() < total_ops {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            } else {
+                assert!(requests_sent.len() >= total_ops);
+                op_list_1.clone().into_iter().for_each(|op_id| {
+                    assert!(requests_sent.contains(&(op_id, source_1.clone(),)));
+                });
+                op_list_2.clone().into_iter().for_each(|op_id| {
+                    assert!(requests_sent.contains(&(op_id, source_2.clone(),)));
+                });
+                op_list_3.clone().into_iter().for_each(|op_id| {
+                    assert!(requests_sent.contains(&(op_id, source_3.clone(),)));
+                });
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    // Check that the ops that are being fetched are appended to the end of
+    // the queue with the correct source.
+    let ops = fetch.0.ops.lock().await;
+    assert_eq!(ops.len(), total_ops);
+    op_list_1.clone().into_iter().for_each(|op_id| {
+        assert!(ops.contains_key(&(op_id, source_1.clone())))
+    });
+    op_list_2.clone().into_iter().for_each(|op_id| {
+        assert!(ops.contains_key(&(op_id, source_2.clone())))
+    });
+    op_list_3.clone().into_iter().for_each(|op_id| {
+        assert!(ops.contains_key(&(op_id, source_3.clone())))
+    });
 }
 
 fn random_id() -> Id {
