@@ -51,7 +51,7 @@ async fn parallel_request_count_is_not_exeeded() {
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
-            if requests_sent.len() == 0 {
+            if requests_sent.is_empty() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             } else {
                 break;

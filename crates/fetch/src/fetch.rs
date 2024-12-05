@@ -125,7 +125,7 @@ struct Inner {
     ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
     current_request_count: Arc<Mutex<u8>>,
     // A sender to wake up a sleeping fetch task.
-    fetch_request_tx: Sender<()>,
+    _fetch_request_tx: Sender<()>,
 }
 
 impl Inner {
@@ -141,7 +141,7 @@ impl Inner {
             config,
             ops: Arc::new(Mutex::new(IndexMap::new())),
             current_request_count: Arc::new(Mutex::new(0)),
-            fetch_request_tx,
+            _fetch_request_tx: fetch_request_tx,
         };
 
         tokio::spawn({
