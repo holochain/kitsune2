@@ -161,6 +161,10 @@ impl Inner {
                 } = inner.config;
 
                 loop {
+                    println!(
+                        "current request count {}",
+                        current_request_count.lock().await
+                    );
                     // Send new request if parallel request count is not reached.
                     if parallel_request_count
                         > (*current_request_count.lock().await)
@@ -169,6 +173,15 @@ impl Inner {
                         let first_elem =
                             inner.ops.lock().await.shift_remove_index(0);
                         if let Some(((op_id, agent_id), ())) = first_elem {
+                            println!("sending request");
+
+                            // Register new request, increase request
+                            (*current_request_count.lock().await) += 1;
+                            println!(
+                                "current request count before {}",
+                                current_request_count.lock().await
+                            );
+
                             // Make new request in a separate task.
                             tokio::spawn({
                                 Inner::request_op(
@@ -215,9 +228,6 @@ impl Inner {
         ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
     ) -> BoxFut<'static, K2Result<()>> {
         Box::pin(async move {
-            // Register new request, increase request
-            (*current_request_count.lock().await) += 1;
-
             let result = transport
                 .lock()
                 .await
@@ -226,6 +236,10 @@ impl Inner {
 
             // Request is complete, decrease request count.
             (*current_request_count.lock().await) -= 1;
+            println!(
+                "current request count after {}",
+                current_request_count.lock().await
+            );
 
             // Pause to give other requests a chance to be processed before re-adding this op.
             tokio::time::sleep(Duration::from_millis(1)).await;

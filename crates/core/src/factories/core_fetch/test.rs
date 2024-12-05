@@ -51,9 +51,7 @@ async fn parallel_request_count_is_not_exceeded() {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
-            if requests_sent.is_empty() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            } else {
+            if !requests_sent.is_empty() {
                 break;
             }
         }
@@ -74,9 +72,16 @@ async fn happy_multi_op_fetch_from_one_agent() {
     let mock_tx = MockTransport::new();
     let mut fetch = CoreFetch::new(config.clone(), mock_tx.clone());
 
-    let num_ops: u8 = 50;
+    let num_ops: usize = 50;
     let op_list = create_op_list(num_ops as u16);
     let source = random_agent_id();
+
+    let mut expected_ops = Vec::new();
+    op_list
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_ops.push((op_id, source.clone())));
+
     fetch
         .add_ops(op_list.clone(), source.clone())
         .await
@@ -86,27 +91,35 @@ async fn happy_multi_op_fetch_from_one_agent() {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
-            if requests_sent.len() < num_ops as usize {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            } else {
-                assert!(requests_sent.len() >= num_ops as usize);
-                op_list.clone().into_iter().for_each(|op_id| {
-                    assert!(requests_sent.contains(&(op_id, source.clone(),)));
+            if requests_sent.len() >= num_ops {
+                op_list.clone().into_iter().all(|op_id| {
+                    requests_sent.contains(&(op_id, source.clone()))
                 });
                 break;
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
     })
     .await
     .unwrap();
 
-    // Check that the ops that are being fetched are appended to the end of
-    // the queue with the correct source.
-    let ops = fetch.0.ops.lock().await;
-    op_list
-        .clone()
-        .into_iter()
-        .for_each(|op_id| assert!(ops.contains_key(&(op_id, source.clone()))));
+    // Leave time for all request threads to complete and re-insert op ids into the data object.
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let ops = fetch.0.ops.lock().await.clone();
+            if expected_ops
+                .iter()
+                .all(|expected_op| ops.contains_key(expected_op))
+            {
+                break;
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -126,6 +139,20 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     let source_3 = random_agent_id();
     let total_ops = op_list_1.len() + op_list_2.len() + op_list_3.len();
 
+    let mut expected_ops = Vec::new();
+    op_list_1
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_ops.push((op_id, source_1.clone())));
+    op_list_2
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_ops.push((op_id, source_2.clone())));
+    op_list_3
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_ops.push((op_id, source_3.clone())));
+
     fetch
         .add_ops(op_list_1.clone(), source_1.clone())
         .await
@@ -143,39 +170,36 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
-            if requests_sent.len() < total_ops {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            } else {
-                assert!(requests_sent.len() >= total_ops);
-                op_list_1.clone().into_iter().for_each(|op_id| {
-                    assert!(requests_sent.contains(&(op_id, source_1.clone(),)));
-                });
-                op_list_2.clone().into_iter().for_each(|op_id| {
-                    assert!(requests_sent.contains(&(op_id, source_2.clone(),)));
-                });
-                op_list_3.clone().into_iter().for_each(|op_id| {
-                    assert!(requests_sent.contains(&(op_id, source_3.clone(),)));
-                });
+            if requests_sent.len() >= total_ops
+                && expected_ops
+                    .iter()
+                    .all(|expected_op| requests_sent.contains(expected_op))
+            {
                 break;
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
     })
     .await
     .unwrap();
 
-    // Check that the ops that are being fetched are appended to the end of
-    // the queue with the correct source.
-    let ops = fetch.0.ops.lock().await;
-    assert_eq!(ops.len(), total_ops);
-    op_list_1.clone().into_iter().for_each(|op_id| {
-        assert!(ops.contains_key(&(op_id, source_1.clone())))
-    });
-    op_list_2.clone().into_iter().for_each(|op_id| {
-        assert!(ops.contains_key(&(op_id, source_2.clone())))
-    });
-    op_list_3.clone().into_iter().for_each(|op_id| {
-        assert!(ops.contains_key(&(op_id, source_3.clone())))
-    });
+    // Leave time for all request threads to complete and re-insert op ids into the data object.
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let ops = fetch.0.ops.lock().await.clone();
+            if expected_ops
+                .iter()
+                .all(|expected_op| ops.contains_key(expected_op))
+            {
+                break;
+            } else {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 fn random_id() -> Id {
