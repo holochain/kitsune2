@@ -34,7 +34,7 @@ use kitsune2_api::{
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     tx::Transport,
-    AgentId, BoxFut, K2Result, OpId,
+    AgentId, BoxFut, K2Error, K2Result, OpId,
 };
 use tokio::{
     select,
@@ -109,11 +109,12 @@ impl Fetch for CoreFetch {
             drop(ops);
 
             // Wake up fetch task in case it is sleeping.
-            // self.0
-            //     .fetch_request_tx
-            //     .send(())
-            //     .await
-            //     .map_err(|err| K2Error::other(err))?;
+            // TODO timeout
+            self.0
+                .fetch_request_tx
+                .send(())
+                .await
+                .map_err(|err| K2Error::other(err))?;
             Ok(())
         })
     }
@@ -129,7 +130,7 @@ struct Inner {
     ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
     current_request_count: Arc<Mutex<u8>>,
     // A sender to wake up a sleeping fetch task.
-    _fetch_request_tx: Sender<()>,
+    fetch_request_tx: Sender<()>,
 }
 
 impl Inner {
@@ -139,13 +140,13 @@ impl Inner {
     ) -> Self {
         // Create a channel to wake up sleeping loop.
         let (fetch_request_tx, mut fetch_request_rx) =
-            tokio::sync::mpsc::channel::<()>(1);
+            tokio::sync::mpsc::channel::<()>(50);
 
         let inner = Self {
             config,
             ops: Arc::new(Mutex::new(IndexMap::new())),
             current_request_count: Arc::new(Mutex::new(0)),
-            _fetch_request_tx: fetch_request_tx,
+            fetch_request_tx,
         };
 
         tokio::spawn({

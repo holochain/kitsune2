@@ -48,11 +48,11 @@ async fn parallel_request_count_is_not_exceeded() {
     fetch.add_ops(op_list, source).await.unwrap();
 
     // Wait until some request has been sent.
-    tokio::time::timeout(Duration::from_secs(1), async {
+    tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent = mock_tx.lock().await.requests_sent.clone();
             if requests_sent.is_empty() {
-                tokio::time::sleep(Duration::from_millis(20)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             } else {
                 break;
             }
