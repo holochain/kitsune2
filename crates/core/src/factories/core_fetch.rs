@@ -157,7 +157,7 @@ impl Inner {
                 let CoreFetchConfig {
                     parallel_request_count,
                     parallel_request_pause,
-                    fetch_loop_sleep: fetch_loop_pause,
+                    fetch_loop_sleep,
                 } = inner.config;
 
                 loop {
@@ -169,35 +169,15 @@ impl Inner {
                         let first_elem =
                             inner.ops.lock().await.shift_remove_index(0);
                         if let Some(((op_id, agent_id), ())) = first_elem {
-                            // Register new request.
-                            (*inner.current_request_count.lock().await) += 1;
-
                             // Make new request in a separate task.
                             tokio::spawn({
-                                let tx = transport.clone();
-                                let op_id = op_id.clone();
-                                let agent_id = agent_id.clone();
-                                let current_request_count =
-                                    inner.current_request_count.clone();
-                                let ops = inner.ops.clone();
-                                async move {
-                                    let _ = tx
-                                        .lock()
-                                        .await
-                                        .send_op_request(
-                                            op_id.clone(),
-                                            agent_id.clone(),
-                                        )
-                                        .await;
-
-                                    // Request is complete, reduce request count.
-                                    (*current_request_count.lock().await) -= 1;
-
-                                    // Push op and source back to the end of the queue.
-                                    ops.lock()
-                                        .await
-                                        .insert((op_id, agent_id), ());
-                                }
+                                Inner::request_op(
+                                    op_id.clone(),
+                                    agent_id.clone(),
+                                    transport.clone(),
+                                    inner.current_request_count.clone(),
+                                    inner.ops.clone(),
+                                )
                             });
                         }
                     }
@@ -215,7 +195,7 @@ impl Inner {
                         // Sleep is canceled by newly added ops.
                         select! {
                             _ = tokio::time::sleep(Duration::from_millis(
-                                fetch_loop_pause,
+                                fetch_loop_sleep,
                             )) => {},
                             _ = fetch_request_rx.recv() => {}
                         }
@@ -225,6 +205,36 @@ impl Inner {
         });
 
         inner
+    }
+
+    fn request_op(
+        op_id: OpId,
+        agent_id: AgentId,
+        transport: DynTransport,
+        current_request_count: Arc<Mutex<u8>>,
+        ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
+    ) -> BoxFut<'static, K2Result<()>> {
+        Box::pin(async move {
+            // Register new request, increase request
+            (*current_request_count.lock().await) += 1;
+
+            let result = transport
+                .lock()
+                .await
+                .send_op_request(op_id.clone(), agent_id.clone())
+                .await;
+
+            // Request is complete, decrease request count.
+            (*current_request_count.lock().await) -= 1;
+
+            // Pause to give other requests a chance to be processed before re-adding this op.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+
+            // Push op and source back to the end of the queue.
+            ops.lock().await.insert((op_id, agent_id), ());
+
+            result
+        })
     }
 }
 
