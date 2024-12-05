@@ -114,7 +114,7 @@ impl Fetch for CoreFetch {
                 .fetch_request_tx
                 .send(())
                 .await
-                .map_err(|err| K2Error::other(err))?;
+                .map_err(K2Error::other)?;
             Ok(())
         })
     }
@@ -161,10 +161,6 @@ impl Inner {
                 } = inner.config;
 
                 loop {
-                    println!(
-                        "current request count {}",
-                        current_request_count.lock().await
-                    );
                     // Send new request if parallel request count is not reached.
                     if parallel_request_count
                         > (*current_request_count.lock().await)
@@ -173,14 +169,8 @@ impl Inner {
                         let first_elem =
                             inner.ops.lock().await.shift_remove_index(0);
                         if let Some(((op_id, agent_id), ())) = first_elem {
-                            println!("sending request");
-
                             // Register new request, increase request
                             (*current_request_count.lock().await) += 1;
-                            println!(
-                                "current request count before {}",
-                                current_request_count.lock().await
-                            );
 
                             // Make new request in a separate task.
                             tokio::spawn({
@@ -236,10 +226,6 @@ impl Inner {
 
             // Request is complete, decrease request count.
             (*current_request_count.lock().await) -= 1;
-            println!(
-                "current request count after {}",
-                current_request_count.lock().await
-            );
 
             // Pause to give other requests a chance to be processed before re-adding this op.
             tokio::time::sleep(Duration::from_millis(1)).await;
