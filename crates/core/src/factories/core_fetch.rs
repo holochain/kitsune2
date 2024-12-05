@@ -43,7 +43,7 @@ use tokio::{
 
 const MOD_NAME: &str = "Fetch";
 
-/// Configuration parameters for [Q]
+/// Configuration parameters for [CoreFetchFactory].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreFetchConfig {
