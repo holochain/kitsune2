@@ -30,7 +30,7 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     /// multiple times and union the results.
     fn get_by_overlapping_storage_arc(
         &self,
-        arc: agent::BasicArc,
+        arc: arc::BasicArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
 
     /// Get a list of agents sorted by nearness to a target basis location.

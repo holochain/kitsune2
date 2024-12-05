@@ -115,31 +115,6 @@ pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
 /// Trait-object [LocalAgent].
 pub type DynLocalAgent = Arc<dyn LocalAgent>;
 
-/// A basic definition of a storage arc compatible with the concept of
-/// storage and querying of items in a store that fall within that arc.
-///
-/// This is intentionally a type definition and NOT a struct to prevent
-/// the accumulation of functionality attached to it. This is intended
-/// to transmit the raw concept of the arc, and ensure that any complexity
-/// of its usage are hidden in the modules that need to use this raw data,
-/// e.g. any store or gossip modules.
-///
-/// - If None, this arc does not claim any coverage.
-/// - If Some, this arc is an inclusive range from the first loc to the second.
-/// - If the first bound is larger than the second, the claim wraps around
-///   the end of u32::MAX to the other side.
-/// - A full arc is represented by `Some((0, u32::MAX))`.
-pub type BasicArc = Option<(u32, u32)>;
-
-/// An empty basic arc (`None`) is used for tombstone entries and for
-/// light-weight nodes that cannot afford the storage and bandwidth of being
-/// an authority.
-pub const BASIC_ARC_EMPTY: BasicArc = None;
-
-/// A full basic arc (`Some((0, u32::MAX))`) is used by nodes that wish to
-/// claim authority over the full DHT.
-pub const BASIC_ARC_FULL: BasicArc = Some((0, u32::MAX));
-
 mod serde_string_timestamp {
     pub fn serialize<S>(
         t: &crate::Timestamp,

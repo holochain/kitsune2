@@ -36,6 +36,10 @@ pub(crate) mod serde_bytes_base64 {
 }
 
 pub mod agent;
+
+pub mod arc;
+pub use arc::*;
+
 pub mod builder;
 pub mod config;
 pub mod kitsune;
