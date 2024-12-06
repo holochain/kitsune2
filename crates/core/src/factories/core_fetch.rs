@@ -10,23 +10,27 @@
 //!     - persisting ops to the data store
 //!     - removing op ids from in-memory data object
 //!
-//! ### Data object [`Kitsune2Fetch`]
+//! ### Data object [`CoreFetch`]
 //!
-//! - Exposes public method [`Kitsune2Fetch::add_ops`] that takes a list of ops and an agent id.
-//! - Stores pairs of (op id, agent id) in the order that ops have been added.
+//! - Exposes public method [`CoreFetch::add_ops`] that takes a list of ops and an agent id.
+//! - Stores pairs of ([`OpId`][`AgentId`]) in the order that ops have been added.
 //!
 //! ### Fetch task
 //!
-//! - Pops pairs of (op id, agent id) pairs from the beginning of the queue and requests the op from the agent.
-//! - Appends popped element to the end of the queue.
-//! - Put unresponsive peers on a back-off list.
+//! - Toeks pairs of ([`OpId`], [`AgentId`]) from the beginning of the queue and requests the op from the agent.
+//! - Appends removed pair to the end of the queue.
+//! - Put unresponsive peers on a cool-down list.
 //!
 //! ### Incoming op task
 //!
 //! - Incoming op is written to the data store.
 //! - Once persisted successfully, op is removed from the data object.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use indexmap::IndexMap;
 use kitsune2_api::{
@@ -34,7 +38,7 @@ use kitsune2_api::{
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     tx::Transport,
-    AgentId, BoxFut, K2Error, K2Result, OpId,
+    AgentId, BoxFut, K2Result, OpId,
 };
 use tokio::{
     select,
@@ -51,8 +55,10 @@ pub struct CoreFetchConfig {
     parallel_request_count: u8,
     /// Duration in ms to pause when parallel request count is reached. Default: 10.
     parallel_request_pause: u64,
-    /// Duration in ms to sleep when idle. Default: 1000.
+    /// Duration in ms to sleep when idle. Default: 1_000.
     fetch_loop_sleep: u64,
+    /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 10_000.
+    cool_down_interval: u64,
 }
 
 impl Default for CoreFetchConfig {
@@ -60,7 +66,8 @@ impl Default for CoreFetchConfig {
         Self {
             parallel_request_count: 2,
             parallel_request_pause: 10,
-            fetch_loop_sleep: 1000,
+            fetch_loop_sleep: 1_000,
+            cool_down_interval: 10_000,
         }
     }
 }
@@ -79,6 +86,10 @@ impl CoreFetchConfig {
     /// Get fetch loop pause interval.
     pub fn fetch_loop_pause(&self) -> u64 {
         self.fetch_loop_sleep
+    }
+    /// Get cool-down interval.
+    pub fn cool_down_interval(&self) -> u64 {
+        self.cool_down_interval
     }
 }
 
@@ -108,13 +119,14 @@ impl Fetch for CoreFetch {
             });
             drop(ops);
 
-            // Wake up fetch task in case it is sleeping.
-            // TODO timeout
-            self.0
-                .fetch_request_tx
-                .send(())
-                .await
-                .map_err(K2Error::other)?;
+            // Wake up fetch task in case it is sleeping. Time out if the channel buffer
+            // is full.
+            let _ = tokio::time::timeout(
+                Duration::from_millis(5),
+                self.0.fetch_request_tx.send(()),
+            )
+            .await;
+
             Ok(())
         })
     }
@@ -129,8 +141,10 @@ struct Inner {
     // The value field could be used to track number of attempts for example.
     ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
     current_request_count: Arc<Mutex<u8>>,
+    cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
     // A sender to wake up a sleeping fetch task.
     fetch_request_tx: Sender<()>,
+    transport: DynTransport,
 }
 
 impl Inner {
@@ -146,7 +160,9 @@ impl Inner {
             config,
             ops: Arc::new(Mutex::new(IndexMap::new())),
             current_request_count: Arc::new(Mutex::new(0)),
+            cool_down_list: Arc::new(Mutex::new(HashMap::new())),
             fetch_request_tx,
+            transport,
         };
 
         tokio::spawn({
@@ -158,6 +174,7 @@ impl Inner {
                     parallel_request_count,
                     parallel_request_pause,
                     fetch_loop_sleep,
+                    ..
                 } = inner.config;
 
                 loop {
@@ -165,23 +182,61 @@ impl Inner {
                     if parallel_request_count
                         > (*current_request_count.lock().await)
                     {
-                        // Pop first element from the start of the queue and release lock on map.
+                        let inner = inner.clone();
+
+                        // Take first element from the start of the queue and release lock on map.
                         let first_elem =
                             inner.ops.lock().await.shift_remove_index(0);
                         if let Some(((op_id, agent_id), ())) = first_elem {
-                            // Register new request, increase request
-                            (*current_request_count.lock().await) += 1;
+                            // Remove agents from cool-down list after configured interval has elapsed.
+                            inner.purge_cool_down_list(Instant::now()).await;
 
-                            // Make new request in a separate task.
-                            tokio::spawn({
-                                Inner::request_op(
-                                    op_id.clone(),
-                                    agent_id.clone(),
-                                    transport.clone(),
-                                    inner.current_request_count.clone(),
-                                    inner.ops.clone(),
-                                )
-                            });
+                            // Do not send request to agent on cool-down list.
+                            if !inner
+                                .cool_down_list
+                                .lock()
+                                .await
+                                .contains_key(&agent_id)
+                            {
+                                // Register new request, increase request count.
+                                (*current_request_count.lock().await) += 1;
+
+                                // Make new request in a separate task.
+                                tokio::spawn({
+                                    let inner = inner.clone();
+                                    let op_id = op_id.clone();
+                                    let agent_id = agent_id.clone();
+                                    async move {
+                                        if let Err(err) = inner
+                                            .request_op(
+                                                op_id.clone(),
+                                                agent_id.clone(),
+                                            )
+                                            .await
+                                        {
+                                            eprintln!("could not send fetch request for op id {op_id} to agent {agent_id}: {err}");
+                                            inner
+                                                .cool_down_list
+                                                .lock()
+                                                .await
+                                                .insert(
+                                                    agent_id,
+                                                    Instant::now(),
+                                                );
+                                        }
+                                    }
+                                });
+                            }
+
+                            // Pause to give other requests a chance to be processed before re-adding this op.
+                            tokio::time::sleep(Duration::from_millis(1)).await;
+
+                            // Push op and source back to the end of the queue.
+                            inner
+                                .ops
+                                .lock()
+                                .await
+                                .insert((op_id, agent_id), ());
                         }
                     }
 
@@ -211,12 +266,12 @@ impl Inner {
     }
 
     fn request_op(
+        &self,
         op_id: OpId,
         agent_id: AgentId,
-        transport: DynTransport,
-        current_request_count: Arc<Mutex<u8>>,
-        ops: Arc<Mutex<IndexMap<(OpId, AgentId), ()>>>,
     ) -> BoxFut<'static, K2Result<()>> {
+        let transport = self.transport.clone();
+        let current_request_count = self.current_request_count.clone();
         Box::pin(async move {
             let result = transport
                 .lock()
@@ -227,13 +282,17 @@ impl Inner {
             // Request is complete, decrease request count.
             (*current_request_count.lock().await) -= 1;
 
-            // Pause to give other requests a chance to be processed before re-adding this op.
-            tokio::time::sleep(Duration::from_millis(1)).await;
-
-            // Push op and source back to the end of the queue.
-            ops.lock().await.insert((op_id, agent_id), ());
-
             result
+        })
+    }
+
+    fn purge_cool_down_list(&self, now: Instant) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            let mut list = self.cool_down_list.lock().await;
+            list.retain(|_, instant| {
+                (now - *instant).as_millis()
+                    <= self.config.cool_down_interval as u128
+            });
         })
     }
 }
