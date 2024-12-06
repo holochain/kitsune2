@@ -17,6 +17,7 @@ pub fn arc_contains(arc_literal: ArcLiteral, location: u32) -> bool {
     if arc_literal.0 < arc_literal.1 {
         location >= arc_literal.0 && location < arc_literal.1
     } else {
+        // Arc wraps around u32::MAX.
         location >= arc_literal.0 || location < arc_literal.1
     }
 }
