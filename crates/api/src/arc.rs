@@ -10,7 +10,7 @@
 pub type ArcLiteral = (u32, u32);
 
 /// A full arc is represented by `(0, u32::MAX)`.
-pub const ARC_LITERAL_FULL: ArcLiteral = (0, u32::MAX);
+pub const ARC_LITERAL_FULL: ArcLiteral = (0, 0);
 
 /// Check if a location is contained within the arc.
 pub fn arc_contains(arc_literal: ArcLiteral, location: u32) -> bool {
@@ -45,3 +45,39 @@ pub const BASIC_ARC_EMPTY: BasicArc = None;
 /// A full basic arc (`Some((0, u32::MAX))`) is used by nodes that wish to
 /// claim authority over the full DHT.
 pub const BASIC_ARC_FULL: BasicArc = Some(ARC_LITERAL_FULL);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn full_arc_includes_all_values() {
+        let arc = super::ARC_LITERAL_FULL;
+
+        // Contains bounds
+        assert!(super::arc_contains(arc, 0));
+        assert!(super::arc_contains(arc, u32::MAX));
+
+        // and a value in the middle somewhere
+        assert!(super::arc_contains(arc, u32::MAX / 2));
+    }
+
+    #[test]
+    fn arc_includes_start_but_not_end() {
+        let arc = (32, 64);
+
+        assert!(super::arc_contains(arc, 32));
+        assert!(super::arc_contains(arc, 40));
+
+        assert!(!super::arc_contains(arc, 64));
+    }
+
+    #[test]
+    fn arc_wraps_around() {
+        let arc = (u32::MAX - 32, 32);
+
+        assert!(super::arc_contains(arc, u32::MAX - 1));
+        assert!(super::arc_contains(arc, u32::MAX));
+        assert!(super::arc_contains(arc, 20));
+
+        assert!(!super::arc_contains(arc, 32));
+    }
+}
