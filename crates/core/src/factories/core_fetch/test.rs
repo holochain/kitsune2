@@ -373,7 +373,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
         .await
         .unwrap();
 
-    let expected_agents = vec![agent_1, agent_2, agent_3];
+    let expected_agents = [agent_1, agent_2, agent_3];
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let request_destinations =
