@@ -60,7 +60,7 @@ async fn parallel_request_count_is_not_exceeded() {
     fetch.add_ops(op_list, source).await.unwrap();
 
     // Wait until some request has been sent.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
@@ -127,7 +127,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     );
 
     // Leave time for all request threads to complete and re-insert op ids into the data object.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let ops = fetch.0.ops.lock().await.clone();
             if expected_ops
@@ -136,7 +136,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
             {
                 break;
             } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
     })
@@ -216,7 +216,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     );
 
     // Leave time for all request threads to complete and re-insert op ids into the data object.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let ops = fetch.0.ops.lock().await.clone();
             if expected_ops
@@ -225,7 +225,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
             {
                 break;
             } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
     })
@@ -244,7 +244,7 @@ async fn unresponsive_agent_is_put_on_cool_down_list() {
 
     fetch.add_ops(op_list, source.clone()).await.unwrap();
 
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
