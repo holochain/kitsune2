@@ -15,7 +15,7 @@
 //! Each hash partition manages a [PartitionedTime] structure that is responsible for managing the
 //! time slices for that hash partition. The interface of this module is largely responsible for
 //! delegating the updating of time slices to the inner time partitions. This ensures that all the
-//! time partitions are updated in lockstep. This makes reasoning about the hash-time partitioning
+//! time partitions are updated in lockstep. This makes reasoning about the space-time partitioning
 //! easier.
 //!
 //! This module must be informed about ops that have been stored. There is no active process here
