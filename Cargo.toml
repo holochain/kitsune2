@@ -8,6 +8,7 @@ members = [
   "crates/test_utils",
   "crates/tool_proto_build",
 ]
+
 resolver = "2"
 
 [workspace.dependencies]
