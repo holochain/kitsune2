@@ -112,7 +112,7 @@ impl Fetch for CoreFetch {
         source: AgentId,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            // Add ops to map.
+            // Add ops to queue.
             let mut ops = self.0.ops.lock().await;
             op_list.clone().into_iter().for_each(|op_id| {
                 ops.insert((op_id, source.clone()), ());
@@ -144,7 +144,6 @@ struct Inner {
     cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
     // A sender to wake up a sleeping fetch task.
     fetch_request_tx: Sender<()>,
-    transport: DynTransport,
 }
 
 impl Inner {
@@ -162,12 +161,12 @@ impl Inner {
             current_request_count: Arc::new(Mutex::new(0)),
             cool_down_list: Arc::new(Mutex::new(HashMap::new())),
             fetch_request_tx,
-            transport,
         };
 
         tokio::spawn({
             let current_request_count = inner.current_request_count.clone();
             let inner = inner.clone();
+            let transport = transport.clone();
 
             async move {
                 let CoreFetchConfig {
@@ -177,6 +176,10 @@ impl Inner {
                     ..
                 } = inner.config;
 
+                // Loop for processing op/agent pairs in the queue. Runs continuously and is paused
+                // briefly when the maximum of parallel requests is reached, and sleeps for a
+                // longer period when the queue is empty. It is awoken from sleep through a channel
+                // when new op ids are added to the queue.
                 loop {
                     // Send new request if parallel request count is not reached.
                     if parallel_request_count
@@ -184,7 +187,7 @@ impl Inner {
                     {
                         let inner = inner.clone();
 
-                        // Take first element from the start of the queue and release lock on map.
+                        // Take first element from the start of the queue and release lock on queue.
                         let first_elem =
                             inner.ops.lock().await.shift_remove_index(0);
                         if let Some(((op_id, agent_id), ())) = first_elem {
@@ -206,14 +209,25 @@ impl Inner {
                                     let inner = inner.clone();
                                     let op_id = op_id.clone();
                                     let agent_id = agent_id.clone();
+                                    let transport = transport.clone();
+                                    let current_request_count =
+                                        current_request_count.clone();
                                     async move {
-                                        if let Err(err) = inner
-                                            .request_op(
+                                        let result = transport
+                                            .lock()
+                                            .await
+                                            .send_op_request(
                                                 op_id.clone(),
                                                 agent_id.clone(),
                                             )
-                                            .await
-                                        {
+                                            .await;
+
+                                        // Request is complete, decrease request count.
+                                        (*current_request_count
+                                            .lock()
+                                            .await) -= 1;
+
+                                        if let Err(err) = result {
                                             eprintln!("could not send fetch request for op id {op_id} to agent {agent_id}: {err}");
                                             inner
                                                 .cool_down_list
@@ -263,27 +277,6 @@ impl Inner {
         });
 
         inner
-    }
-
-    fn request_op(
-        &self,
-        op_id: OpId,
-        agent_id: AgentId,
-    ) -> BoxFut<'static, K2Result<()>> {
-        let transport = self.transport.clone();
-        let current_request_count = self.current_request_count.clone();
-        Box::pin(async move {
-            let result = transport
-                .lock()
-                .await
-                .send_op_request(op_id.clone(), agent_id.clone())
-                .await;
-
-            // Request is complete, decrease request count.
-            (*current_request_count.lock().await) -= 1;
-
-            result
-        })
     }
 
     fn purge_cool_down_list(&self, now: Instant) -> BoxFut<'_, ()> {

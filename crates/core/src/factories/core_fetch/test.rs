@@ -56,8 +56,8 @@ async fn parallel_request_count_is_not_exceeded() {
     let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
 
     let op_list = create_op_list(2);
-    let source = random_agent_id();
-    fetch.add_ops(op_list, source).await.unwrap();
+    let agent = random_agent_id();
+    fetch.add_ops(op_list, agent).await.unwrap();
 
     // Wait until some request has been sent.
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -87,27 +87,24 @@ async fn happy_multi_op_fetch_from_single_agent() {
 
     let num_ops: usize = 50;
     let op_list = create_op_list(num_ops as u16);
-    let source = random_agent_id();
+    let agent = random_agent_id();
 
     let mut expected_ops = Vec::new();
     op_list
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, source.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent.clone())));
 
-    fetch
-        .add_ops(op_list.clone(), source.clone())
-        .await
-        .unwrap();
+    fetch.add_ops(op_list.clone(), agent.clone()).await.unwrap();
 
-    // Check that at least one request was sent to the source for each op.
+    // Check that at least one request was sent to the agent for each op.
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
             if requests_sent.len() >= num_ops {
                 op_list.clone().into_iter().all(|op_id| {
-                    requests_sent.contains(&(op_id, source.clone()))
+                    requests_sent.contains(&(op_id, agent.clone()))
                 });
                 break;
             } else {
@@ -154,37 +151,37 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
 
     let op_list_1 = create_op_list(10);
-    let source_1 = random_agent_id();
+    let agent_1 = random_agent_id();
     let op_list_2 = create_op_list(20);
-    let source_2 = random_agent_id();
+    let agent_2 = random_agent_id();
     let op_list_3 = create_op_list(30);
-    let source_3 = random_agent_id();
+    let agent_3 = random_agent_id();
     let total_ops = op_list_1.len() + op_list_2.len() + op_list_3.len();
 
     let mut expected_ops = Vec::new();
     op_list_1
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, source_1.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_1.clone())));
     op_list_2
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, source_2.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_2.clone())));
     op_list_3
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, source_3.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_3.clone())));
 
     fetch
-        .add_ops(op_list_1.clone(), source_1.clone())
+        .add_ops(op_list_1.clone(), agent_1.clone())
         .await
         .unwrap();
     fetch
-        .add_ops(op_list_2.clone(), source_2.clone())
+        .add_ops(op_list_2.clone(), agent_2.clone())
         .await
         .unwrap();
     fetch
-        .add_ops(op_list_3.clone(), source_3.clone())
+        .add_ops(op_list_3.clone(), agent_3.clone())
         .await
         .unwrap();
 
@@ -240,9 +237,9 @@ async fn unresponsive_agent_is_put_on_cool_down_list() {
     let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
 
     let op_list = create_op_list(1);
-    let source = random_agent_id();
+    let agent = random_agent_id();
 
-    fetch.add_ops(op_list, source.clone()).await.unwrap();
+    fetch.add_ops(op_list, agent.clone()).await.unwrap();
 
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
@@ -259,7 +256,7 @@ async fn unresponsive_agent_is_put_on_cool_down_list() {
     .unwrap();
 
     let cool_down_list = fetch.0.cool_down_list.lock().await.clone();
-    assert!(cool_down_list.contains_key(&source));
+    assert!(cool_down_list.contains_key(&agent));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -348,6 +345,71 @@ async fn unresponsive_agent_is_removed_from_cool_down_list_after_interval() {
     // Check that the agent has been removed from the cool-down list.
     let cool_down_list = fetch.0.cool_down_list.lock().await.clone();
     assert!(cool_down_list.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_op_fetch_from_multiple_unresponsive_agents() {
+    let config = CoreFetchConfig::default();
+    let mock_transport = MockTransport::new(true);
+    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+
+    let op_list_1 = create_op_list(10);
+    let agent_1 = random_agent_id();
+    let op_list_2 = create_op_list(20);
+    let agent_2 = random_agent_id();
+    let op_list_3 = create_op_list(30);
+    let agent_3 = random_agent_id();
+
+    fetch
+        .add_ops(op_list_1.clone(), agent_1.clone())
+        .await
+        .unwrap();
+    fetch
+        .add_ops(op_list_2.clone(), agent_2.clone())
+        .await
+        .unwrap();
+    fetch
+        .add_ops(op_list_3.clone(), agent_3.clone())
+        .await
+        .unwrap();
+
+    let expected_agents = vec![agent_1, agent_2, agent_3];
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let request_destinations =
+                mock_transport.lock().await.requests_sent.clone();
+            let request_destinations = request_destinations
+                .iter()
+                .map(|(_, agent_id)| agent_id)
+                .collect::<Vec<_>>();
+            if expected_agents
+                .iter()
+                .all(|agent| request_destinations.contains(&agent))
+            {
+                break;
+            } else {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let cool_down_list = fetch.0.cool_down_list.lock().await;
+            if expected_agents
+                .iter()
+                .all(|agent| cool_down_list.contains_key(agent))
+            {
+                break;
+            } else {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 fn random_id() -> Id {

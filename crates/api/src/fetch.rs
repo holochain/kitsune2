@@ -23,7 +23,7 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
     /// module factories.
     fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
-    /// Construct a fetch instance.
+    /// Construct a Fetch instance.
     fn create(
         &self,
         builder: Arc<builder::Builder>,
