@@ -128,7 +128,7 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     fn disconnect(
         &self,
         peer: Url,
-        payload: Option<bytes::Bytes>,
+        payload: Option<(String, bytes::Bytes)>,
     ) -> BoxFut<'_, ()>;
 
     /// Indicates that the implementation should send the payload to the remote
@@ -184,7 +184,7 @@ impl Transport {
             })
             .encode()
             {
-                Ok(payload) => Some(payload),
+                Ok(payload) => Some((reason, payload)),
                 Err(_) => None,
             },
         };

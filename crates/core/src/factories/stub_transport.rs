@@ -108,7 +108,7 @@ impl TxImp for StubTransport {
     fn disconnect(
         &self,
         peer: Url,
-        payload: Option<bytes::Bytes>,
+        payload: Option<(String, bytes::Bytes)>,
     ) -> BoxFut<'_, ()> {
         Box::pin(async move {
             let (s, r) = tokio::sync::oneshot::channel();
@@ -137,16 +137,44 @@ impl TxImp for StubTransport {
 }
 
 type Res = tokio::sync::oneshot::Sender<K2Result<()>>;
+type CmdSend = tokio::sync::mpsc::UnboundedSender<Cmd>;
+type CmdRecv = tokio::sync::mpsc::UnboundedReceiver<Cmd>;
+type DataSend = tokio::sync::mpsc::UnboundedSender<(bytes::Bytes, Res)>;
+type DataRecv = tokio::sync::mpsc::UnboundedReceiver<(bytes::Bytes, Res)>;
+type ConSend = tokio::sync::mpsc::UnboundedSender<(Url, DataSend, DataRecv)>;
+type ConRecv = tokio::sync::mpsc::UnboundedReceiver<(Url, DataSend, DataRecv)>;
+
+struct DropSend {
+    send: DataSend,
+    handler: Arc<TxImpHnd>,
+    peer: Url,
+    reason: Option<String>,
+}
+
+impl Drop for DropSend {
+    fn drop(&mut self) {
+        self.handler
+            .peer_disconnect(self.peer.clone(), self.reason.take());
+    }
+}
+
+impl DropSend {
+    fn new(send: DataSend, handler: Arc<TxImpHnd>, peer: Url) -> Self {
+        Self {
+            send,
+            handler,
+            peer,
+            reason: None,
+        }
+    }
+}
 
 enum Cmd {
     RegCon(Url, DataSend, DataRecv),
     InData(Url, bytes::Bytes, Res),
-    Disconnect(Url, Option<bytes::Bytes>, Res),
+    Disconnect(Url, Option<(String, bytes::Bytes)>, Res),
     Send(Url, bytes::Bytes, Res),
 }
-
-type CmdSend = tokio::sync::mpsc::UnboundedSender<Cmd>;
-type CmdRecv = tokio::sync::mpsc::UnboundedReceiver<Cmd>;
 
 async fn cmd_task(
     task_list: Arc<Mutex<tokio::task::JoinSet<()>>>,
@@ -160,6 +188,10 @@ async fn cmd_task(
     while let Some(cmd) = cmd_recv.recv().await {
         match cmd {
             Cmd::RegCon(url, data_send, mut data_recv) => {
+                if handler.peer_connect(url.clone()).is_err() {
+                    continue;
+                }
+
                 let cmd_send2 = cmd_send.clone();
                 let url2 = url.clone();
                 task_list.lock().unwrap().spawn(async move {
@@ -173,20 +205,26 @@ async fn cmd_task(
                     }
                 });
 
-                con_pool.insert(url, data_send);
+                con_pool.insert(
+                    url.clone(),
+                    DropSend::new(data_send, handler.clone(), url),
+                );
             }
             Cmd::InData(url, data, res) => {
                 if let Err(err) = handler.recv_data(url.clone(), data) {
-                    con_pool.remove(&url);
+                    if let Some(mut data_send) = con_pool.remove(&url) {
+                        data_send.reason = Some(format!("{err:?}"));
+                    }
                     let _ = res.send(Err(err));
                 } else {
                     let _ = res.send(Ok(()));
                 }
             }
             Cmd::Disconnect(url, payload, res) => {
-                if let Some(data_send) = con_pool.remove(&url) {
-                    if let Some(payload) = payload {
-                        let _ = data_send.send((payload, res));
+                if let Some(mut data_send) = con_pool.remove(&url) {
+                    if let Some((reason, payload)) = payload {
+                        data_send.reason = Some(reason);
+                        let _ = data_send.send.send((payload, res));
                     }
                 }
             }
@@ -203,11 +241,6 @@ async fn cmd_task(
         }
     }
 }
-
-type DataSend = tokio::sync::mpsc::UnboundedSender<(bytes::Bytes, Res)>;
-type DataRecv = tokio::sync::mpsc::UnboundedReceiver<(bytes::Bytes, Res)>;
-type ConSend = tokio::sync::mpsc::UnboundedSender<(Url, DataSend, DataRecv)>;
-type ConRecv = tokio::sync::mpsc::UnboundedReceiver<(Url, DataSend, DataRecv)>;
 
 struct Listener {
     id: u64,
@@ -261,12 +294,12 @@ impl Stat {
     fn connect(
         &self,
         cmd_send: &CmdSend,
-        map: &mut HashMap<Url, DataSend>,
+        map: &mut HashMap<Url, DropSend>,
         to_peer: &Url,
         from_peer: &Url,
     ) -> Option<DataSend> {
         if let Some(send) = map.get(to_peer) {
-            return Some(send.clone());
+            return Some(send.send.clone());
         }
 
         let id: u64 = match to_peer.peer_id() {
