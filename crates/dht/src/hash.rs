@@ -8,7 +8,7 @@
 //! partitions to create. A factor of 32 will create a single partition. Each unit decrease from 32
 //! will double the number of partitions. A good default for a network that is expected to grow to
 //! a few thousand nodes is 21. This will create 2^11 partitions, which is 2048. Given that data is
-//! also stored redundantly, say 10 times, this is means that 20,000 nodes are needed for the data
+//! also stored redundantly, say 10 times, this means that 20,000 nodes are needed for the data
 //! to be maximally distributed. With higher replication, say 50 times, and a hash factor of 20,
 //! over 200,000 nodes are needed for maximal distribution.
 //!
