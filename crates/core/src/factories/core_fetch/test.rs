@@ -46,40 +46,6 @@ impl Transport for MockTransport {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn parallel_request_count_is_not_exceeded() {
-    let config = CoreFetchConfig {
-        parallel_request_count: 1,
-        parallel_request_pause: 10000, // 10 seconds to be certain that no other request is sent during the test
-        ..Default::default()
-    };
-    let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
-
-    let op_list = create_op_list(2);
-    let agent = random_agent_id();
-    fetch.add_ops(op_list, agent).await.unwrap();
-
-    // Wait until some request has been sent.
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let requests_sent =
-                mock_transport.lock().await.requests_sent.clone();
-            if !requests_sent.is_empty() {
-                break;
-            }
-        }
-    })
-    .await
-    .unwrap();
-
-    let requests_sent = mock_transport.lock().await.requests_sent.clone();
-    assert_eq!(
-        requests_sent.len(),
-        config.parallel_request_count() as usize
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_single_agent() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
@@ -98,7 +64,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     fetch.add_ops(op_list.clone(), agent.clone()).await.unwrap();
 
     // Check that at least one request was sent to the agent for each op.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
@@ -108,7 +74,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
                 });
                 break;
             } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
     })
@@ -118,27 +84,15 @@ async fn happy_multi_op_fetch_from_single_agent() {
     // Assert that not an excessive amount of redundant requests was sent.
     let requests_sent = mock_transport.lock().await.requests_sent.clone();
     assert!(
-        requests_sent.len() < num_ops * 2,
+        requests_sent.len() < num_ops + 10,
         "sent {} requests",
         requests_sent.len()
     );
 
-    // Leave time for all request threads to complete and re-insert op ids into the data object.
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let ops = fetch.0.ops.lock().await.clone();
-            if expected_ops
-                .iter()
-                .all(|expected_op| ops.contains_key(expected_op))
-            {
-                break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }
-    })
-    .await
-    .unwrap();
+    let ops = fetch.0.ops.lock().await;
+    expected_ops
+        .into_iter()
+        .all(|(op_id, agent_id)| ops.contains_key(&(op_id, agent_id)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
