@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{builder, config, AgentId, BoxFut, K2Result, OpId};
 
 /// Trait for implementing a fetch module to fetch ops from other agents.
-pub trait Fetch: 'static + Send + Sync {
+pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be fetched.
     fn add_ops(
         &mut self,
