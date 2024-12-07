@@ -37,6 +37,9 @@ serde = { version = "1.0.215", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
 # bootstrapping. So, we need a json library.
 serde_json = "1.0.132"
+# We've abandoned the ideal of an async runtime agnostic library
+# in favor of expediency.
+tokio = "1.41.1"
 # Simplify writing async code
 futures = "0.3"
 # bootstrap_srv uses tempfiles as virtual memory for storage instead of RAM.
@@ -65,6 +68,5 @@ prost-build = "0.13.3"
 kitsune2_memory = { path = "crates/memory" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
-tokio = "1.41.1"
 ureq = "2.10.1"
 tracing-subscriber = "0.3"

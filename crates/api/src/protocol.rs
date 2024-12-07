@@ -1,6 +1,28 @@
 //! Kitsune2 wire protocol types.
 
+use crate::*;
+
 include!("../proto/gen/kitsune2.wire.rs");
+
+impl K2Proto {
+    /// Decode this message from a byte array.
+    pub fn decode(bytes: &[u8]) -> K2Result<Self> {
+        prost::Message::decode(std::io::Cursor::new(bytes)).map_err(|err| {
+            K2Error::other_src("Failed to decode K2Proto Message", err)
+        })
+    }
+
+    /// Encode this message as a bytes::Bytes buffer.
+    pub fn encode(&self) -> K2Result<bytes::Bytes> {
+        let mut out = bytes::BytesMut::new();
+
+        prost::Message::encode(self, &mut out).map_err(|err| {
+            K2Error::other_src("Failed to encode K2Proto Message", err)
+        })?;
+
+        Ok(out.freeze())
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -32,11 +54,11 @@ mod test {
         // the encoded message should be smaller.
         assert!(d_enc.len() < m_enc.len());
 
-        let m_dec = K2Proto::decode(std::io::Cursor::new(m_enc)).unwrap();
+        let m_dec = K2Proto::decode(&m_enc).unwrap();
 
         assert_eq!(m, m_dec);
 
-        let d_dec = K2Proto::decode(std::io::Cursor::new(d_enc)).unwrap();
+        let d_dec = K2Proto::decode(&d_enc).unwrap();
 
         assert_eq!(d, d_dec);
     }

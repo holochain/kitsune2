@@ -11,7 +11,7 @@ pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
     /// The default implementation sends an empty preflight message.
     fn preflight_gather_outgoing(
         &self,
-        peer_url: String,
+        peer_url: Url,
     ) -> K2Result<bytes::Bytes> {
         drop(peer_url);
         Ok(bytes::Bytes::new())
@@ -24,7 +24,7 @@ pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
     /// and considers it valid.
     fn preflight_validate_incoming(
         &self,
-        peer_url: String,
+        peer_url: Url,
         data: bytes::Bytes,
     ) -> K2Result<()> {
         drop(peer_url);
