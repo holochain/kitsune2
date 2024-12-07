@@ -188,8 +188,12 @@ async fn cmd_task(
     while let Some(cmd) = cmd_recv.recv().await {
         match cmd {
             Cmd::RegCon(url, data_send, mut data_recv) => {
-                if handler.peer_connect(url.clone()).is_err() {
-                    continue;
+                match handler.peer_connect(url.clone()) {
+                    Err(_) => continue,
+                    Ok(preflight) => {
+                        let (s, _) = tokio::sync::oneshot::channel();
+                        let _ = data_send.send((preflight, s));
+                    }
                 }
 
                 let cmd_send2 = cmd_send.clone();

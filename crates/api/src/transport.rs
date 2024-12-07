@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 /// This is the low-level backend transport handler.
 /// Construct this ([TxImpHnd::new]) with a high-level [DynTxHandler],
 /// then call [TxImpHnd::gen_transport] to return the high-level handler
-/// from the [TransportFactory].
+/// from the [TransportFactory]. Then call the member functions at
+/// the appropriate times.
 pub struct TxImpHnd {
     handler: DynTxHandler,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
@@ -37,27 +38,38 @@ impl TxImpHnd {
         }
     }
 
-    /// A notification that a new listening address has been bound.
-    /// Peers should now go to this new address to reach this node.
+    /// Call this when you receive or bind a new address at which
+    /// this local node can be reached by peers
     pub fn new_listening_address(&self, this_url: Url) {
         self.handler.new_listening_address(this_url);
     }
 
-    /// A peer has connected to us. In addition to the preflight
-    /// logic in [TxHandler], this callback allows space and module
-    /// logic to block connections to peers. Simply return an Err here.
-    pub fn peer_connect(&self, peer: Url) -> K2Result<()> {
+    /// Call this when you establish an outgoing connection and
+    /// when you establish an incoming connection. If this call
+    /// returns an error, the connection should be closed immediately.
+    /// On success, this function returns bytes that should be
+    /// sent as a preflight message for additional connection validation.
+    /// (The preflight data should be sent even if it is zero length).
+    pub fn peer_connect(&self, peer: Url) -> K2Result<bytes::Bytes> {
         for h in self.mod_map.lock().unwrap().values() {
             h.peer_connect(peer.clone())?;
         }
         for h in self.space_map.lock().unwrap().values() {
             h.peer_connect(peer.clone())?;
         }
-        self.handler.peer_connect(peer)
+        self.handler.peer_connect(peer.clone())?;
+        let preflight = self.handler.preflight_gather_outgoing(peer)?;
+        let enc = (K2Proto {
+            ty: k2_proto::Ty::Preflight as i32,
+            data: preflight,
+            space: None,
+            module: None,
+        })
+        .encode()?;
+        Ok(enc)
     }
 
-    /// A peer has disconnected from us. If they did so gracefully
-    /// the reason will be is_some().
+    /// Call this whenever a connection is closed.
     pub fn peer_disconnect(&self, peer: Url, reason: Option<String>) {
         for h in self.mod_map.lock().unwrap().values() {
             h.peer_disconnect(peer.clone(), reason.clone());
@@ -68,9 +80,7 @@ impl TxImpHnd {
         self.handler.peer_disconnect(peer, reason);
     }
 
-    /// We have received incoming data from a remote peer.
-    /// An error returned from this handler function indicates the
-    /// connection to the remote should be closed.
+    /// Call this whenever data is received on an open connection.
     pub fn recv_data(&self, peer: Url, data: bytes::Bytes) -> K2Result<()> {
         let data = K2Proto::decode(&data)?;
         let ty = data.ty();
