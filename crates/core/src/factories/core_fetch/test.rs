@@ -92,7 +92,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     let ops = fetch.0.ops.lock().await;
     expected_ops
         .into_iter()
-        .all(|(op_id, agent_id)| ops.contains_key(&(op_id, agent_id)));
+        .all(|(op_id, agent_id)| ops.contains(&(op_id, agent_id)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -172,7 +172,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
             let ops = fetch.0.ops.lock().await.clone();
             if expected_ops
                 .iter()
-                .all(|expected_op| ops.contains_key(expected_op))
+                .all(|expected_op| ops.contains(expected_op))
             {
                 break;
             } else {

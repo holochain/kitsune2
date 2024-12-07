@@ -35,12 +35,11 @@
 //! - Once persisted successfully, op is removed from the data object.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use indexmap::IndexMap;
 use kitsune2_api::{
     builder,
     config::ModConfig,
@@ -98,7 +97,7 @@ impl Fetch for CoreFetch {
             // Add ops to set.
             let mut ops = self.0.ops.lock().await;
             op_list.clone().into_iter().for_each(|op_id| {
-                ops.insert((op_id, source.clone()), ());
+                ops.insert((op_id, source.clone()));
             });
             drop(ops);
 
@@ -126,7 +125,7 @@ struct Inner {
     // by key efficiently. Ops may be added redundantly to the map with different sources to fetch from, so
     // the map is keyed by op and agent id together.
     // The value field could be used to track number of attempts for example.
-    ops: Arc<tokio::sync::Mutex<IndexMap<(OpId, AgentId), ()>>>,
+    ops: Arc<tokio::sync::Mutex<HashSet<(OpId, AgentId)>>>,
     cool_down_list: Arc<tokio::sync::Mutex<HashMap<AgentId, Instant>>>,
     fetch_request_tx: tokio::sync::mpsc::Sender<(OpId, AgentId)>,
 }
@@ -144,7 +143,7 @@ impl Inner {
 
         let inner = Self {
             config: config.clone(),
-            ops: Arc::new(tokio::sync::Mutex::new(IndexMap::new())),
+            ops: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             cool_down_list: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             fetch_request_tx,
         };
@@ -163,7 +162,7 @@ impl Inner {
                         if !ops
                             .lock()
                             .await
-                            .contains_key(&(op_id.clone(), agent_id.clone()))
+                            .contains(&(op_id.clone(), agent_id.clone()))
                         {
                             continue;
                         }
