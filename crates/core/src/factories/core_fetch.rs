@@ -17,6 +17,10 @@
 //!
 //! ### Fetch tasks
 //!
+//! A channel acts as the queue structure for the fetch tasks. Ops to fetch are sent
+//! one by one through the channel to the receiving tasks running in parallel. The flow
+//! of sending fetch requests is as follows:
+//!
 //! - Await fetch requests for ([OpId], [AgentId]) from an internal channel.
 //! - Check if requested op id/agent id is still on the list of ops to fetch.
 //!     - In case the op has been received in the meantime and no longer needs to be fetched,
@@ -121,10 +125,8 @@ impl Fetch for CoreFetch {
 #[derive(Debug)]
 struct Inner {
     config: CoreFetchConfig,
-    // An `IndexMap` is used to retain order of insertion and have the ability to look up elements
-    // by key efficiently. Ops may be added redundantly to the map with different sources to fetch from, so
-    // the map is keyed by op and agent id together.
-    // The value field could be used to track number of attempts for example.
+    // A hash set` is used to look up elements by key efficiently. Ops may be added redundantly
+    // to the set with different sources to fetch from, so the set is keyed by op and agent id together.
     ops: Arc<tokio::sync::Mutex<HashSet<(OpId, AgentId)>>>,
     cool_down_list: Arc<tokio::sync::Mutex<HashMap<AgentId, Instant>>>,
     fetch_request_tx: tokio::sync::mpsc::Sender<(OpId, AgentId)>,
@@ -145,12 +147,12 @@ impl Inner {
             config: config.clone(),
             ops: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             cool_down_list: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            fetch_request_tx,
+            fetch_request_tx: fetch_request_tx.clone(),
         };
 
-        // let mut fetch_tasks = Vec::new();
         for i in 0..config.parallel_request_count {
             tokio::task::spawn({
+                let fetch_request_tx = fetch_request_tx.clone();
                 let fetch_request_rx = fetch_request_rx.clone();
                 let transport = transport.clone();
                 let ops = inner.ops.clone();
@@ -167,6 +169,8 @@ impl Inner {
                             continue;
                         }
 
+                        // Send fetch request to agent.
+                        // If successful, re-insert the fetch request into the channel queue.
                         println!("task {i} fetch request coming in for op {op_id} to agent {agent_id}");
                         if let Err(err) = transport
                             .lock()
@@ -175,6 +179,11 @@ impl Inner {
                             .await
                         {
                             eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
+                        } else if let Err(err) = fetch_request_tx
+                            .send((op_id.clone(), agent_id.clone()))
+                            .await
+                        {
+                            eprintln!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
                         }
                     }
                 }

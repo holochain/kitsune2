@@ -46,6 +46,74 @@ impl Transport for MockTransport {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn fetch_queue() {
+    let config = CoreFetchConfig::default();
+    let mock_transport = MockTransport::new(false);
+    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+
+    let op_id = random_op_id();
+    let op_list = vec![op_id.clone()];
+    let agent_id = random_agent_id();
+
+    let requests_sent = mock_transport.lock().await.requests_sent.clone();
+    assert!(requests_sent.is_empty());
+
+    // Add 1 op.
+    fetch.add_ops(op_list, agent_id.clone()).await.unwrap();
+
+    // Let the fetch request be sent multiple times. As only 1 op was added to the queue,
+    // this proves that it is being re-added to the queue after sending a request for it.
+    tokio::time::timeout(Duration::from_millis(10), async {
+        loop {
+            if mock_transport.lock().await.requests_sent.len() >= 3 {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    // Clear set of ops to fetch to stop sending requests.
+    fetch.0.ops.lock().await.clear();
+
+    let mut num_requests_sent = mock_transport.lock().await.requests_sent.len();
+
+    // Wait for tasks to settle all requests.
+    tokio::time::timeout(Duration::from_millis(10), async {
+        loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            let current_num_requests_sent =
+                mock_transport.lock().await.requests_sent.len();
+            if current_num_requests_sent == num_requests_sent {
+                break;
+            } else {
+                num_requests_sent = current_num_requests_sent;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    // CHeck that all requests have been made for the 1 op to the agent.
+    assert!(mock_transport
+        .lock()
+        .await
+        .requests_sent
+        .iter()
+        .all(|request| request == &(op_id.clone(), agent_id.clone())));
+
+    // Give time for more requests to be sent, which shouldn't happen now that the set of
+    // ops to fetch is cleared.
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    // No more requests should have been sent.
+    // Ideally it were possible to check that no more fetch request have been passed back into
+    // the internal channel, but that would require a custom wrapper around the channel.
+    let requests_sent = mock_transport.lock().await.requests_sent.clone();
+    assert_eq!(requests_sent.len(), num_requests_sent);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_single_agent() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
@@ -64,7 +132,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     fetch.add_ops(op_list.clone(), agent.clone()).await.unwrap();
 
     // Check that at least one request was sent to the agent for each op.
-    tokio::time::timeout(Duration::from_secs(1), async {
+    tokio::time::timeout(Duration::from_millis(100), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
@@ -73,8 +141,6 @@ async fn happy_multi_op_fetch_from_single_agent() {
                     requests_sent.contains(&(op_id, agent.clone()))
                 });
                 break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
     })
@@ -84,15 +150,10 @@ async fn happy_multi_op_fetch_from_single_agent() {
     // Assert that not an excessive amount of redundant requests was sent.
     let requests_sent = mock_transport.lock().await.requests_sent.clone();
     assert!(
-        requests_sent.len() < num_ops + 10,
+        requests_sent.len() < (num_ops as f32 * 1.5) as usize,
         "sent {} requests",
         requests_sent.len()
     );
-
-    let ops = fetch.0.ops.lock().await;
-    expected_ops
-        .into_iter()
-        .all(|(op_id, agent_id)| ops.contains(&(op_id, agent_id)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
