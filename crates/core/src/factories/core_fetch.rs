@@ -51,7 +51,13 @@ use kitsune2_api::{
     tx::Transport,
     AgentId, BoxFut, K2Error, K2Result, OpId,
 };
-use tokio::{select, sync::mpsc::Sender};
+use tokio::{
+    select,
+    sync::{
+        mpsc::{Receiver, Sender},
+        Mutex,
+    },
+};
 
 const MOD_NAME: &str = "Fetch";
 
@@ -80,14 +86,14 @@ impl Default for CoreFetchConfig {
 impl ModConfig for CoreFetchConfig {}
 
 // TODO: Temporary trait object of a transport module to facilitate unit tests.
-type DynTransport = Arc<tokio::sync::Mutex<dyn Transport>>;
+type DynTransport = Arc<Mutex<dyn Transport>>;
 
 #[derive(Debug)]
 struct CoreFetch(Inner);
 
 impl CoreFetch {
     fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
-        Self(Inner::spawn_fetch_task(config, transport))
+        Self(Inner::create_fetch_queue(config, transport))
     }
 }
 
@@ -127,87 +133,78 @@ struct Inner {
     config: CoreFetchConfig,
     // A hash set` is used to look up elements by key efficiently. Ops may be added redundantly
     // to the set with different sources to fetch from, so the set is keyed by op and agent id together.
-    ops: Arc<tokio::sync::Mutex<HashSet<(OpId, AgentId)>>>,
-    cool_down_list: Arc<tokio::sync::Mutex<HashMap<AgentId, Instant>>>,
+    ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
+    cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
     fetch_request_tx: tokio::sync::mpsc::Sender<(OpId, AgentId)>,
 }
 
 impl Inner {
-    pub fn spawn_fetch_task(
+    pub fn create_fetch_queue(
         config: CoreFetchConfig,
         transport: DynTransport,
     ) -> Self {
-        // Create a channel to send new ops to fetch to the tasks.
+        // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
         let (fetch_request_tx, fetch_request_rx) =
             tokio::sync::mpsc::channel::<(OpId, AgentId)>(1024);
-        let fetch_request_rx =
-            Arc::new(tokio::sync::Mutex::new(fetch_request_rx));
+        let fetch_request_rx = Arc::new(Mutex::new(fetch_request_rx));
 
-        let inner = Self {
-            config: config.clone(),
-            ops: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
-            cool_down_list: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            fetch_request_tx: fetch_request_tx.clone(),
-        };
+        let ops = Arc::new(Mutex::new(HashSet::new()));
+        let cool_down_list = Arc::new(Mutex::new(HashMap::new()));
 
-        for i in 0..config.parallel_request_count {
-            tokio::task::spawn({
-                let fetch_request_tx = fetch_request_tx.clone();
-                let fetch_request_rx = fetch_request_rx.clone();
-                let transport = transport.clone();
-                let ops = inner.ops.clone();
-                async move {
-                    while let Some((op_id, agent_id)) =
-                        fetch_request_rx.lock().await.recv().await
-                    {
-                        // Ensure op is still in the set of ops to fetch.
-                        if !ops
-                            .lock()
-                            .await
-                            .contains(&(op_id.clone(), agent_id.clone()))
-                        {
-                            continue;
-                        }
-
-                        // Send fetch request to agent.
-                        // If successful, re-insert the fetch request into the channel queue.
-                        println!("task {i} fetch request coming in for op {op_id} to agent {agent_id}");
-                        if let Err(err) = transport
-                            .lock()
-                            .await
-                            .send_op_request(op_id.clone(), agent_id.clone())
-                            .await
-                        {
-                            eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
-                        } else if let Err(err) = fetch_request_tx
-                            .send((op_id.clone(), agent_id.clone()))
-                            .await
-                        {
-                            eprintln!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
-                        }
-                    }
-                }
-            });
+        for _ in 0..config.parallel_request_count {
+            tokio::task::spawn(Inner::fetch_task(
+                fetch_request_tx.clone(),
+                fetch_request_rx.clone(),
+                transport.clone(),
+                ops.clone(),
+            ));
         }
 
-        inner
+        Self {
+            config,
+            ops,
+            fetch_request_tx,
+            cool_down_list,
+        }
+    }
 
-        //                     // Remove agents from cool-down list after configured interval has elapsed.
-        //                     inner.purge_cool_down_list(Instant::now()).await;
+    async fn fetch_task(
+        fetch_request_tx: Sender<(OpId, AgentId)>,
+        fetch_request_rx: Arc<Mutex<Receiver<(OpId, AgentId)>>>,
+        transport: DynTransport,
+        ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
+    ) {
+        while let Some((op_id, agent_id)) =
+            fetch_request_rx.lock().await.recv().await
+        {
+            // Ensure op is still in the set of ops to fetch.
+            if !ops
+                .lock()
+                .await
+                .contains(&(op_id.clone(), agent_id.clone()))
+            {
+                continue;
+            }
 
-        //                     // Do not send request to agent on cool-down list.
-        //                     if !inner
-        //                         .cool_down_list
-        //                         .lock()
-        //                         .await
-        //                         .contains_key(&agent_id)
-        //                     {
-        //                     // Push op and source back to the end of the queue.
-        //                     inner
-        //                         .ops
-        //                         .lock()
-        //                         .await
-        //                         .insert((op_id, agent_id), ());
+            // Send fetch request to agent.
+            // If successful, re-insert the fetch request into the channel queue.
+            println!(
+                "fetch request coming in for op {op_id} to agent {agent_id}"
+            );
+            if let Err(err) = transport
+                .lock()
+                .await
+                .send_op_request(op_id.clone(), agent_id.clone())
+                .await
+            {
+                eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
+            } else if let Err(err) = fetch_request_tx
+                .send((op_id.clone(), agent_id.clone()))
+                .await
+            {
+                eprintln!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
+            }
+        }
     }
 
     fn purge_cool_down_list(&self, now: Instant) -> BoxFut<'_, ()> {
@@ -258,7 +255,7 @@ impl FetchFactory for CoreFetchFactory {
                 Box::pin(async move { todo!() })
             }
         }
-        let tx = Arc::new(tokio::sync::Mutex::new(TransportPlaceholder));
+        let tx = Arc::new(Mutex::new(TransportPlaceholder));
 
         Box::pin(async move {
             let config = builder.config.get_module_config(MOD_NAME)?;

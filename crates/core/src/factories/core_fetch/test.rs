@@ -201,7 +201,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
         .unwrap();
 
     // Check that at least one request was sent for each op.
-    tokio::time::timeout(Duration::from_secs(100), async {
+    tokio::time::timeout(Duration::from_millis(100), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
@@ -237,14 +237,10 @@ async fn unresponsive_agent_is_put_on_cool_down_list() {
 
     fetch.add_ops(op_list, agent.clone()).await.unwrap();
 
-    tokio::time::timeout(Duration::from_secs(1), async {
+    tokio::time::timeout(Duration::from_millis(100), async {
         loop {
-            let requests_sent =
-                mock_transport.lock().await.requests_sent.clone();
-            if !requests_sent.is_empty() {
+            if !mock_transport.lock().await.requests_sent.is_empty() {
                 break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
     })
