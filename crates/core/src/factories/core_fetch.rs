@@ -106,7 +106,7 @@ impl Fetch for CoreFetch {
             drop(ops);
 
             // Pass ops to fetch tasks.
-            let futs = op_list.into_iter().map(|op_id| async {
+            let futures = op_list.into_iter().map(|op_id| async {
                 if let Err(err) =
                     self.0.fetch_request_tx.send((op_id, source.clone())).await
                 {
@@ -115,7 +115,7 @@ impl Fetch for CoreFetch {
                     );
                 }
             });
-            futures::future::join_all(futs).await;
+            futures::future::join_all(futures).await;
 
             Ok(())
         })

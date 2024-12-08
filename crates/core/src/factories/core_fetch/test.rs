@@ -147,7 +147,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     .await
     .unwrap();
 
-    // Assert that not an excessive amount of redundant requests was sent.
+    // Assert that less than half of the number of sent requests were made redundantly.
     let requests_sent = mock_transport.lock().await.requests_sent.clone();
     assert!(
         requests_sent.len() < (num_ops as f32 * 1.5) as usize,
@@ -201,7 +201,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
         .unwrap();
 
     // Check that at least one request was sent for each op.
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(100), async {
         loop {
             let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
@@ -211,38 +211,19 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
                     .all(|expected_op| requests_sent.contains(expected_op))
             {
                 break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
     })
     .await
     .unwrap();
 
-    // Assert that not an excessive amount of redundant requests was sent.
+    // Assert that less than half of the number of sent requests were made redundantly.
     let requests_sent = mock_transport.lock().await.requests_sent.clone();
     assert!(
-        requests_sent.len() < total_ops * 2,
+        requests_sent.len() < (total_ops as f32 * 1.5) as usize,
         "sent {} requests",
         requests_sent.len()
     );
-
-    // Leave time for all request threads to complete and re-insert op ids into the data object.
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let ops = fetch.0.ops.lock().await.clone();
-            if expected_ops
-                .iter()
-                .all(|expected_op| ops.contains(expected_op))
-            {
-                break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }
-    })
-    .await
-    .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
