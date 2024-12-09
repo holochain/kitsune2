@@ -131,7 +131,7 @@ impl PartitionedHashes {
 
     /// Inform the time partitions of ops that have been stored.
     ///
-    /// The ops are split into the right hash partition based on the location of the op. Then the
+    /// The ops are placed into the right space partition based on the location of the op. Then the
     /// updating of hashes is delegated to the inner time partition for each hash partition.
     pub async fn inform_ops_stored(
         &mut self,
