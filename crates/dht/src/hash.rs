@@ -333,7 +333,7 @@ mod tests {
                         .partitioned_time
                         .full_slice_end_timestamp(),
                 },
-                // Stored in the second partial
+                // Stored in the second time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
                     timestamp: ph.partitioned_hashes[0]
