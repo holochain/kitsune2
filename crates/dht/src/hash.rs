@@ -99,7 +99,7 @@ impl PartitionedHashes {
         })
     }
 
-    /// Get the next update time the inner time partitions.
+    /// Get the next update time of the inner time partitions.
     pub fn next_update_at(&self) -> Timestamp {
         // Because the minimum `hash_factor` is 0, and we compute 2^hash_factor, there will always be at least one partition.
         self.partitioned_hashes
