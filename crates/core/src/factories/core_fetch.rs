@@ -12,8 +12,10 @@
 //!
 //! ### State object [CoreFetch]
 //!
-//! - Exposes public method [CoreFetch::add_ops] that takes a list of ops and an agent id.
+//! - Exposes public method [CoreFetch::add_ops] that takes a list of op ids and an agent id.
 //! - Stores pairs of ([OpId][AgentId]) in a set.
+//! - A hash set` is used to look up elements by key efficiently. Ops may be added redundantly
+//! to the set with different sources to fetch from, so the set is keyed by op and agent id together.
 //!
 //! ### Fetch tasks
 //!
@@ -65,14 +67,14 @@ pub struct CoreFetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     pub parallel_request_count: u8,
     /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 10_000.
-    pub cool_down_interval: u64,
+    pub cool_down_interval_ms: u64,
 }
 
 impl Default for CoreFetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            cool_down_interval: 10_000,
+            cool_down_interval_ms: 10_000,
         }
     }
 }
@@ -108,7 +110,7 @@ impl Fetch for CoreFetch {
             // Pass ops to fetch tasks.
             let futures = op_list.into_iter().map(|op_id| async {
                 if let Err(err) =
-                    self.0.fetch_request_tx.send((op_id, source.clone())).await
+                    self.0.fetch_queue_tx.send((op_id, source.clone())).await
                 {
                     eprintln!(
                         "could not pass fetch request to fetch task: {err}"
@@ -124,11 +126,10 @@ impl Fetch for CoreFetch {
 
 #[derive(Debug)]
 struct Inner {
-    // A hash set` is used to look up elements by key efficiently. Ops may be added redundantly
-    // to the set with different sources to fetch from, so the set is keyed by op and agent id together.
     ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
+    fetch_queue_tx: Sender<(OpId, AgentId)>,
+    #[cfg(test)]
     cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
-    fetch_request_tx: Sender<(OpId, AgentId)>,
 }
 
 impl Inner {
@@ -137,27 +138,27 @@ impl Inner {
         transport: DynTransport,
     ) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
-        let (fetch_request_tx, fetch_request_rx) =
-            channel::<(OpId, AgentId)>(1024);
-        let fetch_request_rx = Arc::new(Mutex::new(fetch_request_rx));
+        let (fetch_queue_tx, fetch_queue_rx) = channel::<(OpId, AgentId)>(1024);
+        let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
 
         let ops = Arc::new(Mutex::new(HashSet::new()));
         let cool_down_list = Arc::new(Mutex::new(HashMap::new()));
 
         for _ in 0..config.parallel_request_count {
             tokio::task::spawn(Inner::fetch_task(
-                fetch_request_tx.clone(),
-                fetch_request_rx.clone(),
+                fetch_queue_tx.clone(),
+                fetch_queue_rx.clone(),
                 transport.clone(),
                 ops.clone(),
                 cool_down_list.clone(),
-                config.cool_down_interval,
+                config.cool_down_interval_ms,
             ));
         }
 
         Self {
             ops,
-            fetch_request_tx,
+            fetch_queue_tx,
+            #[cfg(test)]
             cool_down_list,
         }
     }
@@ -189,9 +190,6 @@ impl Inner {
                 cool_down_interval,
             ) {
                 // Send fetch request to agent.
-                println!(
-                "fetch request coming in for op {op_id} to agent {agent_id}"
-            );
                 if let Err(err) = transport
                     .lock()
                     .await
@@ -229,6 +227,7 @@ impl Inner {
                     cool_down_list.remove(agent_id);
                     false
                 } else {
+                    // Cool down interval has not elapsed, still cooling down.
                     true
                 }
             }

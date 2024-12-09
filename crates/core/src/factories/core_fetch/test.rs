@@ -251,7 +251,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_cooling_down_is_removed_from_list() {
     let config = CoreFetchConfig {
-        cool_down_interval: 10,
+        cool_down_interval_ms: 10,
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
@@ -269,14 +269,15 @@ async fn agent_cooling_down_is_removed_from_list() {
     assert!(Inner::is_agent_cooling_down(
         &agent_id,
         &mut fetch.0.cool_down_list.lock().await,
-        config.cool_down_interval
+        config.cool_down_interval_ms
     ));
 
-    tokio::time::sleep(Duration::from_millis(config.cool_down_interval)).await;
+    tokio::time::sleep(Duration::from_millis(config.cool_down_interval_ms))
+        .await;
     assert!(!Inner::is_agent_cooling_down(
         &agent_id,
         &mut fetch.0.cool_down_list.lock().await,
-        config.cool_down_interval
+        config.cool_down_interval_ms
     ));
 }
 
