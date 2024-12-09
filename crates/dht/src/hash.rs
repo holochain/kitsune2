@@ -36,7 +36,11 @@ use std::collections::HashMap;
 /// responsible for managing the time slices for that partition.
 #[derive(Debug)]
 pub struct PartitionedHashes {
+    /// This is just a convenience for internal function use.
+    /// This should always be exactly `((u32::MAX + 1) / self.partitioned_hashes.len()`.
     size: u32,
+    /// The partition count here (length of Vec) should always be a power of 2.
+    /// (2**0, 2**1, etc).
     partitioned_hashes: Vec<HashPartition>,
 }
 
