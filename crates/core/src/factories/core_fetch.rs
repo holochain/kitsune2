@@ -55,7 +55,7 @@ use kitsune2_api::{
 };
 use tokio::sync::{
     mpsc::{channel, Receiver, Sender},
-    Mutex, MutexGuard,
+    Mutex,
 };
 
 const MOD_NAME: &str = "Fetch";
@@ -103,11 +103,10 @@ impl Fetch for CoreFetch {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // Add ops to set.
-            let mut ops = self.0.ops.lock().await;
+            let ops = &mut self.0.state.lock().await.ops;
             op_list.clone().into_iter().for_each(|op_id| {
                 ops.insert((op_id, source.clone()));
             });
-            drop(ops);
 
             // Pass ops to fetch tasks.
             let futures = op_list.into_iter().map(|op_id| async {
@@ -129,11 +128,16 @@ impl Fetch for CoreFetch {
 type FetchRequest = (OpId, AgentId);
 
 #[derive(Debug)]
+struct State {
+    ops: HashSet<FetchRequest>,
+    cool_down_list: HashMap<AgentId, Instant>,
+}
+
+#[derive(Debug)]
 struct Inner {
-    ops: Arc<Mutex<HashSet<FetchRequest>>>,
+    state: Arc<Mutex<State>>,
     fetch_queue_tx: Sender<FetchRequest>,
     fetch_queue_rx: Arc<Mutex<Receiver<FetchRequest>>>,
-    cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
 }
 
 impl Inner {
@@ -142,14 +146,16 @@ impl Inner {
         let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(1024);
         let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
 
-        let ops = Arc::new(Mutex::new(HashSet::new()));
-        let cool_down_list = Arc::new(Mutex::new(HashMap::new()));
+        let ops = HashSet::new();
+        let cool_down_list = HashMap::new();
 
         Self {
-            ops,
+            state: Arc::new(Mutex::new(State {
+                ops,
+                cool_down_list,
+            })),
             fetch_queue_tx,
             fetch_queue_rx,
-            cool_down_list,
         }
     }
 
@@ -163,8 +169,7 @@ impl Inner {
                 self.fetch_queue_tx.clone(),
                 self.fetch_queue_rx.clone(),
                 transport.clone(),
-                self.ops.clone(),
-                self.cool_down_list.clone(),
+                self.state.clone(),
                 config.cool_down_interval_ms,
             ));
         }
@@ -174,17 +179,17 @@ impl Inner {
         fetch_request_tx: Sender<FetchRequest>,
         fetch_request_rx: Arc<Mutex<Receiver<FetchRequest>>>,
         transport: DynTransport,
-        ops: Arc<Mutex<HashSet<FetchRequest>>>,
-        cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
+        state: Arc<Mutex<State>>,
         cool_down_interval: u64,
     ) {
         while let Some((op_id, agent_id)) =
             fetch_request_rx.lock().await.recv().await
         {
             // Ensure op is still in the set of ops to fetch.
-            if !ops
+            if !state
                 .lock()
                 .await
+                .ops
                 .contains(&(op_id.clone(), agent_id.clone()))
             {
                 continue;
@@ -193,7 +198,7 @@ impl Inner {
             // Check if agent is on cool-down list.
             if !Inner::is_agent_cooling_down(
                 &agent_id,
-                &mut cool_down_list.lock().await,
+                &mut state.lock().await.cool_down_list,
                 cool_down_interval,
             ) {
                 // Send fetch request to agent.
@@ -204,9 +209,10 @@ impl Inner {
                     .await
                 {
                     eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
-                    cool_down_list
+                    state
                         .lock()
                         .await
+                        .cool_down_list
                         .insert(agent_id.clone(), Instant::now());
                 }
             }
@@ -223,10 +229,11 @@ impl Inner {
 
     fn is_agent_cooling_down(
         agent_id: &AgentId,
-        cool_down_list: &mut MutexGuard<HashMap<AgentId, Instant>>,
+        cool_down_list: &mut HashMap<AgentId, Instant>,
         cool_down_interval: u64,
     ) -> bool {
-        match cool_down_list.get(agent_id) {
+        let a = cool_down_list.get(agent_id);
+        match a {
             Some(instant) => {
                 let now = Instant::now();
                 if (now - *instant).as_millis() > cool_down_interval as u128 {

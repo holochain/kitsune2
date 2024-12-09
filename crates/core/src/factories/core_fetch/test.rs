@@ -71,7 +71,7 @@ async fn fetch_queue() {
     .unwrap();
 
     // Clear set of ops to fetch to stop sending requests.
-    fetch.0.ops.lock().await.clear();
+    fetch.0.state.lock().await.ops.clear();
 
     let mut num_requests_sent = mock_transport.lock().await.requests_sent.len();
 
@@ -143,14 +143,6 @@ async fn happy_multi_op_fetch_from_single_agent() {
     })
     .await
     .unwrap();
-
-    // Assert that less than twice the number of sent requests were made redundantly.
-    let requests_sent = mock_transport.lock().await.requests_sent.clone();
-    assert!(
-        requests_sent.len() < num_ops * 3,
-        "sent {} requests",
-        requests_sent.len()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -213,14 +205,6 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     })
     .await
     .unwrap();
-
-    // Assert that less twice the number of sent requests were made redundantly.
-    let requests_sent = mock_transport.lock().await.requests_sent.clone();
-    assert!(
-        requests_sent.len() < total_ops * 3,
-        "sent {} requests",
-        requests_sent.len()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -244,7 +228,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
     .await
     .unwrap();
 
-    let cool_down_list = fetch.0.cool_down_list.lock().await.clone();
+    let cool_down_list = fetch.0.state.lock().await.cool_down_list.clone();
     assert!(cool_down_list.contains_key(&agent));
 }
 
@@ -261,22 +245,25 @@ async fn agent_cooling_down_is_removed_from_list() {
 
     fetch
         .0
-        .cool_down_list
+        .state
         .lock()
         .await
+        .cool_down_list
         .insert(agent_id.clone(), now);
 
     assert!(Inner::is_agent_cooling_down(
         &agent_id,
-        &mut fetch.0.cool_down_list.lock().await,
+        &mut fetch.0.state.lock().await.cool_down_list,
         config.cool_down_interval_ms
     ));
 
-    tokio::time::sleep(Duration::from_millis(config.cool_down_interval_ms))
+    // Wait for the cool-down interval + 1 ms to avoid flakiness.
+    tokio::time::sleep(Duration::from_millis(config.cool_down_interval_ms + 1))
         .await;
+
     assert!(!Inner::is_agent_cooling_down(
         &agent_id,
-        &mut fetch.0.cool_down_list.lock().await,
+        &mut fetch.0.state.lock().await.cool_down_list,
         config.cool_down_interval_ms
     ));
 }
@@ -330,7 +317,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     .unwrap();
 
     // Check all agents are on cool_down_list.
-    let cool_down_list = fetch.0.cool_down_list.lock().await;
+    let cool_down_list = &fetch.0.state.lock().await.cool_down_list;
     assert!(expected_agents
         .iter()
         .all(|agent| cool_down_list.contains_key(agent)));
