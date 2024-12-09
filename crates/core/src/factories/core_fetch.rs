@@ -64,8 +64,6 @@ const MOD_NAME: &str = "Fetch";
 pub struct CoreFetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     pub parallel_request_count: u8,
-    /// Duration in ms to sleep when idle. Default: 1_000.
-    pub fetch_loop_sleep: u64,
     /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 10_000.
     pub cool_down_interval: u64,
 }
@@ -74,7 +72,6 @@ impl Default for CoreFetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            fetch_loop_sleep: 1_000,
             cool_down_interval: 10_000,
         }
     }
@@ -127,7 +124,6 @@ impl Fetch for CoreFetch {
 
 #[derive(Debug)]
 struct Inner {
-    config: CoreFetchConfig,
     // A hash set` is used to look up elements by key efficiently. Ops may be added redundantly
     // to the set with different sources to fetch from, so the set is keyed by op and agent id together.
     ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
@@ -160,7 +156,6 @@ impl Inner {
         }
 
         Self {
-            config,
             ops,
             fetch_request_tx,
             cool_down_list,
