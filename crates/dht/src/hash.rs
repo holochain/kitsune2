@@ -421,7 +421,7 @@ mod tests {
                 .unwrap();
         }
 
-        // Check nothing is current stored in the partials
+        // Check nothing is currently stored in the partials
         for h in &ph.partitioned_hashes {
             for ps in h.partitioned_time.partials() {
                 assert!(ps.hash().is_empty())
