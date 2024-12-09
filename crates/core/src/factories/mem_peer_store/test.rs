@@ -51,7 +51,7 @@ impl AgentBuild {
         });
         let is_tombstone = self.is_tombstone.unwrap_or(false);
         let url = self.url.unwrap_or(None);
-        let storage_arc = self.storage_arc.unwrap_or(BASIC_ARC_FULL);
+        let storage_arc = self.storage_arc.unwrap_or(BasicArc::Full);
         let agent_info = serde_json::to_string(&AgentInfo {
             agent,
             space,
@@ -82,59 +82,6 @@ impl AgentBuild {
         }
         // going through this trouble to use decode because it's sync
         AgentInfoSigned::decode(&V, encoded.as_bytes()).unwrap()
-    }
-}
-
-#[test]
-fn dist_edge_cases() {
-    type Dist = u32;
-    type Loc = u32;
-    const F: &[(Dist, Loc, BasicArc)] = &[
-        (u32::MAX, 0, None),
-        (0, 0, Some((0, 1))),
-        (0, u32::MAX, Some((u32::MAX - 1, u32::MAX))),
-        (1, 0, Some((1, 2))),
-        (1, u32::MAX, Some((0, 1))),
-        (1, 0, Some((u32::MAX - 1, u32::MAX))),
-        (0, 0, Some((u32::MAX, 0))),
-        (1, 1, Some((u32::MAX, 0))),
-        (1, u32::MAX - 1, Some((u32::MAX, 0))),
-        (1, 0, Some((u32::MAX, u32::MAX))),
-        (1, u32::MAX, Some((0, 0))),
-        (u32::MAX / 2, u32::MAX / 2, Some((0, 0))),
-        (u32::MAX / 2 + 1, u32::MAX / 2, Some((u32::MAX, u32::MAX))),
-        (1, u32::MAX - 1, Some((u32::MAX, 1))),
-        (0, 0, Some((u32::MAX, 1))),
-    ];
-
-    for (dist, loc, arc) in F.iter() {
-        assert_eq!(*dist, calc_dist(*loc, *arc));
-    }
-}
-
-#[test]
-fn arcs_overlap_edge_cases() {
-    type DoOverlap = bool;
-    const F: &[(DoOverlap, BasicArc, BasicArc)] = &[
-        (false, Some((0, 0)), Some((1, 1))),
-        (false, Some((0, 0)), Some((u32::MAX, u32::MAX))),
-        (true, Some((0, 0)), Some((0, 0))),
-        (true, Some((u32::MAX, u32::MAX)), Some((u32::MAX, u32::MAX))),
-        (true, Some((u32::MAX, 0)), Some((0, 0))),
-        (true, Some((u32::MAX, 0)), Some((u32::MAX, u32::MAX))),
-        (true, Some((u32::MAX, 0)), Some((u32::MAX, u32::MAX))),
-        (true, Some((0, 3)), Some((1, 2))),
-        (true, Some((1, 2)), Some((0, 3))),
-        (true, Some((1, 3)), Some((2, 4))),
-        (true, Some((2, 4)), Some((1, 3))),
-        (true, Some((u32::MAX - 1, 1)), Some((u32::MAX, 0))),
-        (true, Some((u32::MAX, 0)), Some((u32::MAX - 1, 1))),
-        (true, Some((u32::MAX - 1, 0)), Some((u32::MAX, 1))),
-        (true, Some((u32::MAX, 1)), Some((u32::MAX - 1, 0))),
-    ];
-
-    for (do_overlap, a, b) in F.iter() {
-        assert_eq!(*do_overlap, arcs_overlap(*a, *b));
     }
 }
 
@@ -222,25 +169,25 @@ fn fixture_get_by_overlapping_storage_arc() {
     const F: &[(&[&str], BasicArc, &[(&str, BasicArc)])] = &[
         (
             &["a", "b"],
-            BASIC_ARC_FULL,
-            &[("a", BASIC_ARC_FULL), ("b", BASIC_ARC_FULL)],
+            BasicArc::Full,
+            &[("a", BasicArc::Full), ("b", BasicArc::Full)],
         ),
         (
             &[],
-            BASIC_ARC_FULL,
-            &[("a", BASIC_ARC_EMPTY), ("b", BASIC_ARC_EMPTY)],
+            BasicArc::Full,
+            &[("a", BasicArc::Empty), ("b", BasicArc::Empty)],
         ),
         (
             &[],
-            BASIC_ARC_EMPTY,
-            &[("a", BASIC_ARC_FULL), ("b", BASIC_ARC_FULL)],
+            BasicArc::Empty,
+            &[("a", BasicArc::Full), ("b", BasicArc::Full)],
         ),
         (
             &["a"],
-            Some((0, u32::MAX / 2)),
+            BasicArc::Literal(0, u32::MAX / 2),
             &[
-                ("a", Some((400, u32::MAX / 2 - 400))),
-                ("b", Some((u32f(0.8), u32f(0.9)))),
+                ("a", BasicArc::Literal(400, u32::MAX / 2 - 400)),
+                ("b", BasicArc::Literal(u32f(0.8), u32f(0.9))),
             ],
         ),
     ];
@@ -250,7 +197,7 @@ fn fixture_get_by_overlapping_storage_arc() {
 
         for (arc_name, arc) in arc_list.iter() {
             s.insert(vec![AgentBuild {
-                storage_arc: Some(*arc),
+                storage_arc: Some(arc.clone()),
                 url: Some(Some(sneak_url(arc_name))),
                 ..Default::default()
             }
@@ -258,7 +205,7 @@ fn fixture_get_by_overlapping_storage_arc() {
         }
 
         let mut got = s
-            .get_by_overlapping_storage_arc(*q)
+            .get_by_overlapping_storage_arc(q.clone())
             .into_iter()
             .map(|info| unsneak_url(info.url.as_ref().unwrap()))
             .collect::<Vec<_>>();
@@ -277,7 +224,7 @@ fn fixture_get_near_location() {
         let loc = (u32::MAX / 8) * idx;
         s.insert(vec![AgentBuild {
             // for simplicity have agents claim arcs of len 1
-            storage_arc: Some(Some((loc, loc))),
+            storage_arc: Some(BasicArc::Literal(loc, loc + 1)),
             // set the url to the idx for matching
             url: Some(Some(sneak_url(&idx.to_string()))),
             ..Default::default()
@@ -288,7 +235,7 @@ fn fixture_get_near_location() {
     // these should not be returned because they are invalid.
     s.insert(vec![
         AgentBuild {
-            storage_arc: Some(None),
+            storage_arc: Some(BasicArc::Empty),
             url: Some(Some(sneak_url("zero-arc"))),
             ..Default::default()
         }
