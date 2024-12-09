@@ -233,6 +233,7 @@ impl PartitionedTime {
                 // If we're syncing because we've been offline then it's okay and we should
                 // try to detect that when it's happening but otherwise it'd be good to log a warning
                 // here.
+                tracing::info!("Historical update detected. Seeing many of these places load on our system, but it is expected if we've been offline or a network partition has been resolved.");
 
                 let slice_id = op.timestamp.as_micros()
                     / (self.full_slice_duration.as_micros() as i64);
@@ -512,6 +513,11 @@ impl PartitionedTime {
     #[cfg(test)]
     pub(crate) fn partials(&self) -> &[PartialSlice] {
         &self.partial_slices
+    }
+
+    #[cfg(test)]
+    pub(crate) fn arc_constraint(&self) -> &ArcLiteral {
+        &self.arc_constraint
     }
 }
 

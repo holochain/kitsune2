@@ -12,21 +12,21 @@
 //! to be maximally distributed. With higher replication, say 50 times, and a hash factor of 20,
 //! over 200,000 nodes are needed for maximal distribution.
 //!
-//! Each hash partition manages a [PartitionedTime] structure that is responsible for managing the
-//! time slices for that hash partition. The interface of this module is largely responsible for
+//! Each space partition manages a [PartitionedTime] structure that is responsible for managing the
+//! time slices for that space partition. The interface of this module is largely responsible for
 //! delegating the updating of time slices to the inner time partitions. This ensures that all the
 //! time partitions are updated in lockstep. This makes reasoning about the space-time partitioning
 //! easier.
 //!
 //! This module must be informed about ops that have been stored. There is no active process here
 //! that can look for newly stored ops. When a batch of ops is stored, the [PartitionedHashes] must
-//! be informed and will split the ops into the right hash partition based on the location of the op.
-//! Ops are then pushed to the inner time partition for each hash partition. It is the time
+//! be informed and will split the ops into the right space partition based on the location of the op.
+//! Ops are then pushed to the inner time partition for each space partition. It is the time
 //! partitions that are responsible for updating the combined hash values.
 
 use crate::PartitionedTime;
 use kitsune2_api::{
-    ArcLiteral, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
+    DynOpStore, K2Error, K2Result, StoredOp, Timestamp, ARC_LITERAL_FULL,
 };
 use std::collections::HashMap;
 
@@ -41,59 +41,71 @@ pub struct PartitionedHashes {
     size: u32,
     /// The partition count here (length of Vec) should always be a power of 2.
     /// (2**0, 2**1, etc).
-    partitioned_hashes: Vec<HashPartition>,
-}
-
-#[derive(Debug)]
-struct HashPartition {
-    _arc: ArcLiteral,
-    partitioned_time: PartitionedTime,
+    partitioned_hashes: Vec<PartitionedTime>,
 }
 
 impl PartitionedHashes {
     /// Create a new partitioned hash structure.
     ///
-    /// The `hash_factor` determines the number of partitions to create. A value of 32 will create
+    /// The `space_factor` determines the number of partitions to create. A value of 32 will create
     /// a single partition. Each unit decrease from 32 will double the number of partitions.
     ///
-    /// Each hash partition owns a [PartitionedTime] structure that is responsible for managing
-    /// the time slices for that hash partition. Other parameters to this function are used to
+    /// Each space partition owns a [PartitionedTime] structure that is responsible for managing
+    /// the time slices for that space partition. Other parameters to this function are used to
     /// create the [PartitionedTime] structure.
     pub async fn try_from_store(
-        hash_factor: u8,
+        space_factor: u8,
         time_factor: u8,
         current_time: Timestamp,
         store: DynOpStore,
     ) -> K2Result<Self> {
-        if hash_factor > 32 {
-            return Err(K2Error::other("Hash factor must be 32 or lower"));
+        // Above 32 is not supported because that results in a single partition.
+        // Below 18 is not supported because the number of partitions grows too large and impacts
+        // performance unreasonably.
+        if !(18..=32).contains(&space_factor) {
+            return Err(K2Error::other(
+                "Hash factor must be between 18 and 32",
+            ));
         }
 
-        let (size, num_buckets) = if hash_factor == 32 {
-            (u32::MAX, 1)
+        let (size, partitioned_hashes) = if space_factor == 32 {
+            (
+                u32::MAX,
+                vec![
+                    PartitionedTime::try_from_store(
+                        time_factor,
+                        current_time,
+                        ARC_LITERAL_FULL,
+                        store.clone(),
+                    )
+                    .await?,
+                ],
+            )
         } else {
-            let size = 1u32 << hash_factor;
+            let size = 1u32 << space_factor;
 
             // We will always be one bucket short because u32::MAX is not a power of two. It is one less
             // than a power of two, so the last bucket is always one short.
-            (size, (u32::MAX / size) + 1)
+            let num_partitions = (u32::MAX / size) + 1;
+            let mut partitioned_hashes =
+                Vec::with_capacity(num_partitions as usize);
+            for i in 0..num_partitions {
+                partitioned_hashes.push(
+                    PartitionedTime::try_from_store(
+                        time_factor,
+                        current_time,
+                        (i * size, (i + 1).overflowing_mul(size).0),
+                        store.clone(),
+                    )
+                    .await?,
+                );
+            }
+
+            (size, partitioned_hashes)
         };
 
-        let mut partitioned_hashes = Vec::with_capacity(num_buckets as usize);
-        for i in 0..num_buckets {
-            partitioned_hashes.push(
-                HashPartition::try_from_store(
-                    (i * size, (i + 1).overflowing_mul(size).0),
-                    time_factor,
-                    current_time,
-                    store.clone(),
-                )
-                .await?,
-            );
-        }
-
         tracing::info!(
-            "Allocated {} hash partitions",
+            "Allocated [{}] space partitions",
             partitioned_hashes.len()
         );
 
@@ -105,25 +117,21 @@ impl PartitionedHashes {
 
     /// Get the next update time of the inner time partitions.
     pub fn next_update_at(&self) -> Timestamp {
-        // Because the minimum `hash_factor` is 0, and we compute 2^hash_factor, there will always be at least one partition.
+        // Because the minimum `space_factor` is 0, and we compute 2^space_factor, there will always be at least one partition.
         self.partitioned_hashes
             .first()
-            .expect("Always at least one hash partition")
-            .partitioned_time
+            .expect("Always at least one space partition")
             .next_update_at()
     }
 
-    /// Update the time partitions for each hash partition.
+    /// Update the time partitions for each space partition.
     pub async fn update(
         &mut self,
         store: DynOpStore,
         current_time: Timestamp,
     ) -> K2Result<()> {
         for partition in self.partitioned_hashes.iter_mut() {
-            partition
-                .partitioned_time
-                .update(store.clone(), current_time)
-                .await?;
+            partition.update(store.clone(), current_time).await?;
         }
 
         Ok(())
@@ -132,7 +140,7 @@ impl PartitionedHashes {
     /// Inform the time partitions of ops that have been stored.
     ///
     /// The ops are placed into the right space partition based on the location of the op. Then the
-    /// updating of hashes is delegated to the inner time partition for each hash partition.
+    /// updating of hashes is delegated to the inner time partition for each space partition.
     pub async fn inform_ops_stored(
         &mut self,
         store: DynOpStore,
@@ -154,33 +162,11 @@ impl PartitionedHashes {
 
         for (location, ops) in by_location {
             self.partitioned_hashes[location as usize]
-                .partitioned_time
                 .inform_ops_stored(store.clone(), ops)
                 .await?;
         }
 
         Ok(())
-    }
-}
-
-impl HashPartition {
-    pub async fn try_from_store(
-        arc: ArcLiteral,
-        time_factor: u8,
-        current_time: Timestamp,
-        store: DynOpStore,
-    ) -> K2Result<Self> {
-        let partitioned_time = PartitionedTime::try_from_store(
-            time_factor,
-            current_time,
-            arc,
-            store,
-        )
-        .await?;
-        Ok(Self {
-            _arc: arc,
-            partitioned_time,
-        })
     }
 }
 
@@ -205,7 +191,10 @@ mod tests {
                 .unwrap();
         assert_eq!(1, ph.partitioned_hashes.len());
         assert_eq!(u32::MAX, ph.size);
-        assert_eq!(ARC_LITERAL_FULL, ph.partitioned_hashes[0]._arc);
+        assert_eq!(
+            &ARC_LITERAL_FULL,
+            ph.partitioned_hashes[0].arc_constraint()
+        );
     }
 
     #[tokio::test]
@@ -226,12 +215,12 @@ mod tests {
         enable_tracing();
 
         // Check that the behaviour is consistent for a reasonable range of expected values
-        for hash_factor in 20u8..31 {
+        for space_factor in 18u8..=31 {
             let store = Arc::new(Kitsune2MemoryOpStore::default());
             let ph = PartitionedHashes::try_from_store(
-                hash_factor,
+                space_factor,
                 14,
-                Timestamp::now(),
+                UNIX_TIMESTAMP,
                 store,
             )
             .await
@@ -240,13 +229,44 @@ mod tests {
             let mut start: u32 = 0;
             for i in 0..ph.partitioned_hashes.len() {
                 let end = start.overflowing_add(ph.size).0;
-                assert_eq!(start, ph.partitioned_hashes[i]._arc.0);
-                assert_eq!(end, ph.partitioned_hashes[i]._arc.1);
+                assert_eq!(start, ph.partitioned_hashes[i].arc_constraint().0);
+                assert_eq!(end, ph.partitioned_hashes[i].arc_constraint().1);
                 start = end;
             }
 
-            assert_eq!(0, start, "While checking factor {}", hash_factor);
+            assert_eq!(0, start, "While checking factor {}", space_factor);
         }
+    }
+
+    #[tokio::test]
+    async fn space_factor_outside_permitted_range() {
+        // Too low, must be above 18
+        assert_eq!(
+            "Hash factor must be between 18 and 32 (src: None)".to_string(),
+            PartitionedHashes::try_from_store(
+                17,
+                14,
+                UNIX_TIMESTAMP,
+                Arc::new(Kitsune2MemoryOpStore::default())
+            )
+            .await
+            .unwrap_err()
+            .to_string()
+        );
+
+        // Too high, must be below 32
+        assert_eq!(
+            "Hash factor must be between 18 and 32 (src: None)".to_string(),
+            PartitionedHashes::try_from_store(
+                33,
+                14,
+                UNIX_TIMESTAMP,
+                Arc::new(Kitsune2MemoryOpStore::default())
+            )
+            .await
+            .unwrap_err()
+            .to_string()
+        );
     }
 
     #[tokio::test]
@@ -275,9 +295,7 @@ mod tests {
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
                     timestamp: UNIX_TIMESTAMP
-                        + ph.partitioned_hashes[0]
-                            .partitioned_time
-                            .full_slice_duration(),
+                        + ph.partitioned_hashes[0].full_slice_duration(),
                 },
             ],
         )
@@ -330,14 +348,12 @@ mod tests {
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_1.clone()),
                     timestamp: ph.partitioned_hashes[0]
-                        .partitioned_time
                         .full_slice_end_timestamp(),
                 },
                 // Stored in the second time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
                     timestamp: ph.partitioned_hashes[0]
-                        .partitioned_time
                         .full_slice_end_timestamp()
                         + Duration::from_secs((1 << 13) * UNIT_TIME.as_secs()),
                 },
@@ -355,15 +371,13 @@ mod tests {
             assert_eq!(0, count);
         }
 
-        let partial_slice =
-            &ph.partitioned_hashes[0].partitioned_time.partials()[0];
+        let partial_slice = &ph.partitioned_hashes[0].partials()[0];
         assert_eq!(
             op_id_bytes_1,
             bytes::Bytes::from(partial_slice.hash().to_vec())
         );
 
-        let partial_slice =
-            &ph.partitioned_hashes[1].partitioned_time.partials()[1];
+        let partial_slice = &ph.partitioned_hashes[1].partials()[1];
         assert_eq!(
             op_id_bytes_2,
             bytes::Bytes::from(partial_slice.hash().to_vec())
@@ -386,10 +400,7 @@ mod tests {
         assert!(hashes_next_update_at >= now);
 
         for h in ph.partitioned_hashes {
-            assert_eq!(
-                hashes_next_update_at,
-                h.partitioned_time.next_update_at()
-            );
+            assert_eq!(hashes_next_update_at, h.next_update_at());
         }
     }
 
@@ -408,12 +419,12 @@ mod tests {
         for h in ph.partitioned_hashes.iter() {
             store
                 .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                    // Place the op within the current hash partition
+                    // Place the op within the current space partition
                     OpId::from(bytes::Bytes::copy_from_slice(
-                        (h._arc.0 + 1).to_le_bytes().as_slice(),
+                        (h.arc_constraint().0 + 1).to_le_bytes().as_slice(),
                     )),
                     now,
-                    h._arc.1.to_be_bytes().to_vec(),
+                    h.arc_constraint().1.to_be_bytes().to_vec(),
                 )
                 .try_into()
                 .unwrap()])
@@ -423,7 +434,7 @@ mod tests {
 
         // Check nothing is currently stored in the partials
         for h in &ph.partitioned_hashes {
-            for ps in h.partitioned_time.partials() {
+            for ps in h.partials() {
                 assert!(ps.hash().is_empty())
             }
         }
@@ -436,8 +447,7 @@ mod tests {
             // Exactly one partial should now have a hash
             assert_eq!(
                 1,
-                h.partitioned_time
-                    .partials()
+                h.partials()
                     .iter()
                     .filter(|ps| !ps.hash().is_empty())
                     .count()
