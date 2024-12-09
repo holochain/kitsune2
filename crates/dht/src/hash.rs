@@ -326,7 +326,7 @@ mod tests {
         ph.inform_ops_stored(
             store.clone(),
             vec![
-                // Stored in the first partial
+                // Stored in the first time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_1.clone()),
                     timestamp: ph.partitioned_hashes[0]
