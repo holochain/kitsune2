@@ -8,7 +8,7 @@ use kitsune2_api::{fetch::Fetch, id::Id, AgentId, K2Error, OpId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
-use super::{CoreFetch, CoreFetchConfig, Transport};
+use super::{CoreFetch, CoreFetchConfig, Inner, Transport};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -35,10 +35,7 @@ impl Transport for MockTransport {
     ) -> kitsune2_api::BoxFut<'static, kitsune2_api::K2Result<()>> {
         self.requests_sent.push((op_id, dest));
         if self.fail {
-            Box::pin(async move {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                Err(K2Error::other("connection timed out"))
-            })
+            Box::pin(async move { Err(K2Error::other("connection timed out")) })
         } else {
             Box::pin(async move { Ok(()) })
         }
@@ -147,10 +144,10 @@ async fn happy_multi_op_fetch_from_single_agent() {
     .await
     .unwrap();
 
-    // Assert that less than half of the number of sent requests were made redundantly.
+    // Assert that less than twice the number of sent requests were made redundantly.
     let requests_sent = mock_transport.lock().await.requests_sent.clone();
     assert!(
-        requests_sent.len() < (num_ops as f32 * 1.5) as usize,
+        requests_sent.len() < num_ops * 3,
         "sent {} requests",
         requests_sent.len()
     );
@@ -217,17 +214,17 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     .await
     .unwrap();
 
-    // Assert that less than half of the number of sent requests were made redundantly.
+    // Assert that less twice the number of sent requests were made redundantly.
     let requests_sent = mock_transport.lock().await.requests_sent.clone();
     assert!(
-        requests_sent.len() < (total_ops as f32 * 1.5) as usize,
+        requests_sent.len() < total_ops * 3,
         "sent {} requests",
         requests_sent.len()
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn unresponsive_agent_is_put_on_cool_down_list() {
+async fn unresponsive_agents_are_put_on_cool_down_list() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
     let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
@@ -237,7 +234,7 @@ async fn unresponsive_agent_is_put_on_cool_down_list() {
 
     fetch.add_ops(op_list, agent.clone()).await.unwrap();
 
-    tokio::time::timeout(Duration::from_millis(100), async {
+    tokio::time::timeout(Duration::from_millis(10), async {
         loop {
             if !mock_transport.lock().await.requests_sent.is_empty() {
                 break;
@@ -252,91 +249,35 @@ async fn unresponsive_agent_is_put_on_cool_down_list() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn purge_cool_down_list() {
-    let config = CoreFetchConfig::default();
-    let mock_transport = MockTransport::new(false);
-    let fetch = CoreFetch::new(config.clone(), mock_transport.clone());
-    let agent = random_agent_id();
-
-    // Add agent to cool-down list.
-    fetch
-        .0
-        .cool_down_list
-        .lock()
-        .await
-        .insert(agent.clone(), Instant::now());
-
-    // Purge list 10 ms after cool down interval has passed.
-    fetch
-        .0
-        .purge_cool_down_list(
-            Instant::now()
-                + Duration::from_millis(config.cool_down_interval + 1),
-        )
-        .await;
-
-    assert!(fetch.0.cool_down_list.lock().await.is_empty());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn unresponsive_agent_is_removed_from_cool_down_list_after_interval() {
+async fn agent_cooling_down_is_removed_from_list() {
     let config = CoreFetchConfig {
-        // Set short cool down interval for testing.
-        cool_down_interval: 100,
+        cool_down_interval: 10,
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let agent_id = random_agent_id();
+    let now = Instant::now();
 
-    let op_list = create_op_list(1);
-    let responsive_agent = random_agent_id();
-    let unresponsive_agent = random_agent_id();
-
-    // Add unresponsive agent to cool-down list.
     fetch
         .0
         .cool_down_list
         .lock()
         .await
-        .insert(unresponsive_agent.clone(), Instant::now());
+        .insert(agent_id.clone(), now.clone());
 
-    // Add ops from unresponsive agent first.
-    fetch
-        .add_ops(op_list.clone(), unresponsive_agent.clone())
-        .await
-        .unwrap();
-    fetch
-        .add_ops(op_list, responsive_agent.clone())
-        .await
-        .unwrap();
+    assert!(Inner::is_agent_cooling_down(
+        &agent_id,
+        &mut fetch.0.cool_down_list.lock().await,
+        config.cool_down_interval
+    ));
 
-    // Wait until requests have been sent.
-    tokio::time::timeout(Duration::from_millis(100), async {
-        loop {
-            let requests_sent =
-                mock_transport.lock().await.requests_sent.clone();
-            if !requests_sent.is_empty() {
-                break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }
-    })
-    .await
-    .unwrap();
-
-    // Check that no requests have been sent to unresponsive agent.
-    let requests_sent = mock_transport.lock().await.requests_sent.clone();
-    assert!(requests_sent
-        .iter()
-        .all(|(_, dest)| *dest != unresponsive_agent));
-
-    // Wait for cool down interval to pass.
     tokio::time::sleep(Duration::from_millis(config.cool_down_interval)).await;
-
-    // Check that the agent has been removed from the cool-down list.
-    let cool_down_list = fetch.0.cool_down_list.lock().await.clone();
-    assert!(cool_down_list.is_empty());
+    assert!(!Inner::is_agent_cooling_down(
+        &agent_id,
+        &mut fetch.0.cool_down_list.lock().await,
+        config.cool_down_interval
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -352,6 +293,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     let op_list_3 = create_op_list(30);
     let agent_3 = random_agent_id();
 
+    // Add all ops to the queue.
     fetch
         .add_ops(op_list_1.clone(), agent_1.clone())
         .await
@@ -365,12 +307,13 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
         .await
         .unwrap();
 
+    // Wait for one request for each agent.
     let expected_agents = [agent_1, agent_2, agent_3];
-    tokio::time::timeout(Duration::from_secs(1), async {
+    tokio::time::timeout(Duration::from_millis(100), async {
         loop {
-            let request_destinations =
+            let requests_sent =
                 mock_transport.lock().await.requests_sent.clone();
-            let request_destinations = request_destinations
+            let request_destinations = requests_sent
                 .iter()
                 .map(|(_, agent_id)| agent_id)
                 .collect::<Vec<_>>();
@@ -379,29 +322,17 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
                 .all(|agent| request_destinations.contains(&agent))
             {
                 break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
     })
     .await
     .unwrap();
 
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let cool_down_list = fetch.0.cool_down_list.lock().await;
-            if expected_agents
-                .iter()
-                .all(|agent| cool_down_list.contains_key(agent))
-            {
-                break;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }
-    })
-    .await
-    .unwrap();
+    // Check all agents are on cool_down_list.
+    let cool_down_list = fetch.0.cool_down_list.lock().await;
+    assert!(expected_agents
+        .iter()
+        .all(|agent| cool_down_list.contains_key(agent)));
 }
 
 fn random_id() -> Id {

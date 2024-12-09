@@ -4,13 +4,13 @@
 //! sends fetch requests and processes incoming responses to these requests.
 //!
 //! It consists of multiple parts:
-//! - Data object that tracks op and agent ids in memory
+//! - State object that tracks op and agent ids in memory
 //! - Fetch tasks that request tracked ops from agents
 //! - Incoming op task that processes incoming responses to op requests by
 //!     - persisting ops to the data store
 //!     - removing op ids from in-memory data object
 //!
-//! ### Data object [CoreFetch]
+//! ### State object [CoreFetch]
 //!
 //! - Exposes public method [CoreFetch::add_ops] that takes a list of ops and an agent id.
 //! - Stores pairs of ([OpId][AgentId]) in a set.
@@ -41,7 +41,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use kitsune2_api::{
@@ -49,14 +49,11 @@ use kitsune2_api::{
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     tx::Transport,
-    AgentId, BoxFut, K2Error, K2Result, OpId,
+    AgentId, BoxFut, K2Result, OpId,
 };
-use tokio::{
-    select,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Mutex,
-    },
+use tokio::sync::{
+    mpsc::{channel, Receiver, Sender},
+    Mutex, MutexGuard,
 };
 
 const MOD_NAME: &str = "Fetch";
@@ -135,7 +132,7 @@ struct Inner {
     // to the set with different sources to fetch from, so the set is keyed by op and agent id together.
     ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
     cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
-    fetch_request_tx: tokio::sync::mpsc::Sender<(OpId, AgentId)>,
+    fetch_request_tx: Sender<(OpId, AgentId)>,
 }
 
 impl Inner {
@@ -145,7 +142,7 @@ impl Inner {
     ) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
         let (fetch_request_tx, fetch_request_rx) =
-            tokio::sync::mpsc::channel::<(OpId, AgentId)>(1024);
+            channel::<(OpId, AgentId)>(1024);
         let fetch_request_rx = Arc::new(Mutex::new(fetch_request_rx));
 
         let ops = Arc::new(Mutex::new(HashSet::new()));
@@ -157,6 +154,8 @@ impl Inner {
                 fetch_request_rx.clone(),
                 transport.clone(),
                 ops.clone(),
+                cool_down_list.clone(),
+                config.cool_down_interval,
             ));
         }
 
@@ -173,6 +172,8 @@ impl Inner {
         fetch_request_rx: Arc<Mutex<Receiver<(OpId, AgentId)>>>,
         transport: DynTransport,
         ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
+        cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
+        cool_down_interval: u64,
     ) {
         while let Some((op_id, agent_id)) =
             fetch_request_rx.lock().await.recv().await
@@ -186,19 +187,32 @@ impl Inner {
                 continue;
             }
 
-            // Send fetch request to agent.
-            // If successful, re-insert the fetch request into the channel queue.
-            println!(
+            // Check if agent is on cool-down list.
+            if !Inner::is_agent_cooling_down(
+                &agent_id,
+                &mut cool_down_list.lock().await,
+                cool_down_interval,
+            ) {
+                // Send fetch request to agent.
+                println!(
                 "fetch request coming in for op {op_id} to agent {agent_id}"
             );
-            if let Err(err) = transport
-                .lock()
-                .await
-                .send_op_request(op_id.clone(), agent_id.clone())
-                .await
-            {
-                eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
-            } else if let Err(err) = fetch_request_tx
+                if let Err(err) = transport
+                    .lock()
+                    .await
+                    .send_op_request(op_id.clone(), agent_id.clone())
+                    .await
+                {
+                    eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
+                    cool_down_list
+                        .lock()
+                        .await
+                        .insert(agent_id.clone(), Instant::now());
+                }
+            }
+
+            // Re-insert the fetch request into the queue.
+            if let Err(err) = fetch_request_tx
                 .send((op_id.clone(), agent_id.clone()))
                 .await
             {
@@ -207,14 +221,24 @@ impl Inner {
         }
     }
 
-    fn purge_cool_down_list(&self, now: Instant) -> BoxFut<'_, ()> {
-        Box::pin(async move {
-            let mut list = self.cool_down_list.lock().await;
-            list.retain(|_, instant| {
-                (now - *instant).as_millis()
-                    <= self.config.cool_down_interval as u128
-            });
-        })
+    fn is_agent_cooling_down(
+        agent_id: &AgentId,
+        cool_down_list: &mut MutexGuard<HashMap<AgentId, Instant>>,
+        cool_down_interval: u64,
+    ) -> bool {
+        match cool_down_list.get(&agent_id) {
+            Some(instant) => {
+                let now = Instant::now();
+                if (now - *instant).as_millis() > cool_down_interval as u128 {
+                    // Cool down interval has elapsed. Remove agent from list.
+                    cool_down_list.remove(agent_id);
+                    false
+                } else {
+                    true
+                }
+            }
+            None => false,
+        }
     }
 }
 
