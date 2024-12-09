@@ -89,7 +89,9 @@ struct CoreFetch(Inner);
 
 impl CoreFetch {
     fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
-        Self(Inner::create_fetch_queue(config, transport))
+        let inner = Inner::new();
+        inner.create_fetch_queue(config, transport);
+        Self(inner)
     }
 }
 
@@ -124,50 +126,55 @@ impl Fetch for CoreFetch {
     }
 }
 
+type FetchRequest = (OpId, AgentId);
+
 #[derive(Debug)]
 struct Inner {
-    ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
-    fetch_queue_tx: Sender<(OpId, AgentId)>,
-    #[cfg(test)]
+    ops: Arc<Mutex<HashSet<FetchRequest>>>,
+    fetch_queue_tx: Sender<FetchRequest>,
+    fetch_queue_rx: Arc<Mutex<Receiver<FetchRequest>>>,
     cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
 }
 
 impl Inner {
-    pub fn create_fetch_queue(
-        config: CoreFetchConfig,
-        transport: DynTransport,
-    ) -> Self {
+    pub fn new() -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
-        let (fetch_queue_tx, fetch_queue_rx) = channel::<(OpId, AgentId)>(1024);
+        let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(1024);
         let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
 
         let ops = Arc::new(Mutex::new(HashSet::new()));
         let cool_down_list = Arc::new(Mutex::new(HashMap::new()));
 
-        for _ in 0..config.parallel_request_count {
-            tokio::task::spawn(Inner::fetch_task(
-                fetch_queue_tx.clone(),
-                fetch_queue_rx.clone(),
-                transport.clone(),
-                ops.clone(),
-                cool_down_list.clone(),
-                config.cool_down_interval_ms,
-            ));
-        }
-
         Self {
             ops,
             fetch_queue_tx,
-            #[cfg(test)]
+            fetch_queue_rx,
             cool_down_list,
         }
     }
 
-    async fn fetch_task(
-        fetch_request_tx: Sender<(OpId, AgentId)>,
-        fetch_request_rx: Arc<Mutex<Receiver<(OpId, AgentId)>>>,
+    pub fn create_fetch_queue(
+        &self,
+        config: CoreFetchConfig,
         transport: DynTransport,
-        ops: Arc<Mutex<HashSet<(OpId, AgentId)>>>,
+    ) {
+        for _ in 0..config.parallel_request_count {
+            tokio::task::spawn(Inner::fetch_task(
+                self.fetch_queue_tx.clone(),
+                self.fetch_queue_rx.clone(),
+                transport.clone(),
+                self.ops.clone(),
+                self.cool_down_list.clone(),
+                config.cool_down_interval_ms,
+            ));
+        }
+    }
+
+    async fn fetch_task(
+        fetch_request_tx: Sender<FetchRequest>,
+        fetch_request_rx: Arc<Mutex<Receiver<FetchRequest>>>,
+        transport: DynTransport,
+        ops: Arc<Mutex<HashSet<FetchRequest>>>,
         cool_down_list: Arc<Mutex<HashMap<AgentId, Instant>>>,
         cool_down_interval: u64,
     ) {
