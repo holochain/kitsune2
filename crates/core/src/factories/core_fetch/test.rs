@@ -264,7 +264,7 @@ async fn agent_cooling_down_is_removed_from_list() {
         .cool_down_list
         .lock()
         .await
-        .insert(agent_id.clone(), now.clone());
+        .insert(agent_id.clone(), now);
 
     assert!(Inner::is_agent_cooling_down(
         &agent_id,
