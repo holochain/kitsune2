@@ -37,8 +37,9 @@ serde = { version = "1.0.215", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
 # bootstrapping. So, we need a json library.
 serde_json = "1.0.132"
-# We've abandoned the ideal of an async runtime agnostic library
-# in favor of expediency.
+# tokio is used for synchronization primitives as well as internal
+# task spawning. We could consider abstracting the async runtime
+# at some point in the future.
 tokio = "1.41.1"
 # Simplify writing async code
 futures = "0.3"
