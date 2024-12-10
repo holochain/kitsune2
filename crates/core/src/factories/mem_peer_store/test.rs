@@ -31,7 +31,7 @@ struct AgentBuild {
     pub expires_at: Option<Timestamp>,
     pub is_tombstone: Option<bool>,
     pub url: Option<Option<Url>>,
-    pub storage_arc: Option<StorageArc>,
+    pub storage_arc: Option<DhtArc>,
 }
 
 impl AgentBuild {
@@ -51,7 +51,7 @@ impl AgentBuild {
         });
         let is_tombstone = self.is_tombstone.unwrap_or(false);
         let url = self.url.unwrap_or(None);
-        let storage_arc = self.storage_arc.unwrap_or(StorageArc::FULL);
+        let storage_arc = self.storage_arc.unwrap_or(DhtArc::FULL);
         let agent_info = serde_json::to_string(&AgentInfo {
             agent,
             space,
@@ -166,28 +166,28 @@ fn fixture_get_by_overlapping_storage_arc() {
     }
 
     #[allow(clippy::type_complexity)]
-    const F: &[(&[&str], StorageArc, &[(&str, StorageArc)])] = &[
+    const F: &[(&[&str], DhtArc, &[(&str, DhtArc)])] = &[
         (
             &["a", "b"],
-            StorageArc::FULL,
-            &[("a", StorageArc::FULL), ("b", StorageArc::FULL)],
+            DhtArc::FULL,
+            &[("a", DhtArc::FULL), ("b", DhtArc::FULL)],
         ),
         (
             &[],
-            StorageArc::FULL,
-            &[("a", StorageArc::Empty), ("b", StorageArc::Empty)],
+            DhtArc::FULL,
+            &[("a", DhtArc::Empty), ("b", DhtArc::Empty)],
         ),
         (
             &[],
-            StorageArc::Empty,
-            &[("a", StorageArc::FULL), ("b", StorageArc::FULL)],
+            DhtArc::Empty,
+            &[("a", DhtArc::FULL), ("b", DhtArc::FULL)],
         ),
         (
             &["a"],
-            StorageArc::Arc(0, u32::MAX / 2),
+            DhtArc::Arc(0, u32::MAX / 2),
             &[
-                ("a", StorageArc::Arc(400, u32::MAX / 2 - 400)),
-                ("b", StorageArc::Arc(u32f(0.8), u32f(0.9))),
+                ("a", DhtArc::Arc(400, u32::MAX / 2 - 400)),
+                ("b", DhtArc::Arc(u32f(0.8), u32f(0.9))),
             ],
         ),
     ];
@@ -224,7 +224,7 @@ fn fixture_get_near_location() {
         let loc = (u32::MAX / 8) * idx;
         s.insert(vec![AgentBuild {
             // for simplicity have agents claim arcs of len 1
-            storage_arc: Some(StorageArc::Arc(loc, loc + 1)),
+            storage_arc: Some(DhtArc::Arc(loc, loc + 1)),
             // set the url to the idx for matching
             url: Some(Some(sneak_url(&idx.to_string()))),
             ..Default::default()
@@ -235,7 +235,7 @@ fn fixture_get_near_location() {
     // these should not be returned because they are invalid.
     s.insert(vec![
         AgentBuild {
-            storage_arc: Some(StorageArc::Empty),
+            storage_arc: Some(DhtArc::Empty),
             url: Some(Some(sneak_url("zero-arc"))),
             ..Default::default()
         }
