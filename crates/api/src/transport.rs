@@ -27,7 +27,7 @@ impl TxImpHnd {
     }
 
     /// When constructing a [Transport] from a [TransportFactory],
-    /// This function does the actual wrapping of your implemementation
+    /// this function does the actual wrapping of your implemementation
     /// to produce the [Transport] struct.
     pub fn gen_transport(&self, imp: DynTxImp) -> Transport {
         Transport {
@@ -50,11 +50,11 @@ impl TxImpHnd {
     /// sent as a preflight message for additional connection validation.
     /// (The preflight data should be sent even if it is zero length).
     pub fn peer_connect(&self, peer: Url) -> K2Result<bytes::Bytes> {
-        for handler in self.mod_map.lock().unwrap().values() {
-            h.peer_connect(peer.clone())?;
+        for mod_handler in self.mod_map.lock().unwrap().values() {
+            mod_handler.peer_connect(peer.clone())?;
         }
-        for h in self.space_map.lock().unwrap().values() {
-            h.peer_connect(peer.clone())?;
+        for space_handler in self.space_map.lock().unwrap().values() {
+            space_handler.peer_connect(peer.clone())?;
         }
         self.handler.peer_connect(peer.clone())?;
         let preflight = self.handler.preflight_gather_outgoing(peer)?;
