@@ -753,9 +753,12 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "kitsune2_api",
+ "kitsune2_core",
+ "kitsune2_test_utils",
  "serde",
  "serde_json",
  "tokio",
+ "ureq",
 ]
 
 [[package]]
@@ -785,6 +788,7 @@ dependencies = [
 name = "kitsune2_test_utils"
 version = "0.1.0-nopublish"
 dependencies = [
+ "kitsune2_bootstrap_srv",
  "tracing",
  "tracing-subscriber",
 ]

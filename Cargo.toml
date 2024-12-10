@@ -37,6 +37,10 @@ serde = { version = "1.0.215", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
 # bootstrapping. So, we need a json library.
 serde_json = "1.0.132"
+# tokio is used for synchronization primitives as well as internal
+# task spawning. We could consider abstracting the async runtime
+# at some point in the future.
+tokio = "1.41.1"
 # Simplify writing async code
 futures = "0.3"
 # bootstrap_srv uses tempfiles as virtual memory for storage instead of RAM.
@@ -45,6 +49,8 @@ tempfile = "3.14.0"
 thiserror = "2.0.3"
 # this is used by bootstrap_srv as the http server implementation.
 tiny_http = "0.12.0"
+# ureq is used in the bootstrap client module.
+ureq = "2.10.1"
 # url validation used by the api crate.
 url = "2.5.4"
 # kitsune2 uses tracing to log events. A consumer can choose any subscriber
@@ -62,9 +68,8 @@ prost-build = "0.13.3"
 # Please be careful to only include them in dev dependencies or move them
 # above this section.
 # --- dev-dependencies ---
+kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
 kitsune2_memory = { path = "crates/memory" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
-tokio = "1.41.1"
-ureq = "2.10.1"
 tracing-subscriber = "0.3"
