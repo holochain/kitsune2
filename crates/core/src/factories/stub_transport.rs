@@ -246,6 +246,9 @@ async fn cmd_task(
     }
 }
 
+/// A Listener instance is the receiver side of a pseudo connection.
+/// If this is dropped by test code, it will remove the sender side
+/// from our static global.
 struct Listener {
     id: u64,
     url: Url,
@@ -270,6 +273,10 @@ impl Listener {
     }
 }
 
+/// This struct will be instantiated as a static global called STAT.
+/// The purpose is to hold the sender side of channels that let us
+/// open "connections" to endpoints. These senders will remain in memory
+/// until the [Listener] instance is dropped.
 struct Stat {
     con_map: Mutex<HashMap<u64, ConSend>>,
 }
@@ -281,6 +288,7 @@ impl Stat {
         }
     }
 
+    /// "Bind" a new [Listener].
     fn listen(&self) -> Listener {
         use std::sync::atomic::*;
         static ID: AtomicU64 = AtomicU64::new(1);
@@ -291,10 +299,13 @@ impl Stat {
         Listener { id, url, recv }
     }
 
+    /// Remove a sender. Called by [Listener::drop].
     fn remove(&self, id: u64) {
         self.con_map.lock().unwrap().remove(&id);
     }
 
+    /// If the destination peer is still in memory, this will
+    /// establish an in-memory "connection" to them.
     fn connect(
         &self,
         cmd_send: &CmdSend,
@@ -332,6 +343,7 @@ impl Stat {
     }
 }
 
+/// This is our static global instance of the [Stat] struct.
 static STAT: OnceLock<Stat> = OnceLock::new();
 fn get_stat() -> &'static Stat {
     STAT.get_or_init(Stat::new)
