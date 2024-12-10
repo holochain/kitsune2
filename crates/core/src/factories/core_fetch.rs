@@ -112,16 +112,15 @@ impl Fetch for CoreFetch {
             );
 
             // Pass ops to fetch tasks.
-            let futures = op_list.into_iter().map(|op_id| async {
+            op_list.into_iter().for_each(|op_id| {
                 if let Err(err) =
-                    self.0.fetch_queue_tx.send((op_id, source.clone())).await
+                    self.0.fetch_queue_tx.try_send((op_id, source.clone()))
                 {
-                    eprintln!(
+                    tracing::warn!(
                         "could not pass fetch request to fetch task: {err}"
                     );
                 }
             });
-            futures::future::join_all(futures).await;
 
             Ok(())
         })
@@ -221,11 +220,10 @@ impl Inner {
             }
 
             // Re-insert the fetch request into the queue.
-            if let Err(err) = fetch_request_tx
-                .send((op_id.clone(), agent_id.clone()))
-                .await
+            if let Err(err) =
+                fetch_request_tx.try_send((op_id.clone(), agent_id.clone()))
             {
-                eprintln!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
+                tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
             }
         }
     }
