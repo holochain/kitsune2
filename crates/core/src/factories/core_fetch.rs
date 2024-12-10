@@ -90,7 +90,7 @@ struct CoreFetch(Inner);
 impl CoreFetch {
     fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
         let inner = Inner::new();
-        inner.create_fetch_queue(config, transport);
+        inner.spawn_fetch_tasks(config, transport);
         Self(inner)
     }
 }
@@ -161,7 +161,7 @@ impl Inner {
         }
     }
 
-    pub fn create_fetch_queue(
+    pub fn spawn_fetch_tasks(
         &self,
         config: CoreFetchConfig,
         transport: DynTransport,
