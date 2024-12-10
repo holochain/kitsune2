@@ -9,33 +9,42 @@ use super::{CoreFetch, CoreFetchConfig, Transport};
 
 #[derive(Debug)]
 pub struct MockTransport {
-    requests_sent: Vec<(OpId, AgentId)>,
+    requests_sent: Arc<Mutex<Vec<(OpId, AgentId)>>>,
     fail: bool,
 }
 
-type DynMockTransport = Arc<Mutex<MockTransport>>;
+type DynMockTransport = Arc<MockTransport>;
 
 impl MockTransport {
     fn new(fail: bool) -> DynMockTransport {
-        Arc::new(Mutex::new(Self {
-            requests_sent: Vec::new(),
+        Arc::new(Self {
+            requests_sent: Arc::new(Mutex::new(Vec::new())),
             fail,
-        }))
+        })
     }
 }
 
 impl Transport for MockTransport {
-    fn send_op_request(
-        &mut self,
-        op_id: OpId,
-        dest: AgentId,
-    ) -> kitsune2_api::BoxFut<'static, kitsune2_api::K2Result<()>> {
-        self.requests_sent.push((op_id, dest));
-        if self.fail {
-            Box::pin(async move { Err(K2Error::other("connection timed out")) })
-        } else {
-            Box::pin(async move { Ok(()) })
-        }
+    fn send_module(
+        &self,
+        _peer: kitsune2_api::Url,
+        _space: kitsune2_api::SpaceId,
+        _module: String,
+        mut data: bytes::Bytes,
+    ) -> kitsune2_api::BoxFut<'_, kitsune2_api::K2Result<()>> {
+        Box::pin(async move {
+            let op_id_bytes = data.split_to(data.len() / 2);
+            let agent_id_bytes = data;
+            let op_id = OpId::from(op_id_bytes);
+            let agent_id = AgentId::from(agent_id_bytes);
+            self.requests_sent.lock().await.push((op_id, agent_id));
+
+            if self.fail {
+                Err(K2Error::other("connection timed out"))
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 
@@ -49,7 +58,7 @@ async fn fetch_queue() {
     let op_list = vec![op_id.clone()];
     let agent_id = random_agent_id();
 
-    let requests_sent = mock_transport.lock().await.requests_sent.clone();
+    let requests_sent = mock_transport.requests_sent.lock().await.clone();
     assert!(requests_sent.is_empty());
 
     // Add 1 op.
@@ -59,7 +68,7 @@ async fn fetch_queue() {
     // this proves that it is being re-added to the queue after sending a request for it.
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
-            if mock_transport.lock().await.requests_sent.len() >= 3 {
+            if mock_transport.requests_sent.lock().await.len() >= 3 {
                 break;
             }
         }
@@ -70,14 +79,14 @@ async fn fetch_queue() {
     // Clear set of ops to fetch to stop sending requests.
     fetch.0.state.lock().await.ops.clear();
 
-    let mut num_requests_sent = mock_transport.lock().await.requests_sent.len();
+    let mut num_requests_sent = mock_transport.requests_sent.lock().await.len();
 
     // Wait for tasks to settle all requests.
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             let current_num_requests_sent =
-                mock_transport.lock().await.requests_sent.len();
+                mock_transport.requests_sent.lock().await.len();
             if current_num_requests_sent == num_requests_sent {
                 break;
             } else {
@@ -90,9 +99,9 @@ async fn fetch_queue() {
 
     // CHeck that all requests have been made for the 1 op to the agent.
     assert!(mock_transport
+        .requests_sent
         .lock()
         .await
-        .requests_sent
         .iter()
         .all(|request| request == &(op_id.clone(), agent_id.clone())));
 
@@ -103,7 +112,7 @@ async fn fetch_queue() {
     // No more requests should have been sent.
     // Ideally it were possible to check that no more fetch request have been passed back into
     // the internal channel, but that would require a custom wrapper around the channel.
-    let requests_sent = mock_transport.lock().await.requests_sent.clone();
+    let requests_sent = mock_transport.requests_sent.lock().await.clone();
     assert_eq!(requests_sent.len(), num_requests_sent);
 }
 
@@ -129,7 +138,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
             let requests_sent =
-                mock_transport.lock().await.requests_sent.clone();
+                mock_transport.requests_sent.lock().await.clone();
             if requests_sent.len() >= num_ops {
                 op_list.clone().into_iter().all(|op_id| {
                     requests_sent.contains(&(op_id, agent.clone()))
@@ -190,7 +199,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
             let requests_sent =
-                mock_transport.lock().await.requests_sent.clone();
+                mock_transport.requests_sent.lock().await.clone();
             if requests_sent.len() >= total_ops
                 && expected_ops
                     .iter()
@@ -217,7 +226,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
-            if !mock_transport.lock().await.requests_sent.is_empty() {
+            if !mock_transport.requests_sent.lock().await.is_empty() {
                 break;
             }
         }
@@ -305,7 +314,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
             let requests_sent =
-                mock_transport.lock().await.requests_sent.clone();
+                mock_transport.requests_sent.lock().await.clone();
             let request_destinations = requests_sent
                 .iter()
                 .map(|(_, agent_id)| agent_id)

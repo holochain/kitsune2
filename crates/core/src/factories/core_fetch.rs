@@ -46,12 +46,13 @@ use std::{
     time::Instant,
 };
 
+use bytes::BufMut;
 use kitsune2_api::{
     builder,
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
-    tx::Transport,
-    AgentId, BoxFut, K2Result, OpId,
+    transport::Transport,
+    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
 use tokio::sync::{
     mpsc::{channel, Receiver, Sender},
@@ -82,7 +83,7 @@ impl Default for CoreFetchConfig {
 impl ModConfig for CoreFetchConfig {}
 
 // TODO: Temporary trait object of a transport module to facilitate unit tests.
-type DynTransport = Arc<Mutex<dyn Transport>>;
+type DynTransport = Arc<dyn Transport>;
 
 #[derive(Debug)]
 struct CoreFetch(Inner);
@@ -203,10 +204,18 @@ impl Inner {
                 .is_agent_cooling_down(&agent_id)
             {
                 // Send fetch request to agent.
+                // TODO: update when transport is available
+                let mut data = bytes::BytesMut::new();
+                data.put(op_id.clone().0 .0);
+                data.put(agent_id.clone().0 .0);
+                let data = data.freeze();
                 if let Err(err) = transport
-                    .lock()
-                    .await
-                    .send_op_request(op_id.clone(), agent_id.clone())
+                    .send_module(
+                        Url::from_str("wss://0.0.0.0:443").unwrap(),
+                        SpaceId::from(bytes::Bytes::new()),
+                        "Mod".to_string(),
+                        data,
+                    )
                     .await
                 {
                     tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
@@ -295,15 +304,17 @@ impl FetchFactory for CoreFetchFactory {
         #[derive(Debug)]
         struct TransportPlaceholder;
         impl Transport for TransportPlaceholder {
-            fn send_op_request(
-                &mut self,
-                _op_id: OpId,
-                _source: AgentId,
-            ) -> BoxFut<'static, K2Result<()>> {
+            fn send_module(
+                &self,
+                _peer: Url,
+                _space: SpaceId,
+                _module: String,
+                _data: bytes::Bytes,
+            ) -> BoxFut<'_, K2Result<()>> {
                 Box::pin(async move { todo!() })
             }
         }
-        let tx = Arc::new(Mutex::new(TransportPlaceholder));
+        let tx = Arc::new(TransportPlaceholder);
 
         Box::pin(async move {
             let config = builder.config.get_module_config(MOD_NAME)?;
