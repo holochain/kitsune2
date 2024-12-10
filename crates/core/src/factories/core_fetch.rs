@@ -210,7 +210,7 @@ impl Inner {
                     .send_op_request(op_id.clone(), agent_id.clone())
                     .await
                 {
-                    eprintln!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
+                    tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
                     state
                         .lock()
                         .await
