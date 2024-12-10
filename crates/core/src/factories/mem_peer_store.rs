@@ -111,7 +111,7 @@ impl peer_store::PeerStore for MemPeerStore {
 
     fn get_by_overlapping_storage_arc(
         &self,
-        arc: BasicArc,
+        arc: StorageArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
         let r = self.0.lock().unwrap().get_by_overlapping_storage_arc(arc);
         Box::pin(async move { Ok(r) })
@@ -201,7 +201,7 @@ impl Inner {
 
     pub fn get_by_overlapping_storage_arc(
         &mut self,
-        arc: BasicArc,
+        arc: StorageArc,
     ) -> Vec<Arc<AgentInfoSigned>> {
         self.check_prune();
 
@@ -212,7 +212,7 @@ impl Inner {
                     return None;
                 }
 
-                if !arcs_overlap(arc, info.storage_arc) {
+                if !arc.overlaps(&info.storage_arc) {
                     return None;
                 }
 
@@ -233,11 +233,11 @@ impl Inner {
             .values()
             .filter_map(|v| {
                 if !v.is_tombstone {
-                    if v.storage_arc.is_none() {
-                        // filter out zero arcs, they can't help us
+                    if v.storage_arc == StorageArc::Empty {
+                        // filter out empty arcs, they can't help us
                         None
                     } else {
-                        Some((calc_dist(loc, v.storage_arc), v))
+                        Some((v.storage_arc.dist(loc), v))
                     }
                 } else {
                     None
@@ -251,111 +251,6 @@ impl Inner {
             .take(limit)
             .map(|(_, v)| v.clone())
             .collect()
-    }
-}
-
-/// Get the min distance from a location to an arc in a wrapping u32 space.
-/// This function will only return 0 if the location is covered by the arc.
-/// This function will return u32::MAX if the arc is not set.
-///
-/// All possible cases:
-///
-/// ```text
-/// s = arc_start
-/// e = arc_end
-/// l = location
-///
-/// Arc wraps around, loc >= arc_start
-///
-/// |----e-----------s--l--|
-/// 0                      u32::MAX
-///
-/// Arc wraps around, loc <= arc_end
-/// |-l--e-----------s-----|
-/// 0                      u32::MAX
-///
-/// Arc wraps around, loc outside of arc
-/// |----e----l------s-----|
-/// 0                      u32::MAX
-///
-/// Arc does not wrap around, loc inside of arc
-/// |---------s--l---e-----|
-/// 0                      u32::MAX
-///
-/// Arc does not wrap around, loc < arc_start
-/// |-----l---s------e-----|
-/// 0                      u32::MAX
-///
-/// Arc does not wrap around, loc > arc_end
-/// |---------s------e--l--|
-/// 0                      u32::MAX
-/// ```
-fn calc_dist(loc: u32, arc: BasicArc) -> u32 {
-    match arc {
-        None => u32::MAX,
-        Some((arc_start, arc_end)) => {
-            let (d1, d2) = if arc_start > arc_end {
-                // this arc wraps around the end of u32::MAX
-
-                if loc >= arc_start || loc <= arc_end {
-                    return 0;
-                } else {
-                    (loc - arc_end, arc_start - loc)
-                }
-            } else {
-                // this arc does not wrap
-
-                if loc >= arc_start && loc <= arc_end {
-                    return 0;
-                } else if loc < arc_start {
-                    (arc_start - loc, u32::MAX - arc_end + loc + 1)
-                } else {
-                    (loc - arc_end, u32::MAX - loc + arc_start + 1)
-                }
-            };
-            std::cmp::min(d1, d2)
-        }
-    }
-}
-
-/// Determine if any part of two arcs overlap.
-///
-/// All possible cases (though note the arcs can also wrap around u32::MAX):
-///
-/// ```text
-/// a = a_start
-/// A = a_end
-/// b = b_start
-/// B = b_end
-///
-/// The tail of a..A overlaps the head of b..B
-///
-/// |---a--b-A--B---|
-///
-/// The tail of b..B overlaps the head of a..A
-///
-/// |---b--a-B--A---|
-///
-/// b..B is fully contained by a..A
-///
-/// |---a--b-B--A---|
-///
-/// a..A is fully contained by b..B
-///
-/// |---b--a-A--B---|
-/// ```
-fn arcs_overlap(a: BasicArc, b: BasicArc) -> bool {
-    match (a, b) {
-        (None, _) | (_, None) => false,
-        (Some((a_beg, a_end)), Some((b_beg, b_end))) => {
-            // The only way for there to be overlap is if
-            // either of a's start or end points are within b
-            // or either of b's start or end points are within a
-            calc_dist(a_beg, Some((b_beg, b_end))) == 0
-                || calc_dist(a_end, Some((b_beg, b_end))) == 0
-                || calc_dist(b_beg, Some((a_beg, a_end))) == 0
-                || calc_dist(b_end, Some((a_beg, a_end))) == 0
-        }
     }
 }
 

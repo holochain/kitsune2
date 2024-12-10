@@ -165,7 +165,8 @@ pub struct AgentInfo {
     pub url: Option<Url>,
 
     /// The arc over which this agent claims authority.
-    pub storage_arc: BasicArc,
+    #[serde(default = "StorageArc::default")]
+    pub storage_arc: StorageArc,
 }
 
 /// Signed agent information.
@@ -304,7 +305,7 @@ mod test {
         let now = Timestamp::from_micros(1731690797907204);
         let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
         let url = Some(Url::from_str("ws://test.com:80/test-url").unwrap());
-        let storage_arc = Some((42, u32::MAX / 13));
+        let storage_arc = StorageArc::Arc(42, u32::MAX / 13);
 
         let enc = AgentInfoSigned::sign(
             &TestCrypto,
@@ -315,7 +316,7 @@ mod test {
                 expires_at: later,
                 is_tombstone: false,
                 url: url.clone(),
-                storage_arc,
+                storage_arc: storage_arc.clone(),
             },
         )
         .await
@@ -347,7 +348,7 @@ mod test {
     async fn fills_in_default_fields() {
         let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":"ZmFrZS1zaWduYXR1cmU"}"#).unwrap();
         assert!(dec.url.is_none());
-        assert!(dec.storage_arc.is_none());
+        assert_eq!(StorageArc::Empty, dec.storage_arc);
     }
 
     #[tokio::test(flavor = "multi_thread")]
