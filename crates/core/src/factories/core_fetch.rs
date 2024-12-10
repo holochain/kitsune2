@@ -104,9 +104,12 @@ impl Fetch for CoreFetch {
         Box::pin(async move {
             // Add ops to set.
             let ops = &mut self.0.state.lock().await.ops;
-            op_list.clone().into_iter().for_each(|op_id| {
-                ops.insert((op_id, source.clone()));
-            });
+            ops.extend(
+                op_list
+                    .clone()
+                    .into_iter()
+                    .map(|op_id| (op_id.clone(), source.clone())),
+            );
 
             // Pass ops to fetch tasks.
             let futures = op_list.into_iter().map(|op_id| async {
