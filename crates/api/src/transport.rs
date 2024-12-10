@@ -114,7 +114,7 @@ impl TxImpHnd {
                         .unwrap()
                         .get(&(space.clone(), module.clone()))
                     {
-                        h.recv_module(peer, space, module, data);
+                        h.recv_module_msg(peer, space, module, data);
                     }
                 }
                 Ok(())
@@ -336,7 +336,7 @@ pub type DynTxSpaceHandler = Arc<dyn TxSpaceHandler>;
 pub trait TxModuleHandler: TxBaseHandler {
     /// The sync handler for receiving module messages sent by a remote
     /// peer in reference to a particular space.
-    fn recv_module(
+    fn recv_module_msg(
         &self,
         peer: Url,
         space: SpaceId,

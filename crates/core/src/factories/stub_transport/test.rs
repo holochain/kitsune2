@@ -72,7 +72,7 @@ impl TxSpaceHandler for TrackHnd {
 }
 
 impl TxModuleHandler for TrackHnd {
-    fn recv_module(
+    fn recv_module_msg(
         &self,
         peer: Url,
         space: SpaceId,
