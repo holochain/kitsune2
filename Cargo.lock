@@ -767,6 +767,7 @@ dependencies = [
  "kitsune2_memory",
  "kitsune2_test_utils",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@ use crate::op_store::time_slice_hash_store::TimeSliceHashStore;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use kitsune2_api::{
-    K2Error, K2Result, MetaOp, OpId, OpStore, StoredOp, Timestamp,
+    DhtArc, K2Error, K2Result, MetaOp, OpId, OpStore, StoredOp, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -96,6 +96,7 @@ impl OpStore for Kitsune2MemoryOpStore {
 
     fn retrieve_op_hashes_in_time_slice(
         &self,
+        arc: DhtArc,
         start: Timestamp,
         end: Timestamp,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
@@ -104,7 +105,12 @@ impl OpStore for Kitsune2MemoryOpStore {
             Ok(self_lock
                 .op_list
                 .iter()
-                .filter(|(_, op)| op.timestamp >= start && op.timestamp < end)
+                .filter(|(_, op)| {
+                    let loc = op.op_id.loc();
+                    op.timestamp >= start
+                        && op.timestamp < end
+                        && arc.contains(loc)
+                })
                 .map(|(op_id, _)| op_id.clone())
                 .collect())
         }
@@ -119,6 +125,7 @@ impl OpStore for Kitsune2MemoryOpStore {
     /// 1 would represent the combined hash of all known ops in the time slice `[period, 2*period)`.
     fn store_slice_hash(
         &self,
+        arc: DhtArc,
         slice_id: u64,
         slice_hash: bytes::Bytes,
     ) -> BoxFuture<'_, K2Result<()>> {
@@ -126,7 +133,7 @@ impl OpStore for Kitsune2MemoryOpStore {
             self.write()
                 .await
                 .time_slice_hashes
-                .insert(slice_id, slice_hash)
+                .insert(arc, slice_id, slice_hash)
         }
         .boxed()
     }
@@ -144,14 +151,14 @@ impl OpStore for Kitsune2MemoryOpStore {
     /// a peer might allocate a recent full slice before completing its initial sync. That situation
     /// could be created by a configuration that chooses small time-slices. However, in the general
     /// case, the highest stored id is more useful.
-    fn slice_hash_count(&self) -> BoxFuture<'_, K2Result<u64>> {
+    fn slice_hash_count(&self, arc: DhtArc) -> BoxFuture<'_, K2Result<u64>> {
         // +1 to convert from a 0-based index to a count
         async move {
             Ok(self
                 .read()
                 .await
                 .time_slice_hashes
-                .highest_stored_id()
+                .highest_stored_id(&arc)
                 .map(|id| id + 1)
                 .unwrap_or_default())
         }
@@ -165,9 +172,16 @@ impl OpStore for Kitsune2MemoryOpStore {
     /// If the caller has never provided a value for this `slice_id`, return `None`.
     fn retrieve_slice_hash(
         &self,
+        arc: DhtArc,
         slice_id: u64,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
-        async move { Ok(self.read().await.time_slice_hashes.get(slice_id)) }
-            .boxed()
+        async move {
+            Ok(self
+                .read()
+                .await
+                .time_slice_hashes
+                .get(&arc, slice_id))
+        }
+        .boxed()
     }
 }
