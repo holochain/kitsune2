@@ -1,14 +1,11 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use kitsune2_api::{fetch::Fetch, id::Id, AgentId, K2Error, OpId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
-use super::{CoreFetch, CoreFetchConfig, Inner, Transport};
+use super::{CoreFetch, CoreFetchConfig, Transport};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -228,8 +225,13 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
     .await
     .unwrap();
 
-    let cool_down_list = fetch.0.state.lock().await.cool_down_list.clone();
-    assert!(cool_down_list.contains_key(&agent));
+    assert!(fetch
+        .0
+        .state
+        .lock()
+        .await
+        .cool_down_list
+        .is_agent_cooling_down(&agent));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -241,7 +243,6 @@ async fn agent_cooling_down_is_removed_from_list() {
     let mock_transport = MockTransport::new(false);
     let fetch = CoreFetch::new(config.clone(), mock_transport.clone());
     let agent_id = random_agent_id();
-    let now = Instant::now();
 
     fetch
         .0
@@ -249,23 +250,27 @@ async fn agent_cooling_down_is_removed_from_list() {
         .lock()
         .await
         .cool_down_list
-        .insert(agent_id.clone(), now);
+        .add_agent(agent_id.clone());
 
-    assert!(Inner::is_agent_cooling_down(
-        &agent_id,
-        &mut fetch.0.state.lock().await.cool_down_list,
-        config.cool_down_interval_ms
-    ));
+    assert!(fetch
+        .0
+        .state
+        .lock()
+        .await
+        .cool_down_list
+        .is_agent_cooling_down(&agent_id));
 
     // Wait for the cool-down interval + 1 ms to avoid flakiness.
     tokio::time::sleep(Duration::from_millis(config.cool_down_interval_ms + 1))
         .await;
 
-    assert!(!Inner::is_agent_cooling_down(
-        &agent_id,
-        &mut fetch.0.state.lock().await.cool_down_list,
-        config.cool_down_interval_ms
-    ));
+    assert!(!fetch
+        .0
+        .state
+        .lock()
+        .await
+        .cool_down_list
+        .is_agent_cooling_down(&agent_id));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -317,10 +322,10 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     .unwrap();
 
     // Check all agents are on cool_down_list.
-    let cool_down_list = &fetch.0.state.lock().await.cool_down_list;
+    let cool_down_list = &mut fetch.0.state.lock().await.cool_down_list;
     assert!(expected_agents
         .iter()
-        .all(|agent| cool_down_list.contains_key(agent)));
+        .all(|agent| cool_down_list.is_agent_cooling_down(agent)));
 }
 
 fn random_id() -> Id {

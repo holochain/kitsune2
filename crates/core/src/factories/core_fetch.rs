@@ -89,8 +89,8 @@ struct CoreFetch(Inner);
 
 impl CoreFetch {
     fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
-        let inner = Inner::new();
-        inner.spawn_fetch_tasks(config, transport);
+        let inner = Inner::new(config.cool_down_interval_ms);
+        inner.spawn_fetch_tasks(config.parallel_request_count, transport);
         Self(inner)
     }
 }
@@ -132,7 +132,7 @@ type FetchRequest = (OpId, AgentId);
 #[derive(Debug)]
 struct State {
     ops: HashSet<FetchRequest>,
-    cool_down_list: HashMap<AgentId, Instant>,
+    cool_down_list: CoolDownList,
 }
 
 #[derive(Debug)]
@@ -143,13 +143,13 @@ struct Inner {
 }
 
 impl Inner {
-    pub fn new() -> Self {
+    pub fn new(cool_down_interval_ms: u64) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
         let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(1024);
         let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
 
         let ops = HashSet::new();
-        let cool_down_list = HashMap::new();
+        let cool_down_list = CoolDownList::new(cool_down_interval_ms);
 
         Self {
             state: Arc::new(Mutex::new(State {
@@ -163,16 +163,15 @@ impl Inner {
 
     pub fn spawn_fetch_tasks(
         &self,
-        config: CoreFetchConfig,
+        parallel_request_count: u8,
         transport: DynTransport,
     ) {
-        for _ in 0..config.parallel_request_count {
+        for _ in 0..parallel_request_count {
             tokio::task::spawn(Inner::fetch_task(
                 self.fetch_queue_tx.clone(),
                 self.fetch_queue_rx.clone(),
                 transport.clone(),
                 self.state.clone(),
-                config.cool_down_interval_ms,
             ));
         }
     }
@@ -182,7 +181,6 @@ impl Inner {
         fetch_request_rx: Arc<Mutex<Receiver<FetchRequest>>>,
         transport: DynTransport,
         state: Arc<Mutex<State>>,
-        cool_down_interval: u64,
     ) {
         while let Some((op_id, agent_id)) =
             fetch_request_rx.lock().await.recv().await
@@ -198,11 +196,12 @@ impl Inner {
             }
 
             // Check if agent is on cool-down list.
-            if !Inner::is_agent_cooling_down(
-                &agent_id,
-                &mut state.lock().await.cool_down_list,
-                cool_down_interval,
-            ) {
+            if !state
+                .lock()
+                .await
+                .cool_down_list
+                .is_agent_cooling_down(&agent_id)
+            {
                 // Send fetch request to agent.
                 if let Err(err) = transport
                     .lock()
@@ -215,7 +214,7 @@ impl Inner {
                         .lock()
                         .await
                         .cool_down_list
-                        .insert(agent_id.clone(), Instant::now());
+                        .add_agent(agent_id.clone());
                 }
             }
 
@@ -227,19 +226,35 @@ impl Inner {
             }
         }
     }
+}
 
-    fn is_agent_cooling_down(
-        agent_id: &AgentId,
-        cool_down_list: &mut HashMap<AgentId, Instant>,
-        cool_down_interval: u64,
-    ) -> bool {
-        let a = cool_down_list.get(agent_id);
-        match a {
+#[derive(Debug)]
+struct CoolDownList {
+    state: HashMap<AgentId, Instant>,
+    cool_down_interval: u64,
+}
+
+impl CoolDownList {
+    pub fn new(cool_down_interval: u64) -> Self {
+        Self {
+            state: HashMap::new(),
+            cool_down_interval,
+        }
+    }
+
+    pub fn add_agent(&mut self, agent_id: AgentId) {
+        self.state.insert(agent_id, Instant::now());
+    }
+
+    pub fn is_agent_cooling_down(&mut self, agent_id: &AgentId) -> bool {
+        match self.state.get(agent_id) {
             Some(instant) => {
                 let now = Instant::now();
-                if (now - *instant).as_millis() > cool_down_interval as u128 {
+                if (now - *instant).as_millis()
+                    > self.cool_down_interval as u128
+                {
                     // Cool down interval has elapsed. Remove agent from list.
-                    cool_down_list.remove(agent_id);
+                    self.state.remove(agent_id);
                     false
                 } else {
                     // Cool down interval has not elapsed, still cooling down.
