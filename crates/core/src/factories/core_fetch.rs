@@ -66,7 +66,7 @@ const MOD_NAME: &str = "Fetch";
 pub struct CoreFetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     pub parallel_request_count: u8,
-    /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 10_000.
+    /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 120_000.
     pub cool_down_interval_ms: u64,
 }
 
@@ -74,7 +74,7 @@ impl Default for CoreFetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            cool_down_interval_ms: 10_000,
+            cool_down_interval_ms: 120_000,
         }
     }
 }
