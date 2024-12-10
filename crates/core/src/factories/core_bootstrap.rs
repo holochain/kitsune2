@@ -99,7 +99,7 @@ impl CoreBootstrap {
         space: SpaceId,
     ) -> Self {
         #[cfg(not(feature = "test_utils"))]
-        let server_url = config.server_url.into_boxed_str().into();
+        let server_url: Arc<str> = config.server_url.into_boxed_str().into();
 
         #[cfg(feature = "test_utils")]
         let (server_url, _test_server) = {
