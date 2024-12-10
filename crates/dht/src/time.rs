@@ -55,7 +55,7 @@
 
 use crate::constant::UNIT_TIME;
 use kitsune2_api::{
-    ArcLiteral, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
+    DhtArc, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
     UNIX_TIMESTAMP,
 };
 use std::time::Duration;
@@ -98,7 +98,7 @@ pub struct PartitionedTime {
     /// The storage arc that this partitioned time is associated with.
     ///
     /// Any queries to fetch ops in a time range must be constrained by this arc.
-    arc_constraint: ArcLiteral,
+    arc_constraint: DhtArc,
 }
 
 #[derive(Debug)]
@@ -147,9 +147,13 @@ impl PartitionedTime {
     pub async fn try_from_store(
         factor: u8,
         current_time: Timestamp,
-        arc_constraint: ArcLiteral,
+        arc_constraint: DhtArc,
         store: DynOpStore,
     ) -> K2Result<Self> {
+        if arc_constraint == DhtArc::Empty {
+            return Err(K2Error::other("Empty arc constraint is not valid"));
+        }
+
         let mut pt = Self::new(factor, arc_constraint)?;
 
         pt.full_slices = store.slice_hash_count(arc_constraint).await?;
@@ -312,7 +316,7 @@ impl PartitionedTime {
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
     /// state with full and partial slices for the current time.
-    fn new(factor: u8, arc_constraint: ArcLiteral) -> K2Result<Self> {
+    fn new(factor: u8, arc_constraint: DhtArc) -> K2Result<Self> {
         Ok(Self {
             factor,
             full_slices: 0,
@@ -516,7 +520,7 @@ impl PartitionedTime {
     }
 
     #[cfg(test)]
-    pub(crate) fn arc_constraint(&self) -> &ArcLiteral {
+    pub(crate) fn arc_constraint(&self) -> &DhtArc {
         &self.arc_constraint
     }
 }
@@ -584,7 +588,7 @@ fn combine_hashes(into: &mut bytes::BytesMut, other: bytes::Bytes) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kitsune2_api::{OpStore, ARC_LITERAL_FULL};
+    use kitsune2_api::OpStore;
     use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
     use kitsune2_test_utils::enable_tracing;
     use std::sync::Arc;
@@ -623,7 +627,7 @@ mod tests {
     #[test]
     fn new() {
         let factor = 4;
-        let pt = PartitionedTime::new(factor, ARC_LITERAL_FULL).unwrap();
+        let pt = PartitionedTime::new(factor, DhtArc::FULL).unwrap();
 
         // Full slices would have size 2^4 = 16, so we should reserve space for at least one
         // of each smaller slice size
@@ -637,7 +641,7 @@ mod tests {
         let pt = PartitionedTime::try_from_store(
             factor,
             UNIX_TIMESTAMP,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store,
         )
         .await
@@ -656,7 +660,7 @@ mod tests {
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store,
         )
         .await
@@ -691,7 +695,7 @@ mod tests {
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store,
         )
         .await
@@ -717,7 +721,7 @@ mod tests {
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store,
         )
         .await
@@ -742,7 +746,7 @@ mod tests {
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store,
         )
         .await
@@ -786,7 +790,7 @@ mod tests {
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store,
         )
         .await
@@ -812,7 +816,7 @@ mod tests {
                 + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         store
             .store_slice_hash(arc_constraint, 0, vec![1; 64].into())
             .await
@@ -872,7 +876,7 @@ mod tests {
             .await
             .unwrap();
 
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -948,7 +952,7 @@ mod tests {
             .await
             .unwrap();
 
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1016,7 +1020,7 @@ mod tests {
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
-            ARC_LITERAL_FULL,
+            DhtArc::FULL,
             store.clone(),
         )
         .await
@@ -1051,7 +1055,7 @@ mod tests {
             );
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         store
             .store_slice_hash(arc_constraint, 0, vec![1; 64].into())
             .await
@@ -1148,7 +1152,7 @@ mod tests {
             .await
             .unwrap();
 
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_times,
@@ -1220,7 +1224,7 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1303,7 +1307,7 @@ mod tests {
         let current_time = Timestamp::now();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
-        let arc_constraint = (0, 2);
+        let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1369,7 +1373,7 @@ mod tests {
         let current_time = Timestamp::now();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
-        let arc_constraint = (0, 32);
+        let arc_constraint = DhtArc::Arc(0, 32);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1424,7 +1428,7 @@ mod tests {
             .await
             .unwrap();
 
-        let arc_constraint = (0, 32);
+        let arc_constraint = DhtArc::Arc(0, 32);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1472,7 +1476,7 @@ mod tests {
             UNIX_TIMESTAMP + min_recent_time(factor) + Duration::from_secs(3);
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
-        let arc_constraint = (0, 32);
+        let arc_constraint = DhtArc::Arc(0, 32);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1538,7 +1542,7 @@ mod tests {
             .await
             .unwrap();
 
-        let arc_constraint = (0, 32);
+        let arc_constraint = DhtArc::Arc(0, 32);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1617,13 +1621,13 @@ mod tests {
     }
 
     fn min_recent_time(factor: u8) -> Duration {
-        PartitionedTime::new(factor, ARC_LITERAL_FULL)
+        PartitionedTime::new(factor, DhtArc::FULL)
             .unwrap()
             .min_recent_time
     }
 
     fn full_slice_duration(factor: u8) -> Duration {
-        PartitionedTime::new(factor, ARC_LITERAL_FULL)
+        PartitionedTime::new(factor, DhtArc::FULL)
             .unwrap()
             .full_slice_duration
     }

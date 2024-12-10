@@ -26,7 +26,7 @@
 
 use crate::PartitionedTime;
 use kitsune2_api::{
-    DynOpStore, K2Error, K2Result, StoredOp, Timestamp, ARC_LITERAL_FULL,
+    DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
 };
 use std::collections::HashMap;
 
@@ -75,7 +75,7 @@ impl PartitionedHashes {
                     PartitionedTime::try_from_store(
                         time_factor,
                         current_time,
-                        ARC_LITERAL_FULL,
+                        DhtArc::FULL,
                         store.clone(),
                     )
                     .await?,
@@ -89,17 +89,29 @@ impl PartitionedHashes {
             let num_partitions = (u32::MAX / size) + 1;
             let mut partitioned_hashes =
                 Vec::with_capacity(num_partitions as usize);
-            for i in 0..num_partitions {
+            for i in 0..(num_partitions - 1) {
                 partitioned_hashes.push(
                     PartitionedTime::try_from_store(
                         time_factor,
                         current_time,
-                        (i * size, (i + 1).overflowing_mul(size).0),
+                        DhtArc::Arc(i * size, (i + 1).saturating_mul(size) - 1),
                         store.clone(),
                     )
                     .await?,
                 );
             }
+
+            // The last partition must be handled separately because it needs to include the
+            // remainder of the hash space.
+            partitioned_hashes.push(
+                PartitionedTime::try_from_store(
+                    time_factor,
+                    current_time,
+                    DhtArc::Arc((num_partitions - 1) * size, u32::MAX),
+                    store.clone(),
+                )
+                .await?,
+            );
 
             (size, partitioned_hashes)
         };
@@ -174,7 +186,7 @@ impl PartitionedHashes {
 mod tests {
     use super::*;
     use crate::UNIT_TIME;
-    use kitsune2_api::{OpId, OpStore, ARC_LITERAL_FULL, UNIX_TIMESTAMP};
+    use kitsune2_api::{OpId, OpStore, UNIX_TIMESTAMP};
     use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
     use kitsune2_test_utils::enable_tracing;
     use std::sync::Arc;
@@ -191,10 +203,7 @@ mod tests {
                 .unwrap();
         assert_eq!(1, ph.partitioned_hashes.len());
         assert_eq!(u32::MAX, ph.size);
-        assert_eq!(
-            &ARC_LITERAL_FULL,
-            ph.partitioned_hashes[0].arc_constraint()
-        );
+        assert_eq!(&DhtArc::FULL, ph.partitioned_hashes[0].arc_constraint());
     }
 
     #[tokio::test]
@@ -227,14 +236,19 @@ mod tests {
             .unwrap();
 
             let mut start: u32 = 0;
-            for i in 0..ph.partitioned_hashes.len() {
+            for i in 0..(ph.partitioned_hashes.len() - 1) {
                 let end = start.overflowing_add(ph.size).0;
-                assert_eq!(start, ph.partitioned_hashes[i].arc_constraint().0);
-                assert_eq!(end, ph.partitioned_hashes[i].arc_constraint().1);
+                assert_eq!(
+                    DhtArc::Arc(start, end - 1),
+                    *ph.partitioned_hashes[i].arc_constraint()
+                );
                 start = end;
             }
 
-            assert_eq!(0, start, "While checking factor {}", space_factor);
+            assert_eq!(
+                DhtArc::Arc(start, u32::MAX),
+                *ph.partitioned_hashes.last().unwrap().arc_constraint()
+            );
         }
     }
 
@@ -302,15 +316,21 @@ mod tests {
         .await
         .unwrap();
 
-        let count = store.slice_hash_count((0, ph.size)).await.unwrap();
+        let count = store
+            .slice_hash_count(DhtArc::Arc(0, ph.size - 1))
+            .await
+            .unwrap();
         assert_eq!(1, count);
 
-        let hash = store.retrieve_slice_hash((0, ph.size), 0).await.unwrap();
+        let hash = store
+            .retrieve_slice_hash(DhtArc::Arc(0, ph.size - 1), 0)
+            .await
+            .unwrap();
         assert!(hash.is_some());
         assert_eq!(op_id_bytes_1, hash.unwrap());
 
         let count = store
-            .slice_hash_count((ph.size, 2 * ph.size))
+            .slice_hash_count(DhtArc::Arc(ph.size, 2 * ph.size - 1))
             .await
             .unwrap();
         // Note that this is because we've stored at id 1, not that two hashes ended up in this
@@ -318,7 +338,7 @@ mod tests {
         assert_eq!(2, count);
 
         let hash = store
-            .retrieve_slice_hash((ph.size, 2 * ph.size), 1)
+            .retrieve_slice_hash(DhtArc::Arc(ph.size, 2 * ph.size - 1), 1)
             .await
             .unwrap();
         assert!(hash.is_some());
@@ -365,7 +385,7 @@ mod tests {
         // No full slices should get stored
         for i in 0..(u32::MAX / ph.size) {
             let count = store
-                .slice_hash_count((i * ph.size, (i + 1) * ph.size))
+                .slice_hash_count(DhtArc::Arc(i * ph.size, (i + 1) * ph.size))
                 .await
                 .unwrap();
             assert_eq!(0, count);
@@ -417,14 +437,18 @@ mod tests {
         assert_eq!(4, ph.partitioned_hashes.len());
 
         for h in ph.partitioned_hashes.iter() {
+            let (start, end) = match h.arc_constraint() {
+                DhtArc::Arc(s, e) => (s, e),
+                _ => panic!("Expected an arc"),
+            };
             store
                 .process_incoming_ops(vec![Kitsune2MemoryOp::new(
                     // Place the op within the current space partition
                     OpId::from(bytes::Bytes::copy_from_slice(
-                        (h.arc_constraint().0 + 1).to_le_bytes().as_slice(),
+                        (start + 1).to_le_bytes().as_slice(),
                     )),
                     now,
-                    h.arc_constraint().1.to_be_bytes().to_vec(),
+                    end.to_be_bytes().to_vec(),
                 )
                 .try_into()
                 .unwrap()])

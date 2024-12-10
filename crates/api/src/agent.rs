@@ -316,7 +316,7 @@ mod test {
                 expires_at: later,
                 is_tombstone: false,
                 url: url.clone(),
-                storage_arc: storage_arc.clone(),
+                storage_arc,
             },
         )
         .await

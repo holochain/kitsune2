@@ -1,6 +1,6 @@
 //! Kitsune2 op store types.
 
-use crate::{ArcLiteral, K2Result, OpId, Timestamp};
+use crate::{DhtArc, K2Result, OpId, Timestamp};
 use futures::future::BoxFuture;
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -65,7 +65,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// The returned ops must be ordered by timestamp, ascending.
     fn retrieve_op_hashes_in_time_slice(
         &self,
-        arc: ArcLiteral,
+        arc: DhtArc,
         start: Timestamp,
         end: Timestamp,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
@@ -73,14 +73,13 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// Store the combined hash of a time slice.
     fn store_slice_hash(
         &self,
-        arc: ArcLiteral,
+        arc: DhtArc,
         slice_id: u64,
         slice_hash: bytes::Bytes,
     ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Count the number of stored time slices.
-    fn slice_hash_count(&self, arc: ArcLiteral)
-        -> BoxFuture<'_, K2Result<u64>>;
+    fn slice_hash_count(&self, arc: DhtArc) -> BoxFuture<'_, K2Result<u64>>;
 
     /// Retrieve the combined hash of a time slice.
     ///
@@ -89,7 +88,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// using [Self::store_slice_hash].
     fn retrieve_slice_hash(
         &self,
-        arc: ArcLiteral,
+        arc: DhtArc,
         slice_id: u64,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
 }

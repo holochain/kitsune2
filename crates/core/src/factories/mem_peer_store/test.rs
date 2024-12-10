@@ -197,7 +197,7 @@ fn fixture_get_by_overlapping_storage_arc() {
 
         for (arc_name, arc) in arc_list.iter() {
             s.insert(vec![AgentBuild {
-                storage_arc: Some(arc.clone()),
+                storage_arc: Some(*arc),
                 url: Some(Some(sneak_url(arc_name))),
                 ..Default::default()
             }
@@ -205,7 +205,7 @@ fn fixture_get_by_overlapping_storage_arc() {
         }
 
         let mut got = s
-            .get_by_overlapping_storage_arc(q.clone())
+            .get_by_overlapping_storage_arc(*q)
             .into_iter()
             .map(|info| unsneak_url(info.url.as_ref().unwrap()))
             .collect::<Vec<_>>();

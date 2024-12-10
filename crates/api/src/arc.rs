@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 
 /// The definition of a storage arc compatible with the concept of
 /// storage and querying of items in a store that fall within that arc.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq, Default,
+)]
 #[serde(untagged)]
 pub enum DhtArc {
     /// No DHT locations are contained within this arc.
