@@ -111,7 +111,7 @@ impl peer_store::PeerStore for MemPeerStore {
 
     fn get_by_overlapping_storage_arc(
         &self,
-        arc: BasicArc,
+        arc: StorageArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
         let r = self.0.lock().unwrap().get_by_overlapping_storage_arc(arc);
         Box::pin(async move { Ok(r) })
@@ -201,7 +201,7 @@ impl Inner {
 
     pub fn get_by_overlapping_storage_arc(
         &mut self,
-        arc: BasicArc,
+        arc: StorageArc,
     ) -> Vec<Arc<AgentInfoSigned>> {
         self.check_prune();
 
@@ -233,7 +233,7 @@ impl Inner {
             .values()
             .filter_map(|v| {
                 if !v.is_tombstone {
-                    if v.storage_arc == BasicArc::Empty {
+                    if v.storage_arc == StorageArc::Empty {
                         // filter out empty arcs, they can't help us
                         None
                     } else {

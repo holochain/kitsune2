@@ -6,54 +6,23 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A basic definition of a storage arc compatible with the concept of
+/// The definition of a storage arc compatible with the concept of
 /// storage and querying of items in a store that fall within that arc.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
-pub enum BasicArc {
+#[serde(untagged)]
+pub enum StorageArc {
     /// No DHT locations are contained within this arc.
     #[default]
     Empty,
-    /// All DHT locations are contained within this arc.
-    Full,
     /// A specific range of DHT locations are contained within this arc.
     ///
-    /// The lower bound is inclusive, the upper bound is exclusive.
-    Literal(u32, u32),
+    /// The lower and upper bounds are inclusive.
+    Arc(u32, u32),
 }
 
-impl BasicArc {
-    /// Create a new arc.
-    ///
-    /// If both values are 0 then a full arc is returned.
-    /// Otherwise, equal values for start and end will result in an empty arc.
-    /// Otherwise, a literal arc is returned.
-    ///
-    /// It is valid to create a [BasicArc] directly when using the Full and Empty variants.
-    /// However, when creating an arc from bounds, it is recommended to use this function for
-    /// consistency.
-    pub fn new(start: u32, end: u32) -> Self {
-        if start == end {
-            if start == 0 {
-                BasicArc::Full
-            } else {
-                BasicArc::Empty
-            }
-        } else {
-            BasicArc::Literal(start, end)
-        }
-    }
-
-    /// Convert to a canonical form.
-    ///
-    /// This function will return a new arc that is equivalent to the original arc,
-    /// See the documentation for [BasicArc::new].
-    pub fn canonicalize(&self) -> Self {
-        match self {
-            BasicArc::Empty => BasicArc::Empty,
-            BasicArc::Full => BasicArc::Full,
-            BasicArc::Literal(start, end) => Self::new(*start, *end),
-        }
-    }
+impl StorageArc {
+    /// A full arc that contains all DHT locations.
+    pub const FULL: StorageArc = StorageArc::Arc(0, u32::MAX);
 
     /// Get the min distance from a location to an arc in a wrapping u32 space.
     /// This function will only return 0 if the location is covered by the arc.
@@ -71,7 +40,7 @@ impl BasicArc {
     /// |----e-----------s--l--|
     /// 0                      u32::MAX
     ///
-    /// Arc wraps around, loc < arc_end
+    /// Arc wraps around, loc <= arc_end
     /// |-l--e-----------s-----|
     /// 0                      u32::MAX
     ///
@@ -87,56 +56,43 @@ impl BasicArc {
     /// |-----l---s------e-----|
     /// 0                      u32::MAX
     ///
-    /// Arc does not wrap around, loc >= arc_end
+    /// Arc does not wrap around, loc > arc_end
     /// |---------s------e--l--|
     /// 0                      u32::MAX
     /// ```
     pub fn dist(&self, loc: u32) -> u32 {
-        match self.canonicalize() {
-            BasicArc::Empty => u32::MAX,
-            BasicArc::Full => 0,
-            BasicArc::Literal(arc_start, arc_end) => {
+        match self {
+            StorageArc::Empty => u32::MAX,
+            StorageArc::Arc(arc_start, arc_end) => {
                 let (d1, d2) = if arc_start > arc_end {
                     // this arc wraps around the end of u32::MAX
 
-                    if loc >= arc_start || loc < arc_end {
+                    if loc >= *arc_start || loc <= *arc_end {
                         return 0;
                     } else {
                         (
                             // Here we know that location is less than arc_start
                             arc_start - loc,
-                            // Here we know that location is greater than or equal to arc_end, but
-                            // because arc_start > arc_end, we know that we actually know that
-                            // location is greater than arc_end. Therefore, this cannot overflow.
-                            // Add one to account for the exclusive upper bound.
-                            loc - arc_end + 1,
+                            loc - arc_end,
                         )
                     }
                 } else {
                     // this arc does not wrap, arc_start <= arc_end
 
-                    if loc >= arc_start && loc < arc_end {
+                    if loc >= *arc_start && loc <= *arc_end {
                         return 0;
-                    } else if loc < arc_start {
+                    } else if loc < *arc_start {
                         (
                             // Here we know that location is less than arc_start
                             arc_start - loc,
-                            // Add one to account for the wrap and add one to account for the
-                            // distance to exclusive upper bound.
+                            // Add one to account for the wrap.
                             // Here we know that location is less than arc_end, but we need to
-                            // compute the wrapping distance between them. Adding 1 would be safe
-                            // but adding 2 could overflow if arc_start == arc_end and
-                            // loc = arc_start - 1.
-                            (u32::MAX - arc_end + loc).saturating_add(2),
+                            // compute the wrapping distance between them. Adding 1 is safe and
+                            // cannot overflow.
+                            u32::MAX - arc_end + loc + 1,
                         )
                     } else {
-                        (
-                            u32::MAX - loc + arc_start + 1,
-                            // Add one to account for the exclusive upper bound.
-                            // Here we know that location is greater than or equal to arc_end.
-                            // Therefore, this could overflow if loc == u32::MAX and arc_end == 0.
-                            (loc - arc_end).saturating_add(1),
-                        )
+                        (u32::MAX - loc + arc_start + 1, loc - arc_end)
                     }
                 };
 
@@ -178,13 +134,12 @@ impl BasicArc {
     ///
     /// |---b--a-A--B---|
     /// ```
-    pub fn overlaps(&self, other: &BasicArc) -> bool {
-        match (&self.canonicalize(), &other.canonicalize()) {
-            (BasicArc::Empty, _) | (_, BasicArc::Empty) => false,
-            (BasicArc::Full, _) | (_, BasicArc::Full) => true,
+    pub fn overlaps(&self, other: &StorageArc) -> bool {
+        match (&self, &other) {
+            (StorageArc::Empty, _) | (_, StorageArc::Empty) => false,
             (
-                this @ BasicArc::Literal(a_beg, a_end),
-                other @ BasicArc::Literal(b_beg, b_end),
+                this @ StorageArc::Arc(a_beg, a_end),
+                other @ StorageArc::Arc(b_beg, b_end),
             ) => {
                 // The only way for there to be overlap is if
                 // either of a's start or end points are within b
@@ -200,44 +155,11 @@ impl BasicArc {
 
 #[cfg(test)]
 mod tests {
-    use crate::BasicArc;
+    use crate::StorageArc;
 
     #[test]
-    fn canonicalize_already_correct() {
-        let arc = BasicArc::Empty;
-        assert_eq!(arc, arc.canonicalize());
-
-        let arc = BasicArc::Full;
-        assert_eq!(arc, arc.canonicalize());
-
-        let arc = BasicArc::Literal(32, 64);
-        assert_eq!(arc, arc.canonicalize());
-
-        let arc = BasicArc::Literal(64, 32);
-        assert_eq!(BasicArc::Literal(64, 32), arc.canonicalize());
-    }
-
-    #[test]
-    fn canonicalize_empty() {
-        let arc = BasicArc::Literal(32, 32);
-        assert_eq!(BasicArc::Empty, arc.canonicalize());
-
-        let arc = BasicArc::Literal(1, 1);
-        assert_eq!(BasicArc::Empty, arc.canonicalize());
-
-        let arc = BasicArc::Literal(u32::MAX, u32::MAX);
-        assert_eq!(BasicArc::Empty, arc.canonicalize());
-    }
-
-    #[test]
-    fn canonicalize_full() {
-        let arc = BasicArc::Literal(0, 0);
-        assert_eq!(BasicArc::Full, arc.canonicalize());
-    }
-
-    #[test]
-    fn full_arc_includes_all_values() {
-        let arc = BasicArc::Full;
+    fn contains_full_arc_all_values() {
+        let arc = StorageArc::FULL;
 
         // Contains bounds
         assert!(arc.contains(0));
@@ -248,70 +170,71 @@ mod tests {
     }
 
     #[test]
-    fn arc_includes_start_but_not_end() {
-        let arc = BasicArc::Literal(32, 64);
+    fn contains_includes_bounds() {
+        let arc = StorageArc::Arc(32, 64);
 
         assert!(arc.contains(32));
-        assert!(arc.contains(40));
-
-        assert!(!arc.contains(64));
+        assert!(arc.contains(64));
     }
 
     #[test]
-    fn arc_wraps_around() {
-        let arc = BasicArc::Literal(u32::MAX - 32, 32);
+    fn contains_wraps_around() {
+        let arc = StorageArc::Arc(u32::MAX - 32, 32);
 
+        assert!(!arc.contains(u32::MAX - 33));
+        assert!(arc.contains(u32::MAX - 32));
         assert!(arc.contains(u32::MAX - 1));
         assert!(arc.contains(u32::MAX));
+        assert!(arc.contains(0));
         assert!(arc.contains(20));
-
-        assert!(!arc.contains(32));
+        assert!(arc.contains(32));
+        assert!(!arc.contains(33));
     }
 
     #[test]
     fn arc_dist_edge_cases() {
         type Dist = u32;
         type Loc = u32;
-        const F: &[(Dist, Loc, BasicArc)] = &[
+        const F: &[(Dist, Loc, StorageArc)] = &[
             // Empty arcs contain no values, distance is always u32::MAX
-            (u32::MAX, 0, BasicArc::Empty),
-            (u32::MAX, u32::MAX / 2, BasicArc::Empty),
-            (u32::MAX, u32::MAX, BasicArc::Empty),
-            // Empty arc represented as literal
-            (u32::MAX, 0, BasicArc::Literal(u32::MAX, u32::MAX)),
+            (u32::MAX, 0, StorageArc::Empty),
+            (u32::MAX, u32::MAX / 2, StorageArc::Empty),
+            (u32::MAX, u32::MAX, StorageArc::Empty),
+            // Unit length arcs at max value
+            (1, 0, StorageArc::Arc(u32::MAX, u32::MAX)),
             (
-                u32::MAX,
+                u32::MAX / 2 + 1,
                 u32::MAX / 2,
-                BasicArc::Literal(u32::MAX, u32::MAX),
+                StorageArc::Arc(u32::MAX, u32::MAX),
             ),
-            // Full arc, represented as literal
-            (0, u32::MAX, BasicArc::Literal(0, 0)),
-            (0, u32::MAX / 2, BasicArc::Literal(0, 0)),
+            // Unit length arcs at min value
+            (1, u32::MAX, StorageArc::Arc(0, 0)),
+            (u32::MAX / 2, u32::MAX / 2, StorageArc::Arc(0, 0)),
             // Lower bound is inclusive
-            (0, 0, BasicArc::Literal(0, 1)),
-            (0, u32::MAX - 1, BasicArc::Literal(u32::MAX - 1, u32::MAX)),
+            (0, 0, StorageArc::Arc(0, 1)),
+            (0, u32::MAX - 1, StorageArc::Arc(u32::MAX - 1, u32::MAX)),
             // Distance from lower bound, non-wrapping
-            (1, 0, BasicArc::Literal(1, 2)),
-            (1, u32::MAX, BasicArc::Literal(0, 1)),
+            (1, 0, StorageArc::Arc(1, 2)),
+            (1, u32::MAX, StorageArc::Arc(0, 1)),
             // Distance from upper bound, non-wrapping
-            (2, 0, BasicArc::Literal(u32::MAX - 1, u32::MAX)),
+            (1, 0, StorageArc::Arc(u32::MAX - 1, u32::MAX)),
             // Distance from upper bound, wrapping
-            (1, 0, BasicArc::Literal(u32::MAX, 0)),
-            (2, 1, BasicArc::Literal(u32::MAX, 0)),
+            (0, 0, StorageArc::Arc(u32::MAX, 0)),
+            (1, 1, StorageArc::Arc(u32::MAX, 0)),
             // Distance from lower bound, wrapping
-            (1, u32::MAX - 1, BasicArc::Literal(u32::MAX, 0)),
-            (1, u32::MAX - 1, BasicArc::Literal(u32::MAX, 1)),
+            (1, u32::MAX - 1, StorageArc::Arc(u32::MAX, 0)),
+            (1, u32::MAX - 1, StorageArc::Arc(u32::MAX, 1)),
             // Contains, wrapping
-            (0, 0, BasicArc::Literal(u32::MAX, 1)),
+            (0, 0, StorageArc::Arc(u32::MAX, 1)),
         ];
 
         for (dist, loc, arc) in F.iter() {
             assert_eq!(
                 *dist,
                 arc.dist(*loc),
-                "While checking that {:?} contains {}",
-                arc,
-                loc
+                "While checking the distance from {} to arc {:?}",
+                loc,
+                arc
             );
         }
     }
@@ -319,57 +242,53 @@ mod tests {
     #[test]
     fn arcs_overlap_edge_cases() {
         type DoOverlap = bool;
-        const F: &[(DoOverlap, BasicArc, BasicArc)] = &[
-            (false, BasicArc::Literal(0, 0), BasicArc::Literal(1, 1)),
+        const F: &[(DoOverlap, StorageArc, StorageArc)] = &[
+            (false, StorageArc::Arc(0, 0), StorageArc::Arc(1, 1)),
             (
                 false,
-                BasicArc::Literal(0, 0),
-                BasicArc::Literal(u32::MAX, u32::MAX),
+                StorageArc::Arc(0, 0),
+                StorageArc::Arc(u32::MAX, u32::MAX),
             ),
-            (true, BasicArc::Literal(0, 0), BasicArc::Literal(0, 0)),
+            (true, StorageArc::Arc(0, 0), StorageArc::Arc(0, 0)),
             (
-                false,
-                BasicArc::Literal(u32::MAX, u32::MAX),
-                BasicArc::Literal(u32::MAX, u32::MAX),
+                true,
+                StorageArc::Arc(u32::MAX, u32::MAX),
+                StorageArc::Arc(u32::MAX, u32::MAX),
+            ),
+            (true, StorageArc::Arc(u32::MAX, 0), StorageArc::Arc(0, 0)),
+            (
+                true,
+                StorageArc::Arc(u32::MAX, 0),
+                StorageArc::Arc(u32::MAX, u32::MAX),
             ),
             (
                 true,
-                BasicArc::Literal(u32::MAX, 0),
-                BasicArc::Literal(0, 0),
+                StorageArc::Arc(u32::MAX, 0),
+                StorageArc::Arc(u32::MAX, u32::MAX),
             ),
-            (
-                false,
-                BasicArc::Literal(u32::MAX, 0),
-                BasicArc::Literal(u32::MAX, u32::MAX),
-            ),
-            (
-                false,
-                BasicArc::Literal(u32::MAX, 0),
-                BasicArc::Literal(u32::MAX, u32::MAX),
-            ),
-            (true, BasicArc::Literal(0, 3), BasicArc::Literal(1, 2)),
-            (true, BasicArc::Literal(1, 2), BasicArc::Literal(0, 3)),
-            (true, BasicArc::Literal(1, 3), BasicArc::Literal(2, 4)),
-            (true, BasicArc::Literal(2, 4), BasicArc::Literal(1, 3)),
+            (true, StorageArc::Arc(0, 3), StorageArc::Arc(1, 2)),
+            (true, StorageArc::Arc(1, 2), StorageArc::Arc(0, 3)),
+            (true, StorageArc::Arc(1, 3), StorageArc::Arc(2, 4)),
+            (true, StorageArc::Arc(2, 4), StorageArc::Arc(1, 3)),
             (
                 true,
-                BasicArc::Literal(u32::MAX - 1, 1),
-                BasicArc::Literal(u32::MAX, 0),
+                StorageArc::Arc(u32::MAX - 1, 1),
+                StorageArc::Arc(u32::MAX, 0),
             ),
             (
                 true,
-                BasicArc::Literal(u32::MAX, 0),
-                BasicArc::Literal(u32::MAX - 1, 1),
+                StorageArc::Arc(u32::MAX, 0),
+                StorageArc::Arc(u32::MAX - 1, 1),
             ),
             (
                 true,
-                BasicArc::Literal(u32::MAX - 1, 0),
-                BasicArc::Literal(u32::MAX, 1),
+                StorageArc::Arc(u32::MAX - 1, 0),
+                StorageArc::Arc(u32::MAX, 1),
             ),
             (
                 true,
-                BasicArc::Literal(u32::MAX, 1),
-                BasicArc::Literal(u32::MAX - 1, 0),
+                StorageArc::Arc(u32::MAX, 1),
+                StorageArc::Arc(u32::MAX - 1, 0),
             ),
         ];
 
