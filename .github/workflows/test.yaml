@@ -18,6 +18,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Toml format
+        run: make static-toml
+
       - name: Format
         run: make fmt
 
