@@ -1,14 +1,13 @@
-//! Kitsune2 space related types.
+//! Kitsune2 transport related types.
 
 use crate::{protocol::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// This is the low-level backend transport handler.
-/// Construct this ([TxImpHnd::new]) with a high-level [DynTxHandler],
+/// Construct using ([TxImpHnd::new]), with a high-level [DynTxHandler],
 /// then call [TxImpHnd::gen_transport] to return the high-level handler
-/// from the [TransportFactory]. Then call the member functions at
-/// the appropriate times.
+/// from the [TransportFactory].
 pub struct TxImpHnd {
     handler: DynTxHandler,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
@@ -28,7 +27,7 @@ impl TxImpHnd {
     }
 
     /// When constructing a [Transport] from a [TransportFactory],
-    /// This function does the actually wrapping of your implemementation
+    /// This function does the actual wrapping of your implemementation
     /// to produce the [Transport] struct.
     pub fn gen_transport(&self, imp: DynTxImp) -> Transport {
         Transport {
@@ -51,7 +50,7 @@ impl TxImpHnd {
     /// sent as a preflight message for additional connection validation.
     /// (The preflight data should be sent even if it is zero length).
     pub fn peer_connect(&self, peer: Url) -> K2Result<bytes::Bytes> {
-        for h in self.mod_map.lock().unwrap().values() {
+        for handler in self.mod_map.lock().unwrap().values() {
             h.peer_connect(peer.clone())?;
         }
         for h in self.space_map.lock().unwrap().values() {
