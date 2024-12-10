@@ -4,34 +4,33 @@ use kitsune2_api::{config::*, transport::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-const MOD_NAME: &str = "StubTransport";
+const MOD_NAME: &str = "MemTransport";
 
-/// Configuration parameters for [StubTransportFactory].
+/// Configuration parameters for [MemTransportFactory].
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct StubTransportConfig {}
+pub struct MemTransportConfig {}
 
-impl ModConfig for StubTransportConfig {}
+impl ModConfig for MemTransportConfig {}
 
 /// The core stub transport implementation provided by Kitsune2.
 /// This is NOT a production module. It is for testing only.
 /// It will only establish "connections" within the same process.
 #[derive(Debug)]
-pub struct StubTransportFactory {}
+pub struct MemTransportFactory {}
 
-impl StubTransportFactory {
-    /// Construct a new StubTransportFactory.
+impl MemTransportFactory {
+    /// Construct a new MemTransportFactory.
     pub fn create() -> DynTransportFactory {
-        let out: DynTransportFactory = Arc::new(StubTransportFactory {});
+        let out: DynTransportFactory = Arc::new(MemTransportFactory {});
         out
     }
 }
 
-impl TransportFactory for StubTransportFactory {
+impl TransportFactory for MemTransportFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config.add_default_module_config::<StubTransportConfig>(
-            MOD_NAME.into(),
-        )?;
+        config
+            .add_default_module_config::<MemTransportConfig>(MOD_NAME.into())?;
         Ok(())
     }
 
@@ -43,28 +42,28 @@ impl TransportFactory for StubTransportFactory {
         Box::pin(async move {
             let config = builder
                 .config
-                .get_module_config::<StubTransportConfig>(MOD_NAME)?;
-            let imp = StubTransport::create(config, handler.clone()).await;
+                .get_module_config::<MemTransportConfig>(MOD_NAME)?;
+            let imp = MemTransport::create(config, handler.clone()).await;
             Ok(handler.gen_transport(imp))
         })
     }
 }
 
 #[derive(Debug)]
-struct StubTransport {
+struct MemTransport {
     task_list: Arc<Mutex<tokio::task::JoinSet<()>>>,
     cmd_send: CmdSend,
 }
 
-impl Drop for StubTransport {
+impl Drop for MemTransport {
     fn drop(&mut self) {
         self.task_list.lock().unwrap().abort_all();
     }
 }
 
-impl StubTransport {
+impl MemTransport {
     pub async fn create(
-        _config: StubTransportConfig,
+        _config: MemTransportConfig,
         handler: Arc<TxImpHnd>,
     ) -> DynTxImp {
         let mut listener = get_stat().listen();
@@ -104,7 +103,7 @@ impl StubTransport {
     }
 }
 
-impl TxImp for StubTransport {
+impl TxImp for MemTransport {
     fn disconnect(
         &self,
         peer: Url,
