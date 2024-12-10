@@ -111,21 +111,25 @@ impl TrackHnd {
         panic!("no url found");
     }
 
-    pub fn assert_connect(&self, peer: &Url) {
+    pub fn check_connect(&self, peer: &Url) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
             if let Track::Connect(u) = t {
                 if u == peer {
-                    return;
+                    return Ok(());
                 }
             }
         }
-        panic!(
-            "matching connect entry not found {peer}, {:#?}",
-            self.track.lock().unwrap()
-        );
+        Err(K2Error::other(format!(
+            "matching connect entry not found {peer}, out of {:#?}",
+            self.track.lock().unwrap(),
+        )))
     }
 
-    pub fn disconnect(&self, peer: &Url, reason: Option<&str>) -> bool {
+    pub fn check_disconnect(
+        &self,
+        peer: &Url,
+        reason: Option<&str>,
+    ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
             if let Track::Disconnect(u, r) = t {
                 if u != peer {
@@ -134,41 +138,57 @@ impl TrackHnd {
                 if let Some(reason) = reason {
                     if let Some(r) = r {
                         if r.contains(reason) {
-                            return true;
+                            return Ok(());
                         }
                     }
                 }
             }
         }
-        false
+        Err(K2Error::other(format!(
+            "matching disconnect entry not found {peer} {reason:?}, out of {:#?}",
+            self.track.lock().unwrap(),
+        )))
     }
 
-    pub fn assert_notify(&self, peer: &Url, space: &SpaceId, msg: &[u8]) {
+    pub fn check_notify(
+        &self,
+        peer: &Url,
+        space: &SpaceId,
+        msg: &[u8],
+    ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
             if let Track::SpaceRecv(u, s, d) = t {
                 if u == peer && space == s && &d[..] == msg {
-                    return;
+                    return Ok(());
                 }
             }
         }
-        panic!("matching notify not found");
+        Err(K2Error::other(format!(
+            "matching notify not found {peer} {space} {}, out of {:#?}",
+            String::from_utf8_lossy(msg),
+            self.track.lock().unwrap(),
+        )))
     }
 
-    pub fn assert_mod(
+    pub fn check_mod(
         &self,
         peer: &Url,
         space: &SpaceId,
         module: &str,
         msg: &[u8],
-    ) {
+    ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
             if let Track::ModRecv(u, s, m, d) = t {
                 if u == peer && space == s && module == m && &d[..] == msg {
-                    return;
+                    return Ok(());
                 }
             }
         }
-        panic!("matching mod msg not found");
+        Err(K2Error::other(format!(
+            "matching mod not found {peer} {space} {module} {}, out of {:#?}",
+            String::from_utf8_lossy(msg),
+            self.track.lock().unwrap(),
+        )))
     }
 }
 
@@ -210,10 +230,10 @@ async fn transport_notify() {
     .await
     .unwrap();
 
-    h1.assert_connect(&u2);
-    h2.assert_connect(&u1);
-    h1.assert_notify(&u2, &S1, b"world");
-    h2.assert_notify(&u1, &S1, b"hello");
+    h1.check_connect(&u2).unwrap();
+    h2.check_connect(&u1).unwrap();
+    h1.check_notify(&u2, &S1, b"world").unwrap();
+    h2.check_notify(&u1, &S1, b"hello").unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -246,10 +266,10 @@ async fn transport_module() {
     .await
     .unwrap();
 
-    h1.assert_connect(&u2);
-    h2.assert_connect(&u1);
-    h1.assert_mod(&u2, &S1, "test", b"world");
-    h2.assert_mod(&u1, &S1, "test", b"hello");
+    h1.check_connect(&u2).unwrap();
+    h2.check_connect(&u1).unwrap();
+    h1.check_mod(&u2, &S1, "test", b"world").unwrap();
+    h2.check_mod(&u1, &S1, "test", b"hello").unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -272,12 +292,12 @@ async fn transport_disconnect() {
     .await
     .unwrap();
 
-    h2.assert_connect(&u1);
+    h2.check_connect(&u1).unwrap();
 
     t1.disconnect(u2.clone(), Some("test-reason".into())).await;
 
-    assert!(h1.disconnect(&u2, Some("test-reason")));
-    assert!(h2.disconnect(&u1, Some("test-reason")));
+    h1.check_disconnect(&u2, Some("test-reason")).unwrap();
+    h2.check_disconnect(&u1, Some("test-reason")).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -338,7 +358,7 @@ async fn transport_preflight_reject() {
 
     // ... this is lame, but whatever
     for _ in 0..5 {
-        if h2.disconnect(&u1, Some("test-error")) {
+        if h2.check_disconnect(&u1, Some("test-error")).is_ok() {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await
