@@ -158,25 +158,44 @@ pub struct Transport {
 
 impl Transport {
     /// Register a space handler for receiving incoming notifications.
+    ///
+    /// Panics if you attempt to register a duplicate handler for
+    /// a space.
     pub fn register_space_handler(
         &self,
         space: SpaceId,
         handler: DynTxSpaceHandler,
     ) {
-        self.space_map.lock().unwrap().insert(space, handler);
+        if self
+            .space_map
+            .lock()
+            .unwrap()
+            .insert(space.clone(), handler)
+            .is_some()
+        {
+            panic!("Attempted to register duplicate space handler! {space}");
+        }
     }
 
     /// Register a module handler for receiving incoming module messages.
+    ///
+    /// Panics if you attempt to register a duplicate handler for the
+    /// same (space, module).
     pub fn register_module_handler(
         &self,
         space: SpaceId,
         module: String,
         handler: DynTxModuleHandler,
     ) {
-        self.mod_map
+        if self
+            .mod_map
             .lock()
             .unwrap()
-            .insert((space, module), handler);
+            .insert((space.clone(), module.clone()), handler)
+            .is_some()
+        {
+            panic!("Attempted to register duplicate module handler! {space} {module}");
+        }
     }
 
     /// Make a best effort to notify a peer that we are disconnecting and why.
