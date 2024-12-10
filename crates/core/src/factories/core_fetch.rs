@@ -14,7 +14,7 @@
 //!
 //! - Exposes public method [CoreFetch::add_ops] that takes a list of op ids and an agent id.
 //! - Stores pairs of ([OpId][AgentId]) in a set.
-//! - A hash set` is used to look up elements by key efficiently. Ops may be added redundantly
+//! - A hash set is used to look up elements by key efficiently. Ops may be added redundantly
 //!   to the set with different sources to fetch from, so the set is keyed by op and agent id together.
 //!
 //! ### Fetch tasks
