@@ -6,6 +6,10 @@
 
 all: fmt clippy doc test
 
+static-toml:
+	taplo format --check ./*.toml
+	taplo format --check ./crates/**/*.toml
+
 fmt:
 	cargo fmt --all -- --check
 
