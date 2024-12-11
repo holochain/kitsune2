@@ -5,6 +5,8 @@ use kitsune2_api::{fetch::Fetch, id::Id, AgentId, K2Error, OpId, SpaceId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
+use crate::default_builder;
+
 use super::{CoreFetch, CoreFetchConfig, Transport};
 
 #[derive(Debug)]
@@ -50,11 +52,14 @@ impl Transport for MockTransport {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue() {
-    let config = CoreFetchConfig::default();
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(
+    let config = CoreFetchConfig::default();
+    let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
+        peer_store,
         mock_transport.clone(),
     );
 
@@ -122,11 +127,14 @@ async fn fetch_queue() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_single_agent() {
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(
+    let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
+        peer_store,
         mock_transport.clone(),
     );
 
@@ -161,14 +169,17 @@ async fn happy_multi_op_fetch_from_single_agent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_multiple_agents() {
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         parallel_request_count: 5,
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(
+    let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
+        peer_store,
         mock_transport.clone(),
     );
 
@@ -227,11 +238,14 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_cool_down_list() {
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
-    let mut fetch = CoreFetch::new(
+    let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
+        peer_store,
         mock_transport.clone(),
     );
 
@@ -261,6 +275,8 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_cooling_down_is_removed_from_list() {
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         cool_down_interval_ms: 10,
         ..Default::default()
@@ -269,6 +285,7 @@ async fn agent_cooling_down_is_removed_from_list() {
     let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
+        peer_store,
         mock_transport.clone(),
     );
     let agent_id = random_agent_id();
@@ -304,11 +321,14 @@ async fn agent_cooling_down_is_removed_from_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_op_fetch_from_multiple_unresponsive_agents() {
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
-    let mut fetch = CoreFetch::new(
+    let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
+        peer_store,
         mock_transport.clone(),
     );
 

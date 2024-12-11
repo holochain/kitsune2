@@ -1,5 +1,7 @@
 //! Kitsune2 transport module.
 
+use std::sync::Arc;
+
 use crate::{BoxFut, K2Result, SpaceId, Url};
 
 /// Trait for implementing a transport module for exchanging messages
@@ -18,3 +20,6 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>>;
 }
+
+/// Trait object [Transport].
+pub type DynTransport = Arc<dyn Transport>;

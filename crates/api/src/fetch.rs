@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use crate::{
-    builder, config, peer_store::DynPeerStore, AgentId, BoxFut, K2Result, OpId,
-    SpaceId,
+    builder, config, peer_store::DynPeerStore, transport::DynTransport,
+    AgentId, BoxFut, K2Result, OpId, SpaceId,
 };
 
 /// Trait for implementing a fetch module to fetch ops from other agents.
 pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be fetched.
     fn add_ops(
-        &mut self,
+        &self,
         op_list: Vec<OpId>,
         source: AgentId,
     ) -> BoxFut<'_, K2Result<()>>;
@@ -32,6 +32,7 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
         peer_store: DynPeerStore,
+        transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>>;
 }
 

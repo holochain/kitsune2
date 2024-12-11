@@ -53,7 +53,7 @@ use kitsune2_api::{
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     peer_store,
     transport::Transport,
-    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
+    AgentId, BoxFut, K2Result, OpId, SpaceId,
 };
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
@@ -88,26 +88,14 @@ impl FetchFactory for CoreFetchFactory {
         &self,
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
-        _peer_store: peer_store::DynPeerStore,
+        peer_store: peer_store::DynPeerStore,
+        transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>> {
-        #[derive(Debug)]
-        struct TransportPlaceholder;
-        impl Transport for TransportPlaceholder {
-            fn send_module(
-                &self,
-                _peer: Url,
-                _space: SpaceId,
-                _module: String,
-                _data: bytes::Bytes,
-            ) -> BoxFut<'_, K2Result<()>> {
-                Box::pin(async move { todo!() })
-            }
-        }
-        let tx = Arc::new(TransportPlaceholder);
-
         Box::pin(async move {
             let config = builder.config.get_module_config(MOD_NAME)?;
-            let out: DynFetch = Arc::new(CoreFetch::new(config, space_id, tx));
+            let out: DynFetch = Arc::new(CoreFetch::new(
+                config, space_id, peer_store, transport,
+            ));
             Ok(out)
         })
     }
@@ -144,15 +132,18 @@ impl CoreFetch {
     fn new(
         config: CoreFetchConfig,
         space_id: SpaceId,
+        peer_store: peer_store::DynPeerStore,
         transport: DynTransport,
     ) -> Self {
-        Self(Inner::spawn_fetch_tasks(config, space_id, transport))
+        Self(Inner::spawn_fetch_tasks(
+            config, space_id, peer_store, transport,
+        ))
     }
 }
 
 impl Fetch for CoreFetch {
     fn add_ops(
-        &mut self,
+        &self,
         op_list: Vec<OpId>,
         source: AgentId,
     ) -> BoxFut<'_, K2Result<()>> {
@@ -201,6 +192,7 @@ impl Inner {
     pub fn spawn_fetch_tasks(
         config: CoreFetchConfig,
         space_id: SpaceId,
+        peer_store: peer_store::DynPeerStore,
         transport: DynTransport,
     ) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
@@ -218,6 +210,7 @@ impl Inner {
                 state.clone(),
                 fetch_queue_tx.clone(),
                 fetch_queue_rx.clone(),
+                peer_store.clone(),
                 space_id.clone(),
                 transport.clone(),
             ));
@@ -235,6 +228,7 @@ impl Inner {
         state: Arc<Mutex<State>>,
         fetch_request_tx: Sender<FetchRequest>,
         fetch_request_rx: Arc<tokio::sync::Mutex<Receiver<FetchRequest>>>,
+        peer_store: peer_store::DynPeerStore,
         space_id: SpaceId,
         transport: DynTransport,
     ) {
@@ -256,31 +250,28 @@ impl Inner {
             // Send request if agent is not on cool-down list.
             if !is_agent_cooling_down {
                 // Send fetch request to agent.
+                let peer = match peer_store.get(agent_id.clone()).await {
+                    Ok(Some(peer)) => match &peer.url {
+                        Some(url) => url.clone(),
+                        None => {
+                            tracing::warn!(
+                                "agent {agent_id} no longer in peer store"
+                            );
+                            continue;
+                        }
+                    },
+                    Ok(None) => {
+                        tracing::warn!(
+                            "could not find agent id {agent_id} in peer store"
+                        );
+                        continue;
+                    }
+                    Err(err) => {
+                        tracing::warn!("could not get agent id {agent_id} from peer store: {err}");
+                        continue;
+                    }
+                };
 
-                // TODO: uncomment when peer store is available
-                // let peer = match peer_store.get(agent_id.clone()).await {
-                //     Ok(Some(peer)) => match &peer.url {
-                //         Some(url) => url.clone(),
-                //         None => {
-                //             tracing::warn!(
-                //                 "agent {agent_id} no longer in peer store"
-                //             );
-                //             continue;
-                //         }
-                //     },
-                //     Ok(None) => {
-                //         tracing::warn!(
-                //             "could not find agent id {agent_id} in peer store"
-                //         );
-                //         continue;
-                //     }
-                //     Err(err) => {
-                //         tracing::warn!("could not get agent id {agent_id} from peer store: {err}");
-                //         continue;
-                //     }
-                // };
-
-                // TODO: update when transport is available
                 let mut data = bytes::BytesMut::new();
                 data.put(op_id.clone().0 .0);
                 data.put(agent_id.clone().0 .0);
@@ -288,7 +279,7 @@ impl Inner {
 
                 if let Err(err) = transport
                     .send_module(
-                        Url::from_str("ws://0.0.0.0:443").unwrap(),
+                        peer,
                         space_id.clone(),
                         MOD_NAME.to_string(),
                         data,
