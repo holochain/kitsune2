@@ -61,7 +61,11 @@ impl Stat {
             }
             Entry::Vacant(e) => {
                 let config = Config::testing();
-                let srv = futures::executor::block_on(tokio::task::spawn_blocking(move || BootstrapSrv::new(config).unwrap())).unwrap();
+                let srv =
+                    futures::executor::block_on(tokio::task::spawn_blocking(
+                        move || BootstrapSrv::new(config).unwrap(),
+                    ))
+                    .unwrap();
                 e.insert((srv, vec![weak]));
             }
         }
