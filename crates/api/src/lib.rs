@@ -63,3 +63,6 @@ pub mod protocol;
 
 mod url;
 pub use url::*;
+
+#[cfg(any(doc, docsrs))]
+pub mod doc;
