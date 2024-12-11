@@ -53,7 +53,7 @@ use kitsune2_api::{
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     peer_store,
     transport::DynTransport,
-    AgentId, BoxFut, K2Result, OpId, SpaceId,
+    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
@@ -230,40 +230,26 @@ impl CoreFetch {
             fetch_request_rx.lock().await.recv().await
         {
             let is_agent_cooling_down = {
-                let mut state_lock = state.lock().unwrap();
+                let mut lock = state.lock().unwrap();
 
                 // Do nothing if op id is no longer in the set of ops to fetch.
-                if !state_lock.ops.contains(&(op_id.clone(), agent_id.clone()))
-                {
+                if !lock.ops.contains(&(op_id.clone(), agent_id.clone())) {
                     continue;
                 }
 
-                state_lock.cool_down_list.is_agent_cooling_down(&agent_id)
+                lock.cool_down_list.is_agent_cooling_down(&agent_id)
             };
 
             // Send request if agent is not on cool-down list.
             if !is_agent_cooling_down {
-                // Send fetch request to agent.
-                let peer = match peer_store.get(agent_id.clone()).await {
-                    Ok(Some(peer)) => match &peer.url {
-                        Some(url) => url.clone(),
-                        None => {
-                            tracing::warn!(
-                                "agent {agent_id} no longer in peer store"
-                            );
-                            continue;
-                        }
-                    },
-                    Ok(None) => {
-                        tracing::warn!(
-                            "could not find agent id {agent_id} in peer store"
-                        );
-                        continue;
-                    }
-                    Err(err) => {
-                        tracing::warn!("could not get agent id {agent_id} from peer store: {err}");
-                        continue;
-                    }
+                let peer = match CoreFetch::get_peer_url_from_store(
+                    &agent_id,
+                    peer_store.clone(),
+                )
+                .await
+                {
+                    Some(url) => url,
+                    None => continue,
                 };
 
                 let mut data = bytes::BytesMut::new();
@@ -271,6 +257,7 @@ impl CoreFetch {
                 data.put(agent_id.clone().0 .0);
                 let data = data.freeze();
 
+                // Send fetch request to agent.
                 if let Err(err) = transport
                     .send_module(
                         peer,
@@ -295,6 +282,33 @@ impl CoreFetch {
             {
                 tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
                 state.lock().unwrap().ops.remove(&(op_id, agent_id));
+            }
+        }
+    }
+
+    async fn get_peer_url_from_store(
+        agent_id: &AgentId,
+        peer_store: peer_store::DynPeerStore,
+    ) -> Option<Url> {
+        match peer_store.get(agent_id.clone()).await {
+            Ok(Some(peer)) => match &peer.url {
+                Some(url) => Some(url.clone()),
+                None => {
+                    tracing::warn!("agent {agent_id} no longer on the network");
+                    None
+                }
+            },
+            Ok(None) => {
+                tracing::warn!(
+                    "could not find agent id {agent_id} in peer store"
+                );
+                None
+            }
+            Err(err) => {
+                tracing::warn!(
+                    "could not get agent id {agent_id} from peer store: {err}"
+                );
+                None
             }
         }
     }
