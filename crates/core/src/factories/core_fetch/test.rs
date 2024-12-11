@@ -1,9 +1,16 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use bytes::Bytes;
-use kitsune2_api::{fetch::Fetch, id::Id, AgentId, K2Error, OpId, SpaceId};
+use kitsune2_api::{
+    agent::{AgentInfo, AgentInfoSigned, Verifier},
+    fetch::Fetch,
+    id::Id,
+    AgentId, K2Error, OpId, SpaceId, StorageArc, Timestamp, Url,
+};
 use rand::Rng;
-use tokio::sync::Mutex;
 
 use crate::default_builder;
 
@@ -39,7 +46,7 @@ impl Transport for MockTransport {
             let agent_id_bytes = data;
             let op_id = OpId::from(op_id_bytes);
             let agent_id = AgentId::from(agent_id_bytes);
-            self.requests_sent.lock().await.push((op_id, agent_id));
+            self.requests_sent.lock().unwrap().push((op_id, agent_id));
 
             if self.fail {
                 Err(K2Error::other("connection timed out"))
@@ -50,24 +57,97 @@ impl Transport for MockTransport {
     }
 }
 
+#[derive(Debug, Default)]
+struct AgentBuild {
+    pub agent: Option<AgentId>,
+    pub space: Option<SpaceId>,
+    pub created_at: Option<Timestamp>,
+    pub expires_at: Option<Timestamp>,
+    pub is_tombstone: Option<bool>,
+    pub url: Option<Option<Url>>,
+    pub storage_arc: Option<StorageArc>,
+}
+
+impl AgentBuild {
+    pub fn build(self) -> Arc<AgentInfoSigned> {
+        static NEXT_AGENT: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(1);
+        let agent = self.agent.unwrap_or_else(|| {
+            let a =
+                NEXT_AGENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let a = a.to_le_bytes();
+            AgentId(Id(bytes::Bytes::copy_from_slice(&a)))
+        });
+        let space = self
+            .space
+            .unwrap_or_else(|| SpaceId::from(bytes::Bytes::new()));
+        let created_at = self.created_at.unwrap_or_else(Timestamp::now);
+        let expires_at = self.expires_at.unwrap_or_else(|| {
+            created_at + std::time::Duration::from_secs(60 * 20)
+        });
+        let is_tombstone = self.is_tombstone.unwrap_or(false);
+        let url = self.url.unwrap_or(None);
+        let storage_arc = self.storage_arc.unwrap_or(StorageArc::FULL);
+        let agent_info = serde_json::to_string(&AgentInfo {
+            agent,
+            space,
+            created_at,
+            expires_at,
+            is_tombstone,
+            url,
+            storage_arc,
+        })
+        .unwrap();
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Enc {
+            agent_info: String,
+            signature: String,
+        }
+        let encoded = serde_json::to_string(&Enc {
+            agent_info,
+            signature: "".into(),
+        })
+        .unwrap();
+        #[derive(Debug)]
+        struct V;
+        impl Verifier for V {
+            fn verify(&self, _i: &AgentInfo, _m: &[u8], _s: &[u8]) -> bool {
+                true
+            }
+        }
+        // going through this trouble to use decode because it's sync
+        AgentInfoSigned::decode(&V, encoded.as_bytes()).unwrap()
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let mock_transport = MockTransport::new(false);
     let config = CoreFetchConfig::default();
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let fetch = CoreFetch::new(
         config.clone(),
-        SpaceId::from(bytes::Bytes::new()),
-        peer_store,
+        space_id.clone(),
+        peer_store.clone(),
         mock_transport.clone(),
     );
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
     let agent_id = random_agent_id();
+    let agent_info = AgentBuild {
+        agent: Some(agent_id.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    peer_store.insert(vec![agent_info]).await.unwrap();
 
-    let requests_sent = mock_transport.requests_sent.lock().await.clone();
+    let requests_sent = mock_transport.requests_sent.lock().unwrap().clone();
     assert!(requests_sent.is_empty());
 
     // Add 1 op.
@@ -77,7 +157,8 @@ async fn fetch_queue() {
     // this proves that it is being re-added to the queue after sending a request for it.
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
-            if mock_transport.requests_sent.lock().await.len() >= 3 {
+            tokio::task::yield_now().await;
+            if mock_transport.requests_sent.lock().unwrap().len() >= 3 {
                 break;
             }
         }
@@ -88,14 +169,15 @@ async fn fetch_queue() {
     // Clear set of ops to fetch to stop sending requests.
     fetch.0.state.lock().unwrap().ops.clear();
 
-    let mut num_requests_sent = mock_transport.requests_sent.lock().await.len();
+    let mut num_requests_sent =
+        mock_transport.requests_sent.lock().unwrap().len();
 
     // Wait for tasks to settle all requests.
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            tokio::task::yield_now().await;
             let current_num_requests_sent =
-                mock_transport.requests_sent.lock().await.len();
+                mock_transport.requests_sent.lock().unwrap().len();
             if current_num_requests_sent == num_requests_sent {
                 break;
             } else {
@@ -110,18 +192,18 @@ async fn fetch_queue() {
     assert!(mock_transport
         .requests_sent
         .lock()
-        .await
+        .unwrap()
         .iter()
         .all(|request| request == &(op_id.clone(), agent_id.clone())));
 
     // Give time for more requests to be sent, which shouldn't happen now that the set of
     // ops to fetch is cleared.
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // No more requests should have been sent.
     // Ideally it were possible to check that no more fetch request have been passed back into
     // the internal channel, but that would require a custom wrapper around the channel.
-    let requests_sent = mock_transport.requests_sent.lock().await.clone();
+    let requests_sent = mock_transport.requests_sent.lock().unwrap().clone();
     assert_eq!(requests_sent.len(), num_requests_sent);
 }
 
@@ -129,35 +211,49 @@ async fn fetch_queue() {
 async fn happy_multi_op_fetch_from_single_agent() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
     let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
-        peer_store,
+        peer_store.clone(),
         mock_transport.clone(),
     );
 
     let num_ops: usize = 50;
     let op_list = create_op_list(num_ops as u16);
-    let agent = random_agent_id();
+    let agent_id = random_agent_id();
+
+    let agent_info = AgentBuild {
+        agent: Some(agent_id.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    peer_store.insert(vec![agent_info]).await.unwrap();
 
     let mut expected_ops = Vec::new();
     op_list
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_id.clone())));
 
-    fetch.add_ops(op_list.clone(), agent.clone()).await.unwrap();
+    fetch
+        .add_ops(op_list.clone(), agent_id.clone())
+        .await
+        .unwrap();
 
     // Check that at least one request was sent to the agent for each op.
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
+            tokio::task::yield_now().await;
             let requests_sent =
-                mock_transport.requests_sent.lock().await.clone();
+                mock_transport.requests_sent.lock().unwrap().clone();
             if requests_sent.len() >= num_ops {
                 op_list.clone().into_iter().all(|op_id| {
-                    requests_sent.contains(&(op_id, agent.clone()))
+                    requests_sent.contains(&(op_id, agent_id.clone()))
                 });
                 break;
             }
@@ -171,6 +267,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
 async fn happy_multi_op_fetch_from_multiple_agents() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig {
         parallel_request_count: 5,
         ..Default::default()
@@ -179,7 +276,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
-        peer_store,
+        peer_store.clone(),
         mock_transport.clone(),
     );
 
@@ -190,6 +287,32 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     let op_list_3 = create_op_list(30);
     let agent_3 = random_agent_id();
     let total_ops = op_list_1.len() + op_list_2.len() + op_list_3.len();
+
+    let agent_info_1 = AgentBuild {
+        agent: Some(agent_1.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    let agent_info_2 = AgentBuild {
+        agent: Some(agent_2.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    let agent_info_3 = AgentBuild {
+        agent: Some(agent_3.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    peer_store
+        .insert(vec![agent_info_1, agent_info_2, agent_info_3])
+        .await
+        .unwrap();
 
     let mut expected_ops = Vec::new();
     op_list_1
@@ -221,8 +344,9 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     // Check that at least one request was sent for each op.
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
+            tokio::task::yield_now().await;
             let requests_sent =
-                mock_transport.requests_sent.lock().await.clone();
+                mock_transport.requests_sent.lock().unwrap().clone();
             if requests_sent.len() >= total_ops
                 && expected_ops
                     .iter()
@@ -240,30 +364,40 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
 async fn unresponsive_agents_are_put_on_cool_down_list() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
     let fetch = CoreFetch::new(
         config.clone(),
         SpaceId::from(bytes::Bytes::new()),
-        peer_store,
+        peer_store.clone(),
         mock_transport.clone(),
     );
 
     let op_list = create_op_list(1);
-    let agent = random_agent_id();
+    let agent_id = random_agent_id();
+    let agent_info = AgentBuild {
+        agent: Some(agent_id.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    peer_store.insert(vec![agent_info]).await.unwrap();
 
-    fetch.add_ops(op_list, agent.clone()).await.unwrap();
+    fetch.add_ops(op_list, agent_id.clone()).await.unwrap();
 
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
-            if !mock_transport.requests_sent.lock().await.is_empty()
+            tokio::task::yield_now().await;
+            if !mock_transport.requests_sent.lock().unwrap().is_empty()
                 && fetch
                     .0
                     .state
                     .lock()
                     .unwrap()
                     .cool_down_list
-                    .is_agent_cooling_down(&agent)
+                    .is_agent_cooling_down(&agent_id)
             {
                 break;
             }
@@ -277,6 +411,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 async fn agent_cooling_down_is_removed_from_list() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig {
         cool_down_interval_ms: 10,
         ..Default::default()
@@ -284,7 +419,7 @@ async fn agent_cooling_down_is_removed_from_list() {
     let mock_transport = MockTransport::new(false);
     let fetch = CoreFetch::new(
         config.clone(),
-        SpaceId::from(bytes::Bytes::new()),
+        space_id,
         peer_store,
         mock_transport.clone(),
     );
@@ -323,12 +458,13 @@ async fn agent_cooling_down_is_removed_from_list() {
 async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
     let fetch = CoreFetch::new(
         config.clone(),
-        SpaceId::from(bytes::Bytes::new()),
-        peer_store,
+        space_id.clone(),
+        peer_store.clone(),
         mock_transport.clone(),
     );
 
@@ -338,6 +474,32 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     let agent_2 = random_agent_id();
     let op_list_3 = create_op_list(30);
     let agent_3 = random_agent_id();
+
+    let agent_info_1 = AgentBuild {
+        agent: Some(agent_1.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    let agent_info_2 = AgentBuild {
+        agent: Some(agent_2.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    let agent_info_3 = AgentBuild {
+        agent: Some(agent_3.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        space: Some(space_id.clone()),
+        ..Default::default()
+    }
+    .build();
+    peer_store
+        .insert(vec![agent_info_1, agent_info_2, agent_info_3])
+        .await
+        .unwrap();
 
     // Add all ops to the queue.
     fetch
@@ -357,8 +519,9 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     let expected_agents = [agent_1, agent_2, agent_3];
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
             let requests_sent =
-                mock_transport.requests_sent.lock().await.clone();
+                mock_transport.requests_sent.lock().unwrap().clone();
             let request_destinations = requests_sent
                 .iter()
                 .map(|(_, agent_id)| agent_id)
