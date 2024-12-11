@@ -146,7 +146,7 @@ struct Inner {
 impl Inner {
     pub fn new(cool_down_interval_ms: u64) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
-        let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(1024);
+        let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(16_384);
         let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
 
         let ops = HashSet::new();
