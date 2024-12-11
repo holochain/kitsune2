@@ -106,8 +106,6 @@ impl BootstrapSrv {
     pub fn shutdown(&mut self) -> std::io::Result<()> {
         let mut is_err = false;
         self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
-        for worker in self.workers.drain(..) {
-            if worker.join().is_err() {
         drop(self.server.take());
         while !self.workers.is_empty() {
             println!("waiting on {} threads to close...", self.workers.len());
@@ -175,8 +173,6 @@ fn worker(
 
         handler.handle(req)?;
     }
-
-    server.unblock();
 
     Ok(())
 }

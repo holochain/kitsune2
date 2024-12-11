@@ -12,7 +12,10 @@ edition = "2021"
 
 [dependencies]
 async-channel = { workspace = true }
-axum = { workspace = true, default-features = false, features = ["http1", "tokio"] }
+axum = { workspace = true, default-features = false, features = [
+  "http1",
+  "tokio",
+] }
 base64 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }

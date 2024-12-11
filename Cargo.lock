@@ -968,7 +968,9 @@ dependencies = [
 name = "kitsune2_test_utils"
 version = "0.1.0-nopublish"
 dependencies = [
+ "futures",
  "kitsune2_bootstrap_srv",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

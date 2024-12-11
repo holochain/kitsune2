@@ -95,7 +95,6 @@ impl Test {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "AHHH tiny_http is broken!! ... not sure we're going to be able to use that..."]
 async fn bootstrap_sanity() {
     let t1 = Test::new().await;
     let t2 = Test::new().await;
