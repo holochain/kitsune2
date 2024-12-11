@@ -52,7 +52,7 @@ use kitsune2_api::{
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
     peer_store,
-    transport::Transport,
+    transport::DynTransport,
     AgentId, BoxFut, K2Result, OpId, SpaceId,
 };
 use tokio::{
@@ -122,11 +122,20 @@ impl Default for CoreFetchConfig {
 
 impl ModConfig for CoreFetchConfig {}
 
-// TODO: Temporary trait object of a transport module to facilitate unit tests.
-type DynTransport = Arc<dyn Transport>;
+type FetchRequest = (OpId, AgentId);
 
 #[derive(Debug)]
-struct CoreFetch(Inner);
+struct State {
+    ops: HashSet<FetchRequest>,
+    cool_down_list: CoolDownList,
+}
+
+#[derive(Debug)]
+struct CoreFetch {
+    state: Arc<Mutex<State>>,
+    fetch_queue_tx: Sender<FetchRequest>,
+    fetch_tasks: Vec<JoinHandle<()>>,
+}
 
 impl CoreFetch {
     fn new(
@@ -135,9 +144,7 @@ impl CoreFetch {
         peer_store: peer_store::DynPeerStore,
         transport: DynTransport,
     ) -> Self {
-        Self(Inner::spawn_fetch_tasks(
-            config, space_id, peer_store, transport,
-        ))
+        Self::spawn_fetch_tasks(config, space_id, peer_store, transport)
     }
 }
 
@@ -149,7 +156,7 @@ impl Fetch for CoreFetch {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // Add ops to set.
-            let ops = &mut self.0.state.lock().unwrap().ops;
+            let ops = &mut self.state.lock().unwrap().ops;
             ops.extend(
                 op_list
                     .clone()
@@ -160,7 +167,7 @@ impl Fetch for CoreFetch {
             // Pass ops to fetch tasks.
             op_list.into_iter().for_each(|op_id| {
                 if let Err(err) =
-                    self.0.fetch_queue_tx.try_send((op_id, source.clone()))
+                    self.fetch_queue_tx.try_send((op_id, source.clone()))
                 {
                     tracing::warn!(
                         "could not pass fetch request to fetch task: {err}"
@@ -173,22 +180,7 @@ impl Fetch for CoreFetch {
     }
 }
 
-type FetchRequest = (OpId, AgentId);
-
-#[derive(Debug)]
-struct State {
-    ops: HashSet<FetchRequest>,
-    cool_down_list: CoolDownList,
-}
-
-#[derive(Debug)]
-struct Inner {
-    state: Arc<Mutex<State>>,
-    fetch_queue_tx: Sender<FetchRequest>,
-    fetch_tasks: Vec<JoinHandle<()>>,
-}
-
-impl Inner {
+impl CoreFetch {
     pub fn spawn_fetch_tasks(
         config: CoreFetchConfig,
         space_id: SpaceId,
@@ -206,7 +198,7 @@ impl Inner {
 
         let mut fetch_tasks = Vec::new();
         for _ in 0..config.parallel_request_count {
-            let task = tokio::task::spawn(Inner::fetch_task(
+            let task = tokio::task::spawn(CoreFetch::fetch_task(
                 state.clone(),
                 fetch_queue_tx.clone(),
                 fetch_queue_rx.clone(),
@@ -305,7 +297,7 @@ impl Inner {
     }
 }
 
-impl Drop for Inner {
+impl Drop for CoreFetch {
     fn drop(&mut self) {
         for t in self.fetch_tasks.iter() {
             t.abort();

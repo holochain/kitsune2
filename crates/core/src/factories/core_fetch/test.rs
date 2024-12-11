@@ -5,13 +5,14 @@ use std::{
 
 use bytes::Bytes;
 use kitsune2_api::{
-    fetch::Fetch, id::Id, AgentId, K2Error, OpId, SpaceId, Url,
+    fetch::Fetch, id::Id, transport::Transport, AgentId, K2Error, OpId,
+    SpaceId, Url,
 };
 use rand::Rng;
 
 use crate::{default_builder, factories::test_utils::AgentBuild};
 
-use super::{CoreFetch, CoreFetchConfig, Transport};
+use super::{CoreFetch, CoreFetchConfig};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -99,7 +100,7 @@ async fn fetch_queue() {
     .unwrap();
 
     // Clear set of ops to fetch to stop sending requests.
-    fetch.0.state.lock().unwrap().ops.clear();
+    fetch.state.lock().unwrap().ops.clear();
 
     let mut num_requests_sent =
         mock_transport.requests_sent.lock().unwrap().len();
@@ -321,7 +322,6 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
             tokio::task::yield_now().await;
             if !mock_transport.requests_sent.lock().unwrap().is_empty()
                 && fetch
-                    .0
                     .state
                     .lock()
                     .unwrap()
@@ -356,7 +356,6 @@ async fn agent_cooling_down_is_removed_from_list() {
     let agent_id = random_agent_id();
 
     fetch
-        .0
         .state
         .lock()
         .unwrap()
@@ -364,7 +363,6 @@ async fn agent_cooling_down_is_removed_from_list() {
         .add_agent(agent_id.clone());
 
     assert!(fetch
-        .0
         .state
         .lock()
         .unwrap()
@@ -376,7 +374,6 @@ async fn agent_cooling_down_is_removed_from_list() {
         .await;
 
     assert!(!fetch
-        .0
         .state
         .lock()
         .unwrap()
@@ -463,7 +460,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
             {
                 // Check all agents are on cool_down_list.
                 let cool_down_list =
-                    &mut fetch.0.state.lock().unwrap().cool_down_list;
+                    &mut fetch.state.lock().unwrap().cool_down_list;
                 if expected_agents
                     .iter()
                     .all(|agent| cool_down_list.is_agent_cooling_down(agent))
