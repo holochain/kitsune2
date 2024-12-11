@@ -2,21 +2,48 @@
 //!
 //! The space of possible hashes is mapped to a 32-bit location. See [::kitsune2_api::id::Id::loc] for
 //! more information about this. Each agent is responsible for storing and serving some part of
-//! the hash space. This module provides a structure that partitions the hash space by some factor.
-//!
-//! The factor must be chosen up front and cannot be changed. The factor determines the number of
-//! partitions to create. A factor of 32 will create a single partition. Each unit decrease from 32
-//! will double the number of partitions. A good default for a network that is expected to grow to
-//! a few thousand nodes is 21. This will create 2^11 partitions, which is 2048. Given that data is
-//! also stored redundantly, say 10 times, this means that 20,000 nodes are needed for the data
-//! to be maximally distributed. With higher replication, say 50 times, and a hash factor of 20,
-//! over 200,000 nodes are needed for maximal distribution.
+//! the hash space. This module provides a structure that partitions the hash space into 512
+//! equally-sized DHT arcs.
 //!
 //! Each space partition manages a [PartitionedTime] structure that is responsible for managing the
 //! time slices for that space partition. The interface of this module is largely responsible for
 //! delegating the updating of time slices to the inner time partitions. This ensures that all the
 //! time partitions are updated in lockstep. This makes reasoning about the space-time partitioning
 //! easier.
+//!
+//! That completes the high level information for this module, what follows is a more detailed
+//! explanation of the design.
+//!
+//! The bit-depth of the location roughly determines how evenly ops are distributed across the
+//! partitions. For example, an 8-bit location can only map op hashes to 256 possible location,
+//! which would not use the top half of the partitions here. A 32-bit location retains enough
+//! information to use the full range of partitions and can be calculated inside a 32-bit integer.
+//! A 16-bit location would work as well, and the choice between the two is not quantified here.
+//!
+//! The choice of 512 partitions is a tradeoff between the minimum amount of data that a node must
+//! store to participate in the network and the amount of data that must be sent over the network
+//! to discover what op data needs to be fetched. Every node will store between 0 and 512
+//! partitions. For nodes that are choosing to store data, the minimum they can store is 1
+//! partition. Or in other words, 1/512th of the total data. To put this in context, an application
+//! that has a complete data set of 5TB would require a minimum of 10GB of storage dedicated to
+//! that app to be able to participate in the network.
+//! It is important to note though, that each partition is managing a [PartitionedTime] structure
+//! which requires some memory and processing to maintain. Nodes that take on more partitions will
+//! have more work to do and will have to send more data during gossip rounds when there are
+//! changes to data that has made it into a time slice and become part of a combined hash.
+//! As a consequence, a new network that hasn't yet gained enough members to start reducing how
+//! many partitions are covered by each node will have a higher overhead for each node.
+//! It is the responsibility of the gossip module to work out how to be efficient about sending
+//! the minimum amount of data required to keep all nodes up to date. However, the worst case is
+//! that 512 combined hashes must be sent to find out which partition has a mismatch for a given
+//! time slice. Over time, there will be more time slices to check.
+//! Therefore, the choice of 512 should be thought of as a best-effort choice to ask a reasonable
+//! amount of work and storage from each node in a large network but being no larger than that
+//! so we don't add overhead to gossip.
+//!
+//! It is also important to note that nodes may have to store the full 512 partitions if the
+//! number of peers in the network is not high enough. The network must have enough peers that
+//! data is still stored redundantly before the number of partitions per node can be reduced.
 //!
 //! This module must be informed about ops that have been stored. There is no active process here
 //! that can look for newly stored ops. When a batch of ops is stored, the [PartitionedHashes] must
@@ -25,9 +52,7 @@
 //! partitions that are responsible for updating the combined hash values.
 
 use crate::PartitionedTime;
-use kitsune2_api::{
-    DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
-};
+use kitsune2_api::{DhtArc, DynOpStore, K2Result, StoredOp, Timestamp};
 use std::collections::HashMap;
 
 /// A partitioned hash structure.
@@ -37,84 +62,59 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct PartitionedHashes {
     /// This is just a convenience for internal function use.
-    /// This should always be exactly `((u32::MAX + 1) / self.partitioned_hashes.len()`.
+    /// This should always be exactly `(u32::MAX / self.partitioned_hashes.len()) + 1`.
     size: u32,
-    /// The partition count here (length of Vec) should always be a power of 2.
-    /// (2**0, 2**1, etc).
+    /// The partition count here (length of Vec) is always a power of 2.
+    ///
+    /// That is, (2**0, 2**1, etc). It is currently always 512 and is not configurable.
     partitioned_hashes: Vec<PartitionedTime>,
 }
 
 impl PartitionedHashes {
     /// Create a new partitioned hash structure.
     ///
-    /// The `space_factor` determines the number of partitions to create. A value of 32 will create
-    /// a single partition. Each unit decrease from 32 will double the number of partitions.
+    /// This creates a new partitioned hash structure which has 512 partitions. This is currently
+    /// not configurable. See the module documentation for more details.
     ///
     /// Each space partition owns a [PartitionedTime] structure that is responsible for managing
     /// the time slices for that space partition. Other parameters to this function are used to
     /// create the [PartitionedTime] structure.
     pub async fn try_from_store(
-        space_factor: u8,
         time_factor: u8,
         current_time: Timestamp,
         store: DynOpStore,
     ) -> K2Result<Self> {
-        // Above 32 is not supported because that results in a single partition.
-        // Below 18 is not supported because the number of partitions grows too large and impacts
-        // performance unreasonably.
-        if !(18..=32).contains(&space_factor) {
-            return Err(K2Error::other(
-                "Hash factor must be between 18 and 32",
-            ));
-        }
+        // Creates 512 partitions, because 32 - 23 = 9, and 2^9 = 512.
+        const SIZE: u32 = 1u32 << 23;
 
-        let (size, partitioned_hashes) = if space_factor == 32 {
-            (
-                u32::MAX,
-                vec![
-                    PartitionedTime::try_from_store(
-                        time_factor,
-                        current_time,
-                        DhtArc::FULL,
-                        store.clone(),
-                    )
-                    .await?,
-                ],
-            )
-        } else {
-            let size = 1u32 << space_factor;
-
-            // We will always be one bucket short because u32::MAX is not a power of two. It is one less
-            // than a power of two, so the last bucket is always one short.
-            let num_partitions = (u32::MAX / size) + 1;
-            let mut partitioned_hashes =
-                Vec::with_capacity(num_partitions as usize);
-            for i in 0..(num_partitions - 1) {
-                partitioned_hashes.push(
-                    PartitionedTime::try_from_store(
-                        time_factor,
-                        current_time,
-                        DhtArc::Arc(i * size, (i + 1).saturating_mul(size) - 1),
-                        store.clone(),
-                    )
-                    .await?,
-                );
-            }
-
-            // The last partition must be handled separately because it needs to include the
-            // remainder of the hash space.
+        // We will always be one bucket short because u32::MAX is not a power of two. It is one less
+        // than a power of two, so the last bucket is always one short.
+        let num_partitions = (u32::MAX / SIZE) + 1;
+        let mut partitioned_hashes =
+            Vec::with_capacity(num_partitions as usize);
+        for i in 0..(num_partitions - 1) {
             partitioned_hashes.push(
                 PartitionedTime::try_from_store(
                     time_factor,
                     current_time,
-                    DhtArc::Arc((num_partitions - 1) * size, u32::MAX),
+                    DhtArc::Arc(i * SIZE, (i + 1).saturating_mul(SIZE) - 1),
                     store.clone(),
                 )
                 .await?,
             );
+        }
 
-            (size, partitioned_hashes)
-        };
+        // The last partition must be handled separately because it needs to include the
+        // remainder of the hash space.
+        partitioned_hashes.push(
+            PartitionedTime::try_from_store(
+                time_factor,
+                current_time,
+                DhtArc::Arc((num_partitions - 1) * SIZE, u32::MAX),
+                store.clone(),
+            )
+            .await?,
+        );
 
         tracing::info!(
             "Allocated [{}] space partitions",
@@ -122,7 +122,7 @@ impl PartitionedHashes {
         );
 
         Ok(Self {
-            size,
+            size: SIZE,
             partitioned_hashes,
         })
     }
@@ -193,93 +193,47 @@ mod tests {
     use std::time::Duration;
 
     #[tokio::test]
-    async fn create_with_no_partitioning() {
+    async fn try_from_store() {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let ph =
-            PartitionedHashes::try_from_store(32, 14, Timestamp::now(), store)
-                .await
-                .unwrap();
-        assert_eq!(1, ph.partitioned_hashes.len());
-        assert_eq!(u32::MAX, ph.size);
-        assert_eq!(&DhtArc::FULL, ph.partitioned_hashes[0].arc_constraint());
-    }
-
-    #[tokio::test]
-    async fn create_with_default_partition_factor() {
-        enable_tracing();
-
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let ph =
-            PartitionedHashes::try_from_store(20, 14, Timestamp::now(), store)
-                .await
-                .unwrap();
-        assert_eq!(1 << 20, ph.size);
-        assert_eq!((0, true), (1u32 << 20).overflowing_mul(ph.size));
+        let ph = PartitionedHashes::try_from_store(14, Timestamp::now(), store)
+            .await
+            .unwrap();
+        assert_eq!(512, ph.partitioned_hashes.len());
+        assert_eq!((u32::MAX / 512) + 1, ph.size);
+        assert_eq!(
+            &DhtArc::Arc(0, ph.size - 1),
+            ph.partitioned_hashes[0].arc_constraint()
+        );
+        assert_eq!(
+            &DhtArc::Arc(511 * ph.size, u32::MAX),
+            ph.partitioned_hashes[511].arc_constraint()
+        );
     }
 
     #[tokio::test]
     async fn covers_full_arc() {
         enable_tracing();
 
-        // Check that the behaviour is consistent for a reasonable range of expected values
-        for space_factor in 18u8..=31 {
-            let store = Arc::new(Kitsune2MemoryOpStore::default());
-            let ph = PartitionedHashes::try_from_store(
-                space_factor,
-                14,
-                UNIX_TIMESTAMP,
-                store,
-            )
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let ph = PartitionedHashes::try_from_store(14, UNIX_TIMESTAMP, store)
             .await
             .unwrap();
 
-            let mut start: u32 = 0;
-            for i in 0..(ph.partitioned_hashes.len() - 1) {
-                let end = start.overflowing_add(ph.size).0;
-                assert_eq!(
-                    DhtArc::Arc(start, end - 1),
-                    *ph.partitioned_hashes[i].arc_constraint()
-                );
-                start = end;
-            }
-
+        let mut start: u32 = 0;
+        for i in 0..(ph.partitioned_hashes.len() - 1) {
+            let end = start.overflowing_add(ph.size).0;
             assert_eq!(
-                DhtArc::Arc(start, u32::MAX),
-                *ph.partitioned_hashes.last().unwrap().arc_constraint()
+                DhtArc::Arc(start, end - 1),
+                *ph.partitioned_hashes[i].arc_constraint()
             );
+            start = end;
         }
-    }
 
-    #[tokio::test]
-    async fn space_factor_outside_permitted_range() {
-        // Too low, must be above 18
         assert_eq!(
-            "Hash factor must be between 18 and 32 (src: None)".to_string(),
-            PartitionedHashes::try_from_store(
-                17,
-                14,
-                UNIX_TIMESTAMP,
-                Arc::new(Kitsune2MemoryOpStore::default())
-            )
-            .await
-            .unwrap_err()
-            .to_string()
-        );
-
-        // Too high, must be below 32
-        assert_eq!(
-            "Hash factor must be between 18 and 32 (src: None)".to_string(),
-            PartitionedHashes::try_from_store(
-                33,
-                14,
-                UNIX_TIMESTAMP,
-                Arc::new(Kitsune2MemoryOpStore::default())
-            )
-            .await
-            .unwrap_err()
-            .to_string()
+            DhtArc::Arc(start, u32::MAX),
+            *ph.partitioned_hashes.last().unwrap().arc_constraint()
         );
     }
 
@@ -289,7 +243,6 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let mut ph = PartitionedHashes::try_from_store(
-            20,
             14,
             Timestamp::now(),
             store.clone(),
@@ -351,7 +304,6 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let mut ph = PartitionedHashes::try_from_store(
-            20,
             14,
             Timestamp::now(),
             store.clone(),
@@ -410,11 +362,9 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let now = Timestamp::now();
-        let ph = PartitionedHashes::try_from_store(30, 14, now, store.clone())
+        let ph = PartitionedHashes::try_from_store(14, now, store.clone())
             .await
             .unwrap();
-
-        assert_eq!(4, ph.partitioned_hashes.len());
 
         let hashes_next_update_at = ph.next_update_at();
         assert!(hashes_next_update_at >= now);
@@ -429,12 +379,11 @@ mod tests {
         enable_tracing();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let now = Timestamp::now();
-        let mut ph =
-            PartitionedHashes::try_from_store(30, 14, now, store.clone())
-                .await
-                .unwrap();
+        let mut ph = PartitionedHashes::try_from_store(14, now, store.clone())
+            .await
+            .unwrap();
 
-        assert_eq!(4, ph.partitioned_hashes.len());
+        assert_eq!(512, ph.partitioned_hashes.len());
 
         for h in ph.partitioned_hashes.iter() {
             let (start, end) = match h.arc_constraint() {
