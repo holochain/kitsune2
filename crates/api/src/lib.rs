@@ -55,6 +55,8 @@ pub use id::{AgentId, OpId, SpaceId};
 mod timestamp;
 pub use timestamp::*;
 
+pub mod fetch;
+
 pub mod op_store;
 pub use op_store::*;
 
@@ -62,3 +64,5 @@ pub mod protocol;
 
 mod url;
 pub use url::*;
+
+pub mod transport;

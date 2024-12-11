@@ -26,6 +26,10 @@ pub struct Builder {
     /// The [peer_store::PeerStoreFactory] to be used for creating
     /// [peer_store::PeerStore] instances.
     pub peer_store: peer_store::DynPeerStoreFactory,
+
+    /// The [fetch::FetchFactory] to be used for creating
+    /// [fetch::Fetch] instances.
+    pub fetch: fetch::DynFetchFactory,
 }
 
 impl Builder {
@@ -39,11 +43,13 @@ impl Builder {
             kitsune,
             space,
             peer_store,
+            fetch,
         } = self;
 
         kitsune.default_config(config)?;
         space.default_config(config)?;
         peer_store.default_config(config)?;
+        fetch.default_config(config)?;
 
         Ok(())
     }

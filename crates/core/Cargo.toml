@@ -17,6 +17,9 @@ futures = { workspace = true }
 kitsune2_api = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tracing = { workspace = true }
 
 [dev-dependencies]
+rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
