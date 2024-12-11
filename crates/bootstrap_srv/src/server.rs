@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use crate::*;
-use tiny_http::*;
 
 /// Don't allow created_at to be greater than this far away from now.
 /// 3 minutes.
@@ -33,6 +32,7 @@ pub struct BootstrapSrv {
     cont: Arc<std::sync::atomic::AtomicBool>,
     workers: Vec<std::thread::JoinHandle<std::io::Result<()>>>,
     addr: std::net::SocketAddr,
+    server: Option<Server>,
 }
 
 impl Drop for BootstrapSrv {
@@ -54,20 +54,19 @@ impl BootstrapSrv {
 
         // tiny_http configuration
         let sconf = ServerConfig {
-            addr: ConfigListenAddr::IP(vec![config.listen_address]),
+            addr: config.listen_address,
             // TODO make the server able to accept TLS certificates
-            ssl: None,
+            // ssl: None,
         };
 
         // virtual-memory-like file system storage for infos
         let store = Arc::new(crate::Store::default());
 
         // start the actual http server
-        let server =
-            Arc::new(Server::new(sconf).map_err(std::io::Error::other)?);
+        let server = Server::new(sconf).map_err(std::io::Error::other)?;
 
         // get the address that was assigned
-        let addr = server.server_addr().to_ip().expect("BadAddress");
+        let addr = server.server_addr();
         println!("Listening at {:?}", addr);
 
         // spawn our worker threads
@@ -76,10 +75,10 @@ impl BootstrapSrv {
             let config = config.clone();
             let cont = cont.clone();
             let store = store.clone();
-            let server = server.clone();
+            let recv = server.receiver().clone();
             let space_map = space_map.clone();
             workers.push(std::thread::spawn(move || {
-                worker(config, cont, store, server, space_map)
+                worker(config, cont, store, recv, space_map)
             }));
         }
 
@@ -94,6 +93,7 @@ impl BootstrapSrv {
             cont,
             workers,
             addr,
+            server: Some(server),
         })
     }
 
@@ -102,6 +102,7 @@ impl BootstrapSrv {
     pub fn shutdown(&mut self) -> std::io::Result<()> {
         let mut is_err = false;
         self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
+        drop(self.server.take());
         for worker in self.workers.drain(..) {
             if worker.join().is_err() {
                 is_err = true;
@@ -146,40 +147,25 @@ fn worker(
     config: Arc<Config>,
     cont: Arc<std::sync::atomic::AtomicBool>,
     store: Arc<crate::Store>,
-    server: Arc<Server>,
+    recv: HttpReceiver,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
     let _g = ThreadGuard("WARN: worker thread has ended");
 
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
-        let req = match server.recv_timeout(config.request_listen_duration)? {
-            Some(req) => req,
-            None => continue,
+        let (req, res) = match recv.recv() {
+            None => break,
+            Some(r) => r,
         };
-
-        let path = req
-            .url()
-            .split('/')
-            .rev()
-            .filter_map(|p| {
-                if p.is_empty() {
-                    None
-                } else {
-                    Some(p.to_string())
-                }
-            })
-            .collect::<Vec<_>>();
 
         let handler = Handler {
             config: &config,
             store: &store,
             space_map: &space_map,
-            method: req.method().as_str().to_string(),
-            path,
-            req,
+            res,
         };
 
-        handler.handle()?;
+        handler.handle(req)?;
     }
     Ok(())
 }
@@ -188,15 +174,13 @@ struct Handler<'lt> {
     config: &'lt Config,
     store: &'lt crate::Store,
     space_map: &'lt crate::SpaceMap,
-    method: String,
-    path: Vec<String>,
-    req: tiny_http::Request,
+    res: HttpRespondCb,
 }
 
 impl<'lt> Handler<'lt> {
     /// Wrap the handle call so we can respond to the client with errors.
-    pub fn handle(mut self) -> std::io::Result<()> {
-        match self.handle_inner() {
+    pub fn handle(mut self, req: HttpRequest) -> std::io::Result<()> {
+        match self.handle_inner(req) {
             Ok((status, body)) => self.respond(status, body),
             Err(err) => self.respond(
                 500,
@@ -206,47 +190,46 @@ impl<'lt> Handler<'lt> {
                 .into_bytes(),
             ),
         }
+
+        Ok(())
     }
 
     /// Dispatch to the correct handlers.
-    fn handle_inner(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
-        if let Some(cmd) = self.path.pop() {
-            match (self.method.as_str(), cmd.as_str()) {
-                ("GET", "health") => {
-                    return Ok((200, b"{}".to_vec()));
-                }
-                ("GET", "bootstrap") => {
-                    return self.handle_boot_get();
-                }
-                ("PUT", "bootstrap") => {
-                    return self.handle_boot_put();
-                }
-                _ => (),
+    fn handle_inner(
+        &mut self,
+        req: HttpRequest,
+    ) -> std::io::Result<(u16, Vec<u8>)> {
+        match req {
+            HttpRequest::HealthGet => Ok((200, b"{}".to_vec())),
+            HttpRequest::BootstrapGet { space } => self.handle_boot_get(space),
+            HttpRequest::BootstrapPut { space, agent, body } => {
+                self.handle_boot_put(space, agent, body)
             }
         }
-        Ok((400, b"{\"error\":\"bad request\"}".to_vec()))
     }
 
     /// Respond to a request for the agent infos within a space.
-    fn handle_boot_get(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
-        let space = self.path_to_bytes()?;
-
+    fn handle_boot_get(
+        &mut self,
+        space: bytes::Bytes,
+    ) -> std::io::Result<(u16, Vec<u8>)> {
         let res = self.space_map.read(&space)?;
 
         Ok((200, res))
     }
 
     /// Validate an incoming agent info and put it in the store if appropriate.
-    fn handle_boot_put(&mut self) -> std::io::Result<(u16, Vec<u8>)> {
+    fn handle_boot_put(
+        &mut self,
+        space: bytes::Bytes,
+        agent: bytes::Bytes,
+        body: bytes::Bytes,
+    ) -> std::io::Result<(u16, Vec<u8>)> {
         use ed25519_dalek::*;
 
         let now = crate::now();
 
-        let space = self.path_to_bytes()?;
-        let agent = self.path_to_bytes()?;
-
-        let info_raw = self.read_body()?;
-        let info = crate::ParsedEntry::try_from_slice(&info_raw)?;
+        let info = crate::ParsedEntry::try_from_slice(&body)?;
 
         // validate agent matches url path
         if *agent != *info.agent.as_bytes() {
@@ -295,7 +278,7 @@ impl<'lt> Handler<'lt> {
         let r = if info.is_tombstone {
             None
         } else {
-            Some(self.store.write(&info_raw)?)
+            Some(self.store.write(&body)?)
         };
 
         self.space_map.update(
@@ -307,60 +290,9 @@ impl<'lt> Handler<'lt> {
         Ok((200, b"{}".to_vec()))
     }
 
-    /// Helper to get the next path segment as Bytes.
-    fn path_to_bytes(&mut self) -> std::io::Result<bytes::Bytes> {
-        use base64::prelude::*;
-
-        let p = match self.path.pop() {
-            Some(p) => p,
-            None => return Err(std::io::Error::other("InvalidPathSegment")),
-        };
-
-        Ok(bytes::Bytes::copy_from_slice(
-            &BASE64_URL_SAFE_NO_PAD
-                .decode(p)
-                .map_err(std::io::Error::other)?,
-        ))
-    }
-
-    /// Read the body while respecting our max message size.
-    fn read_body(&mut self) -> std::io::Result<Vec<u8>> {
-        // these are the same right now, but *could* be different
-        const MAX_INFO_SIZE: usize = 1024;
-        const READ_BUF_SIZE: usize = 1024;
-
-        let mut buf = [0; READ_BUF_SIZE];
-        let mut out = Vec::new();
-        loop {
-            let read = match self.req.as_reader().read(&mut buf[..]) {
-                Ok(read) => read,
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
-            if read == 0 {
-                return Ok(out);
-            }
-            out.extend_from_slice(&buf[..read]);
-            if out.len() > MAX_INFO_SIZE {
-                return Err(std::io::Error::other("InfoTooLarge"));
-            }
-        }
-    }
-
     /// Process the response.
-    fn respond(self, status: u16, bytes: Vec<u8>) -> std::io::Result<()> {
-        let len = bytes.len();
-        self.req.respond(Response::new(
-            StatusCode(status),
-            vec![Header {
-                field: HeaderField::from_bytes(b"Content-Type").unwrap(),
-                value: std::str::FromStr::from_str("application/json").unwrap(),
-            }],
-            std::io::Cursor::new(bytes),
-            Some(len),
-            None,
-        ))
+    fn respond(self, status: u16, body: Vec<u8>) {
+        let Self { res, .. } = self;
+        res(HttpResponse { status, body });
     }
 }

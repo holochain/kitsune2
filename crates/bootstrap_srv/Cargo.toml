@@ -11,6 +11,8 @@ categories = ["network-programming"]
 edition = "2021"
 
 [dependencies]
+async-channel = { workspace = true }
+axum = { workspace = true, default-features = false, features = ["http1", "tokio"] }
 base64 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
@@ -20,7 +22,7 @@ num_cpus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-tiny_http = { workspace = true }
+tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 ureq = { workspace = true }
