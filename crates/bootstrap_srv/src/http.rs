@@ -47,6 +47,7 @@ impl HttpReceiver {
 
 pub struct ServerConfig {
     pub addr: std::net::SocketAddr,
+    pub worker_thread_count: usize,
 }
 
 pub struct Server {
@@ -116,8 +117,8 @@ fn tokio_thread(
         .build()
         .unwrap()
         .block_on(async move {
-            // actually use the worker thread count??
-            let (h_send, h_recv) = async_channel::bounded(1024);
+            let (h_send, h_recv) =
+                async_channel::bounded(config.worker_thread_count);
 
             let app: Router = Router::new()
                 .route("/health", routing::get(handle_health_get))
@@ -210,12 +211,10 @@ async fn handle_boot_get(
     extract::Path(space): extract::Path<String>,
     extract::State(h_send): extract::State<HSend>,
 ) -> response::Response {
-    use base64::prelude::*;
-
-    // TODO FIX UNWRAP
-    let space = bytes::Bytes::copy_from_slice(
-        &BASE64_URL_SAFE_NO_PAD.decode(&space).unwrap(),
-    );
+    let space = match b64_to_bytes(&space) {
+        Ok(space) => space,
+        Err(err) => return err,
+    };
     handle_dispatch(&h_send, HttpRequest::BootstrapGet { space }).await
 }
 
@@ -224,15 +223,32 @@ async fn handle_boot_put(
     extract::State(h_send): extract::State<HSend>,
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
-    use base64::prelude::*;
-
-    // TODO FIX UNWRAP
-    let space = bytes::Bytes::copy_from_slice(
-        &BASE64_URL_SAFE_NO_PAD.decode(&space).unwrap(),
-    );
-    let agent = bytes::Bytes::copy_from_slice(
-        &BASE64_URL_SAFE_NO_PAD.decode(&agent).unwrap(),
-    );
+    let space = match b64_to_bytes(&space) {
+        Ok(space) => space,
+        Err(err) => return err,
+    };
+    let agent = match b64_to_bytes(&agent) {
+        Ok(agent) => agent,
+        Err(err) => return err,
+    };
     handle_dispatch(&h_send, HttpRequest::BootstrapPut { space, agent, body })
         .await
+}
+
+fn b64_to_bytes(
+    s: &str,
+) -> std::result::Result<bytes::Bytes, response::Response<body::Body>> {
+    use base64::prelude::*;
+    Ok(bytes::Bytes::copy_from_slice(
+        &match BASE64_URL_SAFE_NO_PAD.decode(s) {
+            Ok(b) => b,
+            Err(err) => {
+                return Err(HttpResponse {
+                    status: 400,
+                    body: err.to_string().into_bytes(),
+                }
+                .respond())
+            }
+        },
+    ))
 }

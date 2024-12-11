@@ -55,6 +55,7 @@ impl BootstrapSrv {
         // tiny_http configuration
         let sconf = ServerConfig {
             addr: config.listen_address,
+            worker_thread_count: config.worker_thread_count,
             // TODO make the server able to accept TLS certificates
             // ssl: None,
         };
