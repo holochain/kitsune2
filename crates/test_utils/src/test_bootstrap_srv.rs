@@ -69,15 +69,23 @@ impl Stat {
 
     /// Drop the server instance if there are no longer any keep-alive refs.
     pub fn handle_drop(&self, key: Arc<str>) {
-        let mut lock = self.0.lock().unwrap();
-        if let Some((srv, mut weak)) = lock.remove(&key) {
-            // if there are still any strong references, we don't actually
-            // want to delete it.
-            weak.retain(|weak| weak.strong_count() > 0);
-            if !weak.is_empty() {
-                lock.insert(key, (srv, weak));
+        let mut do_not_drop_while_mutex_locked: Option<BootstrapSrv> = None;
+
+        {
+            let mut lock = self.0.lock().unwrap();
+            if let Some((srv, mut weak)) = lock.remove(&key) {
+                // if there are still any strong references, we don't actually
+                // want to delete it.
+                weak.retain(|weak| weak.strong_count() > 0);
+                if !weak.is_empty() {
+                    lock.insert(key, (srv, weak));
+                } else {
+                    do_not_drop_while_mutex_locked = Some(srv);
+                }
             }
         }
+
+        drop(do_not_drop_while_mutex_locked)
     }
 
     /// Get the address for connecting to this bootstrap server.

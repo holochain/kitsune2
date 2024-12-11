@@ -14,20 +14,54 @@ const MOD_NAME: &str = "CoreBootstrap";
 pub struct CoreBootstrapConfig {
     /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
     ///
-    /// This defaults to a "test:" scheme with a thread id. This
+    /// # Feature `test_utils`
+    ///
+    /// If the `test_utils` feature is enabled, the default will change.
+    ///
+    /// This now defaults to a "test:" scheme with a thread id. This
     /// gives us separate buckets to partition rust tests that just
     /// happen to be running in the same process. If you are starting
     /// kitsune nodes across multiple threads that you want to communicate
     /// with each other for testing, you'll need to specify an explicit
     /// `test:<my-unique-string-here>` to this config.
+    ///
+    /// It is still valid to pass a real server url.
     pub server_url: String,
+
+    /// Minimum backoff in seconds to use for both push and poll retry loops.
+    /// Default: 5 seconds.
+    pub backoff_min_s: u32,
+
+    /// Maximum backoff in seconds to use for both push and poll retry loops.
+    /// Default: 5 minutes.
+    pub backoff_max_s: u32,
 }
 
 impl Default for CoreBootstrapConfig {
     fn default() -> Self {
+        #[cfg(not(feature = "test_utils"))]
+        let server_url = "https://boot.kitsu.ne".into();
+
+        #[cfg(feature = "test_utils")]
+        let server_url = format!("test:{:?}", std::thread::current().id());
+
         Self {
-            server_url: format!("test:{:?}", std::thread::current().id()),
+            server_url,
+            backoff_min_s: 5,
+            backoff_max_s: 60 * 5,
         }
+    }
+}
+
+impl CoreBootstrapConfig {
+    /// Get the minimum backoff duration.
+    pub fn backoff_min(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.backoff_min_s as u64)
+    }
+
+    /// Get the maximum backoff duration.
+    pub fn backoff_max(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.backoff_max_s as u64)
     }
 }
 
@@ -99,12 +133,13 @@ impl CoreBootstrap {
         space: SpaceId,
     ) -> Self {
         #[cfg(not(feature = "test_utils"))]
-        let server_url: Arc<str> = config.server_url.into_boxed_str().into();
+        let server_url: Arc<str> =
+            config.server_url.clone().into_boxed_str().into();
 
         #[cfg(feature = "test_utils")]
         let (server_url, _test_server) = {
             let mut server_url: Arc<str> =
-                config.server_url.into_boxed_str().into();
+                config.server_url.clone().into_boxed_str().into();
             let test_server = if server_url.starts_with("test:") {
                 let test_server = TestBootstrapSrv::new(server_url);
                 server_url = test_server.server_address().into();
@@ -119,6 +154,7 @@ impl CoreBootstrap {
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
 
         let push_task = tokio::task::spawn(push_task(
+            config.clone(),
             server_url.clone(),
             push_send.clone(),
             push_recv,
@@ -126,6 +162,7 @@ impl CoreBootstrap {
 
         let poll_task = tokio::task::spawn(poll_task(
             builder,
+            config,
             server_url,
             space.clone(),
             peer_store,
@@ -155,17 +192,16 @@ impl Bootstrap for CoreBootstrap {
 }
 
 async fn push_task(
+    config: CoreBootstrapConfig,
     server_url: Arc<str>,
     push_send: PushSend,
     mut push_recv: PushRecv,
 ) {
-    const MIN: std::time::Duration = std::time::Duration::from_secs(5);
-    const MAX: std::time::Duration = std::time::Duration::from_secs(60 * 5);
     let mut wait = None;
 
     while let Some(info) = push_recv.recv().await {
         let url =
-            format!("{server_url}/bootstrap/{}/{}", &info.space, &info.agent,);
+            format!("{server_url}/bootstrap/{}/{}", &info.space, &info.agent);
         let enc = match info.encode() {
             Err(_) => continue,
             Ok(enc) => enc,
@@ -176,21 +212,31 @@ async fn push_task(
         .await
         {
             Ok(Ok(_)) => {
+                // the put was successful, we don't need to wait
+                // before sending the next info if it is ready
                 wait = None;
             }
             _ => {
-                // send it back to try again
-                let _ = push_send.try_send(info);
+                let now = Timestamp::now();
+
+                // the put failed, send it back to try again if not expired
+                if info.expires_at > now {
+                    let _ = push_send.try_send(info);
+                }
+
+                // we need to configure a backoff so we don't hammer the server
                 match wait {
-                    None => wait = Some(MIN),
+                    None => wait = Some(config.backoff_min()),
                     Some(p) => {
                         let mut p = p * 2;
-                        if p > MAX {
-                            p = MAX;
+                        if p > config.backoff_max() {
+                            p = config.backoff_max();
                         }
                         wait = Some(p);
                     }
                 }
+
+                // wait for the backoff time
                 if let Some(wait) = &wait {
                     tokio::time::sleep(*wait).await;
                 }
@@ -201,12 +247,12 @@ async fn push_task(
 
 async fn poll_task(
     builder: Arc<builder::Builder>,
+    config: CoreBootstrapConfig,
     server_url: Arc<str>,
     space: SpaceId,
     peer_store: peer_store::DynPeerStore,
 ) {
-    const MAX: std::time::Duration = std::time::Duration::from_secs(60 * 5);
-    let mut wait = std::time::Duration::from_secs(5);
+    let mut wait = config.backoff_min();
 
     loop {
         let url = format!("{server_url}/bootstrap/{space}");
@@ -223,7 +269,7 @@ async fn poll_task(
                 data.as_bytes(),
             ) {
                 // count decoding a success, and set the wait to max
-                wait = MAX;
+                wait = config.backoff_max();
 
                 let list = list
                     .into_iter()
@@ -238,10 +284,13 @@ async fn poll_task(
         }
 
         wait *= 2;
-        if wait > MAX {
-            wait = MAX;
+        if wait > config.backoff_max() {
+            wait = config.backoff_max();
         }
 
         tokio::time::sleep(wait).await;
     }
 }
+
+#[cfg(test)]
+mod test;
