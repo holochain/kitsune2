@@ -51,6 +51,7 @@ use kitsune2_api::{
     builder,
     config::ModConfig,
     fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
+    peer_store,
     transport::Transport,
     AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
@@ -60,6 +61,57 @@ use tokio::{
 };
 
 const MOD_NAME: &str = "Fetch";
+
+/// A production-ready fetch module.
+#[derive(Debug)]
+pub struct CoreFetchFactory {}
+
+impl CoreFetchFactory {
+    /// Construct a new CoreFetchFactory.
+    pub fn create() -> DynFetchFactory {
+        Arc::new(Self {})
+    }
+}
+
+impl FetchFactory for CoreFetchFactory {
+    fn default_config(
+        &self,
+        config: &mut kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        config.add_default_module_config::<CoreFetchConfig>(
+            MOD_NAME.to_string(),
+        )?;
+        Ok(())
+    }
+
+    fn create(
+        &self,
+        builder: Arc<builder::Builder>,
+        space_id: SpaceId,
+        _peer_store: peer_store::DynPeerStore,
+    ) -> BoxFut<'static, K2Result<DynFetch>> {
+        #[derive(Debug)]
+        struct TransportPlaceholder;
+        impl Transport for TransportPlaceholder {
+            fn send_module(
+                &self,
+                _peer: Url,
+                _space: SpaceId,
+                _module: String,
+                _data: bytes::Bytes,
+            ) -> BoxFut<'_, K2Result<()>> {
+                Box::pin(async move { todo!() })
+            }
+        }
+        let tx = Arc::new(TransportPlaceholder);
+
+        Box::pin(async move {
+            let config = builder.config.get_module_config(MOD_NAME)?;
+            let out: DynFetch = Arc::new(CoreFetch::new(config, space_id, tx));
+            Ok(out)
+        })
+    }
+}
 
 /// Configuration parameters for [CoreFetchFactory].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -89,8 +141,12 @@ type DynTransport = Arc<dyn Transport>;
 struct CoreFetch(Inner);
 
 impl CoreFetch {
-    fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
-        Self(Inner::spawn_fetch_tasks(config, transport))
+    fn new(
+        config: CoreFetchConfig,
+        space_id: SpaceId,
+        transport: DynTransport,
+    ) -> Self {
+        Self(Inner::spawn_fetch_tasks(config, space_id, transport))
     }
 }
 
@@ -144,6 +200,7 @@ struct Inner {
 impl Inner {
     pub fn spawn_fetch_tasks(
         config: CoreFetchConfig,
+        space_id: SpaceId,
         transport: DynTransport,
     ) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
@@ -158,10 +215,11 @@ impl Inner {
         let mut fetch_tasks = Vec::new();
         for _ in 0..config.parallel_request_count {
             let task = tokio::task::spawn(Inner::fetch_task(
+                state.clone(),
                 fetch_queue_tx.clone(),
                 fetch_queue_rx.clone(),
+                space_id.clone(),
                 transport.clone(),
-                state.clone(),
             ));
             fetch_tasks.push(task);
         }
@@ -174,10 +232,11 @@ impl Inner {
     }
 
     async fn fetch_task(
+        state: Arc<Mutex<State>>,
         fetch_request_tx: Sender<FetchRequest>,
         fetch_request_rx: Arc<tokio::sync::Mutex<Receiver<FetchRequest>>>,
+        space_id: SpaceId,
         transport: DynTransport,
-        state: Arc<Mutex<State>>,
     ) {
         while let Some((op_id, agent_id)) =
             fetch_request_rx.lock().await.recv().await
@@ -197,15 +256,40 @@ impl Inner {
             // Send request if agent is not on cool-down list.
             if !is_agent_cooling_down {
                 // Send fetch request to agent.
+
+                // TODO: uncomment when peer store is available
+                // let peer = match peer_store.get(agent_id.clone()).await {
+                //     Ok(Some(peer)) => match &peer.url {
+                //         Some(url) => url.clone(),
+                //         None => {
+                //             tracing::warn!(
+                //                 "agent {agent_id} no longer in peer store"
+                //             );
+                //             continue;
+                //         }
+                //     },
+                //     Ok(None) => {
+                //         tracing::warn!(
+                //             "could not find agent id {agent_id} in peer store"
+                //         );
+                //         continue;
+                //     }
+                //     Err(err) => {
+                //         tracing::warn!("could not get agent id {agent_id} from peer store: {err}");
+                //         continue;
+                //     }
+                // };
+
                 // TODO: update when transport is available
                 let mut data = bytes::BytesMut::new();
                 data.put(op_id.clone().0 .0);
                 data.put(agent_id.clone().0 .0);
                 let data = data.freeze();
+
                 if let Err(err) = transport
                     .send_module(
-                        Url::from_str("wss://0.0.0.0:443").unwrap(),
-                        SpaceId::from(bytes::Bytes::new()),
+                        Url::from_str("ws://0.0.0.0:443").unwrap(),
+                        space_id.clone(),
                         MOD_NAME.to_string(),
                         data,
                     )
@@ -273,55 +357,6 @@ impl CoolDownList {
             }
             None => false,
         }
-    }
-}
-
-/// A production-ready fetch module.
-#[derive(Debug)]
-pub struct CoreFetchFactory {}
-
-impl CoreFetchFactory {
-    /// Construct a new CoreFetchFactory.
-    pub fn create() -> DynFetchFactory {
-        Arc::new(Self {})
-    }
-}
-
-impl FetchFactory for CoreFetchFactory {
-    fn default_config(
-        &self,
-        config: &mut kitsune2_api::config::Config,
-    ) -> K2Result<()> {
-        config.add_default_module_config::<CoreFetchConfig>(
-            MOD_NAME.to_string(),
-        )?;
-        Ok(())
-    }
-
-    fn create(
-        &self,
-        builder: Arc<builder::Builder>,
-    ) -> BoxFut<'static, K2Result<DynFetch>> {
-        #[derive(Debug)]
-        struct TransportPlaceholder;
-        impl Transport for TransportPlaceholder {
-            fn send_module(
-                &self,
-                _peer: Url,
-                _space: SpaceId,
-                _module: String,
-                _data: bytes::Bytes,
-            ) -> BoxFut<'_, K2Result<()>> {
-                Box::pin(async move { todo!() })
-            }
-        }
-        let tx = Arc::new(TransportPlaceholder);
-
-        Box::pin(async move {
-            let config = builder.config.get_module_config(MOD_NAME)?;
-            let out: DynFetch = Arc::new(CoreFetch::new(config, tx));
-            Ok(out)
-        })
     }
 }
 

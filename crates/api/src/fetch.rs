@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::{builder, config, AgentId, BoxFut, K2Result, OpId};
+use crate::{
+    builder, config, peer_store::DynPeerStore, AgentId, BoxFut, K2Result, OpId,
+    SpaceId,
+};
 
 /// Trait for implementing a fetch module to fetch ops from other agents.
 pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
@@ -27,6 +30,8 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
+        space_id: SpaceId,
+        peer_store: DynPeerStore,
     ) -> BoxFut<'static, K2Result<DynFetch>>;
 }
 

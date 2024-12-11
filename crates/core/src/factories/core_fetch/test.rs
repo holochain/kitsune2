@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use kitsune2_api::{fetch::Fetch, id::Id, AgentId, K2Error, OpId};
+use kitsune2_api::{fetch::Fetch, id::Id, AgentId, K2Error, OpId, SpaceId};
 use rand::Rng;
 use tokio::sync::Mutex;
 
@@ -52,7 +52,11 @@ impl Transport for MockTransport {
 async fn fetch_queue() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let mut fetch = CoreFetch::new(
+        config.clone(),
+        SpaceId::from(bytes::Bytes::new()),
+        mock_transport.clone(),
+    );
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
@@ -120,7 +124,11 @@ async fn fetch_queue() {
 async fn happy_multi_op_fetch_from_single_agent() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let mut fetch = CoreFetch::new(
+        config.clone(),
+        SpaceId::from(bytes::Bytes::new()),
+        mock_transport.clone(),
+    );
 
     let num_ops: usize = 50;
     let op_list = create_op_list(num_ops as u16);
@@ -158,7 +166,11 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let mut fetch = CoreFetch::new(
+        config.clone(),
+        SpaceId::from(bytes::Bytes::new()),
+        mock_transport.clone(),
+    );
 
     let op_list_1 = create_op_list(10);
     let agent_1 = random_agent_id();
@@ -217,7 +229,11 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
 async fn unresponsive_agents_are_put_on_cool_down_list() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let mut fetch = CoreFetch::new(
+        config.clone(),
+        SpaceId::from(bytes::Bytes::new()),
+        mock_transport.clone(),
+    );
 
     let op_list = create_op_list(1);
     let agent = random_agent_id();
@@ -251,7 +267,11 @@ async fn agent_cooling_down_is_removed_from_list() {
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
-    let fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let fetch = CoreFetch::new(
+        config.clone(),
+        SpaceId::from(bytes::Bytes::new()),
+        mock_transport.clone(),
+    );
     let agent_id = random_agent_id();
 
     fetch
@@ -287,7 +307,11 @@ async fn agent_cooling_down_is_removed_from_list() {
 async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
-    let mut fetch = CoreFetch::new(config.clone(), mock_transport.clone());
+    let mut fetch = CoreFetch::new(
+        config.clone(),
+        SpaceId::from(bytes::Bytes::new()),
+        mock_transport.clone(),
+    );
 
     let op_list_1 = create_op_list(10);
     let agent_1 = random_agent_id();
