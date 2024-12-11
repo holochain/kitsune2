@@ -60,13 +60,6 @@ async fn fetch_queue() {
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let mock_transport = MockTransport::new(false);
     let config = CoreFetchConfig::default();
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
-    let fetch = CoreFetch::new(
-        config.clone(),
-        space_id.clone(),
-        peer_store.clone(),
-        mock_transport.clone(),
-    );
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
@@ -74,11 +67,17 @@ async fn fetch_queue() {
     let agent_info = AgentBuild {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
-        space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    peer_store.insert(vec![agent_info]).await.unwrap();
+    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        agent_info.space.clone(),
+        peer_store.clone(),
+        mock_transport.clone(),
+    );
 
     let requests_sent = mock_transport.requests_sent.lock().unwrap().clone();
     assert!(requests_sent.is_empty());
@@ -144,28 +143,26 @@ async fn fetch_queue() {
 async fn happy_multi_op_fetch_from_single_agent() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SpaceId::from(bytes::Bytes::new()),
-        peer_store.clone(),
-        mock_transport.clone(),
-    );
 
     let num_ops: usize = 50;
     let op_list = create_op_list(num_ops as u16);
     let agent_id = random_agent_id();
-
     let agent_info = AgentBuild {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
-        space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    peer_store.insert(vec![agent_info]).await.unwrap();
+    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        agent_info.space.clone(),
+        peer_store.clone(),
+        mock_transport.clone(),
+    );
 
     let mut expected_ops = Vec::new();
     op_list
@@ -200,18 +197,12 @@ async fn happy_multi_op_fetch_from_single_agent() {
 async fn happy_multi_op_fetch_from_multiple_agents() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig {
         parallel_request_count: 5,
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SpaceId::from(bytes::Bytes::new()),
-        peer_store.clone(),
-        mock_transport.clone(),
-    );
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
 
     let op_list_1 = create_op_list(10);
     let agent_1 = random_agent_id();
@@ -246,6 +237,12 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
         .insert(vec![agent_info_1, agent_info_2, agent_info_3])
         .await
         .unwrap();
+    let fetch = CoreFetch::new(
+        config.clone(),
+        space_id.clone(),
+        peer_store.clone(),
+        mock_transport.clone(),
+    );
 
     let mut expected_ops = Vec::new();
     op_list_1
@@ -297,26 +294,25 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
 async fn unresponsive_agents_are_put_on_cool_down_list() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SpaceId::from(bytes::Bytes::new()),
-        peer_store.clone(),
-        mock_transport.clone(),
-    );
 
     let op_list = create_op_list(1);
     let agent_id = random_agent_id();
     let agent_info = AgentBuild {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
-        space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    peer_store.insert(vec![agent_info]).await.unwrap();
+    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        agent_info.space.clone(),
+        peer_store.clone(),
+        mock_transport.clone(),
+    );
 
     fetch.add_ops(op_list, agent_id.clone()).await.unwrap();
 
@@ -344,12 +340,13 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 async fn agent_cooling_down_is_removed_from_list() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig {
         cool_down_interval_ms: 10,
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
+
     let fetch = CoreFetch::new(
         config.clone(),
         space_id,
@@ -391,15 +388,9 @@ async fn agent_cooling_down_is_removed_from_list() {
 async fn multi_op_fetch_from_multiple_unresponsive_agents() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
-    let fetch = CoreFetch::new(
-        config.clone(),
-        space_id.clone(),
-        peer_store.clone(),
-        mock_transport.clone(),
-    );
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
 
     let op_list_1 = create_op_list(10);
     let agent_1 = random_agent_id();
@@ -433,6 +424,13 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
         .insert(vec![agent_info_1, agent_info_2, agent_info_3])
         .await
         .unwrap();
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        space_id.clone(),
+        peer_store.clone(),
+        mock_transport.clone(),
+    );
 
     // Add all ops to the queue.
     fetch
