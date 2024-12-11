@@ -156,13 +156,15 @@ impl Fetch for CoreFetch {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // Add ops to set.
-            let ops = &mut self.state.lock().unwrap().ops;
-            ops.extend(
-                op_list
-                    .clone()
-                    .into_iter()
-                    .map(|op_id| (op_id.clone(), source.clone())),
-            );
+            {
+                let ops = &mut self.state.lock().unwrap().ops;
+                ops.extend(
+                    op_list
+                        .clone()
+                        .into_iter()
+                        .map(|op_id| (op_id.clone(), source.clone())),
+                );
+            }
 
             // Pass ops to fetch tasks.
             op_list.into_iter().for_each(|op_id| {
