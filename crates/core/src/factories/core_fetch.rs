@@ -23,7 +23,7 @@
 //! one by one through the channel to the receiving tasks running in parallel. The flow
 //! of sending fetch requests is as follows:
 //!
-//! - Await fetch requests for ([OpId], [AgentId]) from an internal channel.
+//! - Await fetch requests for ([OpId], [AgentId]) from the queue.
 //! - Check if requested op id/agent id is still on the list of ops to fetch.
 //!     - In case the op has been received in the meantime and no longer needs to be fetched,
 //!       do nothing.
@@ -31,14 +31,14 @@
 //! - Check if agent is on a cool-down list of unresponsive agents.
 //! - Dispatch request for op id from agent to transport module.
 //! - If agent is unresponsive, put them on cool-down list.
-//! - Re-send requested ([OpId], [AgentId]) to the internal channel again. It will be removed
+//! - Re-send requested ([OpId], [AgentId]) to the queue again. It will be removed
 //!   from the list of ops to fetch if it is received in the meantime, and thus prevent a redundant
 //!   fetch request.
 //!
 //! ### Incoming op task
 //!
 //! - Incoming op is written to the data store.
-//! - Once persisted successfully, op is removed from the data object.
+//! - Once persisted successfully, op is removed from the set of ops to fetch.
 
 use std::{
     collections::{HashMap, HashSet},
