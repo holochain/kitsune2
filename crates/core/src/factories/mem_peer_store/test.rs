@@ -1,4 +1,4 @@
-use super::*;
+use super::{test_utils::AgentBuild, *};
 use kitsune2_api::id::Id;
 
 #[inline(always)]
@@ -8,7 +8,6 @@ fn create() -> Inner {
 
 const AGENT_1: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent1")));
 const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
-const SPACE_1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space1")));
 
 /// Sneak some test-data into the url field (as the peer id)
 /// this will let us validate store actions when we extract
@@ -21,68 +20,6 @@ fn sneak_url(s: &str) -> Url {
 /// that was put in via the [sneak_url] function.
 fn unsneak_url(u: &Url) -> String {
     u.peer_id().unwrap().into()
-}
-
-#[derive(Debug, Default)]
-struct AgentBuild {
-    pub agent: Option<AgentId>,
-    pub space: Option<SpaceId>,
-    pub created_at: Option<Timestamp>,
-    pub expires_at: Option<Timestamp>,
-    pub is_tombstone: Option<bool>,
-    pub url: Option<Option<Url>>,
-    pub storage_arc: Option<StorageArc>,
-}
-
-impl AgentBuild {
-    pub fn build(self) -> Arc<AgentInfoSigned> {
-        static NEXT_AGENT: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1);
-        let agent = self.agent.unwrap_or_else(|| {
-            let a =
-                NEXT_AGENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let a = a.to_le_bytes();
-            AgentId(Id(bytes::Bytes::copy_from_slice(&a)))
-        });
-        let space = self.space.unwrap_or_else(|| SPACE_1.clone());
-        let created_at = self.created_at.unwrap_or_else(Timestamp::now);
-        let expires_at = self.expires_at.unwrap_or_else(|| {
-            created_at + std::time::Duration::from_secs(60 * 20)
-        });
-        let is_tombstone = self.is_tombstone.unwrap_or(false);
-        let url = self.url.unwrap_or(None);
-        let storage_arc = self.storage_arc.unwrap_or(StorageArc::FULL);
-        let agent_info = serde_json::to_string(&AgentInfo {
-            agent,
-            space,
-            created_at,
-            expires_at,
-            is_tombstone,
-            url,
-            storage_arc,
-        })
-        .unwrap();
-        #[derive(serde::Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Enc {
-            agent_info: String,
-            signature: String,
-        }
-        let encoded = serde_json::to_string(&Enc {
-            agent_info,
-            signature: "".into(),
-        })
-        .unwrap();
-        #[derive(Debug)]
-        struct V;
-        impl Verifier for V {
-            fn verify(&self, _i: &AgentInfo, _m: &[u8], _s: &[u8]) -> bool {
-                true
-            }
-        }
-        // going through this trouble to use decode because it's sync
-        AgentInfoSigned::decode(&V, encoded.as_bytes()).unwrap()
-    }
 }
 
 #[test]
