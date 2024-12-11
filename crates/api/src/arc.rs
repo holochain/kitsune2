@@ -193,6 +193,15 @@ mod tests {
     }
 
     #[test]
+    fn contains_empty_arc_no_locations() {
+        let arc = DhtArc::Empty;
+
+        assert!(!arc.contains(0));
+        assert!(!arc.contains(u32::MAX));
+        assert!(!arc.contains(u32::MAX / 2));
+    }
+
+    #[test]
     fn arc_dist_edge_cases() {
         type Dist = u32;
         type Loc = u32;
