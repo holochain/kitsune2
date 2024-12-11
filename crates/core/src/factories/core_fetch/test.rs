@@ -242,17 +242,16 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
-            if !mock_transport.requests_sent.lock().await.is_empty() {
-                if fetch
+            if !mock_transport.requests_sent.lock().await.is_empty()
+                && fetch
                     .0
                     .state
                     .lock()
                     .unwrap()
                     .cool_down_list
                     .is_agent_cooling_down(&agent)
-                {
-                    break;
-                }
+            {
+                break;
             }
         }
     })
