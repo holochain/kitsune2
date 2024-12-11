@@ -42,7 +42,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Instant,
 };
 
@@ -55,10 +55,7 @@ use kitsune2_api::{
     AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
 use tokio::{
-    sync::{
-    mpsc::{channel, Receiver, Sender},
-    Mutex,
-    },
+    sync::mpsc::{channel, Receiver, Sender},
     task::JoinHandle,
 };
 
@@ -105,7 +102,7 @@ impl Fetch for CoreFetch {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // Add ops to set.
-            let ops = &mut self.0.state.lock().await.ops;
+            let ops = &mut self.0.state.lock().unwrap().ops;
             ops.extend(
                 op_list
                     .clone()
@@ -151,7 +148,7 @@ impl Inner {
     ) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
         let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(16_384);
-        let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
+        let fetch_queue_rx = Arc::new(tokio::sync::Mutex::new(fetch_queue_rx));
 
         let state = Arc::new(Mutex::new(State {
             ops: HashSet::new(),
@@ -178,30 +175,27 @@ impl Inner {
 
     async fn fetch_task(
         fetch_request_tx: Sender<FetchRequest>,
-        fetch_request_rx: Arc<Mutex<Receiver<FetchRequest>>>,
+        fetch_request_rx: Arc<tokio::sync::Mutex<Receiver<FetchRequest>>>,
         transport: DynTransport,
         state: Arc<Mutex<State>>,
     ) {
         while let Some((op_id, agent_id)) =
             fetch_request_rx.lock().await.recv().await
         {
-            // Ensure op is still in the set of ops to fetch.
-            if !state
-                .lock()
-                .await
-                .ops
-                .contains(&(op_id.clone(), agent_id.clone()))
-            {
-                continue;
-            }
+            let is_agent_cooling_down = {
+                let mut state_lock = state.lock().unwrap();
 
-            // Check if agent is on cool-down list.
-            if !state
-                .lock()
-                .await
-                .cool_down_list
-                .is_agent_cooling_down(&agent_id)
-            {
+                // Do nothing if op id is no longer in the set of ops to fetch.
+                if !state_lock.ops.contains(&(op_id.clone(), agent_id.clone()))
+                {
+                    continue;
+                }
+
+                state_lock.cool_down_list.is_agent_cooling_down(&agent_id)
+            };
+
+            // Send request if agent is not on cool-down list.
+            if !is_agent_cooling_down {
                 // Send fetch request to agent.
                 // TODO: update when transport is available
                 let mut data = bytes::BytesMut::new();
@@ -220,7 +214,7 @@ impl Inner {
                     tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
                     state
                         .lock()
-                        .await
+                        .unwrap()
                         .cool_down_list
                         .add_agent(agent_id.clone());
                 }

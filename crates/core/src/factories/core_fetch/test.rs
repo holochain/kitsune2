@@ -77,7 +77,7 @@ async fn fetch_queue() {
     .unwrap();
 
     // Clear set of ops to fetch to stop sending requests.
-    fetch.0.state.lock().await.ops.clear();
+    fetch.0.state.lock().unwrap().ops.clear();
 
     let mut num_requests_sent = mock_transport.requests_sent.lock().await.len();
 
@@ -227,20 +227,21 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
     tokio::time::timeout(Duration::from_millis(10), async {
         loop {
             if !mock_transport.requests_sent.lock().await.is_empty() {
-                break;
+                if fetch
+                    .0
+                    .state
+                    .lock()
+                    .unwrap()
+                    .cool_down_list
+                    .is_agent_cooling_down(&agent)
+                {
+                    break;
+                }
             }
         }
     })
     .await
     .unwrap();
-
-    assert!(fetch
-        .0
-        .state
-        .lock()
-        .await
-        .cool_down_list
-        .is_agent_cooling_down(&agent));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -257,7 +258,7 @@ async fn agent_cooling_down_is_removed_from_list() {
         .0
         .state
         .lock()
-        .await
+        .unwrap()
         .cool_down_list
         .add_agent(agent_id.clone());
 
@@ -265,7 +266,7 @@ async fn agent_cooling_down_is_removed_from_list() {
         .0
         .state
         .lock()
-        .await
+        .unwrap()
         .cool_down_list
         .is_agent_cooling_down(&agent_id));
 
@@ -277,7 +278,7 @@ async fn agent_cooling_down_is_removed_from_list() {
         .0
         .state
         .lock()
-        .await
+        .unwrap()
         .cool_down_list
         .is_agent_cooling_down(&agent_id));
 }
@@ -323,18 +324,20 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
                 .iter()
                 .all(|agent| request_destinations.contains(&agent))
             {
-                break;
+                // Check all agents are on cool_down_list.
+                let cool_down_list =
+                    &mut fetch.0.state.lock().unwrap().cool_down_list;
+                if expected_agents
+                    .iter()
+                    .all(|agent| cool_down_list.is_agent_cooling_down(agent))
+                {
+                    break;
+                }
             }
         }
     })
     .await
     .unwrap();
-
-    // Check all agents are on cool_down_list.
-    let cool_down_list = &mut fetch.0.state.lock().await.cool_down_list;
-    assert!(expected_agents
-        .iter()
-        .all(|agent| cool_down_list.is_agent_cooling_down(agent)));
 }
 
 fn random_id() -> Id {
