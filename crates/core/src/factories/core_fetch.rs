@@ -54,9 +54,12 @@ use kitsune2_api::{
     transport::Transport,
     AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
-use tokio::sync::{
+use tokio::{
+    sync::{
     mpsc::{channel, Receiver, Sender},
     Mutex,
+    },
+    task::JoinHandle,
 };
 
 const MOD_NAME: &str = "Fetch";
@@ -138,6 +141,7 @@ struct State {
 struct Inner {
     state: Arc<Mutex<State>>,
     fetch_queue_tx: Sender<FetchRequest>,
+    fetch_tasks: Vec<JoinHandle<()>>,
 }
 
 impl Inner {
@@ -154,18 +158,21 @@ impl Inner {
             cool_down_list: CoolDownList::new(config.cool_down_interval_ms),
         }));
 
+        let mut fetch_tasks = Vec::new();
         for _ in 0..config.parallel_request_count {
-            tokio::task::spawn(Inner::fetch_task(
+            let task = tokio::task::spawn(Inner::fetch_task(
                 fetch_queue_tx.clone(),
                 fetch_queue_rx.clone(),
                 transport.clone(),
                 state.clone(),
             ));
+            fetch_tasks.push(task);
         }
 
         Self {
             state,
             fetch_queue_tx,
+            fetch_tasks,
         }
     }
 
@@ -225,6 +232,14 @@ impl Inner {
             {
                 tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
             }
+        }
+    }
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        for t in self.fetch_tasks.iter() {
+            t.abort();
         }
     }
 }
