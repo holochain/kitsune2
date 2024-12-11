@@ -45,6 +45,7 @@ pub mod config;
 pub mod kitsune;
 pub mod peer_store;
 pub mod space;
+pub mod transport;
 
 mod error;
 pub use error::*;
