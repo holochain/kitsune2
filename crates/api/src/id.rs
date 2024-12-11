@@ -55,6 +55,7 @@ pub struct Id(#[serde(with = "crate::serde_bytes_base64")] pub bytes::Bytes);
 
 imp_deref!(Id, bytes::Bytes);
 imp_from!(Id, bytes::Bytes, b => Id(b));
+imp_from!(bytes::Bytes, Id, i => i.0);
 
 impl Id {
     /// Get the location u32 based off this Id.
@@ -126,6 +127,8 @@ pub struct AgentId(pub Id);
 imp_deref!(AgentId, Id);
 imp_from!(AgentId, bytes::Bytes, b => AgentId(Id(b)));
 imp_from!(AgentId, Id, b => AgentId(b));
+imp_from!(Id, AgentId, i => i.0);
+imp_from!(bytes::Bytes, AgentId, i => i.0 .0);
 
 impl std::fmt::Display for AgentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -168,6 +171,8 @@ pub struct SpaceId(pub Id);
 imp_deref!(SpaceId, Id);
 imp_from!(SpaceId, bytes::Bytes, b => SpaceId(Id(b)));
 imp_from!(SpaceId, Id, b => SpaceId(b));
+imp_from!(Id, SpaceId, i => i.0);
+imp_from!(bytes::Bytes, SpaceId, i => i.0 .0);
 
 impl std::fmt::Display for SpaceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -210,6 +215,8 @@ pub struct OpId(pub Id);
 imp_deref!(OpId, Id);
 imp_from!(OpId, bytes::Bytes, b => OpId(Id(b)));
 imp_from!(OpId, Id, b => OpId(b));
+imp_from!(Id, OpId, i => i.0);
+imp_from!(bytes::Bytes, OpId, i => i.0 .0);
 
 impl std::fmt::Display for OpId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
