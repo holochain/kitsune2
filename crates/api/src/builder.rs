@@ -26,6 +26,10 @@ pub struct Builder {
     /// The [peer_store::PeerStoreFactory] to be used for creating
     /// [peer_store::PeerStore] instances.
     pub peer_store: peer_store::DynPeerStoreFactory,
+
+    /// The [bootstrap::BootstrapFactory] to be used for creating
+    /// [bootstrap::Bootstrap] instances for initial WAN discovery.
+    pub bootstrap: bootstrap::DynBootstrapFactory,
 }
 
 impl Builder {
@@ -39,11 +43,13 @@ impl Builder {
             kitsune,
             space,
             peer_store,
+            bootstrap,
         } = self;
 
         kitsune.default_config(config)?;
         space.default_config(config)?;
         peer_store.default_config(config)?;
+        bootstrap.default_config(config)?;
 
         Ok(())
     }

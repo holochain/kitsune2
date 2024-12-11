@@ -105,6 +105,17 @@ pub trait Verifier: std::fmt::Debug {
 /// Trait-object [Verifier].
 pub type DynVerifier = Arc<dyn Verifier + 'static + Send + Sync>;
 
+impl Verifier for DynVerifier {
+    fn verify(
+        &self,
+        agent_info: &AgentInfo,
+        message: &[u8],
+        signature: &[u8],
+    ) -> bool {
+        (**self).verify(agent_info, message, signature)
+    }
+}
+
 /// A "Local" agent is an agent that is connected to the local Kitsune2 node,
 /// and is able to sign messages and agent infos.
 pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
@@ -215,16 +226,44 @@ impl AgentInfoSigned {
         }
         let v: Ref = serde_json::from_slice(encoded)
             .map_err(|e| K2Error::other_src("decoding agent_info", e))?;
-        let agent_info: AgentInfo = serde_json::from_str(&v.agent_info)
+        Self::inner_decode_one(verifier, v.agent_info, v.signature)
+    }
+
+    /// Decode a canonical json encoding of a list of signed agent infos.
+    pub fn decode_list<V: Verifier>(
+        verifier: &V,
+        encoded: &[u8],
+    ) -> K2Result<Vec<K2Result<std::sync::Arc<Self>>>> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Ref {
+            agent_info: String,
+            #[serde(with = "crate::serde_bytes_base64")]
+            signature: bytes::Bytes,
+        }
+        let v: Vec<Ref> = serde_json::from_slice(encoded)
+            .map_err(|e| K2Error::other_src("decoding agent_info", e))?;
+        Ok(v.into_iter()
+            .map(|v| {
+                Self::inner_decode_one(verifier, v.agent_info, v.signature)
+            })
+            .collect())
+    }
+
+    fn inner_decode_one<V: Verifier>(
+        verifier: &V,
+        agent_info: String,
+        signature: bytes::Bytes,
+    ) -> K2Result<std::sync::Arc<Self>> {
+        let info: AgentInfo = serde_json::from_str(&agent_info)
             .map_err(|e| K2Error::other_src("decoding inner agent_info", e))?;
-        if !verifier.verify(&agent_info, v.agent_info.as_bytes(), &v.signature)
-        {
+        if !verifier.verify(&info, agent_info.as_bytes(), &signature) {
             return Err(K2Error::other("InvalidSignature"));
         }
         Ok(std::sync::Arc::new(Self {
-            agent_info,
-            encoded: v.agent_info,
-            signature: v.signature,
+            agent_info: info,
+            encoded: agent_info,
+            signature,
         }))
     }
 

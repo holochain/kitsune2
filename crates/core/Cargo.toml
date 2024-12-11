@@ -15,8 +15,18 @@ bytes = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
 kitsune2_api = { workspace = true }
+kitsune2_test_utils = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+ureq = { workspace = true }
 
 [dev-dependencies]
+kitsune2_core = { path = ".", features = ["test_utils"] }
 tokio = { workspace = true, features = ["full"] }
+
+[features]
+default = []
+
+# additional utilities for testing
+test_utils = ["dep:kitsune2_test_utils"]
