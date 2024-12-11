@@ -1,24 +1,31 @@
 //! Partition of the hash space.
 //!
-//! The space of possible hashes is mapped to a 32-bit location. See [::kitsune2_api::id::Id::loc] for
-//! more information about this. Each agent is responsible for storing and serving some part of
+//! The space of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::id::Id::loc)
+//! for more information about this. Each agent is responsible for storing and serving some part of
 //! the hash space. This module provides a structure that partitions the hash space into 512
 //! equally-sized DHT arcs.
 //!
 //! Each space partition manages a [PartitionedTime] structure that is responsible for managing the
 //! time slices for that space partition. The interface of this module is largely responsible for
-//! delegating the updating of time slices to the inner time partitions. This ensures that all the
-//! time partitions are updated in lockstep. This makes reasoning about the space-time partitioning
+//! delegating the updating of time slices to the inner time partitions. This ensures all the time
+//! partitions are updated in lockstep, which makes reasoning about the space-time partitioning
 //! easier.
+//!
+//! This module must be informed about ops that have been stored. There is no active process here
+//! that can look for newly stored ops. When a batch of ops is stored, the [PartitionedHashes] must
+//! be informed and will split the ops into the right space partition based on the location of the op.
+//! Ops are then pushed to the inner time partition for each space partition. It is the time
+//! partitions that are responsible for updating the combined hash values.
 //!
 //! That completes the high level information for this module, what follows is a more detailed
 //! explanation of the design.
 //!
 //! The bit-depth of the location roughly determines how evenly ops are distributed across the
-//! partitions. For example, an 8-bit location can only map op hashes to 256 possible location,
+//! partitions. For example, an 8-bit location can only map op hashes to 256 possible locations,
 //! which would not use the top half of the partitions here. A 32-bit location retains enough
 //! information to use the full range of partitions and can be calculated inside a 32-bit integer.
-//! A 16-bit location would work as well, and the choice between the two is not quantified here.
+//! A 16-bit or 64-bit location would work too, and the choice between the options is not
+//! quantified here.
 //!
 //! The choice of 512 partitions is a tradeoff between the minimum amount of data that a node must
 //! store to participate in the network and the amount of data that must be sent over the network
@@ -29,8 +36,9 @@
 //! that app to be able to participate in the network.
 //! It is important to note though, that each partition is managing a [PartitionedTime] structure
 //! which requires some memory and processing to maintain. Nodes that take on more partitions will
-//! have more work to do and will have to send more data during gossip rounds when there are
-//! changes to data that has made it into a time slice and become part of a combined hash.
+//! have more work to do and will have to send more data during gossip rounds. That happens when
+//! there are  changes to data that has made it into a time slice and become part of a combined
+//! hash. Generally, nodes will be able to just sync "what's new" but for catch-up, this is true.
 //! As a consequence, a new network that hasn't yet gained enough members to start reducing how
 //! many partitions are covered by each node will have a higher overhead for each node.
 //! It is the responsibility of the gossip module to work out how to be efficient about sending
@@ -45,11 +53,12 @@
 //! number of peers in the network is not high enough. The network must have enough peers that
 //! data is still stored redundantly before the number of partitions per node can be reduced.
 //!
-//! This module must be informed about ops that have been stored. There is no active process here
-//! that can look for newly stored ops. When a batch of ops is stored, the [PartitionedHashes] must
-//! be informed and will split the ops into the right space partition based on the location of the op.
-//! Ops are then pushed to the inner time partition for each space partition. It is the time
-//! partitions that are responsible for updating the combined hash values.
+//! It should also be understood that as well as the minimum storage requirement and the
+//! possibility of having to store more data on smaller networks, a user of a Kitsune2 app is
+//! likely to want to use data that isn't stored on their own node. That means that although they
+//! are free to delete that data again once they are done with it, the amount of data stored and
+//! served by a node is not the only storage it may require. It is just a lower bound on the
+//! free space that a node will need to have available.
 
 use crate::PartitionedTime;
 use kitsune2_api::{DhtArc, DynOpStore, K2Result, StoredOp, Timestamp};
@@ -57,8 +66,8 @@ use std::collections::HashMap;
 
 /// A partitioned hash structure.
 ///
-/// Partitions the hash structure into a configurable number of partitions. Each partition is
-/// responsible for managing the time slices for that partition.
+/// Partitions the hash structure into a fixed number of partitions. Each partition is
+/// responsible for managing the time slices for that partition using a [PartitionedTime].
 #[derive(Debug)]
 pub struct PartitionedHashes {
     /// This is just a convenience for internal function use.
@@ -129,7 +138,8 @@ impl PartitionedHashes {
 
     /// Get the next update time of the inner time partitions.
     pub fn next_update_at(&self) -> Timestamp {
-        // Because the minimum `space_factor` is 0, and we compute 2^space_factor, there will always be at least one partition.
+        // We know that a fixed number of partitions is always present,
+        // so this is safe to unwrap here.
         self.partitioned_hashes
             .first()
             .expect("Always at least one space partition")
