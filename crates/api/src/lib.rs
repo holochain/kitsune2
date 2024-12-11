@@ -40,6 +40,7 @@ pub mod agent;
 pub mod arc;
 pub use arc::*;
 
+pub mod bootstrap;
 pub mod builder;
 pub mod config;
 pub mod kitsune;

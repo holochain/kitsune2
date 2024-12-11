@@ -9,5 +9,8 @@ pub use core_space::*;
 mod mem_peer_store;
 pub use mem_peer_store::*;
 
+mod core_bootstrap;
+pub use core_bootstrap::*;
+
 mod mem_transport;
 pub use mem_transport::*;

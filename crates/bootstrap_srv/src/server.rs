@@ -37,6 +37,9 @@ pub struct BootstrapSrv {
 
 impl Drop for BootstrapSrv {
     fn drop(&mut self) {
+        let _g = ThreadGuard("Server Shutdown Complete!");
+
+        println!("begin server shutdown...");
         let _ = self.shutdown();
     }
 }
@@ -103,12 +106,16 @@ impl BootstrapSrv {
     pub fn shutdown(&mut self) -> std::io::Result<()> {
         let mut is_err = false;
         self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
-        drop(self.server.take());
         for worker in self.workers.drain(..) {
             if worker.join().is_err() {
+        drop(self.server.take());
+        while !self.workers.is_empty() {
+            println!("waiting on {} threads to close...", self.workers.len());
+            if self.workers.pop().unwrap().join().is_err() {
                 is_err = true;
             }
         }
+        println!("all threads closed.");
         if is_err {
             Err(std::io::Error::other("Failure shutting down worker thread"))
         } else {
@@ -168,6 +175,9 @@ fn worker(
 
         handler.handle(req)?;
     }
+
+    server.unblock();
+
     Ok(())
 }
 
