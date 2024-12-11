@@ -329,8 +329,7 @@ impl CoolDownList {
     pub fn is_agent_cooling_down(&mut self, agent_id: &AgentId) -> bool {
         match self.state.get(agent_id) {
             Some(instant) => {
-                let now = Instant::now();
-                if (now - *instant).as_millis()
+                if instant.elapsed().as_millis()
                     > self.cool_down_interval as u128
                 {
                     // Cool down interval has elapsed. Remove agent from list.
