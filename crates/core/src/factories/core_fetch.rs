@@ -205,7 +205,7 @@ impl Inner {
                     .send_module(
                         Url::from_str("wss://0.0.0.0:443").unwrap(),
                         SpaceId::from(bytes::Bytes::new()),
-                        "Mod".to_string(),
+                        MOD_NAME.to_string(),
                         data,
                     )
                     .await
