@@ -294,6 +294,7 @@ impl CoreFetch {
                 fetch_request_tx.try_send((op_id.clone(), agent_id.clone()))
             {
                 tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
+                state.lock().unwrap().ops.remove(&(op_id, agent_id));
             }
         }
     }
