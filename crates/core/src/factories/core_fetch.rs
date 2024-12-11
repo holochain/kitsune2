@@ -90,9 +90,7 @@ struct CoreFetch(Inner);
 
 impl CoreFetch {
     fn new(config: CoreFetchConfig, transport: DynTransport) -> Self {
-        let inner = Inner::new(config.cool_down_interval_ms);
-        inner.spawn_fetch_tasks(config.parallel_request_count, transport);
-        Self(inner)
+        Self(Inner::spawn_fetch_tasks(config, transport))
     }
 }
 
@@ -140,40 +138,34 @@ struct State {
 struct Inner {
     state: Arc<Mutex<State>>,
     fetch_queue_tx: Sender<FetchRequest>,
-    fetch_queue_rx: Arc<Mutex<Receiver<FetchRequest>>>,
 }
 
 impl Inner {
-    pub fn new(cool_down_interval_ms: u64) -> Self {
+    pub fn spawn_fetch_tasks(
+        config: CoreFetchConfig,
+        transport: DynTransport,
+    ) -> Self {
         // Create a channel to send new ops to fetch to the tasks. This is in effect the fetch queue.
         let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(16_384);
         let fetch_queue_rx = Arc::new(Mutex::new(fetch_queue_rx));
 
-        let ops = HashSet::new();
-        let cool_down_list = CoolDownList::new(cool_down_interval_ms);
+        let state = Arc::new(Mutex::new(State {
+            ops: HashSet::new(),
+            cool_down_list: CoolDownList::new(config.cool_down_interval_ms),
+        }));
+
+        for _ in 0..config.parallel_request_count {
+            tokio::task::spawn(Inner::fetch_task(
+                fetch_queue_tx.clone(),
+                fetch_queue_rx.clone(),
+                transport.clone(),
+                state.clone(),
+            ));
+        }
 
         Self {
-            state: Arc::new(Mutex::new(State {
-                ops,
-                cool_down_list,
-            })),
+            state,
             fetch_queue_tx,
-            fetch_queue_rx,
-        }
-    }
-
-    pub fn spawn_fetch_tasks(
-        &self,
-        parallel_request_count: u8,
-        transport: DynTransport,
-    ) {
-        for _ in 0..parallel_request_count {
-            tokio::task::spawn(Inner::fetch_task(
-                self.fetch_queue_tx.clone(),
-                self.fetch_queue_rx.clone(),
-                transport.clone(),
-                self.state.clone(),
-            ));
         }
     }
 
