@@ -37,7 +37,7 @@
 //! It is important to note though, that each partition is managing a [PartitionedTime] structure
 //! which requires some memory and processing to maintain. Nodes that take on more partitions will
 //! have more work to do and will have to send more data during gossip rounds. That happens when
-//! there are  changes to data that has made it into a time slice and become part of a combined
+//! there are changes to data that has made it into a time slice and become part of a combined
 //! hash. Generally, nodes will be able to just sync "what's new" but for catch-up, this is true.
 //! As a consequence, a new network that hasn't yet gained enough members to start reducing how
 //! many partitions are covered by each node will have a higher overhead for each node.
