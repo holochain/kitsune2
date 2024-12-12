@@ -38,13 +38,13 @@ impl TransportFactory for MemTransportFactory {
         &self,
         builder: Arc<builder::Builder>,
         handler: Arc<TxImpHnd>,
-    ) -> BoxFut<'static, K2Result<Transport>> {
+    ) -> BoxFut<'static, K2Result<DynTransport>> {
         Box::pin(async move {
             let config = builder
                 .config
                 .get_module_config::<MemTransportConfig>(MOD_NAME)?;
             let imp = MemTransport::create(config, handler.clone()).await;
-            Ok(handler.gen_transport(imp))
+            Ok(DefaultTransport::create(&handler, imp))
         })
     }
 }
