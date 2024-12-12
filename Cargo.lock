@@ -943,6 +943,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "ed25519-dalek",
+ "futures",
  "num_cpus",
  "serde",
  "serde_json",

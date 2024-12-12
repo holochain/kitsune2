@@ -46,13 +46,13 @@ impl HttpReceiver {
 }
 
 pub struct ServerConfig {
-    pub addr: std::net::SocketAddr,
+    pub addrs: Vec<std::net::SocketAddr>,
     pub worker_thread_count: usize,
 }
 
 pub struct Server {
     t_join: Option<std::thread::JoinHandle<()>>,
-    addr: std::net::SocketAddr,
+    addrs: Vec<std::net::SocketAddr>,
     receiver: HttpReceiver,
     h_send: HSend,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
@@ -77,12 +77,12 @@ impl Server {
         match r_ready.blocking_recv() {
             Ok(Ok(Ready {
                 h_send,
-                addr,
+                addrs,
                 receiver,
                 shutdown,
             })) => Ok(Self {
                 t_join: Some(t_join),
-                addr,
+                addrs,
                 receiver,
                 h_send,
                 shutdown: Some(shutdown),
@@ -92,8 +92,8 @@ impl Server {
         }
     }
 
-    pub fn server_addr(&self) -> std::net::SocketAddr {
-        self.addr
+    pub fn server_addrs(&self) -> &[std::net::SocketAddr] {
+        self.addrs.as_slice()
     }
 
     pub fn receiver(&self) -> &HttpReceiver {
@@ -103,7 +103,7 @@ impl Server {
 
 struct Ready {
     h_send: HSend,
-    addr: std::net::SocketAddr,
+    addrs: Vec<std::net::SocketAddr>,
     receiver: HttpReceiver,
     shutdown: tokio::sync::oneshot::Sender<()>,
 }
@@ -132,8 +132,17 @@ fn tokio_thread(
 
             let receiver = HttpReceiver(h_recv);
 
-            let listener =
-                match tokio::net::TcpListener::bind(config.addr).await {
+            let (s_shutdown, r_shutdown) =
+                tokio::sync::oneshot::channel::<()>();
+            let r_shutdown = futures::future::FutureExt::shared(async move {
+                let _ = r_shutdown.await;
+            });
+
+            let mut addrs = Vec::with_capacity(config.addrs.len());
+            let mut servers = Vec::with_capacity(config.addrs.len());
+
+            for addr in config.addrs {
+                let listener = match tokio::net::TcpListener::bind(addr).await {
                     Ok(listener) => listener,
                     Err(err) => {
                         let _ = ready.send(Err(err));
@@ -141,20 +150,24 @@ fn tokio_thread(
                     }
                 };
 
-            let addr = match listener.local_addr() {
-                Ok(addr) => addr,
-                Err(err) => {
-                    let _ = ready.send(Err(err));
-                    return;
+                match listener.local_addr() {
+                    Ok(addr) => addrs.push(addr),
+                    Err(err) => {
+                        let _ = ready.send(Err(err));
+                        return;
+                    }
                 }
-            };
 
-            let (s_shutdown, r_shutdown) = tokio::sync::oneshot::channel();
+                servers.push(std::future::IntoFuture::into_future(
+                    serve(listener, app.clone())
+                        .with_graceful_shutdown(r_shutdown.clone()),
+                ));
+            }
 
             if ready
                 .send(Ok(Ready {
                     h_send,
-                    addr,
+                    addrs,
                     receiver,
                     shutdown: s_shutdown,
                 }))
@@ -163,11 +176,7 @@ fn tokio_thread(
                 return;
             }
 
-            let _ = serve(listener, app)
-                .with_graceful_shutdown(async {
-                    let _ = r_shutdown.await;
-                })
-                .await;
+            let _ = futures::future::join_all(servers).await;
         });
 }
 
