@@ -29,3 +29,9 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 ureq = { workspace = true }
+
+[features]
+default = []
+
+# enable axum http2 support
+http2 = ["axum/http2"]
