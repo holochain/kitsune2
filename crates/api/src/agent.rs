@@ -181,7 +181,6 @@ pub struct AgentInfo {
 }
 
 /// Signed agent information.
-#[derive(Debug)]
 pub struct AgentInfoSigned {
     /// The decoded information associated with this agent.
     agent_info: AgentInfo,
@@ -191,6 +190,14 @@ pub struct AgentInfoSigned {
 
     /// The signature.
     signature: bytes::Bytes,
+}
+
+impl std::fmt::Debug for AgentInfoSigned {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AgentInfoSigned(")?;
+        f.write_str(&self.encoded)?;
+        f.write_str(")")
+    }
 }
 
 impl AgentInfoSigned {

@@ -28,13 +28,13 @@ pub struct CoreBootstrapConfig {
     /// It is still valid to pass a real server url.
     pub server_url: String,
 
-    /// Minimum backoff in seconds to use for both push and poll retry loops.
+    /// Minimum backoff in ms to use for both push and poll retry loops.
     /// Default: 5 seconds.
-    pub backoff_min_s: u32,
+    pub backoff_min_ms: u32,
 
-    /// Maximum backoff in seconds to use for both push and poll retry loops.
+    /// Maximum backoff in ms to use for both push and poll retry loops.
     /// Default: 5 minutes.
-    pub backoff_max_s: u32,
+    pub backoff_max_ms: u32,
 }
 
 impl Default for CoreBootstrapConfig {
@@ -47,8 +47,8 @@ impl Default for CoreBootstrapConfig {
 
         Self {
             server_url,
-            backoff_min_s: 5,
-            backoff_max_s: 60 * 5,
+            backoff_min_ms: 1000 * 5,
+            backoff_max_ms: 1000 * 60 * 5,
         }
     }
 }
@@ -56,12 +56,12 @@ impl Default for CoreBootstrapConfig {
 impl CoreBootstrapConfig {
     /// Get the minimum backoff duration.
     pub fn backoff_min(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.backoff_min_s as u64)
+        std::time::Duration::from_millis(self.backoff_min_ms as u64)
     }
 
     /// Get the maximum backoff duration.
     pub fn backoff_max(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.backoff_max_s as u64)
+        std::time::Duration::from_millis(self.backoff_max_ms as u64)
     }
 }
 

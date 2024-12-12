@@ -74,4 +74,5 @@ kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
 kitsune2_memory = { path = "crates/memory" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
+rand = "0.8.5"
 tracing-subscriber = "0.3"

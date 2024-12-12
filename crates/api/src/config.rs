@@ -61,6 +61,19 @@ impl Config {
         Ok(())
     }
 
+    /// Update a module config with new values. Note, this will overwrite
+    /// ALL config values. If you would like to only update some, please
+    /// first call [Self::get_module_config], update the appropriate values,
+    /// then call this function again to set them.
+    pub fn set_module_config<M: ModConfig>(
+        &mut self,
+        module_name: String,
+        config: &M,
+    ) -> K2Result<()> {
+        self.0.insert(module_name, tc(config)?);
+        Ok(())
+    }
+
     /// When kitsune2 is initializing, it will call the factory function
     /// for all of its modules with an immutable reference to this config
     /// struct. Each of those modules may choose to call this function

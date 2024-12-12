@@ -22,7 +22,13 @@ tokio = { workspace = true, features = ["rt", "sync", "time"] }
 ureq = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true, default-features = false, features = [
+  "http1",
+  "tokio",
+] }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
 kitsune2_core = { path = ".", features = ["test_utils"] }
+rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [features]
