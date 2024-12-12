@@ -4,9 +4,10 @@ use crate::{protocol::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// This is the low-level backend transport handler.
+/// This is the low-level backend transport handler designed to work
+/// with [DefaultTransport].
 /// Construct using ([TxImpHnd::new]), with a high-level [DynTxHandler],
-/// then call [TxImpHnd::gen_transport] to return the high-level handler
+/// then call [DefaultTransport::create] to return the high-level handler
 /// from the [TransportFactory].
 pub struct TxImpHnd {
     handler: DynTxHandler,
@@ -24,17 +25,6 @@ impl TxImpHnd {
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
         })
-    }
-
-    /// When constructing a [Transport] from a [TransportFactory],
-    /// this function does the actual wrapping of your implemementation
-    /// to produce the [Transport] struct.
-    pub fn gen_transport(&self, imp: DynTxImp) -> Transport {
-        Transport {
-            imp,
-            space_map: self.space_map.clone(),
-            mod_map: self.mod_map.clone(),
-        }
     }
 
     /// Call this when you receive or bind a new address at which
@@ -149,19 +139,88 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 pub type DynTxImp = Arc<dyn TxImp>;
 
 /// A high-level wrapper around a low-level [DynTxImp] transport implementation.
+pub trait Transport {
+    /// Register a space handler for receiving incoming notifications.
+    ///
+    /// Panics if you attempt to register a duplicate handler for
+    /// a space.
+    fn register_space_handler(
+        &self,
+        space: SpaceId,
+        handler: DynTxSpaceHandler,
+    );
+
+    /// Register a module handler for receiving incoming module messages.
+    ///
+    /// Panics if you attempt to register a duplicate handler for the
+    /// same (space, module).
+    fn register_module_handler(
+        &self,
+        space: SpaceId,
+        module: String,
+        handler: DynTxModuleHandler,
+    );
+
+    /// Make a best effort to notify a peer that we are disconnecting and why.
+    /// After a short time out, the connection will be closed even if the
+    /// disconnect reason message is still pending.
+    fn disconnect(&self, peer: Url, reason: Option<String>) -> BoxFut<'_, ()>;
+
+    /// Notify a remote peer within a space. This is a fire-and-forget
+    /// type message. The future this call returns will indicate any errors
+    /// that occur up to the point where the message is handed off to
+    /// the transport backend. After that, the future will return `Ok(())`
+    /// but the remote peer may or may not actually receive the message.
+    fn send_space_notify(
+        &self,
+        peer: Url,
+        space: SpaceId,
+        data: bytes::Bytes,
+    ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Notify a remote peer module within a space. This is a fire-and-forget
+    /// type message. The future this call returns will indicate any errors
+    /// that occur up to the point where the message is handed off to
+    /// the transport backend. After that, the future will return `Ok(())`
+    /// but the remote peer may or may not actually receive the message.
+    fn send_module(
+        &self,
+        peer: Url,
+        space: SpaceId,
+        module: String,
+        data: bytes::Bytes,
+    ) -> BoxFut<'_, K2Result<()>>;
+}
+
+/// Trait-object [Transport].
+pub type DynTransport = Arc<dyn Transport>;
+
+/// A high-level wrapper around a low-level [DynTxImp] transport implementation.
 #[derive(Clone, Debug)]
-pub struct Transport {
+pub struct DefaultTransport {
     imp: DynTxImp,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
 }
 
-impl Transport {
-    /// Register a space handler for receiving incoming notifications.
+impl DefaultTransport {
+    /// When constructing a [Transport] from a [TransportFactory],
+    /// this function does the actual wrapping of your implemementation
+    /// to produce the [Transport] struct.
     ///
-    /// Panics if you attempt to register a duplicate handler for
-    /// a space.
-    pub fn register_space_handler(
+    /// [DefaultTransport] is built to be used with the provided [TxImpHnd].
+    pub fn create(hnd: &TxImpHnd, imp: DynTxImp) -> DynTransport {
+        let out: DynTransport = Arc::new(DefaultTransport {
+            imp,
+            space_map: hnd.space_map.clone(),
+            mod_map: hnd.mod_map.clone(),
+        });
+        out
+    }
+}
+
+impl Transport for DefaultTransport {
+    fn register_space_handler(
         &self,
         space: SpaceId,
         handler: DynTxSpaceHandler,
@@ -177,11 +236,7 @@ impl Transport {
         }
     }
 
-    /// Register a module handler for receiving incoming module messages.
-    ///
-    /// Panics if you attempt to register a duplicate handler for the
-    /// same (space, module).
-    pub fn register_module_handler(
+    fn register_module_handler(
         &self,
         space: SpaceId,
         module: String,
@@ -198,69 +253,62 @@ impl Transport {
         }
     }
 
-    /// Make a best effort to notify a peer that we are disconnecting and why.
-    /// After a short time out, the connection will be closed even if the
-    /// disconnect reason message is still pending.
-    pub async fn disconnect(&self, peer: Url, reason: Option<String>) {
-        let payload = match reason {
-            None => None,
-            Some(reason) => match (K2Proto {
-                ty: k2_proto::Ty::Disconnect as i32,
-                data: bytes::Bytes::copy_from_slice(reason.as_bytes()),
-                space: None,
-                module: None,
-            })
-            .encode()
-            {
-                Ok(payload) => Some((reason, payload)),
-                Err(_) => None,
-            },
-        };
+    fn disconnect(&self, peer: Url, reason: Option<String>) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            let payload = match reason {
+                None => None,
+                Some(reason) => match (K2Proto {
+                    ty: k2_proto::Ty::Disconnect as i32,
+                    data: bytes::Bytes::copy_from_slice(reason.as_bytes()),
+                    space: None,
+                    module: None,
+                })
+                .encode()
+                {
+                    Ok(payload) => Some((reason, payload)),
+                    Err(_) => None,
+                },
+            };
 
-        self.imp.disconnect(peer, payload).await;
+            self.imp.disconnect(peer, payload).await;
+        })
     }
 
-    /// Notify a remote peer within a space. This is a fire-and-forget
-    /// type message. The future this call returns will indicate any errors
-    /// that occur up to the point where the message is handed off to
-    /// the transport backend. After that, the future will return `Ok(())`
-    /// but the remote peer may or may not actually receive the message.
-    pub async fn send_space_notify(
+    fn send_space_notify(
         &self,
         peer: Url,
         space: SpaceId,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
-        let enc = (K2Proto {
-            ty: k2_proto::Ty::Notify as i32,
-            data,
-            space: Some(space.into()),
-            module: None,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let enc = (K2Proto {
+                ty: k2_proto::Ty::Notify as i32,
+                data,
+                space: Some(space.into()),
+                module: None,
+            })
+            .encode()?;
+            self.imp.send(peer, enc).await
         })
-        .encode()?;
-        self.imp.send(peer, enc).await
     }
 
-    /// Notify a remote peer module within a space. This is a fire-and-forget
-    /// type message. The future this call returns will indicate any errors
-    /// that occur up to the point where the message is handed off to
-    /// the transport backend. After that, the future will return `Ok(())`
-    /// but the remote peer may or may not actually receive the message.
-    pub async fn send_module(
+    fn send_module(
         &self,
         peer: Url,
         space: SpaceId,
         module: String,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
-        let enc = (K2Proto {
-            ty: k2_proto::Ty::Module as i32,
-            data,
-            space: Some(space.into()),
-            module: Some(module),
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let enc = (K2Proto {
+                ty: k2_proto::Ty::Module as i32,
+                data,
+                space: Some(space.into()),
+                module: Some(module),
+            })
+            .encode()?;
+            self.imp.send(peer, enc).await
         })
-        .encode()?;
-        self.imp.send(peer, enc).await
     }
 }
 
@@ -361,7 +409,7 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<builder::Builder>,
         handler: Arc<TxImpHnd>,
-    ) -> BoxFut<'static, K2Result<Transport>>;
+    ) -> BoxFut<'static, K2Result<DynTransport>>;
 }
 
 /// Trait-object [TransportFactory].
