@@ -167,15 +167,15 @@ impl Fetch for CoreFetch {
             }
 
             // Pass ops to fetch tasks.
-            op_list.into_iter().for_each(|op_id| {
+            for op_id in op_list {
                 if let Err(err) =
-                    self.fetch_queue_tx.try_send((op_id, source.clone()))
+                    self.fetch_queue_tx.send((op_id, source.clone())).await
                 {
                     tracing::warn!(
                         "could not pass fetch request to fetch task: {err}"
                     );
                 }
-            });
+            }
 
             Ok(())
         })
