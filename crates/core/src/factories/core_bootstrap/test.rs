@@ -66,7 +66,7 @@ impl Test {
         ));
 
         let url = Some(Url::from_str("ws://test.com:80/test-url").unwrap());
-        let storage_arc = StorageArc::Arc(42, u32::MAX / 13);
+        let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
 
         let info = agent::AgentInfoSigned::sign(
             &TestCrypto,

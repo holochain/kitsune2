@@ -96,7 +96,7 @@ impl Stat {
     pub fn server_address(&self, key: &str) -> String {
         format!(
             "http://{}",
-            self.0.lock().unwrap().get(key).unwrap().0.listen_addr()
+            self.0.lock().unwrap().get(key).unwrap().0.listen_addrs()[0]
         )
     }
 }
