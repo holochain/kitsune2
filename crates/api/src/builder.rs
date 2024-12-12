@@ -30,6 +30,9 @@ pub struct Builder {
     /// The [fetch::FetchFactory] to be used for creating
     /// [fetch::Fetch] instances.
     pub fetch: fetch::DynFetchFactory,
+    /// The [transport::TransportFactory] to be used for creating
+    /// [transport::Transport] instances.
+    pub transport: transport::DynTransportFactory,
 }
 
 impl Builder {
@@ -44,12 +47,14 @@ impl Builder {
             space,
             peer_store,
             fetch,
+            transport,
         } = self;
 
         kitsune.default_config(config)?;
         space.default_config(config)?;
         peer_store.default_config(config)?;
         fetch.default_config(config)?;
+        transport.default_config(config)?;
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use kitsune2_api::{
     agent::{AgentInfo, AgentInfoSigned, Verifier},
     id::Id,
-    AgentId, SpaceId, StorageArc, Timestamp, Url,
+    AgentId, DhtArc, SpaceId, Timestamp, Url,
 };
 
 const SPACE_1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space1")));
@@ -24,7 +24,7 @@ pub struct AgentBuild {
     /// Optional peer url.
     pub url: Option<Option<Url>>,
     /// Optional storage arc.
-    pub storage_arc: Option<StorageArc>,
+    pub storage_arc: Option<DhtArc>,
 }
 
 impl AgentBuild {
@@ -45,7 +45,7 @@ impl AgentBuild {
         });
         let is_tombstone = self.is_tombstone.unwrap_or(false);
         let url = self.url.unwrap_or(None);
-        let storage_arc = self.storage_arc.unwrap_or(StorageArc::FULL);
+        let storage_arc = self.storage_arc.unwrap_or(DhtArc::FULL);
         let agent_info = serde_json::to_string(&AgentInfo {
             agent,
             space,

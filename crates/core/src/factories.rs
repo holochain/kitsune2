@@ -11,3 +11,6 @@ pub use mem_peer_store::*;
 
 mod core_fetch;
 pub use core_fetch::*;
+
+mod mem_transport;
+pub use mem_transport::*;

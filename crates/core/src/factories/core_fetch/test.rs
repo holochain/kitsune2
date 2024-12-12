@@ -20,10 +20,8 @@ pub struct MockTransport {
     fail: bool,
 }
 
-type DynMockTransport = Arc<MockTransport>;
-
 impl MockTransport {
-    fn new(fail: bool) -> DynMockTransport {
+    fn new(fail: bool) -> Arc<MockTransport> {
         Arc::new(Self {
             requests_sent: Arc::new(Mutex::new(Vec::new())),
             fail,
@@ -52,6 +50,40 @@ impl Transport for MockTransport {
                 Ok(())
             }
         })
+    }
+
+    fn disconnect(
+        &self,
+        _peer: Url,
+        _reason: Option<String>,
+    ) -> kitsune2_api::BoxFut<'_, ()> {
+        unimplemented!()
+    }
+
+    fn register_module_handler(
+        &self,
+        _space: SpaceId,
+        _module: String,
+        _handler: kitsune2_api::transport::DynTxModuleHandler,
+    ) {
+        unimplemented!()
+    }
+
+    fn register_space_handler(
+        &self,
+        _space: SpaceId,
+        _handler: kitsune2_api::transport::DynTxSpaceHandler,
+    ) {
+        unimplemented!()
+    }
+
+    fn send_space_notify(
+        &self,
+        _peer: Url,
+        _space: SpaceId,
+        _data: bytes::Bytes,
+    ) -> kitsune2_api::BoxFut<'_, kitsune2_api::K2Result<()>> {
+        unimplemented!()
     }
 }
 
