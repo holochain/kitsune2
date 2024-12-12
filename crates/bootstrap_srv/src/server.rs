@@ -31,7 +31,7 @@ impl Drop for ThreadGuard {
 pub struct BootstrapSrv {
     cont: Arc<std::sync::atomic::AtomicBool>,
     workers: Vec<std::thread::JoinHandle<std::io::Result<()>>>,
-    addr: std::net::SocketAddr,
+    addrs: Vec<std::net::SocketAddr>,
     server: Option<Server>,
 }
 
@@ -57,7 +57,7 @@ impl BootstrapSrv {
 
         // tiny_http configuration
         let sconf = ServerConfig {
-            addr: config.listen_address,
+            addrs: config.listen_address_list.clone(),
             worker_thread_count: config.worker_thread_count,
             // TODO make the server able to accept TLS certificates
             // ssl: None,
@@ -70,8 +70,8 @@ impl BootstrapSrv {
         let server = Server::new(sconf).map_err(std::io::Error::other)?;
 
         // get the address that was assigned
-        let addr = server.server_addr();
-        println!("Listening at {:?}", addr);
+        let addrs = server.server_addrs().to_vec();
+        println!("Listening at {:?}", addrs);
 
         // spawn our worker threads
         let mut workers = Vec::with_capacity(config.worker_thread_count + 1);
@@ -96,7 +96,7 @@ impl BootstrapSrv {
         Ok(Self {
             cont,
             workers,
-            addr,
+            addrs,
             server: Some(server),
         })
     }
@@ -121,9 +121,9 @@ impl BootstrapSrv {
         }
     }
 
-    /// Get the bound listening address of this server.
-    pub fn listen_addr(&self) -> std::net::SocketAddr {
-        self.addr
+    /// Get the bound listening addresses of this server.
+    pub fn listen_addrs(&self) -> &[std::net::SocketAddr] {
+        self.addrs.as_slice()
     }
 }
 

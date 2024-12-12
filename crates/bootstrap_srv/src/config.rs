@@ -1,7 +1,7 @@
 //! config types.
 
 /// Configuration for running a BootstrapSrv.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Worker thread count.
     ///
@@ -43,9 +43,9 @@ pub struct Config {
     /// The address(es) at which to listen.
     ///
     /// Defaults:
-    /// - `testing = "127.0.0.1:0"`
-    /// - `production = "0.0.0.0:443"`
-    pub listen_address: std::net::SocketAddr,
+    /// - `testing = "[127.0.0.1:0]"`
+    /// - `production = "[0.0.0.0:443, [::]:443]"`
+    pub listen_address_list: Vec<std::net::SocketAddr>,
 
     /// The interval at which expired agents are purged from the cache.
     /// This is a fairly expensive operation that requires iterating
@@ -66,7 +66,7 @@ impl Config {
             worker_thread_count: 2,
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_millis(10),
-            listen_address: ([127, 0, 0, 1], 0).into(),
+            listen_address_list: vec![(std::net::Ipv4Addr::LOCALHOST, 0).into()],
             prune_interval: std::time::Duration::from_secs(10),
         }
     }
@@ -77,7 +77,10 @@ impl Config {
             worker_thread_count: num_cpus::get() * 4,
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_secs(2),
-            listen_address: ([0, 0, 0, 0], 443).into(),
+            listen_address_list: vec![
+                (std::net::Ipv4Addr::UNSPECIFIED, 443).into(),
+                (std::net::Ipv6Addr::UNSPECIFIED, 443).into(),
+            ],
             prune_interval: std::time::Duration::from_secs(60),
         }
     }
