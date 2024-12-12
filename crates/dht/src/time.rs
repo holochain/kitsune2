@@ -55,7 +55,8 @@
 
 use crate::constant::UNIT_TIME;
 use kitsune2_api::{
-    DynOpStore, K2Error, K2Result, OpId, Timestamp, UNIX_TIMESTAMP,
+    DhtArc, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
+    UNIX_TIMESTAMP,
 };
 use std::time::Duration;
 
@@ -94,6 +95,10 @@ pub struct PartitionedTime {
     /// It is idempotent to call [PartitionedTime::update] more often than required, but it is not
     /// efficient.
     next_update_at: Timestamp,
+    /// The storage arc that this partitioned time is associated with.
+    ///
+    /// Any queries to fetch ops in a time range must be constrained by this arc.
+    arc_constraint: DhtArc,
 }
 
 #[derive(Debug)]
@@ -108,7 +113,7 @@ pub struct PartialSlice {
     /// That means a 0 size translates to [UNIT_TIME], and a 1 size translates to 2*[UNIT_TIME].
     size: u8,
     /// The combined hash over all the ops in this time slice.
-    hash: bytes::Bytes,
+    hash: bytes::BytesMut,
 }
 
 impl PartialSlice {
@@ -118,6 +123,11 @@ impl PartialSlice {
     fn end(&self) -> Timestamp {
         self.start
             + Duration::from_secs((1u64 << self.size) * UNIT_TIME.as_secs())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hash(&self) -> &[u8] {
+        &self.hash
     }
 }
 
@@ -137,11 +147,16 @@ impl PartitionedTime {
     pub async fn try_from_store(
         factor: u8,
         current_time: Timestamp,
+        arc_constraint: DhtArc,
         store: DynOpStore,
     ) -> K2Result<Self> {
-        let mut pt = Self::new(factor)?;
+        if arc_constraint == DhtArc::Empty {
+            return Err(K2Error::other("Empty arc constraint is not valid"));
+        }
 
-        pt.full_slices = store.slice_hash_count().await?;
+        let mut pt = Self::new(factor, arc_constraint)?;
+
+        pt.full_slices = store.slice_hash_count(arc_constraint).await?;
 
         // The end timestamp of the last full slice
         let full_slice_end_timestamp = pt.full_slice_end_timestamp();
@@ -156,7 +171,7 @@ impl PartitionedTime {
         }
 
         // Update the state for the current time. The stored slices might be out of date.
-        pt.update(current_time, store).await?;
+        pt.update(store, current_time).await?;
 
         Ok(pt)
     }
@@ -181,8 +196,8 @@ impl PartitionedTime {
     ///   - Update the `next_update_at` field to the next time an update is required.
     pub async fn update(
         &mut self,
-        current_time: Timestamp,
         store: DynOpStore,
+        current_time: Timestamp,
     ) -> K2Result<()> {
         // Check if there is enough time to allocate new full slices
         self.update_full_slice_hashes(store.clone(), current_time)
@@ -200,6 +215,99 @@ impl PartitionedTime {
 
         Ok(())
     }
+
+    /// Inform the [PartitionedTime] that some ops have been stored.
+    ///
+    /// It is expected that the caller ensures that the ops belong to the hash range managed by this
+    /// [PartitionedTime]. This method will update the hashes of the full and partial slices that
+    /// the incoming ops belong to.
+    ///
+    /// If the op happens to be new enough to not belong in a slice, then it will be ignored. The
+    /// op will be discovered later when a partial slice update adds a slice that includes the op.
+    pub(crate) async fn inform_ops_stored(
+        &mut self,
+        store: DynOpStore,
+        stored_ops: Vec<StoredOp>,
+    ) -> K2Result<()> {
+        let full_slice_end = self.full_slice_end_timestamp();
+
+        for op in stored_ops {
+            if op.timestamp < full_slice_end {
+                // This is a historical update. We don't really expect this to happen too often.
+                // If we're syncing because we've been offline then it's okay and we should
+                // try to detect that when it's happening but otherwise it'd be good to log a warning
+                // here.
+                tracing::info!("Historical update detected. Seeing many of these places load on our system, but it is expected if we've been offline or a network partition has been resolved.");
+
+                let slice_id = op.timestamp.as_micros()
+                    / (self.full_slice_duration.as_micros() as i64);
+                let current_hash = store
+                    .retrieve_slice_hash(self.arc_constraint, slice_id as u64)
+                    .await?;
+                match current_hash {
+                    Some(hash) => {
+                        let mut hash = bytes::BytesMut::from(hash);
+                        // Combine the stored hash with the new op hash
+                        combine_hashes(&mut hash, op.op_id.0 .0);
+
+                        // and store the new value
+                        store
+                            .store_slice_hash(
+                                self.arc_constraint,
+                                slice_id as u64,
+                                hash.freeze(),
+                            )
+                            .await?;
+                    }
+                    None => {
+                        // If there was no hash stored, then store the new op hash
+                        store
+                            .store_slice_hash(
+                                self.arc_constraint,
+                                slice_id as u64,
+                                op.op_id.0 .0,
+                            )
+                            .await?;
+                    }
+                }
+            } else {
+                let end_of_partials = match self
+                    .partial_slices
+                    .last()
+                    .map(|last| last.end())
+                {
+                    Some(end) => end,
+                    None => {
+                        // If there are no partial slices yet, we can't update anything here.
+                        // This would only happen if the current time is close to the UNIX_TIMESTAMP.
+                        tracing::warn!("No partial slices yet, can't update partials. This is likely a configuration or clock issue.");
+                        continue;
+                    }
+                };
+
+                if op.timestamp >= end_of_partials {
+                    // This new op is not yet included in the partial slices. That's okay, there
+                    // is expected to be a small amount of recent time that isn't covered by
+                    // partial slices. This op will get included in a future update of the partials.
+                    continue;
+                }
+
+                // At this point, we know we're between the end of the full slices and the end of
+                // the partial slices. We can easily iterate backwards and check just the start
+                // bound of the partials to find out which partial slice this op belongs to.
+                for partial in self.partial_slices.iter_mut().rev() {
+                    if op.timestamp >= partial.start {
+                        combine_hashes(&mut partial.hash, op.op_id.0 .0);
+
+                        // Belongs in exactly one partial, stop after finding the right one.
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // Private methods
@@ -208,7 +316,7 @@ impl PartitionedTime {
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
     /// state with full and partial slices for the current time.
-    fn new(factor: u8) -> K2Result<Self> {
+    fn new(factor: u8, arc_constraint: DhtArc) -> K2Result<Self> {
         Ok(Self {
             factor,
             full_slices: 0,
@@ -223,13 +331,14 @@ impl PartitionedTime {
             min_recent_time: residual_duration_for_factor(factor - 1)?,
             // Immediately requires an update, any time in the past will do
             next_update_at: Timestamp::from_micros(0),
+            arc_constraint,
         })
     }
 
     /// The timestamp at which the last full slice ends.
     ///
     /// If there are no full slices, then this is the constant [UNIX_TIMESTAMP].
-    fn full_slice_end_timestamp(&self) -> Timestamp {
+    pub(crate) fn full_slice_end_timestamp(&self) -> Timestamp {
         let full_slices_duration = Duration::from_secs(
             self.full_slices * self.full_slice_duration.as_secs(),
         );
@@ -280,6 +389,7 @@ impl PartitionedTime {
             // Store the hash of the full slice
             let op_hashes = store
                 .retrieve_op_hashes_in_time_slice(
+                    self.arc_constraint,
                     full_slices_end_timestamp,
                     full_slices_end_timestamp + self.full_slice_duration,
                 )
@@ -288,7 +398,13 @@ impl PartitionedTime {
             let hash = combine_op_hashes(op_hashes);
 
             if !hash.is_empty() {
-                store.store_slice_hash(self.full_slices, hash).await?;
+                store
+                    .store_slice_hash(
+                        self.arc_constraint,
+                        self.full_slices,
+                        hash.freeze(),
+                    )
+                    .await?;
             }
 
             self.full_slices += 1;
@@ -377,7 +493,11 @@ impl PartitionedTime {
                         );
                     combine_op_hashes(
                         store
-                            .retrieve_op_hashes_in_time_slice(start, end)
+                            .retrieve_op_hashes_in_time_slice(
+                                self.arc_constraint,
+                                start,
+                                end,
+                            )
                             .await?,
                     )
                 }
@@ -387,6 +507,21 @@ impl PartitionedTime {
         }
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn full_slice_duration(&self) -> Duration {
+        self.full_slice_duration
+    }
+
+    #[cfg(test)]
+    pub(crate) fn partials(&self) -> &[PartialSlice] {
+        &self.partial_slices
+    }
+
+    #[cfg(test)]
+    pub(crate) fn arc_constraint(&self) -> &DhtArc {
+        &self.arc_constraint
     }
 }
 
@@ -416,23 +551,38 @@ fn residual_duration_for_factor(factor: u8) -> K2Result<Duration> {
 ///
 /// Requires that the op hashes are already ordered.
 /// If the input is empty, then the output is an empty byte array.
-fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::Bytes {
+fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::BytesMut {
     let mut out = if let Some(first) = hashes.first() {
         bytes::BytesMut::zeroed(first.0.len())
     } else {
         // `Bytes::new` does not allocate, so if there was no input, then return an empty
         // byte array without allocating.
-        return bytes::Bytes::new();
+        return bytes::BytesMut::new();
     };
 
     let iter = hashes.into_iter().map(|x| x.0 .0);
     for hash in iter {
-        for (out_byte, hash_byte) in out.iter_mut().zip(hash.iter()) {
-            *out_byte ^= hash_byte;
-        }
+        combine_hashes(&mut out, hash);
     }
 
-    out.freeze()
+    out
+}
+
+fn combine_hashes(into: &mut bytes::BytesMut, other: bytes::Bytes) {
+    // Properly initialise the target from the source if the target is empty.
+    // Otherwise, the loop below would run 0 times.
+    if into.is_empty() && !other.is_empty() {
+        into.extend_from_slice(&other);
+        return;
+    }
+
+    if into.len() != other.len() {
+        tracing::debug!("Combining hashes of different lengths. This is undefined behaviour.")
+    }
+
+    for (into_byte, other_byte) in into.iter_mut().zip(other.iter()) {
+        *into_byte ^= other_byte;
+    }
 }
 
 #[cfg(test)]
@@ -477,7 +627,7 @@ mod tests {
     #[test]
     fn new() {
         let factor = 4;
-        let pt = PartitionedTime::new(factor).unwrap();
+        let pt = PartitionedTime::new(factor, DhtArc::FULL).unwrap();
 
         // Full slices would have size 2^4 = 16, so we should reserve space for at least one
         // of each smaller slice size
@@ -488,9 +638,14 @@ mod tests {
     async fn from_store() {
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(factor, UNIX_TIMESTAMP, store)
-            .await
-            .unwrap();
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            UNIX_TIMESTAMP,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(0, pt.full_slices);
         assert!(pt.partial_slices.is_empty());
@@ -502,9 +657,14 @@ mod tests {
             UNIX_TIMESTAMP + Duration::from_secs(UNIT_TIME.as_secs() + 1);
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(factor, current_time, store)
-            .await
-            .unwrap();
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
 
         // Should allocate no full slices and one partial
         assert_eq!(0, pt.full_slices);
@@ -532,9 +692,14 @@ mod tests {
                 min_recent_time(factor).as_secs() + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(factor, current_time, store)
-            .await
-            .unwrap();
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(0, pt.full_slices);
         assert_eq!(factor as usize, pt.partial_slices.len());
@@ -553,9 +718,14 @@ mod tests {
                 + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(factor, current_time, store)
-            .await
-            .unwrap();
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(factor as usize + 1, pt.partial_slices.len());
         assert_eq!(pt.partial_slices[0].size, factor - 1);
@@ -573,9 +743,14 @@ mod tests {
                 2 * min_recent_time(factor).as_secs() + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(factor, current_time, store)
-            .await
-            .unwrap();
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(factor as usize * 2, pt.partial_slices.len());
 
@@ -612,9 +787,14 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::try_from_store(factor, current_time, store)
-            .await
-            .unwrap();
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(factor as usize, pt.partial_slices.len());
         let last_partial = pt.partial_slices.last().unwrap();
@@ -636,12 +816,24 @@ mod tests {
                 + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        store.store_slice_hash(0, vec![1; 64].into()).await.unwrap();
-        store.store_slice_hash(1, vec![1; 64].into()).await.unwrap();
-
-        let pt = PartitionedTime::try_from_store(factor, current_time, store)
+        let arc_constraint = DhtArc::Arc(0, 2);
+        store
+            .store_slice_hash(arc_constraint, 0, vec![1; 64].into())
             .await
             .unwrap();
+        store
+            .store_slice_hash(arc_constraint, 1, vec![1; 64].into())
+            .await
+            .unwrap();
+
+        let pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            arc_constraint,
+            store,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(2, pt.full_slices);
         assert_eq!(factor as usize, pt.partial_slices.len());
@@ -684,9 +876,11 @@ mod tests {
             .await
             .unwrap();
 
+        let arc_constraint = DhtArc::Arc(0, 2);
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
+            arc_constraint,
             store.clone(),
         )
         .await
@@ -697,9 +891,12 @@ mod tests {
         assert_eq!(factor as usize, pt.partial_slices.len());
 
         // The full slice should have been stored
-        assert_eq!(1, store.slice_hash_count().await.unwrap());
-        let full_slice_hash =
-            store.retrieve_slice_hash(0).await.unwrap().unwrap();
+        assert_eq!(1, store.slice_hash_count(arc_constraint).await.unwrap());
+        let full_slice_hash = store
+            .retrieve_slice_hash(arc_constraint, 0)
+            .await
+            .unwrap()
+            .unwrap();
         // The hashes should be combined using XOR
         assert_eq!(vec![7 ^ 23; 32], full_slice_hash);
 
@@ -755,9 +952,11 @@ mod tests {
             .await
             .unwrap();
 
+        let arc_constraint = DhtArc::Arc(0, 2);
         let pt = PartitionedTime::try_from_store(
             factor,
             current_time,
+            arc_constraint,
             store.clone(),
         )
         .await
@@ -768,9 +967,12 @@ mod tests {
         assert_eq!(factor as usize, pt.partial_slices.len());
 
         // The full slice should have been stored
-        assert_eq!(1, store.slice_hash_count().await.unwrap());
-        let full_slice_hash =
-            store.retrieve_slice_hash(0).await.unwrap().unwrap();
+        assert_eq!(1, store.slice_hash_count(arc_constraint).await.unwrap());
+        let full_slice_hash = store
+            .retrieve_slice_hash(arc_constraint, 0)
+            .await
+            .unwrap()
+            .unwrap();
         // The hashes should be combined using XOR
         assert_eq!(vec![7 ^ 23; 32], full_slice_hash);
 
@@ -818,6 +1020,7 @@ mod tests {
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
+            DhtArc::FULL,
             store.clone(),
         )
         .await
@@ -832,7 +1035,7 @@ mod tests {
                 current_time + Duration::from_secs(UNIT_TIME.as_secs() / 100);
             assert!(call_at < pt.next_update_at());
 
-            pt.update(call_at, store.clone()).await.unwrap();
+            pt.update(store.clone(), call_at).await.unwrap();
 
             assert_eq!(pt_original, pt);
         }
@@ -852,7 +1055,11 @@ mod tests {
             );
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        store.store_slice_hash(0, vec![1; 64].into()).await.unwrap();
+        let arc_constraint = DhtArc::Arc(0, 2);
+        store
+            .store_slice_hash(arc_constraint, 0, vec![1; 64].into())
+            .await
+            .unwrap();
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(
@@ -876,6 +1083,7 @@ mod tests {
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
+            arc_constraint,
             store.clone(),
         )
         .await
@@ -897,7 +1105,7 @@ mod tests {
             .await
             .unwrap();
 
-        pt.update(current_time + UNIT_TIME, store.clone())
+        pt.update(store.clone(), current_time + UNIT_TIME)
             .await
             .unwrap();
 
@@ -944,9 +1152,11 @@ mod tests {
             .await
             .unwrap();
 
+        let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_times,
+            arc_constraint,
             store.clone(),
         )
         .await
@@ -955,7 +1165,11 @@ mod tests {
         assert_eq!(1, pt.full_slices);
         assert_eq!(
             vec![7 ^ 23; 32],
-            store.retrieve_slice_hash(0).await.unwrap().unwrap()
+            store
+                .retrieve_slice_hash(arc_constraint, 0)
+                .await
+                .unwrap()
+                .unwrap()
         );
 
         // Store a new op, currently in the first partial slice, but will be in the next full slice.
@@ -971,11 +1185,11 @@ mod tests {
             .unwrap();
 
         pt.update(
+            store.clone(),
             UNIX_TIMESTAMP
                 + 2 * full_slice_duration(factor)
                 + min_recent_time(factor)
                 + Duration::from_secs(1),
-            store.clone(),
         )
         .await
         .unwrap();
@@ -983,14 +1197,22 @@ mod tests {
         assert_eq!(2, pt.full_slices);
         assert_eq!(factor as usize, pt.partial_slices.len());
 
-        assert_eq!(2, store.slice_hash_count().await.unwrap());
+        assert_eq!(2, store.slice_hash_count(arc_constraint).await.unwrap());
         assert_eq!(
             vec![7 ^ 23; 32],
-            store.retrieve_slice_hash(0).await.unwrap().unwrap()
+            store
+                .retrieve_slice_hash(arc_constraint, 0)
+                .await
+                .unwrap()
+                .unwrap()
         );
         assert_eq!(
             vec![13; 32],
-            store.retrieve_slice_hash(1).await.unwrap().unwrap()
+            store
+                .retrieve_slice_hash(arc_constraint, 1)
+                .await
+                .unwrap()
+                .unwrap()
         );
     }
 
@@ -1002,9 +1224,11 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
+        let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
+            arc_constraint,
             store.clone(),
         )
         .await
@@ -1049,21 +1273,29 @@ mod tests {
             .await
             .unwrap();
 
-        pt.update(current_time + (2 * pt.full_slice_duration), store.clone())
+        pt.update(store.clone(), current_time + (2 * pt.full_slice_duration))
             .await
             .unwrap();
 
         assert_eq!(2, pt.full_slices);
         assert_eq!(factor as usize, pt.partial_slices.len());
 
-        assert_eq!(2, store.slice_hash_count().await.unwrap());
+        assert_eq!(2, store.slice_hash_count(arc_constraint).await.unwrap());
         assert_eq!(
             vec![7 ^ 23; 32],
-            store.retrieve_slice_hash(0).await.unwrap().unwrap()
+            store
+                .retrieve_slice_hash(arc_constraint, 0)
+                .await
+                .unwrap()
+                .unwrap()
         );
         assert_eq!(
             vec![11 ^ 37; 32],
-            store.retrieve_slice_hash(1).await.unwrap().unwrap()
+            store
+                .retrieve_slice_hash(arc_constraint, 1)
+                .await
+                .unwrap()
+                .unwrap()
         );
     }
 
@@ -1075,9 +1307,11 @@ mod tests {
         let current_time = Timestamp::now();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
+        let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
+            arc_constraint,
             store.clone(),
         )
         .await
@@ -1093,13 +1327,16 @@ mod tests {
             pt.full_slices as u128
         );
 
-        let slice_hash_count = store.slice_hash_count().await.unwrap();
+        let slice_hash_count =
+            store.slice_hash_count(arc_constraint).await.unwrap();
         // Should be nothing stored, because we haven't ever created any data.
         assert_eq!(0, slice_hash_count);
 
         // Getting some partial slice that doesn't have any data stored will just return `None`
-        let some_slice_hash =
-            store.retrieve_slice_hash(5203984823).await.unwrap();
+        let some_slice_hash = store
+            .retrieve_slice_hash(arc_constraint, 5203984823)
+            .await
+            .unwrap();
         assert!(some_slice_hash.is_none());
 
         // Now insert an op at the current time
@@ -1114,17 +1351,238 @@ mod tests {
             .await
             .unwrap();
         // and compute the new state in the future
-        pt.update(Timestamp::now() + pt.full_slice_duration, store.clone())
+        pt.update(store.clone(), Timestamp::now() + pt.full_slice_duration)
             .await
             .unwrap();
 
         // Then a single full slice should have been created at the current time
-        assert!(store.slice_hash_count().await.unwrap() > 15_000);
+        assert!(store.slice_hash_count(arc_constraint).await.unwrap() > 15_000);
         // and the count should match the number of full slices that the time partition claims to
         // have created.
         assert_eq!(
-            store.slice_hash_count().await.unwrap(),
+            store.slice_hash_count(arc_constraint).await.unwrap(),
             initial_full_slices_count + 1
+        );
+    }
+
+    #[tokio::test]
+    async fn inform_ops_stored_for_empty_full_slice() {
+        enable_tracing();
+
+        let factor = 14;
+        let current_time = Timestamp::now();
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+
+        let arc_constraint = DhtArc::Arc(0, 32);
+        let mut pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            arc_constraint,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        let initial_hash =
+            store.retrieve_slice_hash(arc_constraint, 0).await.unwrap();
+        assert!(initial_hash.is_none());
+
+        // Receive an op into the first time slice
+        pt.inform_ops_stored(
+            store.clone(),
+            vec![StoredOp {
+                op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
+                    11, 0, 0, 0,
+                ])),
+                timestamp: UNIX_TIMESTAMP,
+            }],
+        )
+        .await
+        .unwrap();
+
+        // The hash should be updated to include the new op
+        let updated_hash = store
+            .retrieve_slice_hash(arc_constraint, 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(vec![11, 0, 0, 0], updated_hash);
+    }
+
+    #[tokio::test]
+    async fn inform_ops_stored_for_existing_full_slice() {
+        enable_tracing();
+
+        let factor = 14;
+        let current_time = Timestamp::now();
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        // Insert a single op in the first time slice
+        store
+            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::copy_from_slice(&[7, 0, 0, 0])),
+                UNIX_TIMESTAMP,
+                vec![],
+            )
+            .try_into()
+            .unwrap()])
+            .await
+            .unwrap();
+
+        let arc_constraint = DhtArc::Arc(0, 32);
+        let mut pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            arc_constraint,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        let initial_hash = store
+            .retrieve_slice_hash(arc_constraint, 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(vec![7, 0, 0, 0], initial_hash);
+
+        // Receive a new op into the same time slice
+        pt.inform_ops_stored(
+            store.clone(),
+            vec![StoredOp {
+                op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
+                    23, 0, 0, 0,
+                ])),
+                timestamp: UNIX_TIMESTAMP,
+            }],
+        )
+        .await
+        .unwrap();
+
+        // The hash should be updated to include the new op
+        let updated_hash = store
+            .retrieve_slice_hash(arc_constraint, 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(vec![7 ^ 23, 0, 0, 0], updated_hash);
+    }
+
+    #[tokio::test]
+    async fn inform_ops_stored_for_empty_partial_slice() {
+        enable_tracing();
+
+        let factor = 14;
+        let current_time =
+            UNIX_TIMESTAMP + min_recent_time(factor) + Duration::from_secs(3);
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+
+        let arc_constraint = DhtArc::Arc(0, 32);
+        let mut pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            arc_constraint,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Ensure that all the partial slices are empty
+        assert!(pt.partial_slices.iter().all(|slice| slice.hash.is_empty()));
+
+        // Receive an op into the first and last time slices
+        pt.inform_ops_stored(
+            store.clone(),
+            vec![
+                StoredOp {
+                    op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
+                        11, 0, 0, 0,
+                    ])),
+                    timestamp: UNIX_TIMESTAMP,
+                },
+                StoredOp {
+                    op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
+                        29, 0, 0, 0,
+                    ])),
+                    timestamp: (current_time - Duration::from_secs(5)).unwrap(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(vec![11, 0, 0, 0], pt.partial_slices.first().unwrap().hash);
+        assert_eq!(vec![29, 0, 0, 0], pt.partial_slices.last().unwrap().hash);
+    }
+
+    #[tokio::test]
+    async fn inform_ops_stored_for_existing_partial_slice() {
+        enable_tracing();
+
+        let factor = 14;
+        let current_time =
+            UNIX_TIMESTAMP + min_recent_time(factor) + Duration::from_secs(3);
+        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        store
+            .process_incoming_ops(vec![
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::copy_from_slice(&[7, 0, 0, 0])),
+                    UNIX_TIMESTAMP + Duration::from_secs(10),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+                Kitsune2MemoryOp::new(
+                    OpId::from(bytes::Bytes::copy_from_slice(&[31, 0, 0, 0])),
+                    (current_time - Duration::from_secs(30)).unwrap(),
+                    vec![],
+                )
+                .try_into()
+                .unwrap(),
+            ])
+            .await
+            .unwrap();
+
+        let arc_constraint = DhtArc::Arc(0, 32);
+        let mut pt = PartitionedTime::try_from_store(
+            factor,
+            current_time,
+            arc_constraint,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(vec![7, 0, 0, 0], pt.partial_slices.first().unwrap().hash);
+        assert_eq!(vec![31, 0, 0, 0], pt.partial_slices.last().unwrap().hash);
+
+        // Receive an op into the first and last time slices
+        pt.inform_ops_stored(
+            store.clone(),
+            vec![
+                StoredOp {
+                    op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
+                        11, 0, 0, 0,
+                    ])),
+                    timestamp: UNIX_TIMESTAMP,
+                },
+                StoredOp {
+                    op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
+                        29, 0, 0, 0,
+                    ])),
+                    timestamp: (current_time - Duration::from_secs(5)).unwrap(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            vec![7 ^ 11, 0, 0, 0],
+            pt.partial_slices.first().unwrap().hash
+        );
+        assert_eq!(
+            vec![31 ^ 29, 0, 0, 0],
+            pt.partial_slices.last().unwrap().hash
         );
     }
 
@@ -1163,10 +1621,14 @@ mod tests {
     }
 
     fn min_recent_time(factor: u8) -> Duration {
-        PartitionedTime::new(factor).unwrap().min_recent_time
+        PartitionedTime::new(factor, DhtArc::FULL)
+            .unwrap()
+            .min_recent_time
     }
 
     fn full_slice_duration(factor: u8) -> Duration {
-        PartitionedTime::new(factor).unwrap().full_slice_duration
+        PartitionedTime::new(factor, DhtArc::FULL)
+            .unwrap()
+            .full_slice_duration
     }
 }

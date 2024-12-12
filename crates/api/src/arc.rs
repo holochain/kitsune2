@@ -1,16 +1,17 @@
 //! Kitsune2 arcs represent a range of hash locations on the DHT.
 //!
-//! An arc can exist in its own right and refer to a range of locations on the DHT.
-//! It can also be used in context, such as an agent. Where it represents the range of locations
+//! When used in the context of an agent, it represents the range of hash locations
 //! that agent is responsible for.
 
 use serde::{Deserialize, Serialize};
 
 /// The definition of a storage arc compatible with the concept of
 /// storage and querying of items in a store that fall within that arc.
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq, Default,
+)]
 #[serde(untagged)]
-pub enum StorageArc {
+pub enum DhtArc {
     /// No DHT locations are contained within this arc.
     #[default]
     Empty,
@@ -20,9 +21,9 @@ pub enum StorageArc {
     Arc(u32, u32),
 }
 
-impl StorageArc {
+impl DhtArc {
     /// A full arc that contains all DHT locations.
-    pub const FULL: StorageArc = StorageArc::Arc(0, u32::MAX);
+    pub const FULL: DhtArc = DhtArc::Arc(0, u32::MAX);
 
     /// Get the min distance from a location to an arc in a wrapping u32 space.
     /// This function will only return 0 if the location is covered by the arc.
@@ -62,8 +63,8 @@ impl StorageArc {
     /// ```
     pub fn dist(&self, loc: u32) -> u32 {
         match self {
-            StorageArc::Empty => u32::MAX,
-            StorageArc::Arc(arc_start, arc_end) => {
+            DhtArc::Empty => u32::MAX,
+            DhtArc::Arc(arc_start, arc_end) => {
                 let (d1, d2) = if arc_start > arc_end {
                     // this arc wraps around the end of u32::MAX
 
@@ -134,12 +135,12 @@ impl StorageArc {
     ///
     /// |---b--a-A--B---|
     /// ```
-    pub fn overlaps(&self, other: &StorageArc) -> bool {
+    pub fn overlaps(&self, other: &DhtArc) -> bool {
         match (&self, &other) {
-            (StorageArc::Empty, _) | (_, StorageArc::Empty) => false,
+            (DhtArc::Empty, _) | (_, DhtArc::Empty) => false,
             (
-                this @ StorageArc::Arc(a_beg, a_end),
-                other @ StorageArc::Arc(b_beg, b_end),
+                this @ DhtArc::Arc(a_beg, a_end),
+                other @ DhtArc::Arc(b_beg, b_end),
             ) => {
                 // The only way for there to be overlap is if
                 // either of a's start or end points are within b
@@ -155,11 +156,11 @@ impl StorageArc {
 
 #[cfg(test)]
 mod tests {
-    use crate::StorageArc;
+    use crate::DhtArc;
 
     #[test]
     fn contains_full_arc_all_values() {
-        let arc = StorageArc::FULL;
+        let arc = DhtArc::FULL;
 
         // Contains bounds
         assert!(arc.contains(0));
@@ -171,7 +172,7 @@ mod tests {
 
     #[test]
     fn contains_includes_bounds() {
-        let arc = StorageArc::Arc(32, 64);
+        let arc = DhtArc::Arc(32, 64);
 
         assert!(arc.contains(32));
         assert!(arc.contains(64));
@@ -179,7 +180,7 @@ mod tests {
 
     #[test]
     fn contains_wraps_around() {
-        let arc = StorageArc::Arc(u32::MAX - 32, 32);
+        let arc = DhtArc::Arc(u32::MAX - 32, 32);
 
         assert!(!arc.contains(u32::MAX - 33));
         assert!(arc.contains(u32::MAX - 32));
@@ -192,40 +193,49 @@ mod tests {
     }
 
     #[test]
+    fn contains_empty_arc_no_locations() {
+        let arc = DhtArc::Empty;
+
+        assert!(!arc.contains(0));
+        assert!(!arc.contains(u32::MAX));
+        assert!(!arc.contains(u32::MAX / 2));
+    }
+
+    #[test]
     fn arc_dist_edge_cases() {
         type Dist = u32;
         type Loc = u32;
-        const F: &[(Dist, Loc, StorageArc)] = &[
+        const F: &[(Dist, Loc, DhtArc)] = &[
             // Empty arcs contain no values, distance is always u32::MAX
-            (u32::MAX, 0, StorageArc::Empty),
-            (u32::MAX, u32::MAX / 2, StorageArc::Empty),
-            (u32::MAX, u32::MAX, StorageArc::Empty),
+            (u32::MAX, 0, DhtArc::Empty),
+            (u32::MAX, u32::MAX / 2, DhtArc::Empty),
+            (u32::MAX, u32::MAX, DhtArc::Empty),
             // Unit length arcs at max value
-            (1, 0, StorageArc::Arc(u32::MAX, u32::MAX)),
+            (1, 0, DhtArc::Arc(u32::MAX, u32::MAX)),
             (
                 u32::MAX / 2 + 1,
                 u32::MAX / 2,
-                StorageArc::Arc(u32::MAX, u32::MAX),
+                DhtArc::Arc(u32::MAX, u32::MAX),
             ),
             // Unit length arcs at min value
-            (1, u32::MAX, StorageArc::Arc(0, 0)),
-            (u32::MAX / 2, u32::MAX / 2, StorageArc::Arc(0, 0)),
+            (1, u32::MAX, DhtArc::Arc(0, 0)),
+            (u32::MAX / 2, u32::MAX / 2, DhtArc::Arc(0, 0)),
             // Lower bound is inclusive
-            (0, 0, StorageArc::Arc(0, 1)),
-            (0, u32::MAX - 1, StorageArc::Arc(u32::MAX - 1, u32::MAX)),
+            (0, 0, DhtArc::Arc(0, 1)),
+            (0, u32::MAX - 1, DhtArc::Arc(u32::MAX - 1, u32::MAX)),
             // Distance from lower bound, non-wrapping
-            (1, 0, StorageArc::Arc(1, 2)),
-            (1, u32::MAX, StorageArc::Arc(0, 1)),
+            (1, 0, DhtArc::Arc(1, 2)),
+            (1, u32::MAX, DhtArc::Arc(0, 1)),
             // Distance from upper bound, non-wrapping
-            (1, 0, StorageArc::Arc(u32::MAX - 1, u32::MAX)),
+            (1, 0, DhtArc::Arc(u32::MAX - 1, u32::MAX)),
             // Distance from upper bound, wrapping
-            (0, 0, StorageArc::Arc(u32::MAX, 0)),
-            (1, 1, StorageArc::Arc(u32::MAX, 0)),
+            (0, 0, DhtArc::Arc(u32::MAX, 0)),
+            (1, 1, DhtArc::Arc(u32::MAX, 0)),
             // Distance from lower bound, wrapping
-            (1, u32::MAX - 1, StorageArc::Arc(u32::MAX, 0)),
-            (1, u32::MAX - 1, StorageArc::Arc(u32::MAX, 1)),
+            (1, u32::MAX - 1, DhtArc::Arc(u32::MAX, 0)),
+            (1, u32::MAX - 1, DhtArc::Arc(u32::MAX, 1)),
             // Contains, wrapping
-            (0, 0, StorageArc::Arc(u32::MAX, 1)),
+            (0, 0, DhtArc::Arc(u32::MAX, 1)),
         ];
 
         for (dist, loc, arc) in F.iter() {
@@ -242,54 +252,34 @@ mod tests {
     #[test]
     fn arcs_overlap_edge_cases() {
         type DoOverlap = bool;
-        const F: &[(DoOverlap, StorageArc, StorageArc)] = &[
-            (false, StorageArc::Arc(0, 0), StorageArc::Arc(1, 1)),
-            (
-                false,
-                StorageArc::Arc(0, 0),
-                StorageArc::Arc(u32::MAX, u32::MAX),
-            ),
-            (true, StorageArc::Arc(0, 0), StorageArc::Arc(0, 0)),
+        const F: &[(DoOverlap, DhtArc, DhtArc)] = &[
+            (false, DhtArc::Arc(0, 0), DhtArc::Arc(1, 1)),
+            (false, DhtArc::Arc(0, 0), DhtArc::Arc(u32::MAX, u32::MAX)),
+            (true, DhtArc::Arc(0, 0), DhtArc::Arc(0, 0)),
             (
                 true,
-                StorageArc::Arc(u32::MAX, u32::MAX),
-                StorageArc::Arc(u32::MAX, u32::MAX),
+                DhtArc::Arc(u32::MAX, u32::MAX),
+                DhtArc::Arc(u32::MAX, u32::MAX),
             ),
-            (true, StorageArc::Arc(u32::MAX, 0), StorageArc::Arc(0, 0)),
+            (true, DhtArc::Arc(u32::MAX, 0), DhtArc::Arc(0, 0)),
             (
                 true,
-                StorageArc::Arc(u32::MAX, 0),
-                StorageArc::Arc(u32::MAX, u32::MAX),
+                DhtArc::Arc(u32::MAX, 0),
+                DhtArc::Arc(u32::MAX, u32::MAX),
             ),
             (
                 true,
-                StorageArc::Arc(u32::MAX, 0),
-                StorageArc::Arc(u32::MAX, u32::MAX),
+                DhtArc::Arc(u32::MAX, 0),
+                DhtArc::Arc(u32::MAX, u32::MAX),
             ),
-            (true, StorageArc::Arc(0, 3), StorageArc::Arc(1, 2)),
-            (true, StorageArc::Arc(1, 2), StorageArc::Arc(0, 3)),
-            (true, StorageArc::Arc(1, 3), StorageArc::Arc(2, 4)),
-            (true, StorageArc::Arc(2, 4), StorageArc::Arc(1, 3)),
-            (
-                true,
-                StorageArc::Arc(u32::MAX - 1, 1),
-                StorageArc::Arc(u32::MAX, 0),
-            ),
-            (
-                true,
-                StorageArc::Arc(u32::MAX, 0),
-                StorageArc::Arc(u32::MAX - 1, 1),
-            ),
-            (
-                true,
-                StorageArc::Arc(u32::MAX - 1, 0),
-                StorageArc::Arc(u32::MAX, 1),
-            ),
-            (
-                true,
-                StorageArc::Arc(u32::MAX, 1),
-                StorageArc::Arc(u32::MAX - 1, 0),
-            ),
+            (true, DhtArc::Arc(0, 3), DhtArc::Arc(1, 2)),
+            (true, DhtArc::Arc(1, 2), DhtArc::Arc(0, 3)),
+            (true, DhtArc::Arc(1, 3), DhtArc::Arc(2, 4)),
+            (true, DhtArc::Arc(2, 4), DhtArc::Arc(1, 3)),
+            (true, DhtArc::Arc(u32::MAX - 1, 1), DhtArc::Arc(u32::MAX, 0)),
+            (true, DhtArc::Arc(u32::MAX, 0), DhtArc::Arc(u32::MAX - 1, 1)),
+            (true, DhtArc::Arc(u32::MAX - 1, 0), DhtArc::Arc(u32::MAX, 1)),
+            (true, DhtArc::Arc(u32::MAX, 1), DhtArc::Arc(u32::MAX - 1, 0)),
         ];
 
         for (do_overlap, a, b) in F.iter() {
