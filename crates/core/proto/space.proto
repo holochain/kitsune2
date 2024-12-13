@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package kitsune2.space;
+
+// A Kitsune2 space protocol message.
+//
+// There is only a single space-level message type. That is a notify
+// between two agents at that space level. Making this a very simple message.
+message K2SpaceProto {
+  // The destination agent.
+  bytes to_agent = 1;
+
+  // The source agent.
+  bytes from_agent = 2;
+
+  // The payload or content of this message.
+  bytes data = 3;
+}

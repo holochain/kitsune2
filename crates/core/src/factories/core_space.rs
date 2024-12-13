@@ -3,6 +3,8 @@
 use kitsune2_api::{config::*, space::*, *};
 use std::sync::Arc;
 
+mod protocol;
+
 const MOD_NAME: &str = "CoreSpace";
 
 /// Configuration parameters for [CoreSpaceFactory].
@@ -35,31 +37,66 @@ impl SpaceFactory for CoreSpaceFactory {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-        _handler: DynSpaceHandler,
-        _space: SpaceId,
+        handler: DynSpaceHandler,
+        space: SpaceId,
+        tx: transport::DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
             let config = builder
                 .config
                 .get_module_config::<CoreSpaceConfig>(MOD_NAME)?;
             let peer_store = builder.peer_store.create(builder.clone()).await?;
-            let out: DynSpace = Arc::new(CoreSpace::new(config, peer_store));
+            tx.register_space_handler(
+                space.clone(),
+                Arc::new(TxHandlerTranslator(handler)),
+            );
+            let out: DynSpace =
+                Arc::new(CoreSpace::new(config, space, tx, peer_store));
             Ok(out)
         })
     }
 }
 
 #[derive(Debug)]
+struct TxHandlerTranslator(DynSpaceHandler);
+
+impl transport::TxBaseHandler for TxHandlerTranslator {}
+impl transport::TxSpaceHandler for TxHandlerTranslator {
+    fn recv_space_notify(
+        &self,
+        _peer: Url,
+        space: SpaceId,
+        data: bytes::Bytes,
+    ) -> K2Result<()> {
+        let dec = protocol::K2SpaceProto::decode(&data)?;
+        self.0.recv_notify(
+            dec.to_agent.into(),
+            dec.from_agent.into(),
+            space,
+            dec.data,
+        )
+    }
+}
+
+#[derive(Debug)]
 struct CoreSpace {
+    space: SpaceId,
+    tx: transport::DynTransport,
     peer_store: peer_store::DynPeerStore,
 }
 
 impl CoreSpace {
     pub fn new(
         _config: CoreSpaceConfig,
+        space: SpaceId,
+        tx: transport::DynTransport,
         peer_store: peer_store::DynPeerStore,
     ) -> Self {
-        Self { peer_store }
+        Self {
+            space,
+            tx,
+            peer_store,
+        }
     }
 }
 
@@ -79,11 +116,38 @@ impl Space for CoreSpace {
         Box::pin(async move { todo!() })
     }
 
-    fn send_message(
+    fn send_notify(
         &self,
-        _peer: AgentId,
-        _data: bytes::Bytes,
-    ) -> BoxFut<'_, ()> {
-        Box::pin(async move { todo!() })
+        to_agent: AgentId,
+        from_agent: AgentId,
+        data: bytes::Bytes,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let info = match self.peer_store.get(to_agent.clone()).await? {
+                Some(info) => info,
+                None => {
+                    todo!("discovery is not yet implemented!");
+                }
+            };
+            let url = match &info.url {
+                Some(url) => url.clone(),
+                None => {
+                    return Err(K2Error::other(format!(
+                        "to_agent {to_agent} is offline"
+                    )))
+                }
+            };
+
+            let enc = protocol::K2SpaceProto {
+                to_agent: to_agent.into(),
+                from_agent: from_agent.into(),
+                data,
+            }
+            .encode()?;
+
+            self.tx
+                .send_space_notify(url, self.space.clone(), enc)
+                .await
+        })
     }
 }

@@ -63,11 +63,17 @@ impl TxHandler for TrackHnd {
 }
 
 impl TxSpaceHandler for TrackHnd {
-    fn recv_space_notify(&self, peer: Url, space: SpaceId, data: bytes::Bytes) {
+    fn recv_space_notify(
+        &self,
+        peer: Url,
+        space: SpaceId,
+        data: bytes::Bytes,
+    ) -> K2Result<()> {
         self.track
             .lock()
             .unwrap()
             .push(Track::SpaceRecv(peer, space, data));
+        Ok(())
     }
 }
 
@@ -78,11 +84,12 @@ impl TxModuleHandler for TrackHnd {
         space: SpaceId,
         module: String,
         data: bytes::Bytes,
-    ) {
+    ) -> K2Result<()> {
         self.track
             .lock()
             .unwrap()
             .push(Track::ModRecv(peer, space, module, data));
+        Ok(())
     }
 }
 
@@ -194,7 +201,6 @@ impl TrackHnd {
 
 async fn gen_tx(hnd: DynTxHandler) -> DynTransport {
     let builder = Arc::new(crate::default_builder());
-    let hnd = TxImpHnd::new(hnd);
     builder
         .transport
         .create(builder.clone(), hnd)

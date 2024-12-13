@@ -960,6 +960,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "kitsune2_api",
+ "prost",
  "serde",
  "serde_json",
  "tokio",

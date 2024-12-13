@@ -37,9 +37,10 @@ impl TransportFactory for MemTransportFactory {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-        handler: Arc<TxImpHnd>,
+        handler: DynTxHandler,
     ) -> BoxFut<'static, K2Result<DynTransport>> {
         Box::pin(async move {
+            let handler = TxImpHnd::new(handler);
             let config = builder
                 .config
                 .get_module_config::<MemTransportConfig>(MOD_NAME)?;
