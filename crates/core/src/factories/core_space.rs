@@ -126,7 +126,11 @@ impl Space for CoreSpace {
             let info = match self.peer_store.get(to_agent.clone()).await? {
                 Some(info) => info,
                 None => {
-                    todo!("discovery is not yet implemented!");
+                    // TODO - once discovery is implemented try to
+                    //        look up the peer from the network.
+                    return Err(K2Error::other(format!(
+                        "to_agent {to_agent} not found"
+                    )));
                 }
             };
             let url = match &info.url {
@@ -134,7 +138,7 @@ impl Space for CoreSpace {
                 None => {
                     return Err(K2Error::other(format!(
                         "to_agent {to_agent} is offline"
-                    )))
+                    )));
                 }
             };
 
@@ -151,3 +155,6 @@ impl Space for CoreSpace {
         })
     }
 }
+
+#[cfg(test)]
+mod test;
