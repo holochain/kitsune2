@@ -7,6 +7,8 @@ use crate::{
     AgentId, BoxFut, K2Result, OpId, SpaceId,
 };
 
+include!("../proto/gen/kitsune2.fetch.rs");
+
 /// Trait for implementing a fetch module to fetch ops from other agents.
 pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be fetched.
@@ -38,3 +40,31 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait object [FetchFactory].
 pub type DynFetchFactory = Arc<dyn FetchFactory>;
+
+#[cfg(test)]
+mod test {
+    use crate::id::Id;
+
+    use super::*;
+
+    #[test]
+    fn happy_encode_decode() {
+        use prost::Message;
+        let op_id_1 = OpId(Id(bytes::Bytes::from_static(b"some_op_id")));
+        let op_id_2 = OpId(Id(bytes::Bytes::from_static(b"another_op_id")));
+        let op_ids = vec![op_id_1, op_id_2];
+        let op_id_bytes = op_ids
+            .into_iter()
+            .map(|op_id| op_id.0 .0)
+            .collect::<Vec<_>>();
+
+        let ops = Ops {
+            ids: op_id_bytes.clone(),
+        };
+
+        let op_ids_enc = ops.encode_to_vec();
+        let op_ids_dec = Ops::decode(op_ids_enc.as_slice()).unwrap();
+
+        assert_eq!(op_id_bytes, op_ids_dec.ids);
+    }
+}

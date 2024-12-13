@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package kitsune2.fetch;
+
+// Op ids to request ops from a peer.
+message Ops {
+  // A vector of op ids.
+  repeated bytes ids = 1;
+}
