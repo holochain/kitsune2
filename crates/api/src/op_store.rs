@@ -91,6 +91,12 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         arc: DhtArc,
         slice_id: u64,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
+
+    /// Retrieve all slice hashes for a given arc.
+    fn retrieve_slice_hashes(
+        &self,
+        arc: DhtArc,
+    ) -> BoxFuture<'_, K2Result<Vec<bytes::Bytes>>>;
 }
 
 /// Trait-object version of kitsune2 op store.

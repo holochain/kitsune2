@@ -6,6 +6,7 @@ use kitsune2_api::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use bytes::Bytes;
 use tokio::sync::RwLock;
 
 pub mod time_slice_hash_store;
@@ -181,6 +182,15 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .await
                 .time_slice_hashes
                 .get(&arc, slice_id))
+        }
+        .boxed()
+    }
+
+    /// Retrieve the hashes of all time slices.
+    fn retrieve_slice_hashes(&self, arc: DhtArc) -> BoxFuture<'_, K2Result<Vec<Bytes>>> {
+        async move {
+            let self_lock = self.read().await;
+            Ok(self_lock.time_slice_hashes.get_all(&arc))
         }
         .boxed()
     }

@@ -60,6 +60,8 @@
 //! served by a node is not the only storage it may require. It is just a lower bound on the
 //! free space that a node will need to have available.
 
+use crate::arc_set::ArcSet;
+use crate::combine::combine_hashes;
 use crate::PartitionedTime;
 use kitsune2_api::{DhtArc, DynOpStore, K2Result, StoredOp, Timestamp};
 use std::collections::HashMap;
@@ -189,6 +191,63 @@ impl PartitionedHashes {
         }
 
         Ok(())
+    }
+}
+
+// Query implementation
+impl PartitionedHashes {
+    pub async fn full_time_slice_disc(
+        &self,
+        arc_set: &ArcSet,
+        store: DynOpStore,
+    ) -> K2Result<(bytes::Bytes, Timestamp)> {
+        let mut combined = bytes::BytesMut::new();
+        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
+            if !arc_set.includes_sector_id(sector_id as u32) {
+                continue;
+            }
+
+            let hash =
+                sector.combined_full_time_slice_hash(store.clone()).await?;
+            combine_hashes(&mut combined, hash);
+        }
+
+        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+
+        Ok((combined.freeze(), timestamp))
+    }
+
+    pub fn partial_time_rings(&self, arc_set: &ArcSet) -> Vec<bytes::Bytes> {
+        let mut partials = Vec::with_capacity(arc_set.covered_sector_count());
+
+        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
+            if !arc_set.includes_sector_id(sector_id as u32) {
+                continue;
+            }
+
+            partials.push(sector.combined_partial_slice_hashes().peekable());
+        }
+
+        let mut out = Vec::new();
+        let mut combined = bytes::BytesMut::new();
+        while partials[0].peek().is_some() {
+            combined.clear();
+            for partial in &mut partials {
+                if let Some(hash) = partial.next() {
+                    combine_hashes(&mut combined, hash);
+                }
+            }
+            out.push(combined.clone().freeze());
+        }
+
+        out
+    }
+}
+
+#[cfg(test)]
+impl PartitionedHashes {
+    pub fn full_slice_end_timestamp(&self) -> Timestamp {
+        self.partitioned_hashes[0].full_slice_end_timestamp()
     }
 }
 
