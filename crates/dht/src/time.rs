@@ -53,10 +53,10 @@
 //! comparing time slices with another peer. A higher factor allocates more recent time and fewer
 //! slices to be stored but is less granular when comparing time slices with another peer.
 
+use crate::combine;
 use crate::constant::UNIT_TIME;
 use kitsune2_api::{
-    DhtArc, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
-    UNIX_TIMESTAMP,
+    DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp, UNIX_TIMESTAMP,
 };
 use std::time::Duration;
 
@@ -248,7 +248,7 @@ impl PartitionedTime {
                     Some(hash) => {
                         let mut hash = bytes::BytesMut::from(hash);
                         // Combine the stored hash with the new op hash
-                        combine_hashes(&mut hash, op.op_id.0 .0);
+                        combine::combine_hashes(&mut hash, op.op_id.0 .0);
 
                         // and store the new value
                         store
@@ -297,7 +297,10 @@ impl PartitionedTime {
                 // bound of the partials to find out which partial slice this op belongs to.
                 for partial in self.partial_slices.iter_mut().rev() {
                     if op.timestamp >= partial.start {
-                        combine_hashes(&mut partial.hash, op.op_id.0 .0);
+                        combine::combine_hashes(
+                            &mut partial.hash,
+                            op.op_id.0 .0,
+                        );
 
                         // Belongs in exactly one partial, stop after finding the right one.
                         break;
@@ -307,6 +310,25 @@ impl PartitionedTime {
         }
 
         Ok(())
+    }
+}
+
+// Public, query methods
+impl PartitionedTime {
+    pub async fn combined_full_time_slice_hash(
+        &self,
+        store: DynOpStore,
+    ) -> K2Result<bytes::Bytes> {
+        let hashes = store.retrieve_slice_hashes(self.arc_constraint).await?;
+        Ok(combine::combine_op_hashes(hashes).freeze())
+    }
+
+    pub fn combined_partial_slice_hashes(
+        &self,
+    ) -> impl Iterator<Item = bytes::Bytes> + use<'_> {
+        self.partial_slices
+            .iter()
+            .map(|partial| partial.hash.clone().freeze())
     }
 }
 
@@ -395,7 +417,7 @@ impl PartitionedTime {
                 )
                 .await?;
 
-            let hash = combine_op_hashes(op_hashes);
+            let hash = combine::combine_op_hashes(op_hashes);
 
             if !hash.is_empty() {
                 store
@@ -491,7 +513,7 @@ impl PartitionedTime {
                         + Duration::from_secs(
                             (1u64 << size) * UNIT_TIME.as_secs(),
                         );
-                    combine_op_hashes(
+                    combine::combine_op_hashes(
                         store
                             .retrieve_op_hashes_in_time_slice(
                                 self.arc_constraint,
@@ -547,48 +569,10 @@ fn residual_duration_for_factor(factor: u8) -> K2Result<Duration> {
     Ok(Duration::from_secs(sum * UNIT_TIME.as_secs()))
 }
 
-/// Combine a series of op hashes into a single hash.
-///
-/// Requires that the op hashes are already ordered.
-/// If the input is empty, then the output is an empty byte array.
-fn combine_op_hashes(hashes: Vec<OpId>) -> bytes::BytesMut {
-    let mut out = if let Some(first) = hashes.first() {
-        bytes::BytesMut::zeroed(first.0.len())
-    } else {
-        // `Bytes::new` does not allocate, so if there was no input, then return an empty
-        // byte array without allocating.
-        return bytes::BytesMut::new();
-    };
-
-    let iter = hashes.into_iter().map(|x| x.0 .0);
-    for hash in iter {
-        combine_hashes(&mut out, hash);
-    }
-
-    out
-}
-
-fn combine_hashes(into: &mut bytes::BytesMut, other: bytes::Bytes) {
-    // Properly initialise the target from the source if the target is empty.
-    // Otherwise, the loop below would run 0 times.
-    if into.is_empty() && !other.is_empty() {
-        into.extend_from_slice(&other);
-        return;
-    }
-
-    if into.len() != other.len() {
-        tracing::debug!("Combining hashes of different lengths. This is undefined behaviour.")
-    }
-
-    for (into_byte, other_byte) in into.iter_mut().zip(other.iter()) {
-        *into_byte ^= other_byte;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kitsune2_api::OpStore;
+    use kitsune2_api::{OpId, OpStore};
     use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
     use kitsune2_test_utils::enable_tracing;
     use std::sync::Arc;
@@ -1307,7 +1291,7 @@ mod tests {
         let current_time = Timestamp::now();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
-        let arc_constraint = DhtArc::Arc(0, 2);
+        let arc_constraint = DhtArc::FULL;
         let mut pt = PartitionedTime::try_from_store(
             factor,
             current_time,
@@ -1343,7 +1327,7 @@ mod tests {
         store
             .process_incoming_ops(vec![Kitsune2MemoryOp::new(
                 OpId::from(bytes::Bytes::from(vec![7; 32])),
-                (Timestamp::now() - pt.full_slice_duration).unwrap(),
+                pt.full_slice_end_timestamp(),
                 vec![],
             )
             .try_into()

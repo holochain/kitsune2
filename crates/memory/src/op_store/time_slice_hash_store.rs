@@ -47,7 +47,14 @@ impl TimeSliceHashStore {
             .cloned()
     }
 
-    pub fn highest_stored_id(&self, arc: &DhtArc) -> Option<u64> {
+    pub(super) fn get_all(&self, arc: &DhtArc) -> Vec<bytes::Bytes> {
+        self.inner
+            .get(arc)
+            .map(|by_arc| by_arc.iter().map(|(_, hash)| hash.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    pub(super) fn highest_stored_id(&self, arc: &DhtArc) -> Option<u64> {
         self.inner
             .get(arc)
             .and_then(|by_arc| by_arc.iter().last().map(|(id, _)| *id))
