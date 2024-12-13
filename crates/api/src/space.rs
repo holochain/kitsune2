@@ -29,6 +29,13 @@ pub trait SpaceHandler: 'static + Send + Sync + std::fmt::Debug {
 pub type DynSpaceHandler = Arc<dyn SpaceHandler>;
 
 /// Represents a unique dht space within which to communicate with peers.
+///
+/// A space in Kitsune2 is largely just responsible for hooking up
+/// modules within that space. However, it also has a couple responsibilities:
+///
+/// - The space provides the space-level notification send/recv ability.
+/// - The space manages the generation / publishing of agent infos
+///   for joined local agents.
 pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// Get a reference to the peer store being used by this space.
     /// This could allow you to inject peer info from some source other

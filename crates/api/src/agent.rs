@@ -110,10 +110,52 @@ pub type DynVerifier = Arc<dyn Verifier + 'static + Send + Sync>;
 pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
     /// The [AgentId] of this local agent.
     fn agent(&self) -> &AgentId;
+
+    /// Register a callback to be invoked when [Self::invoke_cb] is called.
+    /// Implementations need only track a single cb. If this is called again,
+    /// use only the new one.
+    fn register_cb(&self, cb: Arc<dyn Fn() + 'static + Send + Sync>);
+
+    /// Invoke the registered cb if one has been set.
+    /// This can be ignored if [Self::register_cb] has not yet been called.
+    fn invoke_cb(&self);
+
+    /// Access the current storage arc for this local agent.
+    /// This will be used by the space module to construct [AgentInfoSigned].
+    fn get_cur_storage_arc(&self) -> DhtArc;
+
+    /// Set the current storage arc for this local agent.
+    /// This will be initially set to zero on space join,
+    /// then will be updated by the gossip module as best effort to
+    /// collect data for the range is made.
+    fn set_cur_storage_arc(&self, arc: DhtArc);
+
+    /// This is a chance for the implementor to influence how large
+    /// a storage arc should be for this agent. The gossip module will
+    /// attempt to collect enough data for claiming storage authority
+    /// over this range.
+    fn get_tgt_storage_arc(&self) -> DhtArc;
+
+    /// The sharding module will attempt to determine an ideal target
+    /// arc for this agent. An implementation is free to use or discard
+    /// this information when returning the arc in [Self::get_tgt_storage_arc].
+    /// This will initially be set to zero on join, but the sharding module
+    /// may later update this to FULL or a true target value.
+    fn set_tgt_storage_arc_hint(&self, arc: DhtArc);
 }
 
 /// Trait-object [LocalAgent].
 pub type DynLocalAgent = Arc<dyn LocalAgent>;
+
+impl Signer for DynLocalAgent {
+    fn sign(
+        &self,
+        agent_info: &AgentInfo,
+        message: &[u8],
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        (**self).sign(agent_info, message)
+    }
+}
 
 mod serde_string_timestamp {
     pub fn serialize<S>(
