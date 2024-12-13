@@ -46,15 +46,15 @@ use std::{
     time::Instant,
 };
 
-use bytes::BufMut;
 use kitsune2_api::{
     builder,
     config::ModConfig,
-    fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory},
+    fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory, Ops},
     peer_store,
     transport::DynTransport,
     AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
+use prost::Message;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     task::JoinHandle,
@@ -252,10 +252,16 @@ impl CoreFetch {
                     None => continue,
                 };
 
-                let mut data = bytes::BytesMut::new();
-                data.put(op_id.clone().0 .0);
-                data.put(agent_id.clone().0 .0);
-                let data = data.freeze();
+                let op_id_bytes = vec![op_id.clone()]
+                    .into_iter()
+                    .map(|op_id| op_id.0 .0)
+                    .collect::<Vec<_>>();
+
+                let op_id_bytes = Ops {
+                    ids: op_id_bytes.clone(),
+                };
+                let data =
+                    bytes::Bytes::copy_from_slice(&op_id_bytes.encode_to_vec());
 
                 // Send fetch request to agent.
                 if let Err(err) = transport

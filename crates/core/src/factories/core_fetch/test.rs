@@ -5,9 +5,12 @@ use std::{
 
 use bytes::Bytes;
 use kitsune2_api::{
-    fetch::Fetch, id::Id, transport::Transport, AgentId, K2Error, OpId,
-    SpaceId, Url,
+    fetch::{Fetch, Ops},
+    id::Id,
+    transport::Transport,
+    AgentId, K2Error, OpId, SpaceId, Url,
 };
+use prost::Message;
 use rand::Rng;
 
 use crate::{default_builder, factories::test_utils::AgentBuild};
@@ -16,7 +19,7 @@ use super::{CoreFetch, CoreFetchConfig};
 
 #[derive(Debug)]
 pub struct MockTransport {
-    requests_sent: Arc<Mutex<Vec<(OpId, AgentId)>>>,
+    requests_sent: Arc<Mutex<Vec<(OpId, Url)>>>,
     fail: bool,
 }
 
@@ -32,17 +35,18 @@ impl MockTransport {
 impl Transport for MockTransport {
     fn send_module(
         &self,
-        _peer: kitsune2_api::Url,
+        peer: kitsune2_api::Url,
         _space: kitsune2_api::SpaceId,
         _module: String,
-        mut data: bytes::Bytes,
+        data: bytes::Bytes,
     ) -> kitsune2_api::BoxFut<'_, kitsune2_api::K2Result<()>> {
         Box::pin(async move {
-            let op_id_bytes = data.split_to(data.len() / 2);
-            let agent_id_bytes = data;
-            let op_id = OpId::from(op_id_bytes);
-            let agent_id = AgentId::from(agent_id_bytes);
-            self.requests_sent.lock().unwrap().push((op_id, agent_id));
+            let ops = Ops::decode(data).unwrap();
+            let mut lock = self.requests_sent.lock().unwrap();
+            ops.ids.into_iter().for_each(|op_id| {
+                let op_id = OpId::from(op_id);
+                lock.push((op_id, peer.clone()));
+            });
 
             if self.fail {
                 Err(K2Error::other("connection timed out"))
@@ -103,6 +107,7 @@ async fn fetch_queue() {
         ..Default::default()
     }
     .build();
+    let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
     let fetch = CoreFetch::new(
@@ -159,7 +164,7 @@ async fn fetch_queue() {
         .lock()
         .unwrap()
         .iter()
-        .all(|request| request == &(op_id.clone(), agent_id.clone())));
+        .all(|request| request == &(op_id.clone(), agent_url.clone())));
 
     // Give time for more requests to be sent, which shouldn't happen now that the set of
     // ops to fetch is cleared.
@@ -188,6 +193,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
         ..Default::default()
     }
     .build();
+    let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
     let fetch = CoreFetch::new(
@@ -216,7 +222,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
                 mock_transport.requests_sent.lock().unwrap().clone();
             if requests_sent.len() >= num_ops {
                 op_list.clone().into_iter().all(|op_id| {
-                    requests_sent.contains(&(op_id, agent_id.clone()))
+                    requests_sent.contains(&(op_id, agent_url.clone()))
                 });
                 break;
             }
@@ -266,6 +272,9 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
         ..Default::default()
     }
     .build();
+    let agent_url_1 = agent_info_1.url.clone().unwrap();
+    let agent_url_2 = agent_info_1.url.clone().unwrap();
+    let agent_url_3 = agent_info_1.url.clone().unwrap();
     peer_store
         .insert(vec![agent_info_1, agent_info_2, agent_info_3])
         .await
@@ -281,15 +290,15 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     op_list_1
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_1.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_url_1.clone())));
     op_list_2
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_2.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_url_2.clone())));
     op_list_3
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_3.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_url_3.clone())));
 
     fetch
         .add_ops(op_list_1.clone(), agent_1.clone())
@@ -430,25 +439,28 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
 
     let agent_info_1 = AgentBuild {
         agent: Some(agent_1.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:0").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
     let agent_info_2 = AgentBuild {
         agent: Some(agent_2.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        url: Some(Some(Url::from_str("wss://127.0.0.2:0").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
     let agent_info_3 = AgentBuild {
         agent: Some(agent_3.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:8888").unwrap())),
+        url: Some(Some(Url::from_str("wss://127.0.0.3:0").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
+    let agent_url_1 = agent_info_1.url.clone().unwrap();
+    let agent_url_2 = agent_info_2.url.clone().unwrap();
+    let agent_url_3 = agent_info_3.url.clone().unwrap();
     peer_store
         .insert(vec![agent_info_1, agent_info_2, agent_info_3])
         .await
@@ -476,6 +488,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
         .unwrap();
 
     // Wait for one request for each agent.
+    let expected_agent_url = [agent_url_1, agent_url_2, agent_url_3];
     let expected_agents = [agent_1, agent_2, agent_3];
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
@@ -486,7 +499,7 @@ async fn multi_op_fetch_from_multiple_unresponsive_agents() {
                 .iter()
                 .map(|(_, agent_id)| agent_id)
                 .collect::<Vec<_>>();
-            if expected_agents
+            if expected_agent_url
                 .iter()
                 .all(|agent| request_destinations.contains(&agent))
             {
