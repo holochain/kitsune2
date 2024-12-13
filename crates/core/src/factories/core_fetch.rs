@@ -49,12 +49,11 @@ use std::{
 use kitsune2_api::{
     builder,
     config::ModConfig,
-    fetch::{DynFetch, DynFetchFactory, Fetch, FetchFactory, Ops},
+    fetch::{serialize_op_ids, DynFetch, DynFetchFactory, Fetch, FetchFactory},
     peer_store,
     transport::DynTransport,
     AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
-use prost::Message;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     task::JoinHandle,
@@ -252,16 +251,7 @@ impl CoreFetch {
                     None => continue,
                 };
 
-                let op_id_bytes = vec![op_id.clone()]
-                    .into_iter()
-                    .map(|op_id| op_id.0 .0)
-                    .collect::<Vec<_>>();
-
-                let op_id_bytes = Ops {
-                    ids: op_id_bytes.clone(),
-                };
-                let data =
-                    bytes::Bytes::copy_from_slice(&op_id_bytes.encode_to_vec());
+                let data = serialize_op_ids(vec![op_id.clone()]);
 
                 // Send fetch request to agent.
                 match transport
@@ -288,14 +278,14 @@ impl CoreFetch {
                         }
                     }
                     Err(err) => {
-                    tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
-                    state
-                        .lock()
-                        .unwrap()
-                        .cool_down_list
-                        .add_agent(agent_id.clone());
+                        tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
+                        state
+                            .lock()
+                            .unwrap()
+                            .cool_down_list
+                            .add_agent(agent_id.clone());
+                    }
                 }
-            }
             }
         }
     }

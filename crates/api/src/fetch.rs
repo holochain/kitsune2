@@ -2,12 +2,41 @@
 
 use std::sync::Arc;
 
+use prost::Message;
+
 use crate::{
-    builder, config, peer_store::DynPeerStore, transport::DynTransport,
-    AgentId, BoxFut, K2Result, OpId, SpaceId,
+    builder, config, id::Id, peer_store::DynPeerStore, transport::DynTransport,
+    AgentId, BoxFut, K2Error, K2Result, OpId, SpaceId,
 };
 
 include!("../proto/gen/kitsune2.fetch.rs");
+
+impl From<Vec<OpId>> for OpIds {
+    fn from(value: Vec<OpId>) -> Self {
+        Self {
+            data: value.into_iter().map(|op_id| op_id.0 .0).collect(),
+        }
+    }
+}
+
+impl From<OpIds> for Vec<OpId> {
+    fn from(value: OpIds) -> Self {
+        value.data.into_iter().map(|id| OpId(Id(id))).collect()
+    }
+}
+
+/// Serialize list of op ids for sending over the wire.
+pub fn serialize_op_ids(value: Vec<OpId>) -> bytes::Bytes {
+    let bytes = OpIds::from(value).encode_to_vec();
+    bytes::Bytes::copy_from_slice(&bytes)
+}
+
+/// Deserialize list of op ids.
+pub fn deserialize_op_ids(value: bytes::Bytes) -> K2Result<Vec<OpId>> {
+    let op_ids = OpIds::decode(value).map_err(K2Error::other)?;
+    let vec = Vec::from(op_ids);
+    Ok(vec)
+}
 
 /// Trait for implementing a fetch module to fetch ops from other agents.
 pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
@@ -46,25 +75,30 @@ mod test {
     use crate::id::Id;
 
     use super::*;
+    use prost::Message;
 
     #[test]
     fn happy_encode_decode() {
-        use prost::Message;
         let op_id_1 = OpId(Id(bytes::Bytes::from_static(b"some_op_id")));
         let op_id_2 = OpId(Id(bytes::Bytes::from_static(b"another_op_id")));
-        let op_ids = vec![op_id_1, op_id_2];
-        let op_id_bytes = op_ids
-            .into_iter()
-            .map(|op_id| op_id.0 .0)
-            .collect::<Vec<_>>();
+        let op_id_vec = vec![op_id_1, op_id_2];
+        let op_ids = OpIds::from(op_id_vec.clone());
 
-        let ops = Ops {
-            ids: op_id_bytes.clone(),
-        };
+        let op_ids_enc = op_ids.encode_to_vec();
+        let op_ids_dec = OpIds::decode(op_ids_enc.as_slice()).unwrap();
+        let op_ids_dec_vec = Vec::from(op_ids_dec.clone());
 
-        let op_ids_enc = ops.encode_to_vec();
-        let op_ids_dec = Ops::decode(op_ids_enc.as_slice()).unwrap();
+        assert_eq!(op_ids, op_ids_dec);
+        assert_eq!(op_id_vec, op_ids_dec_vec);
+    }
 
-        assert_eq!(op_id_bytes, op_ids_dec.ids);
+    #[test]
+    fn bytes_from_op_ids() {
+        let op_id_1 = OpId(Id(bytes::Bytes::from_static(b"some_op_id")));
+        let op_id_2 = OpId(Id(bytes::Bytes::from_static(b"another_op_id")));
+        let op_id_vec = vec![op_id_1, op_id_2];
+        let bytes = serialize_op_ids(op_id_vec.clone());
+        let op_id_vec_deserialized = deserialize_op_ids(bytes.clone()).unwrap();
+        assert_eq!(op_id_vec_deserialized, op_id_vec);
     }
 }

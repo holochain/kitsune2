@@ -5,12 +5,11 @@ use std::{
 
 use bytes::Bytes;
 use kitsune2_api::{
-    fetch::{Fetch, Ops},
+    fetch::{deserialize_op_ids, Fetch},
     id::Id,
     transport::Transport,
     AgentId, K2Error, OpId, SpaceId, Url,
 };
-use prost::Message;
 use rand::Rng;
 
 use crate::{default_builder, factories::test_utils::AgentBuild};
@@ -41,10 +40,9 @@ impl Transport for MockTransport {
         data: bytes::Bytes,
     ) -> kitsune2_api::BoxFut<'_, kitsune2_api::K2Result<()>> {
         Box::pin(async move {
-            let ops = Ops::decode(data).unwrap();
+            let op_ids = deserialize_op_ids(data).unwrap();
             let mut lock = self.requests_sent.lock().unwrap();
-            ops.ids.into_iter().for_each(|op_id| {
-                let op_id = OpId::from(op_id);
+            op_ids.into_iter().for_each(|op_id| {
                 lock.push((op_id, peer.clone()));
             });
 
