@@ -264,7 +264,7 @@ impl CoreFetch {
                     bytes::Bytes::copy_from_slice(&op_id_bytes.encode_to_vec());
 
                 // Send fetch request to agent.
-                if let Err(err) = transport
+                match transport
                     .send_module(
                         peer,
                         space_id.clone(),
@@ -273,6 +273,21 @@ impl CoreFetch {
                     )
                     .await
                 {
+                    Ok(()) => {
+                        // Re-insert the fetch request into the queue.
+                        if let Err(err) = fetch_request_tx
+                            .try_send((op_id.clone(), agent_id.clone()))
+                        {
+                            tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
+                            // Remove op id/agent id from set to prevent build-up of state.
+                            state
+                                .lock()
+                                .unwrap()
+                                .ops
+                                .remove(&(op_id, agent_id));
+                        }
+                    }
+                    Err(err) => {
                     tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
                     state
                         .lock()
@@ -281,13 +296,6 @@ impl CoreFetch {
                         .add_agent(agent_id.clone());
                 }
             }
-
-            // Re-insert the fetch request into the queue.
-            if let Err(err) =
-                fetch_request_tx.try_send((op_id.clone(), agent_id.clone()))
-            {
-                tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
-                state.lock().unwrap().ops.remove(&(op_id, agent_id));
             }
         }
     }
