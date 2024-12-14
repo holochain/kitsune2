@@ -97,8 +97,10 @@ mod test {
         let op_id_1 = OpId(Id(bytes::Bytes::from_static(b"some_op_id")));
         let op_id_2 = OpId(Id(bytes::Bytes::from_static(b"another_op_id")));
         let op_id_vec = vec![op_id_1, op_id_2];
+
         let bytes = serialize_op_ids(op_id_vec.clone());
         let op_id_vec_deserialized = deserialize_op_ids(bytes.clone()).unwrap();
+
         assert_eq!(op_id_vec_deserialized, op_id_vec);
     }
 }
