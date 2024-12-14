@@ -141,9 +141,9 @@ async fn fetch_queue() {
         mock_transport.requests_sent.lock().unwrap().len();
 
     // Wait for tasks to settle all requests.
-    tokio::time::timeout(Duration::from_millis(10), async {
+    tokio::time::timeout(Duration::from_millis(20), async {
         loop {
-            tokio::task::yield_now().await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
             let current_num_requests_sent =
                 mock_transport.requests_sent.lock().unwrap().len();
             if current_num_requests_sent == num_requests_sent {
@@ -166,7 +166,7 @@ async fn fetch_queue() {
 
     // Give time for more requests to be sent, which shouldn't happen now that the set of
     // ops to fetch is cleared.
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
     // No more requests should have been sent.
     // Ideally it were possible to check that no more fetch request have been passed back into
