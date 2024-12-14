@@ -238,6 +238,9 @@ impl CoreFetch {
 
                 lock.cool_down_list.is_agent_cooling_down(&agent_id)
             };
+            tracing::trace!(
+                "is agent {agent_id} cooling down {is_agent_cooling_down}"
+            );
 
             // Send request if agent is not on cool-down list.
             if !is_agent_cooling_down {
@@ -248,7 +251,16 @@ impl CoreFetch {
                 .await
                 {
                     Some(url) => url,
-                    None => continue,
+                    None => {
+                        let mut lock = state.lock().unwrap();
+                        lock.ops = lock
+                            .ops
+                            .clone()
+                            .into_iter()
+                            .filter(|(_, a)| *a != agent_id)
+                            .collect();
+                        continue;
+                    }
                 };
 
                 let data = serialize_op_ids(vec![op_id.clone()]);
@@ -268,7 +280,7 @@ impl CoreFetch {
                         if let Err(err) = fetch_request_tx
                             .try_send((op_id.clone(), agent_id.clone()))
                         {
-                            tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} in queue: {err}");
+                            tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
                             // Remove op id/agent id from set to prevent build-up of state.
                             state
                                 .lock()
@@ -284,6 +296,15 @@ impl CoreFetch {
                             .unwrap()
                             .cool_down_list
                             .add_agent(agent_id.clone());
+                        // Agent is unresponsive.
+                        // Remove associated op ids from set to prevent build-up of state.
+                        let mut lock = state.lock().unwrap();
+                        lock.ops = lock
+                            .ops
+                            .clone()
+                            .into_iter()
+                            .filter(|(_, a)| *a != agent_id)
+                            .collect();
                     }
                 }
             }
