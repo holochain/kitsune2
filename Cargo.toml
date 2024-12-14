@@ -16,6 +16,10 @@ resolver = "2"
 # For example, most crates will depend on the api crate.
 kitsune2_api = { version = "0.0.1-alpha", path = "crates/api" }
 
+# used by bootstrap_srv for mpmc worker queue pattern.
+async-channel = "2.3.1"
+# this is used by bootstrap_srv as the http server implementation.
+axum = { version = "0.7.9", default-features = false }
 # debugging is far easier when you can see short byte arrays
 # as base64 instead of decimal u8s.
 base64 = "0.22.1"
@@ -48,8 +52,6 @@ futures = "0.3"
 tempfile = "3.14.0"
 # kitsune2 internally uses a mix of std::io::Error and thiserror derivation.
 thiserror = "2.0.3"
-# this is used by bootstrap_srv as the http server implementation.
-tiny_http = "0.12.0"
 # url validation used by the api crate.
 url = "2.5.4"
 # kitsune2 uses tracing to log events. A consumer can choose any subscriber

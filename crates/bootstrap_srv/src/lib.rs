@@ -195,6 +195,9 @@ use store::*;
 mod space;
 use space::*;
 
+mod http;
+use http::*;
+
 mod server;
 pub use server::*;
 
