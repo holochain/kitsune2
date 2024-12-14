@@ -5,7 +5,7 @@ use std::sync::Arc;
 use prost::Message;
 
 use crate::{
-    builder, config, id::Id, peer_store::DynPeerStore, transport::DynTransport,
+    builder, config, peer_store::DynPeerStore, transport::DynTransport,
     AgentId, BoxFut, K2Error, K2Result, OpId, SpaceId,
 };
 
@@ -14,14 +14,14 @@ include!("../proto/gen/kitsune2.fetch.rs");
 impl From<Vec<OpId>> for OpIds {
     fn from(value: Vec<OpId>) -> Self {
         Self {
-            data: value.into_iter().map(|op_id| op_id.0 .0).collect(),
+            data: value.into_iter().map(Into::into).collect(),
         }
     }
 }
 
 impl From<OpIds> for Vec<OpId> {
     fn from(value: OpIds) -> Self {
-        value.data.into_iter().map(|id| OpId(Id(id))).collect()
+        value.data.into_iter().map(Into::into).collect()
     }
 }
 
