@@ -183,11 +183,17 @@ impl Bootstrap for CoreBootstrap {
     fn put(&self, info: Arc<agent::AgentInfoSigned>) {
         // ignore puts outside our space.
         if info.space != self.space {
+            tracing::error!(
+                ?info,
+                "Logic Error: Attempting to put an agent outside of this space"
+            );
             return;
         }
 
         // if we can't push onto our large buffer channel... we've got problems
-        let _ = self.push_send.try_send(info);
+        if let Err(err) = self.push_send.try_send(info) {
+            tracing::warn!(?err, "Bootstrap overloaded, dropping put");
+        }
     }
 }
 
@@ -203,7 +209,10 @@ async fn push_task(
         let url =
             format!("{server_url}/bootstrap/{}/{}", &info.space, &info.agent);
         let enc = match info.encode() {
-            Err(_) => continue,
+            Err(err) => {
+                tracing::error!(?err, "Could not encode agent info, dropping");
+                continue;
+            }
             Ok(enc) => enc,
         };
         match tokio::task::spawn_blocking(move || {

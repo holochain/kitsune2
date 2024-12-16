@@ -19,6 +19,7 @@ kitsune2_test_utils = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tracing = { workspace = true }
 ureq = { workspace = true }
 
 [dev-dependencies]
