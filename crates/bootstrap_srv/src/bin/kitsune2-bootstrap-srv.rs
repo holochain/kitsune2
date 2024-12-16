@@ -36,10 +36,11 @@ fn main() {
         .with_line_number(true);
 
     if args.json {
-        let _ = t.json().try_init();
+        t.json().try_init()
     } else {
-        let _ = t.try_init();
+        t.try_init()
     }
+    .expect("failed to init tracing");
 
     let config = if args.production {
         Config::production()
