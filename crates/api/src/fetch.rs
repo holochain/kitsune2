@@ -72,15 +72,13 @@ pub type DynFetchFactory = Arc<dyn FetchFactory>;
 
 #[cfg(test)]
 mod test {
-    use crate::id::Id;
-
     use super::*;
     use prost::Message;
 
     #[test]
     fn happy_encode_decode() {
-        let op_id_1 = OpId(Id(bytes::Bytes::from_static(b"some_op_id")));
-        let op_id_2 = OpId(Id(bytes::Bytes::from_static(b"another_op_id")));
+        let op_id_1 = OpId::from(bytes::Bytes::from_static(b"some_op_id"));
+        let op_id_2 = OpId::from(bytes::Bytes::from_static(b"another_op_id"));
         let op_id_vec = vec![op_id_1, op_id_2];
         let op_ids = OpIds::from(op_id_vec.clone());
 
@@ -94,8 +92,8 @@ mod test {
 
     #[test]
     fn bytes_from_op_ids() {
-        let op_id_1 = OpId(Id(bytes::Bytes::from_static(b"some_op_id")));
-        let op_id_2 = OpId(Id(bytes::Bytes::from_static(b"another_op_id")));
+        let op_id_1 = OpId::from(bytes::Bytes::from_static(b"some_op_id"));
+        let op_id_2 = OpId::from(bytes::Bytes::from_static(b"another_op_id"));
         let op_id_vec = vec![op_id_1, op_id_2];
 
         let bytes = serialize_op_ids(op_id_vec.clone());
