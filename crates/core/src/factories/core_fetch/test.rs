@@ -12,7 +12,7 @@ use kitsune2_api::{
 };
 use rand::Rng;
 
-use crate::{default_builder, factories::test_utils::AgentBuild};
+use crate::{default_builder, factories::test_utils::AgentBuilder};
 
 use super::{CoreFetch, CoreFetchConfig};
 
@@ -99,7 +99,7 @@ async fn fetch_queue() {
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
     let agent_id = random_agent_id();
-    let agent_info = AgentBuild {
+    let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
@@ -185,7 +185,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     let num_ops: usize = 50;
     let op_list = create_op_list(num_ops as u16);
     let agent_id = random_agent_id();
-    let agent_info = AgentBuild {
+    let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
@@ -253,21 +253,21 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     let agent_3 = random_agent_id();
     let total_ops = op_list_1.len() + op_list_2.len() + op_list_3.len();
 
-    let agent_info_1 = AgentBuild {
+    let agent_info_1 = AgentBuilder {
         agent: Some(agent_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    let agent_info_2 = AgentBuild {
+    let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    let agent_info_3 = AgentBuild {
+    let agent_info_3 = AgentBuilder {
         agent: Some(agent_3.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
         space: Some(space_id.clone()),
@@ -354,7 +354,7 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
 
     let op_list = create_op_list(2);
     let agent_id = random_agent_id();
-    let agent_info = AgentBuild {
+    let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
@@ -386,7 +386,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 
     let op_list = create_op_list(1);
     let agent_id = random_agent_id();
-    let agent_info = AgentBuild {
+    let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
@@ -443,21 +443,21 @@ async fn add_ops_for_multiple_unresponsive_agents() {
     let op_list_3 = create_op_list(1);
     let agent_3 = random_agent_id();
 
-    let agent_info_1 = AgentBuild {
+    let agent_info_1 = AgentBuilder {
         agent: Some(agent_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    let agent_info_2 = AgentBuild {
+    let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
     .build();
-    let agent_info_3 = AgentBuild {
+    let agent_info_3 = AgentBuilder {
         agent: Some(agent_3.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
         space: Some(space_id.clone()),

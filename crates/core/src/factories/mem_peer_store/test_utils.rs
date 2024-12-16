@@ -10,7 +10,7 @@ const SPACE_1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space1")));
 
 /// Agent builder for testing.
 #[derive(Debug, Default)]
-pub struct AgentBuild {
+pub struct AgentBuilder {
     /// Optional agent id.
     pub agent: Option<AgentId>,
     /// Optional space id.
@@ -27,7 +27,7 @@ pub struct AgentBuild {
     pub storage_arc: Option<DhtArc>,
 }
 
-impl AgentBuild {
+impl AgentBuilder {
     /// Build an agent from given values or defaults.
     pub fn build(self) -> Arc<AgentInfoSigned> {
         static NEXT_AGENT: std::sync::atomic::AtomicU64 =

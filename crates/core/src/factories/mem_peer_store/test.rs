@@ -1,4 +1,4 @@
-use super::{test_utils::AgentBuild, *};
+use super::{test_utils::AgentBuilder, *};
 use kitsune2_api::id::Id;
 
 #[inline(always)]
@@ -34,12 +34,12 @@ fn prune_prunes_only_expired_agents() {
     let mut s = create();
 
     s.insert(vec![
-        AgentBuild {
+        AgentBuilder {
             expires_at: Some(Timestamp::now()),
             ..Default::default()
         }
         .build(),
-        AgentBuild {
+        AgentBuilder {
             expires_at: Some(
                 Timestamp::now() + std::time::Duration::from_secs(10),
             ),
@@ -60,7 +60,7 @@ fn prune_prunes_only_expired_agents() {
 fn happy_get() {
     let mut s = create();
 
-    s.insert(vec![AgentBuild {
+    s.insert(vec![AgentBuilder {
         agent: Some(AGENT_1),
         ..Default::default()
     }
@@ -75,12 +75,12 @@ fn happy_get_all() {
     let mut s = create();
 
     s.insert(vec![
-        AgentBuild {
+        AgentBuilder {
             agent: Some(AGENT_1),
             ..Default::default()
         }
         .build(),
-        AgentBuild {
+        AgentBuilder {
             agent: Some(AGENT_2),
             ..Default::default()
         }
@@ -133,7 +133,7 @@ fn fixture_get_by_overlapping_storage_arc() {
         let mut s = create();
 
         for (arc_name, arc) in arc_list.iter() {
-            s.insert(vec![AgentBuild {
+            s.insert(vec![AgentBuilder {
                 storage_arc: Some(*arc),
                 url: Some(Some(sneak_url(arc_name))),
                 ..Default::default()
@@ -159,7 +159,7 @@ fn fixture_get_near_location() {
 
     for idx in 0..8 {
         let loc = (u32::MAX / 8) * idx;
-        s.insert(vec![AgentBuild {
+        s.insert(vec![AgentBuilder {
             // for simplicity have agents claim arcs of len 1
             storage_arc: Some(DhtArc::Arc(loc, loc + 1)),
             // set the url to the idx for matching
@@ -171,19 +171,19 @@ fn fixture_get_near_location() {
 
     // these should not be returned because they are invalid.
     s.insert(vec![
-        AgentBuild {
+        AgentBuilder {
             storage_arc: Some(DhtArc::Empty),
             url: Some(Some(sneak_url("zero-arc"))),
             ..Default::default()
         }
         .build(),
-        AgentBuild {
+        AgentBuilder {
             is_tombstone: Some(true),
             url: Some(Some(sneak_url("tombstone"))),
             ..Default::default()
         }
         .build(),
-        AgentBuild {
+        AgentBuilder {
             expires_at: Some(Timestamp::from_micros(
                 Timestamp::now().as_micros()
                     - std::time::Duration::from_secs(10).as_micros() as i64,
