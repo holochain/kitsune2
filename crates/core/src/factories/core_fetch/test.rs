@@ -156,7 +156,7 @@ async fn fetch_queue() {
     .await
     .unwrap();
 
-    // CHeck that all requests have been made for the 1 op to the agent.
+    // Check that all requests have been made for the 1 op to the agent.
     assert!(mock_transport
         .requests_sent
         .lock()
@@ -229,7 +229,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
     .await
     .unwrap();
 
-    // CHeck that op ids are still part of ops to fetch.
+    // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
     assert!(expected_ops.iter().all(|v| lock.ops.contains(v)));
 }
@@ -340,7 +340,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     .await
     .unwrap();
 
-    // CHeck that op ids are still part of ops to fetch.
+    // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
     assert!(expected_ops.iter().all(|v| lock.ops.contains(v)));
 }
