@@ -71,10 +71,12 @@ impl BootstrapSrv {
 
         // get the address that was assigned
         let addrs = server.server_addrs().to_vec();
+        tracing::info!(?addrs, "Listening");
         for addr in addrs.iter() {
-            // print these separately incase someone wants to parse them
-            tracing::info!(addr = format!("{:?}", addr), "Listening");
+            // print these incase someone wants to parse for them
+            println!("#kitsune2_bootstrap_srv#listening#{addr:?}#");
         }
+        println!("#kitsune2_bootstrap_srv#running#");
 
         // spawn our worker threads
         let mut workers = Vec::with_capacity(config.worker_thread_count + 1);
