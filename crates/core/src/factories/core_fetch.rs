@@ -28,9 +28,9 @@
 //!     - In case the op has been received in the meantime and no longer needs to be fetched,
 //!       do nothing.
 //!     - Otherwise proceed.
-//! - Check if agent is on a cool-down list of unresponsive agents.
+//! - Check if agent is on a back off list of unresponsive agents.
 //! - Dispatch request for op id from agent to transport module.
-//! - If agent is unresponsive, put them on cool-down list.
+//! - If agent is unresponsive, put them on back off list.
 //! - Re-send requested ([OpId], [AgentId]) to the queue again. It will be removed
 //!   from the list of ops to fetch if it is received in the meantime, and thus prevent a redundant
 //!   fetch request.
@@ -41,7 +41,7 @@
 //! - Once persisted successfully, op is removed from the set of ops to fetch.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -106,15 +106,19 @@ impl FetchFactory for CoreFetchFactory {
 pub struct CoreFetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     pub parallel_request_count: u8,
-    /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 120_000.
-    pub cool_down_interval_ms: u64,
+    /// Duration in ms to keep an unresponsive agent on the back off list. Default: 120_000.
+    pub back_off_interval_ms: u64,
+    /// Maximum exponent for back off interval. Back off duration is calculated
+    /// back_off_interval * 2^back_off_exponent. Default: 4.
+    pub max_back_off_exponent: u32,
 }
 
 impl Default for CoreFetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            cool_down_interval_ms: 120_000,
+            back_off_interval_ms: 120_000,
+            max_back_off_exponent: 4,
         }
     }
 }
@@ -126,7 +130,7 @@ type FetchRequest = (OpId, AgentId);
 #[derive(Debug)]
 struct State {
     ops: HashSet<FetchRequest>,
-    cool_down_list: CoolDownList,
+    back_off_list: BackOffList,
 }
 
 #[derive(Debug)]
@@ -194,7 +198,10 @@ impl CoreFetch {
 
         let state = Arc::new(Mutex::new(State {
             ops: HashSet::new(),
-            cool_down_list: CoolDownList::new(config.cool_down_interval_ms),
+            back_off_list: BackOffList::new(
+                config.back_off_interval_ms,
+                config.max_back_off_exponent,
+            ),
         }));
 
         let mut fetch_tasks = Vec::new();
@@ -228,22 +235,23 @@ impl CoreFetch {
         while let Some((op_id, agent_id)) =
             fetch_request_rx.lock().await.recv().await
         {
-            let is_agent_cooling_down = {
+            let is_agent_on_back_off = {
                 let mut lock = state.lock().unwrap();
+
+                if lock.back_off_list.is_agent_at_max_back_off(&agent_id) {
+                    lock.ops.remove(&(op_id.clone(), agent_id.clone()));
+                }
 
                 // Do nothing if op id is no longer in the set of ops to fetch.
                 if !lock.ops.contains(&(op_id.clone(), agent_id.clone())) {
                     continue;
                 }
 
-                lock.cool_down_list.is_agent_cooling_down(&agent_id)
+                lock.back_off_list.is_agent_backing_off(&agent_id)
             };
-            tracing::trace!(
-                "is agent {agent_id} cooling down {is_agent_cooling_down}"
-            );
 
-            // Send request if agent is not on cool-down list.
-            if !is_agent_cooling_down {
+            // Send request if agent is not on back off list.
+            if !is_agent_on_back_off {
                 let peer = match CoreFetch::get_peer_url_from_store(
                     &agent_id,
                     peer_store.clone(),
@@ -276,37 +284,27 @@ impl CoreFetch {
                     .await
                 {
                     Ok(()) => {
-                        // Re-insert the fetch request into the queue.
-                        if let Err(err) = fetch_request_tx
-                            .try_send((op_id.clone(), agent_id.clone()))
-                        {
-                            tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
-                            // Remove op id/agent id from set to prevent build-up of state.
-                            state
-                                .lock()
-                                .unwrap()
-                                .ops
-                                .remove(&(op_id, agent_id));
-                        }
-                    }
-                    Err(err) => {
-                        tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
                         state
                             .lock()
                             .unwrap()
-                            .cool_down_list
-                            .add_agent(agent_id.clone());
-                        // Agent is unresponsive.
-                        // Remove associated op ids from set to prevent build-up of state.
+                            .back_off_list
+                            .remove_agent(&agent_id);
+                    }
+                    Err(err) => {
+                        tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
                         let mut lock = state.lock().unwrap();
-                        lock.ops = lock
-                            .ops
-                            .clone()
-                            .into_iter()
-                            .filter(|(_, a)| *a != agent_id)
-                            .collect();
+                        lock.back_off_list.back_off_agent(&agent_id);
                     }
                 }
+            }
+
+            // Re-insert the fetch request into the queue.
+            if let Err(err) =
+                fetch_request_tx.try_send((op_id.clone(), agent_id.clone()))
+            {
+                tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
+                // Remove op id/agent id from set to prevent build-up of state.
+                state.lock().unwrap().ops.remove(&(op_id, agent_id));
             }
         }
     }
@@ -348,39 +346,52 @@ impl Drop for CoreFetch {
 }
 
 #[derive(Debug)]
-struct CoolDownList {
-    state: HashMap<AgentId, Instant>,
-    cool_down_interval: u64,
+struct BackOffList {
+    state: HashMap<AgentId, (Instant, u32)>,
+    back_off_interval: u64,
+    max_back_off_exponent: u32,
 }
 
-impl CoolDownList {
-    pub fn new(cool_down_interval: u64) -> Self {
+impl BackOffList {
+    pub fn new(back_off_interval: u64, max_back_off_exponent: u32) -> Self {
         Self {
             state: HashMap::new(),
-            cool_down_interval,
+            back_off_interval,
+            max_back_off_exponent,
         }
     }
 
-    pub fn add_agent(&mut self, agent_id: AgentId) {
-        self.state.insert(agent_id, Instant::now());
+    pub fn back_off_agent(&mut self, agent_id: &AgentId) {
+        match self.state.entry(agent_id.clone()) {
+            Entry::Occupied(mut o) => {
+                o.get_mut().0 = Instant::now();
+                o.get_mut().1 = self.max_back_off_exponent.min(o.get().1 + 1);
+            }
+            Entry::Vacant(v) => {
+                v.insert((Instant::now(), 0));
+            }
+        }
     }
 
-    pub fn is_agent_cooling_down(&mut self, agent_id: &AgentId) -> bool {
+    pub fn is_agent_backing_off(&mut self, agent_id: &AgentId) -> bool {
         match self.state.get(agent_id) {
-            Some(instant) => {
-                if instant.elapsed().as_millis()
-                    > self.cool_down_interval as u128
-                {
-                    // Cool down interval has elapsed. Remove agent from list.
-                    self.state.remove(agent_id);
-                    false
-                } else {
-                    // Cool down interval has not elapsed, still cooling down.
-                    true
-                }
+            Some((instant, factor)) => {
+                instant.elapsed().as_millis()
+                    <= (self.back_off_interval * 2_u64.pow(*factor)) as u128
             }
             None => false,
         }
+    }
+
+    pub fn is_agent_at_max_back_off(&self, agent_id: &AgentId) -> bool {
+        self.state
+            .get(agent_id)
+            .map(|v| v.1 == self.max_back_off_exponent)
+            .unwrap_or(false)
+    }
+
+    pub fn remove_agent(&mut self, agent_id: &AgentId) {
+        self.state.remove(agent_id);
     }
 }
 

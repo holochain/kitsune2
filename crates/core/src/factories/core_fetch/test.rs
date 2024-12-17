@@ -14,7 +14,7 @@ use rand::Rng;
 
 use crate::{default_builder, factories::test_utils::AgentBuilder};
 
-use super::{CoreFetch, CoreFetchConfig};
+use super::{BackOffList, CoreFetch, CoreFetchConfig};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -377,8 +377,43 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
     assert!(fetch.state.lock().unwrap().ops.is_empty());
 }
 
+#[test]
+fn back_off() {
+    let back_off_interval_ms = 10;
+    let mut back_off_list = BackOffList::new(back_off_interval_ms, 2);
+    let agent_id = random_agent_id();
+    back_off_list.back_off_agent(&agent_id);
+    assert!(back_off_list.is_agent_backing_off(&agent_id));
+
+    std::thread::sleep(Duration::from_millis(back_off_interval_ms + 1));
+
+    assert!(!back_off_list.is_agent_backing_off(&agent_id));
+
+    back_off_list.back_off_agent(&agent_id);
+    assert!(back_off_list.is_agent_backing_off(&agent_id));
+
+    std::thread::sleep(Duration::from_millis(back_off_interval_ms + 1));
+}
+
+#[test]
+fn back_off_max_not_exceeded() {
+    let back_off_interval_ms = 10;
+    let max_back_off_exponent = 2;
+    let mut back_off_list =
+        BackOffList::new(back_off_interval_ms, max_back_off_exponent);
+    let agent_id = random_agent_id();
+    for _ in 0..max_back_off_exponent + 1 {
+        back_off_list.back_off_agent(&agent_id);
+    }
+    let factor = back_off_list.state.get(&agent_id).unwrap().1;
+
+    back_off_list.back_off_agent(&agent_id);
+
+    assert_eq!(back_off_list.state.get(&agent_id).unwrap().1, factor);
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn unresponsive_agents_are_put_on_cool_down_list() {
+async fn unresponsive_agents_are_put_on_back_off_list() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
@@ -411,8 +446,8 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
                     .state
                     .lock()
                     .unwrap()
-                    .cool_down_list
-                    .is_agent_cooling_down(&agent_id)
+                    .back_off_list
+                    .is_agent_backing_off(&agent_id)
             {
                 break;
             }
@@ -420,12 +455,6 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
     })
     .await
     .unwrap();
-
-    // Give time to remove op id from set.
-    tokio::time::sleep(Duration::from_millis(1)).await;
-
-    // Op should have been removed from ops to fetch.
-    assert!(fetch.state.lock().unwrap().ops.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -436,11 +465,11 @@ async fn add_ops_for_multiple_unresponsive_agents() {
     let mock_transport = MockTransport::new(true);
     let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
 
-    let op_list_1 = create_op_list(2);
+    let op_list_1 = create_op_list(5);
     let agent_1 = random_agent_id();
-    let op_list_2 = create_op_list(1);
+    let op_list_2 = create_op_list(5);
     let agent_2 = random_agent_id();
-    let op_list_3 = create_op_list(1);
+    let op_list_3 = create_op_list(5);
     let agent_3 = random_agent_id();
 
     let agent_info_1 = AgentBuilder {
@@ -503,12 +532,12 @@ async fn add_ops_for_multiple_unresponsive_agents() {
                 .iter()
                 .all(|agent| request_destinations.contains(&agent))
             {
-                // Check all agents are on cool-down_list.
-                let cool_down_list =
-                    &mut fetch.state.lock().unwrap().cool_down_list;
+                // Check all agents are on back off list.
+                let back_off_list =
+                    &mut fetch.state.lock().unwrap().back_off_list;
                 if expected_agents
                     .iter()
-                    .all(|agent| cool_down_list.is_agent_cooling_down(agent))
+                    .all(|agent| back_off_list.is_agent_backing_off(agent))
                 {
                     break;
                 }
@@ -517,61 +546,124 @@ async fn add_ops_for_multiple_unresponsive_agents() {
     })
     .await
     .unwrap();
-
-    // Give time to remove op id from set.
-    tokio::time::sleep(Duration::from_millis(1)).await;
-
-    // Op should have been removed from ops to fetch.
-    assert!(
-        fetch.state.lock().unwrap().ops.is_empty(),
-        "ops are {:?}",
-        fetch.state.lock().unwrap().ops.len()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn agent_cooling_down_is_removed_from_list() {
+async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
-        cool_down_interval_ms: 10,
+        back_off_interval_ms: 10,
         ..Default::default()
     };
     let mock_transport = MockTransport::new(false);
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
+
+    let op_list = create_op_list(1);
+    let agent_id = random_agent_id();
+    let agent_info = AgentBuilder {
+        agent: Some(agent_id.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
+        ..Default::default()
+    }
+    .build();
+    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
-        space_id,
+        agent_info.space.clone(),
         peer_store,
         mock_transport.clone(),
     );
+
+    {
+        let mut lock = fetch.state.lock().unwrap();
+        lock.back_off_list.back_off_agent(&agent_id);
+
+        assert!(lock.back_off_list.is_agent_backing_off(&agent_id));
+    }
+
+    tokio::time::sleep(Duration::from_millis(config.back_off_interval_ms + 1))
+        .await;
+
+    fetch.add_ops(op_list, agent_id.clone()).await.unwrap();
+
+    tokio::time::timeout(Duration::from_millis(10), async {
+        loop {
+            tokio::task::yield_now().await;
+            if !mock_transport.requests_sent.lock().unwrap().is_empty() {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(fetch.state.lock().unwrap().back_off_list.state.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn request_is_removed_for_agent_on_back_off_when_max_is_hit() {
+    let builder = Arc::new(default_builder());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let config = CoreFetchConfig::default();
+    let mock_transport = MockTransport::new(true);
+
+    let op_id = random_op_id();
     let agent_id = random_agent_id();
+    let agent_info = AgentBuilder {
+        agent: Some(agent_id.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
+        ..Default::default()
+    }
+    .build();
+    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        agent_info.space.clone(),
+        peer_store,
+        mock_transport.clone(),
+    );
 
     fetch
-        .state
-        .lock()
-        .unwrap()
-        .cool_down_list
-        .add_agent(agent_id.clone());
+        .add_ops(vec![op_id.clone()], agent_id.clone())
+        .await
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_millis(10), async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            if !mock_transport
+                .requests_sent
+                .lock()
+                .unwrap()
+                .clone()
+                .is_empty()
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
 
     assert!(fetch
         .state
         .lock()
         .unwrap()
-        .cool_down_list
-        .is_agent_cooling_down(&agent_id));
+        .ops
+        .contains(&(op_id, agent_id.clone())));
 
-    // Wait for the cool-down interval + 1 ms to avoid flakiness.
-    tokio::time::sleep(Duration::from_millis(config.cool_down_interval_ms + 1))
-        .await;
+    {
+        let mut lock = fetch.state.lock().unwrap();
+        for _ in 0..config.max_back_off_exponent {
+            lock.back_off_list.back_off_agent(&agent_id);
+        }
+    }
 
-    assert!(!fetch
-        .state
-        .lock()
-        .unwrap()
-        .cool_down_list
-        .is_agent_cooling_down(&agent_id));
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    assert!(fetch.state.lock().unwrap().ops.is_empty());
 }
 
 fn random_id() -> Id {
