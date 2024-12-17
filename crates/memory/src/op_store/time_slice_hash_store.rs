@@ -47,10 +47,15 @@ impl TimeSliceHashStore {
             .cloned()
     }
 
-    pub(super) fn get_all(&self, arc: &DhtArc) -> Vec<bytes::Bytes> {
+    pub(super) fn get_all(&self, arc: &DhtArc) -> HashMap<u64, bytes::Bytes> {
         self.inner
             .get(arc)
-            .map(|by_arc| by_arc.iter().map(|(_, hash)| hash.clone()).collect())
+            .map(|by_arc| {
+                by_arc
+                    .iter()
+                    .map(|(id, hash)| (*id, hash.clone()))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 

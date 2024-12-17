@@ -58,6 +58,7 @@ use crate::constant::UNIT_TIME;
 use kitsune2_api::{
     DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp, UNIX_TIMESTAMP,
 };
+use std::collections::HashMap;
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -311,6 +312,25 @@ impl PartitionedTime {
 
         Ok(())
     }
+
+    pub(crate) fn time_bounds_for_full_slice_id(
+        &self,
+        slice_id: u64,
+    ) -> K2Result<(Timestamp, Timestamp)> {
+        if slice_id > self.full_slices {
+            return Err(K2Error::other(
+                "Requested slice id is beyond the current full slices",
+            ));
+        }
+
+        let start = UNIX_TIMESTAMP
+            + Duration::from_secs(
+                slice_id * self.full_slice_duration.as_secs(),
+            );
+        let end = start + self.full_slice_duration;
+
+        Ok((start, end))
+    }
 }
 
 // Public, query methods
@@ -320,7 +340,7 @@ impl PartitionedTime {
         store: DynOpStore,
     ) -> K2Result<bytes::Bytes> {
         let hashes = store.retrieve_slice_hashes(self.arc_constraint).await?;
-        Ok(combine::combine_op_hashes(hashes).freeze())
+        Ok(combine::combine_op_hashes(hashes.values().cloned()).freeze())
     }
 
     pub fn combined_partial_slice_hashes(
@@ -329,6 +349,24 @@ impl PartitionedTime {
         self.partial_slices
             .iter()
             .map(|partial| partial.hash.clone().freeze())
+    }
+
+    pub async fn full_time_slice_hash(
+        &self,
+        slice_id: u64,
+        store: DynOpStore,
+    ) -> K2Result<bytes::Bytes> {
+        Ok(store
+            .retrieve_slice_hash(self.arc_constraint, slice_id)
+            .await?
+            .unwrap_or_else(bytes::Bytes::new))
+    }
+
+    pub async fn full_time_slice_hashes(
+        &self,
+        store: DynOpStore,
+    ) -> K2Result<HashMap<u64, bytes::Bytes>> {
+        store.retrieve_slice_hashes(self.arc_constraint).await
     }
 }
 
@@ -365,6 +403,10 @@ impl PartitionedTime {
             self.full_slices * self.full_slice_duration.as_secs(),
         );
         UNIX_TIMESTAMP + full_slices_duration
+    }
+
+    pub(crate) fn arc_constraint(&self) -> &DhtArc {
+        &self.arc_constraint
     }
 
     /// Figure out how many new full slices need to be allocated.
@@ -539,11 +581,6 @@ impl PartitionedTime {
     #[cfg(test)]
     pub(crate) fn partials(&self) -> &[PartialSlice] {
         &self.partial_slices
-    }
-
-    #[cfg(test)]
-    pub(crate) fn arc_constraint(&self) -> &DhtArc {
-        &self.arc_constraint
     }
 }
 
