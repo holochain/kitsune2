@@ -48,7 +48,6 @@ use std::{
 
 use kitsune2_api::{
     builder,
-    config::ModConfig,
     fetch::{serialize_op_ids, DynFetch, DynFetchFactory, Fetch, FetchFactory},
     peer_store,
     transport::DynTransport,
@@ -118,8 +117,6 @@ impl Default for CoreFetchConfig {
         }
     }
 }
-
-impl ModConfig for CoreFetchConfig {}
 
 type FetchRequest = (OpId, AgentId);
 

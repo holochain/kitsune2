@@ -4,32 +4,39 @@ use kitsune2_api::{agent::*, config::*, peer_store::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-const MOD_NAME: &str = "MemPeerStore";
+/// MemPeerStore configuration types.
+pub mod config {
+    use super::*;
 
-/// Configuration parameters for [MemPeerStoreFactory]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemPeerStoreConfig {
-    /// The interval in seconds at which expired infos will be pruned.
-    /// Default: 10s.
-    pub prune_interval_secs: u32,
-}
+    const MOD_NAME: &str = "memPeerStore";
 
-impl Default for MemPeerStoreConfig {
-    fn default() -> Self {
-        Self {
-            prune_interval_secs: 10,
+    /// How often the store will prune expired agents in seconds.
+    pub struct PruneIntervalSecs;
+
+    impl ConfigEntry for PruneIntervalSecs {
+        const PATH: &'static [&'static str] = &[MOD_NAME, "pruneIntervalSecs"];
+        const DESC: &'static str =
+            "How often the store will prune expired agents in seconds.";
+        fn default() -> K2Result<serde_json::Value> {
+            Ok(serde_json::json!(10))
+        }
+    }
+
+    pub(crate) struct MemPeerStoreConfig {
+        pub prune_interval: std::time::Duration,
+    }
+
+    impl MemPeerStoreConfig {
+        pub fn load(config: &Config) -> K2Result<Self> {
+            let secs = config.get::<PruneIntervalSecs, u32>()? as u64;
+            Ok(Self {
+                prune_interval: std::time::Duration::from_secs(secs),
+            })
         }
     }
 }
 
-impl ModConfig for MemPeerStoreConfig {}
-
-impl MemPeerStoreConfig {
-    fn prune_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.prune_interval_secs as u64)
-    }
-}
+use config::*;
 
 /// A production-ready memory-based peer store factory.
 ///
@@ -54,9 +61,7 @@ impl MemPeerStoreFactory {
 
 impl PeerStoreFactory for MemPeerStoreFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config
-            .add_default_module_config::<MemPeerStoreConfig>(MOD_NAME.into())?;
-        Ok(())
+        config.register_entry::<PruneIntervalSecs>()
     }
 
     fn create(
@@ -64,9 +69,7 @@ impl PeerStoreFactory for MemPeerStoreFactory {
         builder: Arc<builder::Builder>,
     ) -> BoxFut<'static, K2Result<DynPeerStore>> {
         Box::pin(async move {
-            let config = builder
-                .config
-                .get_module_config::<MemPeerStoreConfig>(MOD_NAME)?;
+            let config = MemPeerStoreConfig::load(&builder.config)?;
             let out: DynPeerStore = Arc::new(MemPeerStore::new(config));
             Ok(out)
         })
@@ -83,7 +86,10 @@ impl std::fmt::Debug for MemPeerStore {
 
 impl MemPeerStore {
     pub fn new(config: MemPeerStoreConfig) -> Self {
-        Self(Mutex::new(Inner::new(config, std::time::Instant::now())))
+        Self(Mutex::new(Inner::new(
+            config,
+            std::time::Instant::now(),
+        )))
     }
 }
 
@@ -138,7 +144,7 @@ impl Inner {
         config: MemPeerStoreConfig,
         now_inst: std::time::Instant,
     ) -> Self {
-        let no_prune_until = now_inst + config.prune_interval();
+        let no_prune_until = now_inst + config.prune_interval;
         Self {
             config,
             store: HashMap::new(),
@@ -151,7 +157,7 @@ impl Inner {
 
         // we only care about not looping on the order of tight cpu cycles
         // even a couple seconds gets us away from this.
-        self.no_prune_until = now_inst + self.config.prune_interval()
+        self.no_prune_until = now_inst + self.config.prune_interval
     }
 
     fn check_prune(&mut self) {
