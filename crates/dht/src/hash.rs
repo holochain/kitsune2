@@ -63,7 +63,9 @@
 use crate::arc_set::ArcSet;
 use crate::combine::combine_hashes;
 use crate::PartitionedTime;
-use kitsune2_api::{DhtArc, DynOpStore, K2Result, StoredOp, Timestamp};
+use kitsune2_api::{
+    DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
+};
 use std::collections::HashMap;
 
 /// A partitioned hash structure.
@@ -192,11 +194,27 @@ impl PartitionedHashes {
 
         Ok(())
     }
+
+    pub fn dht_arc_for_sector_id(&self, sector_id: u32) -> K2Result<DhtArc> {
+        let sector_id = sector_id as usize;
+        if sector_id >= self.partitioned_hashes.len() {
+            return Err(K2Error::other("Sector ID out of bounds"));
+        }
+
+        Ok(*self.partitioned_hashes[sector_id].arc_constraint())
+    }
+
+    pub fn time_bounds_for_full_slice_id(
+        &self,
+        slice_id: u64,
+    ) -> K2Result<(Timestamp, Timestamp)> {
+        self.partitioned_hashes[0].time_bounds_for_full_slice_id(slice_id)
+    }
 }
 
 // Query implementation
 impl PartitionedHashes {
-    pub async fn full_time_slice_disc(
+    pub async fn full_time_slice_disc_top_hash(
         &self,
         arc_set: &ArcSet,
         store: DynOpStore,
@@ -209,7 +227,9 @@ impl PartitionedHashes {
 
             let hash =
                 sector.combined_full_time_slice_hash(store.clone()).await?;
-            combine_hashes(&mut combined, hash);
+            if !hash.is_empty() {
+                combine_hashes(&mut combined, hash);
+            }
         }
 
         let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
@@ -234,13 +254,68 @@ impl PartitionedHashes {
             combined.clear();
             for partial in &mut partials {
                 if let Some(hash) = partial.next() {
-                    combine_hashes(&mut combined, hash);
+                    if !hash.is_empty() {
+                        combine_hashes(&mut combined, hash);
+                    }
                 }
             }
             out.push(combined.clone().freeze());
         }
 
         out
+    }
+
+    pub async fn full_time_slice_sector_hashes(
+        &self,
+        arc_set: &ArcSet,
+        store: DynOpStore,
+    ) -> K2Result<(HashMap<u32, bytes::Bytes>, Timestamp)> {
+        let mut out = HashMap::new();
+        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
+            if !arc_set.includes_sector_id(sector_id as u32) {
+                continue;
+            }
+
+            let hash =
+                sector.combined_full_time_slice_hash(store.clone()).await?;
+            if !hash.is_empty() {
+                out.insert(sector_id as u32, hash);
+            }
+        }
+
+        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+
+        Ok((out, timestamp))
+    }
+
+    pub async fn full_time_slice_sector_details(
+        &self,
+        sector_ids: Vec<u32>,
+        arc_set: &ArcSet,
+        store: DynOpStore,
+    ) -> K2Result<(HashMap<u32, HashMap<u64, bytes::Bytes>>, Timestamp)> {
+        let sectors_ids = sector_ids
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+
+        let mut out = HashMap::new();
+
+        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
+            if !arc_set.includes_sector_id(sector_id as u32)
+                || !sectors_ids.contains(&(sector_id as u32))
+            {
+                continue;
+            }
+
+            out.insert(
+                sector_id as u32,
+                sector.full_time_slice_hashes(store.clone()).await?,
+            );
+        }
+
+        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+
+        Ok((out, timestamp))
     }
 }
 

@@ -6,7 +6,6 @@ use kitsune2_api::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use bytes::Bytes;
 use tokio::sync::RwLock;
 
 pub mod time_slice_hash_store;
@@ -37,6 +36,16 @@ impl From<Kitsune2MemoryOp> for StoredOp {
             op_id: value.op_id,
             timestamp: value.timestamp,
         }
+    }
+}
+
+impl TryFrom<MetaOp> for Kitsune2MemoryOp {
+    type Error = serde_json::Error;
+
+    fn try_from(value: MetaOp) -> serde_json::Result<Self> {
+        let op = serde_json::from_slice(value.op_data.as_slice())?;
+
+        Ok(op)
     }
 }
 
@@ -80,10 +89,8 @@ impl OpStore for Kitsune2MemoryOpStore {
             let ops_to_add = op_list
                 .iter()
                 .map(|op| -> serde_json::Result<(OpId, Kitsune2MemoryOp)> {
-                    Ok((
-                        op.op_id.clone(),
-                        serde_json::from_slice(op.op_data.as_slice())?,
-                    ))
+                    let op = Kitsune2MemoryOp::try_from(op.clone())?;
+                    Ok((op.op_id.clone(), op))
                 })
                 .collect::<Result<Vec<_>, _>>().map_err(|e| {
                 K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
@@ -113,6 +120,26 @@ impl OpStore for Kitsune2MemoryOpStore {
                         && arc.contains(loc)
                 })
                 .map(|(op_id, _)| op_id.clone())
+                .collect())
+        }
+        .boxed()
+    }
+
+    fn retrieve_ops(
+        &self,
+        op_ids: Vec<OpId>,
+    ) -> BoxFuture<'_, K2Result<Vec<MetaOp>>> {
+        async move {
+            let self_lock = self.read().await;
+            Ok(op_ids
+                .iter()
+                .filter_map(|op_id| {
+                    self_lock.op_list.get(op_id).map(|op| MetaOp {
+                        op_id: op.op_id.clone(),
+                        op_data: serde_json::to_vec(op)
+                            .expect("Failed to serialize op"),
+                    })
+                })
                 .collect())
         }
         .boxed()
@@ -187,7 +214,10 @@ impl OpStore for Kitsune2MemoryOpStore {
     }
 
     /// Retrieve the hashes of all time slices.
-    fn retrieve_slice_hashes(&self, arc: DhtArc) -> BoxFuture<'_, K2Result<Vec<Bytes>>> {
+    fn retrieve_slice_hashes(
+        &self,
+        arc: DhtArc,
+    ) -> BoxFuture<'_, K2Result<HashMap<u64, bytes::Bytes>>> {
         async move {
             let self_lock = self.read().await;
             Ok(self_lock.time_slice_hashes.get_all(&arc))

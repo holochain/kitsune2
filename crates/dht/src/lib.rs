@@ -1,3 +1,5 @@
+// TODO #![deny(missing_docs)]
+
 pub mod constant;
 pub mod dht;
 pub mod hash;
