@@ -135,7 +135,7 @@ async fn fetch_queue() {
     .unwrap();
 
     // Clear set of ops to fetch to stop sending requests.
-    fetch.state.lock().unwrap().ops.clear();
+    fetch.state.lock().unwrap().requests.clear();
 
     let mut num_requests_sent =
         mock_transport.requests_sent.lock().unwrap().len();
@@ -231,7 +231,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
 
     // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
-    assert!(expected_ops.iter().all(|v| lock.ops.contains(v)));
+    assert!(expected_ops.iter().all(|v| lock.requests.contains(v)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -342,7 +342,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
 
     // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
-    assert!(expected_ops.iter().all(|v| lock.ops.contains(v)));
+    assert!(expected_ops.iter().all(|v| lock.requests.contains(v)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -374,7 +374,7 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     // Check that all op ids for agent have been removed from ops set.
-    assert!(fetch.state.lock().unwrap().ops.is_empty());
+    assert!(fetch.state.lock().unwrap().requests.is_empty());
 }
 
 #[test]
@@ -605,7 +605,10 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 async fn request_is_removed_for_agent_on_back_off_when_max_is_hit() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let config = CoreFetchConfig::default();
+    let config = CoreFetchConfig {
+        back_off_interval_ms: 5,
+        ..Default::default()
+    };
     let mock_transport = MockTransport::new(true);
 
     let op_id = random_op_id();
@@ -647,23 +650,22 @@ async fn request_is_removed_for_agent_on_back_off_when_max_is_hit() {
     .await
     .unwrap();
 
-    assert!(fetch
-        .state
-        .lock()
-        .unwrap()
-        .ops
-        .contains(&(op_id, agent_id.clone())));
-
     {
         let mut lock = fetch.state.lock().unwrap();
+        assert!(lock.requests.contains(&(op_id, agent_id.clone())));
         for _ in 0..config.max_back_off_exponent {
             lock.back_off_list.back_off_agent(&agent_id);
         }
     }
 
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    // Wait for back off to pass. Afterwards the request should fail again and be
+    // removed from the set.
+    tokio::time::sleep(Duration::from_millis(
+        config.back_off_interval_ms * 2_u64.pow(config.max_back_off_exponent),
+    ))
+    .await;
 
-    assert!(fetch.state.lock().unwrap().ops.is_empty());
+    assert!(fetch.state.lock().unwrap().requests.is_empty());
 }
 
 fn random_id() -> Id {
