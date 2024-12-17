@@ -7,6 +7,9 @@ pub struct ArcSet {
 }
 
 impl ArcSet {
+    /// Create a new arc set from a list of arcs.
+    ///
+    /// The resulting arc set represents the union of the input arcs.
     pub fn new(size: u32, arcs: Vec<DhtArc>) -> K2Result<Self> {
         let factor = u32::MAX / size + 1;
 
@@ -119,9 +122,11 @@ mod test {
 
     #[test]
     fn wrapping_arc() {
-        let set =
-            ArcSet::new(SECTOR_SIZE, vec![DhtArc::Arc(510 * SECTOR_SIZE, 3 * SECTOR_SIZE - 1)])
-                .unwrap();
+        let set = ArcSet::new(
+            SECTOR_SIZE,
+            vec![DhtArc::Arc(510 * SECTOR_SIZE, 3 * SECTOR_SIZE - 1)],
+        )
+        .unwrap();
 
         assert_eq!(5, set.inner.len(), "Set is {:?}", set.inner);
         assert_eq!(
@@ -167,7 +172,10 @@ mod test {
     fn valid_and_invalid_arcs() {
         let set = ArcSet::new(
             SECTOR_SIZE,
-            vec![DhtArc::Arc(0, SECTOR_SIZE - 1), DhtArc::Arc(u32::MAX, u32::MAX)],
+            vec![
+                DhtArc::Arc(0, SECTOR_SIZE - 1),
+                DhtArc::Arc(u32::MAX, u32::MAX),
+            ],
         );
 
         assert!(set.is_err());
