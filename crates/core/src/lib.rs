@@ -44,7 +44,7 @@ impl agent::Verifier for Ed25519Verifier {
 ///               [factories::CoreKitsuneFactory].
 /// - `space` - The default space module is [factories::CoreSpaceFactory].
 /// - `peer_store` - The default peer store is [factories::MemPeerStoreFactory].
-/// - `bootstrap` - The default bootstrap is [factories::CoreBootstrapFactory].
+/// - `bootstrap` - The default bootstrap is [factories::MemBootstrapFactory].
 /// - `transport` - The default transport is [factories::MemTransportFactory].
 pub fn default_builder() -> Builder {
     Builder {
@@ -53,7 +53,7 @@ pub fn default_builder() -> Builder {
         kitsune: factories::CoreKitsuneFactory::create(),
         space: factories::CoreSpaceFactory::create(),
         peer_store: factories::MemPeerStoreFactory::create(),
-        bootstrap: factories::CoreBootstrapFactory::create(),
+        bootstrap: factories::MemBootstrapFactory::create(),
         transport: factories::MemTransportFactory::create(),
     }
 }

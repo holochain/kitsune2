@@ -49,6 +49,7 @@ impl Test {
     pub async fn new(server: &str) -> Self {
         let mut builder = builder::Builder {
             verifier: Arc::new(TestCrypto),
+            bootstrap: super::CoreBootstrapFactory::create(),
             ..crate::default_builder()
         };
         builder.set_default_config().unwrap();
@@ -232,33 +233,6 @@ impl Srv {
     pub fn addr(&self) -> &str {
         &self.addr
     }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn bootstrap_sanity() {
-    // just needs to be unique across all tests that might run
-    // in the same process
-    const SERVER: &str = "test:bootstrap_sanity";
-    let t1 = Test::new(SERVER).await;
-    let t2 = Test::new(SERVER).await;
-
-    let a1 = t1.push_agent().await;
-    let a2 = t2.push_agent().await;
-
-    for _ in 0..5 {
-        println!("checking...");
-        if t1.check_agent(a2.clone()).await.is_ok()
-            && t2.check_agent(a1.clone()).await.is_ok()
-        {
-            println!("found!");
-            return;
-        }
-        println!("not found :(");
-
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-
-    panic!("failed to bootstrap both created agents in time");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -14,5 +14,3 @@ pub fn enable_tracing() {
         )
         .try_init();
 }
-
-pub mod test_bootstrap_srv;

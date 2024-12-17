@@ -3,9 +3,6 @@
 use kitsune2_api::{bootstrap::*, config::*, *};
 use std::sync::Arc;
 
-#[cfg(feature = "test_utils")]
-use kitsune2_test_utils::test_bootstrap_srv::TestBootstrapSrv;
-
 const MOD_NAME: &str = "CoreBootstrap";
 
 /// Configuration parameters for [CoreBootstrapFactory].
@@ -13,19 +10,6 @@ const MOD_NAME: &str = "CoreBootstrap";
 #[serde(rename_all = "camelCase")]
 pub struct CoreBootstrapConfig {
     /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
-    ///
-    /// # Feature `test_utils`
-    ///
-    /// If the `test_utils` feature is enabled, the default will change.
-    ///
-    /// This now defaults to a "test:" scheme with a thread id. This
-    /// gives us separate buckets to partition rust tests that just
-    /// happen to be running in the same process. If you are starting
-    /// kitsune nodes across multiple threads that you want to communicate
-    /// with each other for testing, you'll need to specify an explicit
-    /// `test:<my-unique-string-here>` to this config.
-    ///
-    /// It is still valid to pass a real server url.
     pub server_url: String,
 
     /// Minimum backoff in ms to use for both push and poll retry loops.
@@ -39,14 +23,8 @@ pub struct CoreBootstrapConfig {
 
 impl Default for CoreBootstrapConfig {
     fn default() -> Self {
-        #[cfg(not(feature = "test_utils"))]
-        let server_url = "https://boot.kitsu.ne".into();
-
-        #[cfg(feature = "test_utils")]
-        let server_url = format!("test:{:?}", std::thread::current().id());
-
         Self {
-            server_url,
+            server_url: "<https://your.bootstrap.url>".into(),
             backoff_min_ms: 1000 * 5,
             backoff_max_ms: 1000 * 60 * 5,
         }
@@ -114,8 +92,6 @@ struct CoreBootstrap {
     push_send: PushSend,
     push_task: tokio::task::JoinHandle<()>,
     poll_task: tokio::task::JoinHandle<()>,
-    #[cfg(feature = "test_utils")]
-    _test_server: Option<Arc<TestBootstrapSrv>>,
 }
 
 impl Drop for CoreBootstrap {
@@ -132,24 +108,8 @@ impl CoreBootstrap {
         peer_store: peer_store::DynPeerStore,
         space: SpaceId,
     ) -> Self {
-        #[cfg(not(feature = "test_utils"))]
         let server_url: Arc<str> =
             config.server_url.clone().into_boxed_str().into();
-
-        #[cfg(feature = "test_utils")]
-        let (server_url, _test_server) = {
-            let mut server_url: Arc<str> =
-                config.server_url.clone().into_boxed_str().into();
-            let test_server = if server_url.starts_with("test:") {
-                let test_server = TestBootstrapSrv::new(server_url);
-                server_url = test_server.server_address().into();
-                Some(test_server)
-            } else {
-                None
-            };
-
-            (server_url, test_server)
-        };
 
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
 
@@ -173,8 +133,6 @@ impl CoreBootstrap {
             push_send,
             push_task,
             poll_task,
-            #[cfg(feature = "test_utils")]
-            _test_server,
         }
     }
 }
