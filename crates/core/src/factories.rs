@@ -15,5 +15,8 @@ pub use mem_bootstrap::*;
 mod core_bootstrap;
 pub use core_bootstrap::*;
 
+mod core_fetch;
+pub use core_fetch::*;
+
 mod mem_transport;
 pub use mem_transport::*;

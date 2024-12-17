@@ -31,6 +31,10 @@ pub struct Builder {
     /// [bootstrap::Bootstrap] instances for initial WAN discovery.
     pub bootstrap: bootstrap::DynBootstrapFactory,
 
+    /// The [fetch::FetchFactory] to be used for creating
+    /// [fetch::Fetch] instances.
+    pub fetch: fetch::DynFetchFactory,
+
     /// The [transport::TransportFactory] to be used for creating
     /// [transport::Transport] instances.
     pub transport: transport::DynTransportFactory,
@@ -48,6 +52,7 @@ impl Builder {
             space,
             peer_store,
             bootstrap,
+            fetch,
             transport,
         } = self;
 
@@ -55,6 +60,7 @@ impl Builder {
         space.default_config(config)?;
         peer_store.default_config(config)?;
         bootstrap.default_config(config)?;
+        fetch.default_config(config)?;
         transport.default_config(config)?;
 
         Ok(())

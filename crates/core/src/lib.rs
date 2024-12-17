@@ -45,6 +45,7 @@ impl agent::Verifier for Ed25519Verifier {
 /// - `space` - The default space module is [factories::CoreSpaceFactory].
 /// - `peer_store` - The default peer store is [factories::MemPeerStoreFactory].
 /// - `bootstrap` - The default bootstrap is [factories::MemBootstrapFactory].
+/// - `fetch` - The default fetch module is [factories::CoreFetchFactory].
 /// - `transport` - The default transport is [factories::MemTransportFactory].
 pub fn default_builder() -> Builder {
     Builder {
@@ -54,6 +55,7 @@ pub fn default_builder() -> Builder {
         space: factories::CoreSpaceFactory::create(),
         peer_store: factories::MemPeerStoreFactory::create(),
         bootstrap: factories::MemBootstrapFactory::create(),
+        fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
     }
 }

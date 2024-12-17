@@ -139,7 +139,7 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 pub type DynTxImp = Arc<dyn TxImp>;
 
 /// A high-level wrapper around a low-level [DynTxImp] transport implementation.
-pub trait Transport {
+pub trait Transport: Send + Sync {
     /// Register a space handler for receiving incoming notifications.
     ///
     /// Panics if you attempt to register a duplicate handler for

@@ -8,6 +8,7 @@ members = [
   "crates/test_utils",
   "crates/tool_proto_build",
 ]
+
 resolver = "2"
 
 [workspace.dependencies]
@@ -75,6 +76,4 @@ kitsune2_memory = { path = "crates/memory" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
 rand = "0.8.5"
-# this is also used by the binary bootstrap_srv. But, since this monorepo
-# is largely libraries, leaving this in this section.
 tracing-subscriber = "0.3"
