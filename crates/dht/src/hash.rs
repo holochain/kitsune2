@@ -83,6 +83,8 @@ pub struct PartitionedHashes {
     partitioned_hashes: Vec<PartitionedTime>,
 }
 
+pub type PartialTimeSliceDetails = HashMap<u32, HashMap<u32, bytes::Bytes>>;
+
 impl PartitionedHashes {
     /// Create a new partitioned hash structure.
     ///
@@ -210,6 +212,13 @@ impl PartitionedHashes {
     ) -> K2Result<(Timestamp, Timestamp)> {
         self.partitioned_hashes[0].time_bounds_for_full_slice_id(slice_id)
     }
+
+    pub fn time_bounds_for_partial_slice_id(
+        &self,
+        slice_id: u32,
+    ) -> K2Result<(Timestamp, Timestamp)> {
+        self.partitioned_hashes[0].time_bounds_for_partial_slice_id(slice_id)
+    }
 }
 
 // Query implementation
@@ -311,6 +320,35 @@ impl PartitionedHashes {
                 sector_id as u32,
                 sector.full_time_slice_hashes(store.clone()).await?,
             );
+        }
+
+        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+
+        Ok((out, timestamp))
+    }
+
+    pub fn partial_time_slice_details(
+        &self,
+        ring_ids: Vec<u32>,
+        arc_set: &ArcSet,
+    ) -> K2Result<(PartialTimeSliceDetails, Timestamp)> {
+        let mut out = HashMap::new();
+
+        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
+            if !arc_set.includes_sector_id(sector_id as u32) {
+                continue;
+            }
+
+            for ring_id in &ring_ids {
+                let hash = sector.partial_slice_hash(*ring_id)?;
+
+                // Important to capture that the ring didn't match even if the hash is empty and
+                // therefore we won't communicate this sector.
+                let entry = out.entry(*ring_id).or_insert_with(HashMap::new);
+                if !hash.is_empty() {
+                    entry.insert(sector_id as u32, hash);
+                }
+            }
         }
 
         let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();

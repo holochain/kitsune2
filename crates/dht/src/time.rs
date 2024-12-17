@@ -331,6 +331,21 @@ impl PartitionedTime {
 
         Ok((start, end))
     }
+
+    pub(crate) fn time_bounds_for_partial_slice_id(
+        &self,
+        slice_id: u32,
+    ) -> K2Result<(Timestamp, Timestamp)> {
+        let slice_id = slice_id as usize;
+        if slice_id > self.partial_slices.len() {
+            return Err(K2Error::other(
+                "Requested slice id is beyond the current partial slices",
+            ));
+        }
+
+        let partial = &self.partial_slices[slice_id];
+        Ok((partial.start, partial.end()))
+    }
 }
 
 // Public, query methods
@@ -367,6 +382,17 @@ impl PartitionedTime {
         store: DynOpStore,
     ) -> K2Result<HashMap<u64, bytes::Bytes>> {
         store.retrieve_slice_hashes(self.arc_constraint).await
+    }
+
+    pub fn partial_slice_hash(&self, slice_id: u32) -> K2Result<bytes::Bytes> {
+        let slice_id = slice_id as usize;
+        if slice_id > self.partial_slices.len() {
+            return Err(K2Error::other(
+                "Requested slice id is beyond the current partial slices",
+            ));
+        }
+
+        Ok(self.partial_slices[slice_id].hash.clone().freeze())
     }
 }
 

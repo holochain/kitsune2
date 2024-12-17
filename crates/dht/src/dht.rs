@@ -30,7 +30,7 @@ pub enum DhtSnapshot {
         disc_boundary: Timestamp,
         ring_top_hashes: Vec<bytes::Bytes>,
     },
-    /// A snapshot to be used when there is a disc top hash mismatch in the minimal snapshot.
+    /// A snapshot to be used when there is a [DhtSnapshot::Minimal] mismatch in the disc top hash.
     DiscSectors {
         disc_sector_top_hashes: HashMap<u32, bytes::Bytes>,
         disc_boundary: Timestamp,
@@ -43,24 +43,33 @@ pub enum DhtSnapshot {
         disc_sector_hashes: HashMap<u32, HashMap<u64, bytes::Bytes>>,
         disc_boundary: Timestamp,
     },
+    /// A snapshot to be used when there is a [DhtSnapshot::Minimal] mismatch in the ring top
+    /// hashes.
+    RingSectorDetails {
+        ring_sector_hashes: HashMap<u32, HashMap<u32, bytes::Bytes>>,
+        disc_boundary: Timestamp,
+    },
 }
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
-pub enum DhtSnapshotCompareOutcomeInner {
+pub enum SnapshotDiff {
     Identical,
     CannotCompare,
+    // Historical mismatch
     DiscMismatch,
-    RingMismatches(Vec<u32>),
     DiscSectorMismatches(Vec<u32>),
     DiscSectorSliceMismatches(HashMap<u32, Vec<u64>>),
+    // Recent mismatch
+    RingMismatches(Vec<u32>),
+    RingSectorMismatches(HashMap<u32, Vec<u32>>),
 }
 
 impl DhtSnapshot {
-    pub fn compare(&self, other: &Self) -> DhtSnapshotCompareOutcomeInner {
+    pub fn compare(&self, other: &Self) -> SnapshotDiff {
         // Check if they match exactly, before doing further work to check how they differ.
         if self == other {
-            return DhtSnapshotCompareOutcomeInner::Identical;
+            return SnapshotDiff::Identical;
         }
 
         match (self, other) {
@@ -79,14 +88,14 @@ impl DhtSnapshot {
                 // If the historical time boundary doesn't match, we can't compare.
                 // This won't happen very often so it's okay to just fail this match.
                 if our_disc_boundary != other_disc_boundary {
-                    return DhtSnapshotCompareOutcomeInner::CannotCompare;
+                    return SnapshotDiff::CannotCompare;
                 }
 
                 // If the disc hash mismatches, then there is a historical mismatch.
                 // This shouldn't be common, but we sync forwards through time, so if we
                 // find a historical mismatch then focus on fixing that first.
                 if our_disc_top_hash != other_disc_top_hash {
-                    return DhtSnapshotCompareOutcomeInner::DiscMismatch;
+                    return SnapshotDiff::DiscMismatch;
                 }
 
                 // This is more common, it can happen if we're close to a UNIT_TIME boundary
@@ -94,17 +103,15 @@ impl DhtSnapshot {
                 // before the other did. Still, we'll have to wait until we next compare to
                 // compare our DHT state.
                 if our_ring_top_hashes.len() != other_ring_top_hashes.len() {
-                    return DhtSnapshotCompareOutcomeInner::CannotCompare;
+                    return SnapshotDiff::CannotCompare;
                 }
 
                 // There should always be at least one mismatched ring, otherwise the snapshots
                 // would have been identical which has already been checked.
-                DhtSnapshotCompareOutcomeInner::RingMismatches(
-                    hash_mismatch_indices(
-                        our_ring_top_hashes,
-                        other_ring_top_hashes,
-                    ),
-                )
+                SnapshotDiff::RingMismatches(hash_mismatch_indices(
+                    our_ring_top_hashes,
+                    other_ring_top_hashes,
+                ))
             }
             (
                 DhtSnapshot::DiscSectors {
@@ -119,7 +126,7 @@ impl DhtSnapshot {
                 if our_disc_boundary != other_disc_boundary {
                     // TODO Don't expect the boundary to move during a comparison so treat this as
                     //      an error at this point? We should have stopped before now.
-                    return DhtSnapshotCompareOutcomeInner::CannotCompare;
+                    return SnapshotDiff::CannotCompare;
                 }
 
                 // If one side has a hash for a sector and the other doesn't then that is a mismatch
@@ -147,9 +154,7 @@ impl DhtSnapshot {
                 // If the number of sectors is the same, then we can compare the hashes.
                 // There will be at least one mismatched sector, otherwise the snapshots would be
                 // identical which has already been checked.
-                DhtSnapshotCompareOutcomeInner::DiscSectorMismatches(
-                    mismatched_sector_ids,
-                )
+                SnapshotDiff::DiscSectorMismatches(mismatched_sector_ids)
             }
             (
                 DhtSnapshot::DiscSectorDetails {
@@ -164,7 +169,7 @@ impl DhtSnapshot {
                 if our_disc_boundary != other_disc_boundary {
                     // TODO Don't expect the boundary to move during a comparison so treat this as
                     //      an error at this point? We should have stopped before now.
-                    return DhtSnapshotCompareOutcomeInner::CannotCompare;
+                    return SnapshotDiff::CannotCompare;
                 }
 
                 let our_ids =
@@ -212,9 +217,69 @@ impl DhtSnapshot {
                         .extend(mismatched_slice_ids);
                 }
 
-                DhtSnapshotCompareOutcomeInner::DiscSectorSliceMismatches(
-                    mismatched_sector_ids,
-                )
+                SnapshotDiff::DiscSectorSliceMismatches(mismatched_sector_ids)
+            }
+            (
+                DhtSnapshot::RingSectorDetails {
+                    ring_sector_hashes: our_ring_sector_hashes,
+                    disc_boundary: our_disc_boundary,
+                },
+                DhtSnapshot::RingSectorDetails {
+                    ring_sector_hashes: other_ring_sector_hashes,
+                    disc_boundary: other_disc_boundary,
+                },
+            ) => {
+                if our_disc_boundary != other_disc_boundary {
+                    // TODO Don't expect the boundary to move during a comparison so treat this as
+                    //      an error at this point? We should have stopped before now.
+                    return SnapshotDiff::CannotCompare;
+                }
+
+                let our_ids =
+                    our_ring_sector_hashes.keys().collect::<HashSet<_>>();
+                let other_ids =
+                    other_ring_sector_hashes.keys().collect::<HashSet<_>>();
+
+                // If one side has a hash in a given ring and the other doesn't then that is a
+                // mismatch
+                let mut mismatched_ring_sectors = our_ids
+                    .symmetric_difference(&other_ids)
+                    .map(|id| (**id, Vec::new()))
+                    .collect::<HashMap<_, _>>();
+
+                // Then for any common rings, check if the hashes match
+                let common_ring_ids =
+                    our_ids.intersection(&other_ids).collect::<HashSet<_>>();
+                for ring_id in common_ring_ids {
+                    let our_sector_ids = &our_ring_sector_hashes[ring_id]
+                        .keys()
+                        .collect::<HashSet<_>>();
+                    let other_sector_ids = &other_ring_sector_hashes[ring_id]
+                        .keys()
+                        .collect::<HashSet<_>>();
+
+                    let mut mismatched_sector_ids = our_sector_ids
+                        .symmetric_difference(other_sector_ids)
+                        .map(|id| **id)
+                        .collect::<Vec<_>>();
+
+                    let common_sector_ids = our_sector_ids
+                        .intersection(other_sector_ids)
+                        .collect::<HashSet<_>>();
+
+                    for sector_id in common_sector_ids {
+                        if our_ring_sector_hashes[ring_id][sector_id]
+                            != other_ring_sector_hashes[ring_id][sector_id]
+                        {
+                            mismatched_sector_ids.push(**sector_id);
+                        }
+                    }
+
+                    mismatched_ring_sectors
+                        .insert(**ring_id, mismatched_sector_ids);
+                }
+
+                SnapshotDiff::RingSectorMismatches(mismatched_ring_sectors)
             }
             (theirs, other) => {
                 tracing::error!(
@@ -222,7 +287,7 @@ impl DhtSnapshot {
                     theirs,
                     other
                 );
-                DhtSnapshotCompareOutcomeInner::CannotCompare
+                SnapshotDiff::CannotCompare
             }
         }
     }
@@ -328,35 +393,37 @@ impl Dht {
                 )
                 .await?
             }
+            DhtSnapshot::RingSectorDetails {
+                ring_sector_hashes, ..
+            } => self.snapshot_ring_sector_details(
+                ring_sector_hashes.keys().cloned().collect(),
+                arc_set,
+            )?,
         };
 
         println!("Our snapshot: {:?}", our_snapshot);
 
         match our_snapshot.compare(&their_snapshot) {
-            DhtSnapshotCompareOutcomeInner::Identical => {
-                Ok(DhtSnapshotCompareOutcome::Identical)
-            }
-            DhtSnapshotCompareOutcomeInner::CannotCompare => {
+            SnapshotDiff::Identical => Ok(DhtSnapshotCompareOutcome::Identical),
+            SnapshotDiff::CannotCompare => {
                 Ok(DhtSnapshotCompareOutcome::CannotCompare)
             }
-            DhtSnapshotCompareOutcomeInner::DiscMismatch => {
+            SnapshotDiff::DiscMismatch => {
                 Ok(DhtSnapshotCompareOutcome::NewSnapshot(
                     self.snapshot_disc_sectors(arc_set, store).await?,
                 ))
             }
-            DhtSnapshotCompareOutcomeInner::DiscSectorMismatches(
-                mismatched_sectors,
-            ) => Ok(DhtSnapshotCompareOutcome::NewSnapshot(
-                self.snapshot_disc_sector_details(
-                    mismatched_sectors,
-                    arc_set,
-                    store,
-                )
-                .await?,
-            )),
-            DhtSnapshotCompareOutcomeInner::DiscSectorSliceMismatches(
-                mismatched_slice_ids,
-            ) => {
+            SnapshotDiff::DiscSectorMismatches(mismatched_sectors) => {
+                Ok(DhtSnapshotCompareOutcome::NewSnapshot(
+                    self.snapshot_disc_sector_details(
+                        mismatched_sectors,
+                        arc_set,
+                        store,
+                    )
+                    .await?,
+                ))
+            }
+            SnapshotDiff::DiscSectorSliceMismatches(mismatched_slice_ids) => {
                 let mut out = Vec::new();
                 for (sector_id, missing_slices) in mismatched_slice_ids {
                     let Ok(arc) =
@@ -368,6 +435,9 @@ impl Dht {
                         );
                         continue;
                     };
+
+                    // TODO handle an empty list of missing slices here?
+                    //      if that's empty then we actually need to send the whole sector?
 
                     for missing_slice in missing_slices {
                         let Ok((start, end)) = self
@@ -393,10 +463,52 @@ impl Dht {
 
                 Ok(DhtSnapshotCompareOutcome::HashList(our_snapshot, out))
             }
-            DhtSnapshotCompareOutcomeInner::RingMismatches(
-                _mismatched_rings,
-            ) => {
-                unimplemented!("Ring mismatches are not yet supported")
+            SnapshotDiff::RingMismatches(mismatched_rings) => {
+                println!("Mismatched rings: {:?}", mismatched_rings);
+                Ok(DhtSnapshotCompareOutcome::NewSnapshot(
+                    self.snapshot_ring_sector_details(
+                        mismatched_rings,
+                        arc_set,
+                    )?,
+                ))
+            }
+            SnapshotDiff::RingSectorMismatches(mismatched_sectors) => {
+                let mut out = Vec::new();
+
+                for (ring_id, missing_sectors) in mismatched_sectors {
+                    for sector_id in missing_sectors {
+                        let Ok(arc) =
+                            self.partition.dht_arc_for_sector_id(sector_id)
+                        else {
+                            tracing::error!(
+                                "Sector id {} out of bounds, ignoring",
+                                sector_id
+                            );
+                            continue;
+                        };
+
+                        let Ok((start, end)) = self
+                            .partition
+                            .time_bounds_for_partial_slice_id(ring_id)
+                        else {
+                            tracing::error!(
+                                "Partial slice id {} out of bounds, ignoring",
+                                ring_id
+                            );
+                            continue;
+                        };
+
+                        out.extend(
+                            store
+                                .retrieve_op_hashes_in_time_slice(
+                                    arc, start, end,
+                                )
+                                .await?,
+                        );
+                    }
+                }
+
+                Ok(DhtSnapshotCompareOutcome::HashList(our_snapshot, out))
             }
         }
     }
@@ -437,6 +549,21 @@ impl Dht {
             disc_boundary,
         })
     }
+
+    fn snapshot_ring_sector_details(
+        &self,
+        mismatched_rings: Vec<u32>,
+        arc_set: &ArcSet,
+    ) -> K2Result<DhtSnapshot> {
+        let (ring_sector_hashes, disc_boundary) = self
+            .partition
+            .partial_time_slice_details(mismatched_rings, arc_set)?;
+
+        Ok(DhtSnapshot::RingSectorDetails {
+            ring_sector_hashes,
+            disc_boundary,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -452,10 +579,7 @@ mod snapshot_tests {
             ring_top_hashes: vec![bytes::Bytes::from(vec![2; 32])],
         };
 
-        assert_eq!(
-            DhtSnapshotCompareOutcomeInner::Identical,
-            snapshot.compare(&snapshot)
-        );
+        assert_eq!(SnapshotDiff::Identical, snapshot.compare(&snapshot));
     }
 
     #[test]
@@ -473,10 +597,7 @@ mod snapshot_tests {
             ring_top_hashes: vec![],
         };
 
-        assert_eq!(
-            snapshot_1.compare(&snapshot_2),
-            DhtSnapshotCompareOutcomeInner::DiscMismatch
-        );
+        assert_eq!(snapshot_1.compare(&snapshot_2), SnapshotDiff::DiscMismatch);
     }
 
     #[test]
@@ -496,7 +617,7 @@ mod snapshot_tests {
 
         assert_eq!(
             snapshot_1.compare(&snapshot_2),
-            DhtSnapshotCompareOutcomeInner::CannotCompare
+            SnapshotDiff::CannotCompare
         );
     }
 }
@@ -684,6 +805,112 @@ mod dht_tests {
             .await
             .unwrap();
 
+        let snapshot = dht2
+            .snapshot_minimal(&arc_set, store2.clone())
+            .await
+            .unwrap();
+        let outcome = dht1
+            .handle_snapshot(snapshot, &arc_set, store1.clone())
+            .await
+            .unwrap();
+        match outcome {
+            DhtSnapshotCompareOutcome::Identical => {}
+            s => panic!("Unexpected outcome: {:?}", s),
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_ops_in_ring() {
+        let current_time = Timestamp::now();
+        let full_slice_end = {
+            let temp_store = Arc::new(Kitsune2MemoryOpStore::default());
+            let dht = Dht::try_from_store(current_time, temp_store.clone())
+                .await
+                .unwrap();
+            dht.partition.full_slice_end_timestamp()
+        };
+
+        let store1 = Arc::new(Kitsune2MemoryOpStore::default());
+        store1
+            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::from(vec![43; 32])),
+                // Will place the op in the first partial slice
+                full_slice_end,
+                vec![],
+            )
+            .try_into()
+            .unwrap()])
+            .await
+            .unwrap();
+        let store2 = Arc::new(Kitsune2MemoryOpStore::default());
+
+        let dht1 = Dht::try_from_store(current_time, store1.clone())
+            .await
+            .unwrap();
+        let mut dht2 = Dht::try_from_store(current_time, store2.clone())
+            .await
+            .unwrap();
+
+        let arc_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap();
+
+        let snapshot = dht1
+            .snapshot_minimal(&arc_set, store1.clone())
+            .await
+            .unwrap();
+
+        println!("Initial snapshot: {:?}", snapshot);
+
+        let outcome = dht2
+            .handle_snapshot(snapshot, &arc_set, store2.clone())
+            .await
+            .unwrap();
+        let snapshot = match outcome {
+            DhtSnapshotCompareOutcome::NewSnapshot(new_snapshot) => {
+                match new_snapshot {
+                    DhtSnapshot::RingSectorDetails { .. } => new_snapshot,
+                    s => panic!("Unexpected snapshot type: {:?}", s),
+                }
+            }
+            s => panic!("Unexpected outcome: {:?}", s),
+        };
+
+        println!("Sectors snapshot {:?}", snapshot);
+
+        let outcome = dht1
+            .handle_snapshot(snapshot, &arc_set, store1.clone())
+            .await
+            .unwrap();
+        let (snapshot, hash_list) = match outcome {
+            DhtSnapshotCompareOutcome::HashList(new_snapshot, hash_list) => {
+                assert_eq!(1, hash_list.len());
+                assert_eq!(
+                    OpId::from(bytes::Bytes::from(vec![43; 32])),
+                    hash_list[0]
+                );
+
+                (new_snapshot, hash_list)
+            }
+            s => panic!("Unexpected outcome: {:?}", s),
+        };
+
+        // Agent 2 then checks diffs against the incoming snapshot but has no new ops to send
+        let outcome = dht2
+            .handle_snapshot(snapshot, &arc_set, store2.clone())
+            .await
+            .unwrap();
+        match outcome {
+            DhtSnapshotCompareOutcome::HashList(_, hash_list) => {
+                assert_eq!(0, hash_list.len());
+            }
+            s => panic!("Unexpected outcome: {:?}", s),
+        };
+
+        // Sync the identified ops from agent 1 to agent 2
+        transfer_ops(store1.clone(), store2.clone(), &mut dht2, hash_list)
+            .await
+            .unwrap();
+
+        // Now the snapshots should match
         let snapshot = dht2
             .snapshot_minimal(&arc_set, store2.clone())
             .await
