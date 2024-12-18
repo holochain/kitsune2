@@ -3,7 +3,6 @@
 use crate::{DhtArc, K2Result, OpId, Timestamp};
 use futures::future::BoxFuture;
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// An op with metadata.
@@ -105,7 +104,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn retrieve_slice_hashes(
         &self,
         arc: DhtArc,
-    ) -> BoxFuture<'_, K2Result<HashMap<u64, bytes::Bytes>>>;
+    ) -> BoxFuture<'_, K2Result<Vec<(u64, bytes::Bytes)>>>;
 }
 
 /// Trait-object version of kitsune2 op store.
