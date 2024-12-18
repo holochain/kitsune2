@@ -2,6 +2,7 @@
 
 use crate::*;
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 /// helper transcode function
 fn tc<S: serde::Serialize, D: serde::de::DeserializeOwned>(
@@ -14,68 +15,239 @@ fn tc<S: serde::Serialize, D: serde::de::DeserializeOwned>(
     .map_err(|e| K2Error::other_src("decode", e))
 }
 
-/// Denotes a type used to configure a specific kitsune2 module.
-///
-/// Note, the types defined in this struct are specifically for configuration
-/// that cannot be changed at runtime, the likes of which might be found
-/// in a configuration file.
-///
-/// If a specific module has a config that can be changed at runtime, the
-/// component found in this type might be a `default_` prefixed version
-/// of it, then the runtime value can be altered through different means.
-///
-/// It is highly recommended that you expose this struct in your module
-/// docs to help devs using your module understand how to configure it.
-pub trait ModConfig:
-    'static
-    + Sized
-    + Default
-    + std::fmt::Debug
-    + serde::Serialize
-    + serde::de::DeserializeOwned
-    + Send
-    + Sync
-{
+/// A callback to be invoked if the config value is updated at runtime.
+pub type ConfigUpdateCb =
+    Arc<dyn Fn(serde_json::Value) + 'static + Send + Sync>;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent, rename_all = "camelCase")]
+struct ConfigEntry {
+    pub value: serde_json::Value,
+    #[serde(skip, default)]
+    pub update_cb: Option<ConfigUpdateCb>,
+}
+
+impl std::fmt::Debug for ConfigEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfigEntry")
+            .field("value", &self.value)
+            .field("has_update_cb", &self.update_cb.is_some())
+            .finish()
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(untagged, rename_all = "camelCase")]
+enum ConfigMap {
+    ConfigMap(BTreeMap<String, Box<Self>>),
+    ConfigEntry(ConfigEntry),
+}
+
+impl Default for ConfigMap {
+    fn default() -> Self {
+        Self::ConfigMap(BTreeMap::new())
+    }
+}
+
+struct Inner {
+    map: ConfigMap,
+    are_defaults_set: bool,
+    is_runtime: bool,
 }
 
 /// Kitsune configuration.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct Config(BTreeMap<String, serde_json::Value>);
+pub struct Config(Mutex<Inner>);
+
+impl serde::Serialize for Config {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.lock().unwrap().map.serialize(serializer)
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.lock().unwrap().map.fmt(f)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self(Mutex::new(Inner {
+            map: ConfigMap::default(),
+            are_defaults_set: false,
+            is_runtime: false,
+        }))
+    }
+}
 
 impl Config {
-    /// When kitsune2 is generating a default or example configuration
-    /// file, it will pass a mutable reference of this config struct to
-    /// the module factories that are configured to be used. Those factories
-    /// should call this function any number of times to add any default
-    /// configuration parameters to that file.
-    pub fn add_default_module_config<M: ModConfig>(
-        &mut self,
-        module_name: String,
+    /// Once defaults are set, generate warnings for any values
+    /// set beyond this list. So that we can identify no-longer-used
+    /// config parameters.
+    pub fn mark_defaults_set(&self) {
+        self.0.lock().unwrap().are_defaults_set = true;
+    }
+
+    /// Once we are done setting initial config, generate warnings for
+    /// any runtime alterations that do not have update callbacks registered.
+    /// This way we can tell if runtime config changes are being ignored.
+    pub fn mark_runtime(&self) {
+        self.0.lock().unwrap().is_runtime = true;
+    }
+
+    /// Get a set of module config values from this config instance.
+    pub fn get_module_config<D: serde::de::DeserializeOwned>(
+        &self,
+    ) -> K2Result<D> {
+        let lock = self.0.lock().unwrap();
+        tc(&lock.map)
+    }
+
+    /// Set any number of module config values on this config instance.
+    ///
+    /// This will error if trying to write an entry where a map currently
+    /// resides or visa-versa.
+    pub fn set_module_config<S: serde::Serialize>(
+        &self,
+        config: &S,
     ) -> K2Result<()> {
-        if self.0.contains_key(&module_name) {
-            return Err(K2Error::other(format!(
-                "Refusing to overwrite conflicting module name: {module_name}"
-            )));
+        let in_map: ConfigMap = tc(config)?;
+        let debug_path = format!("{in_map:?}");
+        let mut updates = Vec::new();
+        {
+            let mut lock = self.0.lock().unwrap();
+            let are_defaults_set = lock.are_defaults_set;
+            let is_runtime = lock.is_runtime;
+            let old_map: &mut ConfigMap = &mut lock.map;
+            let new_map: &ConfigMap = &in_map;
+            fn apply_map(
+                debug_path: &str,
+                are_defaults_set: bool,
+                is_runtime: bool,
+                updates: &mut Vec<(ConfigUpdateCb, serde_json::Value)>,
+                old_map: &mut ConfigMap,
+                new_map: &ConfigMap,
+            ) -> K2Result<()> {
+                match new_map {
+                    ConfigMap::ConfigMap(new_map) => {
+                        match old_map {
+                            ConfigMap::ConfigMap(old_map) => {
+                                for (key, new_map) in new_map.iter() {
+                                    if are_defaults_set
+                                        && !old_map.contains_key(key)
+                                    {
+                                        tracing::warn!(debug_path, "this config parameter may be unused");
+                                    }
+                                    let old_map =
+                                        old_map.entry(key.clone()).or_default();
+                                    apply_map(
+                                        debug_path,
+                                        are_defaults_set,
+                                        is_runtime,
+                                        updates,
+                                        old_map,
+                                        new_map,
+                                    )?;
+                                }
+                            }
+                            ConfigMap::ConfigEntry(_) => {
+                                return Err(K2Error::other(format!(
+                                "{debug_path} attempted to insert a map where an entry exists",
+                            )));
+                            }
+                        }
+                    }
+                    ConfigMap::ConfigEntry(new_entry) => match old_map {
+                        ConfigMap::ConfigMap(m) => {
+                            if !m.is_empty() {
+                                return Err(K2Error::other(format!(
+                                    "{debug_path} attempted to insert an entry where a map exists",
+                                )));
+                            }
+                            *old_map =
+                                ConfigMap::ConfigEntry(new_entry.clone());
+                            if is_runtime {
+                                tracing::warn!(debug_path, "no update callback for runtime config alteration");
+                            }
+                        }
+                        ConfigMap::ConfigEntry(old_entry) => {
+                            old_entry.value = new_entry.value.clone();
+                            if let Some(update_cb) = &old_entry.update_cb {
+                                updates.push((
+                                    update_cb.clone(),
+                                    new_entry.value.clone(),
+                                ));
+                            } else if is_runtime {
+                                tracing::warn!(debug_path, "no update callback for runtime config alteration");
+                            }
+                        }
+                    },
+                }
+                Ok(())
+            }
+            apply_map(
+                &debug_path,
+                are_defaults_set,
+                is_runtime,
+                &mut updates,
+                old_map,
+                new_map,
+            )?;
         }
-        self.0.insert(module_name, tc(&M::default())?);
+        for (update_cb, value) in updates {
+            update_cb(value);
+        }
         Ok(())
     }
 
-    /// When kitsune2 is initializing, it will call the factory function
-    /// for all of its modules with an immutable reference to this config
-    /// struct. Each of those modules may choose to call this function
-    /// to extract a module config. Note that this config is loaded from
-    /// disk and can be edited by humans, so the serialization on the module
-    /// config should be tolerant to missing properties, setting sane defaults.
-    /// A module may choose to warn about missing properties and should warn about extraneous properties.
-    pub fn get_module_config<M: ModConfig>(
+    /// Call this in your module constructor once for every parameter for
+    /// which you would like to receive runtime updates. This will immediately
+    /// invoke the callback with the current value to ensure this is atomic.
+    /// (If this is called before default initialization, that initial value
+    /// will be json Null.)
+    pub fn register_entry_update_cb<D: std::fmt::Display>(
         &self,
-        module_name: &str,
-    ) -> K2Result<M> {
-        self.0
-            .get(module_name)
-            .map(tc)
-            .unwrap_or_else(|| Ok(M::default()))
+        path: &[D],
+        update_cb: ConfigUpdateCb,
+    ) -> K2Result<()> {
+        let value = {
+            let mut lock = self.0.lock().unwrap();
+            let mut cur: &mut ConfigMap = &mut lock.map;
+            for path in path {
+                let key = path.to_string();
+                match cur {
+                    ConfigMap::ConfigMap(m) => cur = m.entry(key).or_default(),
+                    ConfigMap::ConfigEntry(_) => {
+                        return Err(K2Error::other(
+                            "attempted to insert a map where an entry exists",
+                        ))
+                    }
+                }
+            }
+            match cur {
+                ConfigMap::ConfigMap(m) => {
+                    if !m.is_empty() {
+                        return Err(K2Error::other(
+                            "attempted to insert an entry where a map exists",
+                        ));
+                    }
+                    *cur = ConfigMap::ConfigEntry(ConfigEntry {
+                        value: serde_json::Value::Null,
+                        update_cb: Some(update_cb.clone()),
+                    });
+                    serde_json::Value::Null
+                }
+                ConfigMap::ConfigEntry(e) => {
+                    e.update_cb = Some(update_cb.clone());
+                    e.value.clone()
+                }
+            }
+        };
+        update_cb(value);
+        Ok(())
     }
 }
 
@@ -84,100 +256,91 @@ mod test {
     use super::*;
 
     #[test]
-    fn config_usage_example() {
-        #[derive(
-            Debug, Default, serde::Serialize, serde::Deserialize, PartialEq,
-        )]
-        struct Mod1 {
-            #[serde(default)]
-            p_a: u32,
-            #[serde(default)]
-            p_b: String,
-        }
+    fn warns_unused() {
+        // this test will never fail,
+        // but we can check it traces correctly manually
 
-        impl ModConfig for Mod1 {}
+        kitsune2_test_utils::enable_tracing();
+
+        let c = Config::default();
+        c.set_module_config(&serde_json::json!({"apples": "red"}))
+            .unwrap();
+        c.mark_defaults_set();
+        c.set_module_config(&serde_json::json!({"apples": "green"}))
+            .unwrap();
+        c.set_module_config(&serde_json::json!({"bananas": 42}))
+            .unwrap();
+    }
+
+    #[test]
+    fn warns_no_runtime_cb() {
+        // this test will never fail,
+        // but we can check it traces correctly manually
+
+        kitsune2_test_utils::enable_tracing();
+
+        let c = Config::default();
+        c.set_module_config(&serde_json::json!({"apples": "red"}))
+            .unwrap();
+        c.mark_runtime();
+        c.set_module_config(&serde_json::json!({"apples": "green"}))
+            .unwrap();
+        c.set_module_config(&serde_json::json!({"bananas": 42}))
+            .unwrap();
+    }
+
+    #[test]
+    fn config_usage_example() {
+        #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        struct SubConfig {
+            pub apples: String,
+            pub bananas: u32,
+        }
 
         #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-        #[serde(default)]
-        struct Mod2 {
-            #[serde(rename = "#p_c", skip_deserializing)]
-            doc_p_a: &'static str,
-            #[serde(default)]
-            p_c: u32,
-            #[serde(default)]
-            p_d: String,
+        #[serde(rename_all = "camelCase")]
+        struct ModConfig {
+            pub my_module: SubConfig,
         }
 
-        impl Default for Mod2 {
-            fn default() -> Self {
-                Self {
-                    doc_p_a: "This is a potential pattern for how to document config props.",
-                    p_c: 0,
-                    p_d: "".into(),
-                }
-            }
-        }
+        let c = Config::default();
 
-        impl ModConfig for Mod2 {}
+        let expect = ModConfig {
+            my_module: SubConfig {
+                apples: "red".to_string(),
+                bananas: 42,
+            },
+        };
 
-        let mut config = Config::default();
-        config
-            .add_default_module_config::<Mod1>("mod1".into())
-            .unwrap();
-        config
-            .add_default_module_config::<Mod2>("mod2".into())
-            .unwrap();
+        c.set_module_config(&expect).unwrap();
 
-        // output the "default" config
-        assert_eq!(
-            r##"{
-  "mod1": {
-    "p_a": 0,
-    "p_b": ""
-  },
-  "mod2": {
-    "#p_c": "This is a potential pattern for how to document config props.",
-    "p_c": 0,
-    "p_d": ""
-  }
-}"##,
-            serde_json::to_string_pretty(&config).unwrap()
-        );
+        println!("{}", serde_json::to_string_pretty(&c).unwrap());
 
-        // ensure we can load a weird config from disk
-        let config: Config = serde_json::from_str(
-            r#"{
-          "modBAD": { "foo": "bar" },
-          "mod1": { "p_b": "test-p_b" },
-          "mod2": { "p_c": 42, "p_d": "test-p_d", "extra": "foo" }
-        }"#,
+        let resp: ModConfig = c.get_module_config().unwrap();
+        assert_eq!(expect, resp);
+
+        use std::sync::atomic::*;
+        let update = Arc::new(AtomicU32::new(0));
+        let update2 = update.clone();
+        c.register_entry_update_cb(
+            &["myModule", "bananas"],
+            Arc::new(move |v| {
+                let v: u32 =
+                    serde_json::from_str(&serde_json::to_string(&v).unwrap())
+                        .unwrap();
+                update2.store(v, Ordering::SeqCst);
+            }),
         )
         .unwrap();
 
-        assert_eq!(
-            Mod1 {
-                p_a: 0,
-                p_b: "test-p_b".to_string(),
-            },
-            config.get_module_config::<Mod1>("mod1").unwrap(),
-        );
+        c.set_module_config(&serde_json::json!({
+            "myModule": {
+                "bananas": 99,
+            }
+        }))
+        .unwrap();
 
-        assert_eq!(
-            Mod2 {
-                p_c: 42,
-                p_d: "test-p_d".to_string(),
-                ..Default::default()
-            },
-            config.get_module_config::<Mod2>("mod2").unwrap(),
-        );
-
-        // unset mods get the default
-        assert_eq!(
-            Mod1 {
-                p_a: 0,
-                p_b: "".to_string(),
-            },
-            config.get_module_config::<Mod1>("NOT-SET").unwrap(),
-        );
+        assert_eq!(99, update.load(Ordering::SeqCst));
     }
 }
