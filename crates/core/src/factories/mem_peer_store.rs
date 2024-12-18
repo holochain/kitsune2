@@ -256,7 +256,3 @@ impl Inner {
 
 #[cfg(test)]
 mod test;
-
-/// Peer store related utilities for testing.
-#[cfg(test)]
-pub mod test_utils;

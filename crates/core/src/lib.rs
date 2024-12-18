@@ -2,8 +2,9 @@
 //! Kitsune2 p2p / dht communication framework.
 
 use kitsune2_api::{builder::Builder, config::Config, *};
+use std::sync::{Arc, Mutex};
 
-/// A default [kitsune2_api::agent::Verifier] based on ed25519_dalek.
+/// A default [kitsune2_api::agent::Verifier] based on ed25519.
 #[derive(Debug)]
 pub struct Ed25519Verifier;
 
@@ -34,6 +35,104 @@ impl agent::Verifier for Ed25519Verifier {
         let signature = ed25519_dalek::Signature::from_bytes(&signature);
 
         agent.verify(message, &signature).is_ok()
+    }
+}
+
+struct Ed25519LocalAgentInner {
+    cb: Option<Arc<dyn Fn() + 'static + Send + Sync>>,
+    cur: DhtArc,
+    tgt: DhtArc,
+}
+
+/// A default in-memory [kitsune2_api::agent::LocalAgent] based on ed25519.
+pub struct Ed25519LocalAgent {
+    pk: ed25519_dalek::SigningKey,
+    id: AgentId,
+    inner: Mutex<Ed25519LocalAgentInner>,
+}
+
+impl std::fmt::Debug for Ed25519LocalAgent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let storage_arc = self.inner.lock().unwrap().cur;
+        f.debug_struct("Ed25519LocalAgent")
+            .field("agent", &self.id)
+            .field("storage_arc", &storage_arc)
+            .finish()
+    }
+}
+
+impl Default for Ed25519LocalAgent {
+    fn default() -> Self {
+        Self::new(ed25519_dalek::SigningKey::generate(&mut rand::thread_rng()))
+    }
+}
+
+impl Ed25519LocalAgent {
+    fn new(pk: ed25519_dalek::SigningKey) -> Self {
+        let id = bytes::Bytes::copy_from_slice(pk.verifying_key().as_bytes());
+        Self {
+            pk,
+            id: id.into(),
+            inner: Mutex::new(Ed25519LocalAgentInner {
+                cb: None,
+                cur: DhtArc::Empty,
+                tgt: DhtArc::Empty,
+            }),
+        }
+    }
+
+    /// Construct an instance from seed bytes.
+    pub fn from_seed(seed: &[u8; 32]) -> Self {
+        Self::new(ed25519_dalek::SigningKey::from_bytes(seed))
+    }
+
+    /// Sign a message with this local agent.
+    pub fn sign(&self, message: &[u8]) -> bytes::Bytes {
+        use ed25519_dalek::Signer;
+        bytes::Bytes::copy_from_slice(&self.pk.sign(message).to_bytes())
+    }
+}
+
+impl agent::Signer for Ed25519LocalAgent {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        _agent_info: &'b agent::AgentInfo,
+        message: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
+        Box::pin(async move { Ok(self.sign(message)) })
+    }
+}
+
+impl agent::LocalAgent for Ed25519LocalAgent {
+    fn agent(&self) -> &AgentId {
+        &self.id
+    }
+
+    fn register_cb(&self, cb: Arc<dyn Fn() + 'static + Send + Sync>) {
+        self.inner.lock().unwrap().cb = Some(cb);
+    }
+
+    fn invoke_cb(&self) {
+        let cb = self.inner.lock().unwrap().cb.clone();
+        if let Some(cb) = cb {
+            cb();
+        }
+    }
+
+    fn get_cur_storage_arc(&self) -> DhtArc {
+        self.inner.lock().unwrap().cur
+    }
+
+    fn set_cur_storage_arc(&self, arc: DhtArc) {
+        self.inner.lock().unwrap().cur = arc;
+    }
+
+    fn get_tgt_storage_arc(&self) -> DhtArc {
+        self.inner.lock().unwrap().tgt
+    }
+
+    fn set_tgt_storage_arc_hint(&self, arc: DhtArc) {
+        self.inner.lock().unwrap().tgt = arc;
     }
 }
 

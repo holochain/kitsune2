@@ -83,11 +83,11 @@ use std::sync::Arc;
 /// Defines a type capable of cryptographic signatures.
 pub trait Signer {
     /// Sign the encoded data, returning the resulting detached signature bytes.
-    fn sign(
-        &self,
-        agent_info: &AgentInfo,
-        message: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>>;
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        agent_info: &'b AgentInfo,
+        message: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>>;
 }
 
 /// Defines a type capable of cryptographic verification.
@@ -148,11 +148,11 @@ pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
 pub type DynLocalAgent = Arc<dyn LocalAgent>;
 
 impl Signer for DynLocalAgent {
-    fn sign(
-        &self,
-        agent_info: &AgentInfo,
-        message: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        agent_info: &'b AgentInfo,
+        message: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         (**self).sign(agent_info, message)
     }
 }
@@ -320,11 +320,11 @@ mod test {
     struct TestCrypto;
 
     impl Signer for TestCrypto {
-        fn sign(
-            &self,
-            _agent_info: &AgentInfo,
-            _encoded: &[u8],
-        ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        fn sign<'a, 'b: 'a, 'c: 'a>(
+            &'a self,
+            _agent_info: &'b AgentInfo,
+            _encoded: &'c [u8],
+        ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
             Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
         }
     }

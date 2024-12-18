@@ -7,11 +7,11 @@ const SIG: &[u8] = b"fake-signature";
 struct TestCrypto;
 
 impl agent::Signer for TestCrypto {
-    fn sign(
-        &self,
-        _agent_info: &agent::AgentInfo,
-        _encoded: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        _agent_info: &'b agent::AgentInfo,
+        _encoded: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
     }
 }
