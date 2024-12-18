@@ -12,14 +12,14 @@ pub use mem_peer_store::MemPeerStoreFactory;
 #[cfg(test)]
 pub(crate) use mem_peer_store::test_utils;
 
-mod mem_bootstrap;
-pub use mem_bootstrap::*;
+pub mod mem_bootstrap;
+pub use mem_bootstrap::MemBootstrapFactory;
 
-mod core_bootstrap;
-pub use core_bootstrap::*;
+pub mod core_bootstrap;
+pub use core_bootstrap::CoreBootstrapFactory;
 
-mod core_fetch;
-pub use core_fetch::*;
+pub mod core_fetch;
+pub use core_fetch::CoreFetchFactory;
 
 mod mem_transport;
 pub use mem_transport::*;

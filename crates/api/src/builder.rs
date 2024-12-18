@@ -52,6 +52,7 @@ impl Builder {
                 kitsune,
                 space,
                 peer_store,
+                bootstrap,
                 fetch,
                 transport,
             } = &mut self;

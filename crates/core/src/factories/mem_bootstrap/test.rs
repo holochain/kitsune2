@@ -36,12 +36,14 @@ struct Test {
 
 impl Test {
     pub async fn new() -> Self {
-        let mut builder = builder::Builder {
-            verifier: Arc::new(TestCrypto),
-            ..crate::default_builder()
-        };
-        builder.set_default_config().unwrap();
-        let builder = Arc::new(builder);
+        let builder = Arc::new(
+            builder::Builder {
+                verifier: Arc::new(TestCrypto),
+                ..crate::default_builder()
+            }
+            .with_default_config()
+            .unwrap(),
+        );
         println!("{}", serde_json::to_string(&builder.config).unwrap());
 
         let peer_store =

@@ -3,35 +3,44 @@
 use kitsune2_api::{bootstrap::*, config::*, *};
 use std::sync::{Arc, Mutex};
 
-const MOD_NAME: &str = "MemBootstrap";
+/// MemBootstrap configuration types.
+pub mod config {
+    /// Configuration parameters for [MemBootstrapFactory](super::MemBootstrapFactory).
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MemBootstrapConfig {
+        /// Since rust test runs multiple tests in the same process,
+        /// we cannot just have a single global bootstrap test store.
+        /// This defaults to the current thread id when this config instance
+        /// is constructed. This should be sufficient for most needs.
+        /// However, if you are creating kitsune nodes in tests from
+        /// different tasks, you may need to pick an explicit id for this value.
+        pub test_id: String,
 
-/// Configuration parameters for [MemBootstrapFactory].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemBootstrapConfig {
-    /// Since rust test runs multiple tests in the same process,
-    /// we cannot just have a single global bootstrap test store.
-    /// This defaults to the current thread id when this config instance
-    /// is constructed. This should be sufficient for most needs.
-    /// However, if you are creating kitsune nodes in tests from
-    /// different tasks, you may need to pick an explicit id for this value.
-    pub test_id: String,
+        /// How often in ms to update the peer store with bootstrap infos.
+        /// Defaults to 5s.
+        pub poll_freq_ms: u32,
+    }
 
-    /// How often in ms to update the peer store with bootstrap infos.
-    /// Defaults to 5s.
-    pub poll_freq_ms: u32,
-}
-
-impl Default for MemBootstrapConfig {
-    fn default() -> Self {
-        Self {
-            test_id: format!("{:?}", std::thread::current().id()),
-            poll_freq_ms: 5000,
+    impl Default for MemBootstrapConfig {
+        fn default() -> Self {
+            Self {
+                test_id: format!("{:?}", std::thread::current().id()),
+                poll_freq_ms: 5000,
+            }
         }
+    }
+
+    /// Module-level configuration for MemBootstrap.
+    #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MemBootstrapModConfig {
+        /// MemBootstrap configuration.
+        pub mem_bootstrap: MemBootstrapConfig,
     }
 }
 
-impl ModConfig for MemBootstrapConfig {}
+use config::*;
 
 /// The mem bootstrap implementation provided by Kitsune2.
 #[derive(Debug)]
@@ -53,9 +62,7 @@ impl MemBootstrapFactory {
 
 impl BootstrapFactory for MemBootstrapFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config
-            .add_default_module_config::<MemBootstrapConfig>(MOD_NAME.into())?;
-        Ok(())
+        config.set_module_config(&MemBootstrapModConfig::default())
     }
 
     fn create(
@@ -65,11 +72,10 @@ impl BootstrapFactory for MemBootstrapFactory {
         _space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
-            let config = builder
-                .config
-                .get_module_config::<MemBootstrapConfig>(MOD_NAME)?;
+            let config: MemBootstrapModConfig =
+                builder.config.get_module_config()?;
             let out: DynBootstrap =
-                Arc::new(MemBootstrap::new(config, peer_store));
+                Arc::new(MemBootstrap::new(config.mem_bootstrap, peer_store));
             Ok(out)
         })
     }

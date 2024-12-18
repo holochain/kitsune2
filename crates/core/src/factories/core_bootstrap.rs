@@ -3,47 +3,56 @@
 use kitsune2_api::{bootstrap::*, config::*, *};
 use std::sync::Arc;
 
-const MOD_NAME: &str = "CoreBootstrap";
+/// CoreBootstrap configuration types.
+pub mod config {
+    /// Configuration parameters for [CoreBootstrapFactory](super::CoreBootstrapFactory).
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct CoreBootstrapConfig {
+        /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
+        pub server_url: String,
 
-/// Configuration parameters for [CoreBootstrapFactory].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoreBootstrapConfig {
-    /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
-    pub server_url: String,
+        /// Minimum backoff in ms to use for both push and poll retry loops.
+        /// Default: 5 seconds.
+        pub backoff_min_ms: u32,
 
-    /// Minimum backoff in ms to use for both push and poll retry loops.
-    /// Default: 5 seconds.
-    pub backoff_min_ms: u32,
+        /// Maximum backoff in ms to use for both push and poll retry loops.
+        /// Default: 5 minutes.
+        pub backoff_max_ms: u32,
+    }
 
-    /// Maximum backoff in ms to use for both push and poll retry loops.
-    /// Default: 5 minutes.
-    pub backoff_max_ms: u32,
-}
-
-impl Default for CoreBootstrapConfig {
-    fn default() -> Self {
-        Self {
-            server_url: "<https://your.bootstrap.url>".into(),
-            backoff_min_ms: 1000 * 5,
-            backoff_max_ms: 1000 * 60 * 5,
+    impl Default for CoreBootstrapConfig {
+        fn default() -> Self {
+            Self {
+                server_url: "<https://your.bootstrap.url>".into(),
+                backoff_min_ms: 1000 * 5,
+                backoff_max_ms: 1000 * 60 * 5,
+            }
         }
     }
-}
 
-impl CoreBootstrapConfig {
-    /// Get the minimum backoff duration.
-    pub fn backoff_min(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.backoff_min_ms as u64)
+    impl CoreBootstrapConfig {
+        /// Get the minimum backoff duration.
+        pub fn backoff_min(&self) -> std::time::Duration {
+            std::time::Duration::from_millis(self.backoff_min_ms as u64)
+        }
+
+        /// Get the maximum backoff duration.
+        pub fn backoff_max(&self) -> std::time::Duration {
+            std::time::Duration::from_millis(self.backoff_max_ms as u64)
+        }
     }
 
-    /// Get the maximum backoff duration.
-    pub fn backoff_max(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.backoff_max_ms as u64)
+    /// Module-level configuration for CoreBootstrap.
+    #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct CoreBootstrapModConfig {
+        /// CoreBootstrap configuration.
+        pub core_bootstrap: CoreBootstrapConfig,
     }
 }
 
-impl ModConfig for CoreBootstrapConfig {}
+use config::*;
 
 /// The core bootstrap implementation provided by Kitsune2.
 #[derive(Debug)]
@@ -59,10 +68,7 @@ impl CoreBootstrapFactory {
 
 impl BootstrapFactory for CoreBootstrapFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config.add_default_module_config::<CoreBootstrapConfig>(
-            MOD_NAME.into(),
-        )?;
-        Ok(())
+        config.set_module_config(&CoreBootstrapModConfig::default())
     }
 
     fn create(
@@ -72,11 +78,13 @@ impl BootstrapFactory for CoreBootstrapFactory {
         space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
-            let config = builder
-                .config
-                .get_module_config::<CoreBootstrapConfig>(MOD_NAME)?;
+            let config: CoreBootstrapModConfig =
+                builder.config.get_module_config()?;
             let out: DynBootstrap = Arc::new(CoreBootstrap::new(
-                builder, config, peer_store, space,
+                builder,
+                config.core_bootstrap,
+                peer_store,
+                space,
             ));
             Ok(out)
         })

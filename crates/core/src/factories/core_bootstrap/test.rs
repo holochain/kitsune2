@@ -47,22 +47,22 @@ struct Test {
 
 impl Test {
     pub async fn new(server: &str) -> Self {
-        let mut builder = builder::Builder {
+        let builder = builder::Builder {
             verifier: Arc::new(TestCrypto),
             bootstrap: super::CoreBootstrapFactory::create(),
             ..crate::default_builder()
-        };
-        builder.set_default_config().unwrap();
+        }
+        .with_default_config()
+        .unwrap();
         builder
             .config
-            .set_module_config(
-                super::MOD_NAME.into(),
-                &super::CoreBootstrapConfig {
+            .set_module_config(&super::CoreBootstrapModConfig {
+                core_bootstrap: super::CoreBootstrapConfig {
                     server_url: server.into(),
                     backoff_min_ms: 10,
                     backoff_max_ms: 10,
                 },
-            )
+            })
             .unwrap();
         let builder = Arc::new(builder);
         println!("{}", serde_json::to_string(&builder.config).unwrap());
