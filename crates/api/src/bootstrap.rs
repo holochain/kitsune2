@@ -14,7 +14,7 @@ pub trait Bootstrap: 'static + Send + Sync + std::fmt::Debug {
     /// This method takes responsibility for retrying the send in the case
     /// of server error until such time as:
     /// - the Put succeeds
-    /// - we receive a new info that supercedes the previous
+    /// - we receive a new info that supersedes the previous
     /// - or the info expires
     fn put(&self, info: Arc<agent::AgentInfoSigned>);
 }
