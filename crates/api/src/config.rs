@@ -46,23 +46,61 @@ impl Default for ConfigMap {
     }
 }
 
+struct Inner {
+    map: ConfigMap,
+    are_defaults_set: bool,
+    is_runtime: bool,
+}
+
 /// Kitsune configuration.
-#[derive(Debug, serde::Serialize)]
-pub struct Config(Mutex<ConfigMap>);
+pub struct Config(Mutex<Inner>);
+
+impl serde::Serialize for Config {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.lock().unwrap().map.serialize(serializer)
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.lock().unwrap().map.fmt(f)
+    }
+}
 
 impl Default for Config {
     fn default() -> Self {
-        Self(Mutex::new(ConfigMap::ConfigMap(BTreeMap::new())))
+        Self(Mutex::new(Inner {
+            map: ConfigMap::default(),
+            are_defaults_set: false,
+            is_runtime: false,
+        }))
     }
 }
 
 impl Config {
+    /// Once defaults are set, generate warnings for any values
+    /// set beyond this list. So that we can identify no-longer-used
+    /// config parameters.
+    pub fn mark_defaults_set(&self) {
+        self.0.lock().unwrap().are_defaults_set = true;
+    }
+
+    /// Once we are done setting initial config, generate warnings for
+    /// any runtime alterations that do not have update callbacks registered.
+    /// This way we can tell if runtime config changes are being ignored.
+    pub fn mark_runtime(&self) {
+        self.0.lock().unwrap().is_runtime = true;
+    }
+
     /// Get a set of module config values from this config instance.
     pub fn get_module_config<D: serde::de::DeserializeOwned>(
         &self,
     ) -> K2Result<D> {
         let lock = self.0.lock().unwrap();
-        tc(&*lock)
+        tc(&lock.map)
     }
 
     /// Set any number of module config values on this config instance.
@@ -74,40 +112,63 @@ impl Config {
         config: &S,
     ) -> K2Result<()> {
         let in_map: ConfigMap = tc(config)?;
+        let debug_path = format!("{in_map:?}");
         let mut updates = Vec::new();
         {
             let mut lock = self.0.lock().unwrap();
-            let old_map: &mut ConfigMap = &mut lock;
+            let are_defaults_set = lock.are_defaults_set;
+            let is_runtime = lock.is_runtime;
+            let old_map: &mut ConfigMap = &mut lock.map;
             let new_map: &ConfigMap = &in_map;
             fn apply_map(
+                debug_path: &str,
+                are_defaults_set: bool,
+                is_runtime: bool,
                 updates: &mut Vec<(ConfigUpdateCb, serde_json::Value)>,
                 old_map: &mut ConfigMap,
                 new_map: &ConfigMap,
             ) -> K2Result<()> {
                 match new_map {
-                    ConfigMap::ConfigMap(new_map) => match old_map {
-                        ConfigMap::ConfigMap(old_map) => {
-                            for (key, new_map) in new_map.iter() {
-                                let old_map =
-                                    old_map.entry(key.clone()).or_default();
-                                apply_map(updates, old_map, new_map)?;
+                    ConfigMap::ConfigMap(new_map) => {
+                        match old_map {
+                            ConfigMap::ConfigMap(old_map) => {
+                                for (key, new_map) in new_map.iter() {
+                                    if are_defaults_set
+                                        && !old_map.contains_key(key)
+                                    {
+                                        tracing::warn!(debug_path, "this config parameter may be unused");
+                                    }
+                                    let old_map =
+                                        old_map.entry(key.clone()).or_default();
+                                    apply_map(
+                                        debug_path,
+                                        are_defaults_set,
+                                        is_runtime,
+                                        updates,
+                                        old_map,
+                                        new_map,
+                                    )?;
+                                }
+                            }
+                            ConfigMap::ConfigEntry(_) => {
+                                return Err(K2Error::other(format!(
+                                "{debug_path} attempted to insert a map where an entry exists",
+                            )));
                             }
                         }
-                        ConfigMap::ConfigEntry(_) => {
-                            return Err(K2Error::other(
-                                "attempted to insert a map where an entry exists",
-                            ));
-                        }
-                    },
+                    }
                     ConfigMap::ConfigEntry(new_entry) => match old_map {
                         ConfigMap::ConfigMap(m) => {
                             if !m.is_empty() {
-                                return Err(K2Error::other(
-                                    "attempted to insert an entry where a map exists",
-                                ));
+                                return Err(K2Error::other(format!(
+                                    "{debug_path} attempted to insert an entry where a map exists",
+                                )));
                             }
                             *old_map =
                                 ConfigMap::ConfigEntry(new_entry.clone());
+                            if is_runtime {
+                                tracing::warn!(debug_path, "no update callback for runtime config alteration");
+                            }
                         }
                         ConfigMap::ConfigEntry(old_entry) => {
                             old_entry.value = new_entry.value.clone();
@@ -116,13 +177,22 @@ impl Config {
                                     update_cb.clone(),
                                     new_entry.value.clone(),
                                 ));
+                            } else if is_runtime {
+                                tracing::warn!(debug_path, "no update callback for runtime config alteration");
                             }
                         }
                     },
                 }
                 Ok(())
             }
-            apply_map(&mut updates, old_map, new_map)?;
+            apply_map(
+                &debug_path,
+                are_defaults_set,
+                is_runtime,
+                &mut updates,
+                old_map,
+                new_map,
+            )?;
         }
         for (update_cb, value) in updates {
             update_cb(value);
@@ -142,7 +212,7 @@ impl Config {
     ) -> K2Result<()> {
         let value = {
             let mut lock = self.0.lock().unwrap();
-            let mut cur: &mut ConfigMap = &mut lock;
+            let mut cur: &mut ConfigMap = &mut lock.map;
             for path in path {
                 let key = path.to_string();
                 match cur {
@@ -181,6 +251,40 @@ impl Config {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn warns_unused() {
+        // this test will never fail,
+        // but we can check it traces correctly manually
+
+        kitsune2_test_utils::enable_tracing();
+
+        let c = Config::default();
+        c.set_module_config(&serde_json::json!({"apples": "red"}))
+            .unwrap();
+        c.mark_defaults_set();
+        c.set_module_config(&serde_json::json!({"apples": "green"}))
+            .unwrap();
+        c.set_module_config(&serde_json::json!({"bananas": 42}))
+            .unwrap();
+    }
+
+    #[test]
+    fn warns_no_runtime_cb() {
+        // this test will never fail,
+        // but we can check it traces correctly manually
+
+        kitsune2_test_utils::enable_tracing();
+
+        let c = Config::default();
+        c.set_module_config(&serde_json::json!({"apples": "red"}))
+            .unwrap();
+        c.mark_runtime();
+        c.set_module_config(&serde_json::json!({"apples": "green"}))
+            .unwrap();
+        c.set_module_config(&serde_json::json!({"bananas": 42}))
+            .unwrap();
+    }
 
     #[test]
     fn config_usage_example() {
