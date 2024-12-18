@@ -223,7 +223,19 @@ impl PartitionedHashes {
 
 // Query implementation
 impl PartitionedHashes {
-    pub async fn full_time_slice_disc_top_hash(
+    /// Compute the disc top hash for the given arc set.
+    ///
+    /// Considering the hash space as a circle, with time represented outwards from the center in
+    /// each sector. This function requests the top hash of each sector, over full time slices, and
+    /// then combines them into a single hash. It works around the circle from 0 and skips any
+    /// sectors that are not included in the arc set.
+    ///
+    /// If there are no sectors included in the arc set, then an empty hash is returned.
+    ///
+    /// Along with the disc top hash, the end timestamp of the last full time slice is returned.
+    /// This should be used when comparing disc top hash of one DHT model with that of another node
+    /// to ensure that both nodes are using a common reference point.
+    pub async fn disc_top_hash(
         &self,
         arc_set: &ArcSet,
         store: DynOpStore,
@@ -234,8 +246,7 @@ impl PartitionedHashes {
                 continue;
             }
 
-            let hash =
-                sector.combined_full_time_slice_hash(store.clone()).await?;
+            let hash = sector.full_time_slice_top_hash(store.clone()).await?;
             if !hash.is_empty() {
                 combine_hashes(&mut combined, hash);
             }
@@ -246,7 +257,7 @@ impl PartitionedHashes {
         Ok((combined.freeze(), timestamp))
     }
 
-    pub fn partial_time_rings(&self, arc_set: &ArcSet) -> Vec<bytes::Bytes> {
+    pub fn ring_top_hashes(&self, arc_set: &ArcSet) -> Vec<bytes::Bytes> {
         let mut partials = Vec::with_capacity(arc_set.covered_sector_count());
 
         for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
@@ -254,7 +265,7 @@ impl PartitionedHashes {
                 continue;
             }
 
-            partials.push(sector.combined_partial_slice_hashes().peekable());
+            partials.push(sector.partial_slice_combined_hashes().peekable());
         }
 
         let mut out = Vec::new();
@@ -285,8 +296,7 @@ impl PartitionedHashes {
                 continue;
             }
 
-            let hash =
-                sector.combined_full_time_slice_hash(store.clone()).await?;
+            let hash = sector.full_time_slice_top_hash(store.clone()).await?;
             if !hash.is_empty() {
                 out.insert(sector_id as u32, hash);
             }
@@ -318,7 +328,11 @@ impl PartitionedHashes {
 
             out.insert(
                 sector_id as u32,
-                sector.full_time_slice_hashes(store.clone()).await?,
+                sector
+                    .full_time_slice_hashes(store.clone())
+                    .await?
+                    .into_iter()
+                    .collect(),
             );
         }
 

@@ -58,9 +58,9 @@ use crate::constant::UNIT_TIME;
 use kitsune2_api::{
     DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp, UNIX_TIMESTAMP,
 };
-use std::collections::HashMap;
 use std::time::Duration;
 
+/// The partitioned time structure.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
 pub struct PartitionedTime {
@@ -102,6 +102,10 @@ pub struct PartitionedTime {
     arc_constraint: DhtArc,
 }
 
+/// A slice of recent time that has a combined hash of all the ops in that time slice.
+///
+/// This is used to represent a slice of recent time that is not yet ready to be stored as a full
+/// time slice.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
 pub struct PartialSlice {
@@ -350,15 +354,29 @@ impl PartitionedTime {
 
 // Public, query methods
 impl PartitionedTime {
-    pub async fn combined_full_time_slice_hash(
+    /// Compute a top hash over the full time slice combined hashes owned by this [PartitionedTime].
+    ///
+    /// This method will fetch the hashes of all the full time slices within the arc constraint
+    /// for this [PartitionedTime]. Those are expected to be ordered by slice id, which implies
+    /// that they are ordered by time. It will then combine those hashes into a single hash.
+    pub async fn full_time_slice_top_hash(
         &self,
         store: DynOpStore,
     ) -> K2Result<bytes::Bytes> {
         let hashes = store.retrieve_slice_hashes(self.arc_constraint).await?;
-        Ok(combine::combine_op_hashes(hashes.values().cloned()).freeze())
+        Ok(
+            combine::combine_op_hashes(
+                hashes.into_iter().map(|(_, hash)| hash),
+            )
+            .freeze(),
+        )
     }
 
-    pub fn combined_partial_slice_hashes(
+    /// Get the combined hash of all the partial slices owned by this [PartitionedTime].
+    ///
+    /// This method takes the current partial slices and returns their pre-computed hashes.
+    /// These are combined hashes over all the ops in each partial slice, ordered by time.
+    pub fn partial_slice_combined_hashes(
         &self,
     ) -> impl Iterator<Item = bytes::Bytes> + use<'_> {
         self.partial_slices
@@ -366,24 +384,26 @@ impl PartitionedTime {
             .map(|partial| partial.hash.clone().freeze())
     }
 
-    pub async fn full_time_slice_hash(
-        &self,
-        slice_id: u64,
-        store: DynOpStore,
-    ) -> K2Result<bytes::Bytes> {
-        Ok(store
-            .retrieve_slice_hash(self.arc_constraint, slice_id)
-            .await?
-            .unwrap_or_else(bytes::Bytes::new))
-    }
-
+    /// Gets the combined hashes of all the full time slices owned by this [PartitionedTime].
+    ///
+    /// This is a pass-through to the provided store, using the arc constraint of this [PartitionedTime].
     pub async fn full_time_slice_hashes(
         &self,
         store: DynOpStore,
-    ) -> K2Result<HashMap<u64, bytes::Bytes>> {
+    ) -> K2Result<Vec<(u64, bytes::Bytes)>> {
         store.retrieve_slice_hashes(self.arc_constraint).await
     }
 
+    /// Get the combined hash of a partial slice by its slice id.
+    ///
+    /// Note that the number of partial slices changes over time and the start point of the partial
+    /// slices moves. It is important that the slice id is only used to refer to a specific slice
+    /// at a specific point in time. This can be achieved by not calling [PartitionedTime::update]
+    /// while expecting the slice id to refer to the same slice.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the requested slice id is beyond the current partial slices.
     pub fn partial_slice_hash(&self, slice_id: u32) -> K2Result<bytes::Bytes> {
         let slice_id = slice_id as usize;
         if slice_id > self.partial_slices.len() {

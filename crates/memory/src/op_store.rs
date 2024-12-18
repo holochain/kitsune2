@@ -217,7 +217,7 @@ impl OpStore for Kitsune2MemoryOpStore {
     fn retrieve_slice_hashes(
         &self,
         arc: DhtArc,
-    ) -> BoxFuture<'_, K2Result<HashMap<u64, bytes::Bytes>>> {
+    ) -> BoxFuture<'_, K2Result<Vec<(u64, bytes::Bytes)>>> {
         async move {
             let self_lock = self.read().await;
             Ok(self_lock.time_slice_hashes.get_all(&arc))
