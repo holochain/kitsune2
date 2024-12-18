@@ -931,11 +931,13 @@ dependencies = [
  "base64",
  "bytes",
  "futures",
+ "kitsune2_test_utils",
  "prost",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
 ]
 

@@ -48,7 +48,6 @@ use std::{
 
 use kitsune2_api::{
     builder,
-    config::ModConfig,
     fetch::{serialize_op_ids, DynFetch, DynFetchFactory, Fetch, FetchFactory},
     peer_store,
     transport::DynTransport,
@@ -60,6 +59,38 @@ use tokio::{
 };
 
 const MOD_NAME: &str = "Fetch";
+
+/// CoreFetch configuration types.
+pub mod config {
+    /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct CoreFetchConfig {
+        /// How many parallel op fetch requests can be made at once. Default: 2.  
+        pub parallel_request_count: u8,
+        /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 120_000.
+        pub cool_down_interval_ms: u64,
+    }
+
+    impl Default for CoreFetchConfig {
+        fn default() -> Self {
+            Self {
+                parallel_request_count: 2,
+                cool_down_interval_ms: 120_000,
+            }
+        }
+    }
+
+    /// Module-level configuration for CoreFetch.
+    #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct CoreFetchModConfig {
+        /// CoreFetch configuration.
+        pub core_fetch: CoreFetchConfig,
+    }
+}
+
+use config::*;
 
 /// A production-ready fetch module.
 #[derive(Debug)]
@@ -77,9 +108,7 @@ impl FetchFactory for CoreFetchFactory {
         &self,
         config: &mut kitsune2_api::config::Config,
     ) -> K2Result<()> {
-        config.add_default_module_config::<CoreFetchConfig>(
-            MOD_NAME.to_string(),
-        )?;
+        config.set_module_config(&CoreFetchModConfig::default())?;
         Ok(())
     }
 
@@ -91,35 +120,18 @@ impl FetchFactory for CoreFetchFactory {
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>> {
         Box::pin(async move {
-            let config = builder.config.get_module_config(MOD_NAME)?;
+            let config: CoreFetchModConfig =
+                builder.config.get_module_config()?;
             let out: DynFetch = Arc::new(CoreFetch::new(
-                config, space_id, peer_store, transport,
+                config.core_fetch,
+                space_id,
+                peer_store,
+                transport,
             ));
             Ok(out)
         })
     }
 }
-
-/// Configuration parameters for [CoreFetchFactory].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoreFetchConfig {
-    /// How many parallel op fetch requests can be made at once. Default: 2.  
-    pub parallel_request_count: u8,
-    /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 120_000.
-    pub cool_down_interval_ms: u64,
-}
-
-impl Default for CoreFetchConfig {
-    fn default() -> Self {
-        Self {
-            parallel_request_count: 2,
-            cool_down_interval_ms: 120_000,
-        }
-    }
-}
-
-impl ModConfig for CoreFetchConfig {}
 
 type FetchRequest = (OpId, AgentId);
 

@@ -44,26 +44,29 @@ impl Builder {
     /// Construct a default config given the configured module factories.
     /// Note, this should be called before freezing the Builder instance
     /// in an Arc<>.
-    pub fn set_default_config(&mut self) -> K2Result<()> {
-        let Self {
-            config,
-            verifier: _,
-            kitsune,
-            space,
-            peer_store,
-            bootstrap,
-            fetch,
-            transport,
-        } = self;
+    pub fn with_default_config(mut self) -> K2Result<Self> {
+        {
+            let Self {
+                config,
+                verifier: _,
+                kitsune,
+                space,
+                peer_store,
+                fetch,
+                transport,
+            } = &mut self;
 
-        kitsune.default_config(config)?;
-        space.default_config(config)?;
-        peer_store.default_config(config)?;
-        bootstrap.default_config(config)?;
-        fetch.default_config(config)?;
-        transport.default_config(config)?;
+            kitsune.default_config(config)?;
+            space.default_config(config)?;
+            peer_store.default_config(config)?;
+            bootstrap.default_config(config)?;
+            fetch.default_config(config)?;
+            transport.default_config(config)?;
 
-        Ok(())
+            config.mark_defaults_set();
+        }
+
+        Ok(self)
     }
 
     /// This will generate an actual kitsune instance.
@@ -71,6 +74,7 @@ impl Builder {
         self,
         handler: kitsune::DynKitsuneHandler,
     ) -> K2Result<kitsune::DynKitsune> {
+        self.config.mark_runtime();
         let builder = Arc::new(self);
         builder.kitsune.create(builder.clone(), handler).await
     }
