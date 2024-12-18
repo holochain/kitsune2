@@ -56,6 +56,8 @@ impl Builder {
             peer_store.default_config(config)?;
             fetch.default_config(config)?;
             transport.default_config(config)?;
+
+            config.mark_defaults_set();
         }
 
         Ok(self)
@@ -66,6 +68,7 @@ impl Builder {
         self,
         handler: kitsune::DynKitsuneHandler,
     ) -> K2Result<kitsune::DynKitsune> {
+        self.config.mark_runtime();
         let builder = Arc::new(self);
         builder.kitsune.create(builder.clone(), handler).await
     }
