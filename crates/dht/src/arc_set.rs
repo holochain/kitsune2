@@ -58,6 +58,12 @@ impl ArcSet {
         Ok(ArcSet { inner })
     }
 
+    pub fn intersection(&self, other: &Self) -> Self {
+        ArcSet {
+            inner: self.inner.intersection(&other.inner).copied().collect(),
+        }
+    }
+
     pub(crate) fn includes_sector_id(&self, value: u32) -> bool {
         self.inner.contains(&value)
     }

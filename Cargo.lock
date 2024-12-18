@@ -1029,6 +1029,7 @@ dependencies = [
  "kitsune2_api",
  "kitsune2_memory",
  "kitsune2_test_utils",
+ "rand",
  "tokio",
  "tracing",
 ]
