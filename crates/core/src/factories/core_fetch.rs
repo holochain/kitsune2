@@ -205,7 +205,8 @@ impl CoreFetch {
             ),
         }));
 
-        let mut fetch_tasks = Vec::new();
+        let mut fetch_tasks =
+            Vec::with_capacity(config.parallel_request_count as usize);
         for _ in 0..config.parallel_request_count {
             let task = tokio::task::spawn(CoreFetch::fetch_task(
                 state.clone(),
