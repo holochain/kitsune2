@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 /// MemPeerStore configuration types.
 pub mod config {
-    /// Configuration parameters for [MemPeerStoreFactory]
+    /// Configuration parameters for [MemPeerStoreFactory](super::MemPeerStoreFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct MemPeerStoreConfig {

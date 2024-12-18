@@ -62,7 +62,7 @@ const MOD_NAME: &str = "Fetch";
 
 /// CoreFetch configuration types.
 pub mod config {
-    /// Configuration parameters for [CoreFetchFactory].
+    /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct CoreFetchConfig {

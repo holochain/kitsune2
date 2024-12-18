@@ -77,7 +77,7 @@ impl Config {
         let mut updates = Vec::new();
         {
             let mut lock = self.0.lock().unwrap();
-            let old_map: &mut ConfigMap = &mut *lock;
+            let old_map: &mut ConfigMap = &mut lock;
             let new_map: &ConfigMap = &in_map;
             fn apply_map(
                 updates: &mut Vec<(ConfigUpdateCb, serde_json::Value)>,
@@ -101,7 +101,7 @@ impl Config {
                     },
                     ConfigMap::ConfigEntry(new_entry) => match old_map {
                         ConfigMap::ConfigMap(m) => {
-                            if m.len() > 0 {
+                            if !m.is_empty() {
                                 return Err(K2Error::other(
                                     "attempted to insert an entry where a map exists",
                                 ));
@@ -142,7 +142,7 @@ impl Config {
     ) -> K2Result<()> {
         let value = {
             let mut lock = self.0.lock().unwrap();
-            let mut cur: &mut ConfigMap = &mut *lock;
+            let mut cur: &mut ConfigMap = &mut lock;
             for path in path {
                 let key = path.to_string();
                 match cur {
@@ -156,7 +156,7 @@ impl Config {
             }
             match cur {
                 ConfigMap::ConfigMap(m) => {
-                    if m.len() > 0 {
+                    if !m.is_empty() {
                         return Err(K2Error::other(
                             "attempted to insert an entry where a map exists",
                         ));
