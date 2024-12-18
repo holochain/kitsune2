@@ -258,14 +258,11 @@ impl CoreFetch {
                 {
                     Some(url) => url,
                     None => {
-                        // Agent not in peer store. Remove all associated op ids.
-                        let mut lock = state.lock().unwrap();
-                        lock.requests = lock
+                        state
+                            .lock()
+                            .unwrap()
                             .requests
-                            .clone()
-                            .into_iter()
-                            .filter(|(_, a)| *a != agent_id)
-                            .collect();
+                            .retain(|(_, a)| *a != agent_id);
                         continue;
                     }
                 };
