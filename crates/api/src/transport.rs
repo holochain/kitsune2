@@ -90,7 +90,7 @@ impl TxImpHnd {
                     let space = SpaceId::from(space);
                     if let Some(h) = self.space_map.lock().unwrap().get(&space)
                     {
-                        h.recv_space_notify(peer, space, data);
+                        h.recv_space_notify(peer, space, data)?;
                     }
                 }
                 Ok(())
@@ -104,7 +104,7 @@ impl TxImpHnd {
                         .unwrap()
                         .get(&(space.clone(), module.clone()))
                     {
-                        h.recv_module_msg(peer, space, module, data);
+                        h.recv_module_msg(peer, space, module, data)?;
                     }
                 }
                 Ok(())
@@ -139,7 +139,7 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 pub type DynTxImp = Arc<dyn TxImp>;
 
 /// A high-level wrapper around a low-level [DynTxImp] transport implementation.
-pub trait Transport: Send + Sync {
+pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     /// Register a space handler for receiving incoming notifications.
     ///
     /// Panics if you attempt to register a duplicate handler for
@@ -371,9 +371,16 @@ pub type DynTxHandler = Arc<dyn TxHandler>;
 /// Handler for space-related events.
 pub trait TxSpaceHandler: TxBaseHandler {
     /// The sync handler for receiving notifications sent by a remote
-    /// peer in reference to a particular space.
-    fn recv_space_notify(&self, peer: Url, space: SpaceId, data: bytes::Bytes) {
+    /// peer in reference to a particular space. If this callback returns
+    /// an error, then the connection which sent the message will be closed.
+    fn recv_space_notify(
+        &self,
+        peer: Url,
+        space: SpaceId,
+        data: bytes::Bytes,
+    ) -> K2Result<()> {
         drop((peer, space, data));
+        Ok(())
     }
 }
 
@@ -383,15 +390,17 @@ pub type DynTxSpaceHandler = Arc<dyn TxSpaceHandler>;
 /// Handler for module-related events.
 pub trait TxModuleHandler: TxBaseHandler {
     /// The sync handler for receiving module messages sent by a remote
-    /// peer in reference to a particular space.
+    /// peer in reference to a particular space. If this callback returns
+    /// an error, then the connection which sent the message will be closed.
     fn recv_module_msg(
         &self,
         peer: Url,
         space: SpaceId,
         module: String,
         data: bytes::Bytes,
-    ) {
+    ) -> K2Result<()> {
         drop((peer, space, module, data));
+        Ok(())
     }
 }
 
@@ -408,7 +417,7 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-        handler: Arc<TxImpHnd>,
+        handler: DynTxHandler,
     ) -> BoxFut<'static, K2Result<DynTransport>>;
 }
 
