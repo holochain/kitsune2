@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package kitsune2.fetch;
+
+// A list of op ids.
+message OpIds {
+  // Op ids.
+  repeated bytes data = 1;
+}
