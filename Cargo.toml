@@ -79,4 +79,3 @@ kitsune2_test_utils = { path = "crates/test_utils" }
 
 rand = "0.8.5"
 tracing-subscriber = "0.3"
-rand = "0.8"
