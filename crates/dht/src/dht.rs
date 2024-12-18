@@ -424,6 +424,10 @@ impl Dht {
                 ))
             }
             SnapshotDiff::DiscSectorSliceMismatches(mismatched_slice_ids) => {
+                println!(
+                    "Creating response for slice mismatches: {:?}",
+                    mismatched_slice_ids
+                );
                 let mut out = Vec::new();
                 for (sector_id, missing_slices) in mismatched_slice_ids {
                     let Ok(arc) =
@@ -435,6 +439,8 @@ impl Dht {
                         );
                         continue;
                     };
+
+                    println!("Using arc: {:?}", arc);
 
                     // TODO handle an empty list of missing slices here?
                     //      if that's empty then we actually need to send the whole sector?
@@ -451,6 +457,8 @@ impl Dht {
                             continue;
                         };
 
+                        println!("In time range: {:?} - {:?}", start, end);
+
                         out.extend(
                             store
                                 .retrieve_op_hashes_in_time_slice(
@@ -458,6 +466,7 @@ impl Dht {
                                 )
                                 .await?,
                         );
+                        println!("Out is now: {:?}", out);
                     }
                 }
 
@@ -625,9 +634,11 @@ mod snapshot_tests {
 #[cfg(test)]
 mod dht_tests {
     use super::*;
-    use kitsune2_api::{DhtArc, OpId, OpStore, UNIX_TIMESTAMP};
+    use kitsune2_api::{AgentId, DhtArc, OpId, OpStore, UNIX_TIMESTAMP};
     use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
+    use rand::RngCore;
     use std::sync::Arc;
+    use std::time::Duration;
 
     const SECTOR_SIZE: u32 = 1u32 << 23;
 
@@ -649,6 +660,379 @@ mod dht_tests {
             .await?;
 
         Ok(())
+    }
+
+    /// Intended to represent a single agent in a network, which knows how to sync with
+    /// some other agent.
+    struct DhtSyncHarness {
+        store: Arc<Kitsune2MemoryOpStore>,
+        dht: Dht,
+        arc: DhtArc,
+        agent_id: AgentId,
+        discovered_ops: HashMap<AgentId, Vec<OpId>>,
+    }
+
+    enum SyncWithOutcome {
+        InSync,
+        CannotCompare,
+        SyncedDisc,
+        SyncedRings,
+        DiscoveredInSync,
+    }
+
+    impl DhtSyncHarness {
+        async fn new(current_time: Timestamp, arc: DhtArc) -> Self {
+            let store = Arc::new(Kitsune2MemoryOpStore::default());
+            let dht = Dht::try_from_store(current_time, store.clone())
+                .await
+                .unwrap();
+
+            let mut bytes = [0; 32];
+            rand::thread_rng().fill_bytes(&mut bytes);
+            let agent_id = AgentId::from(bytes::Bytes::copy_from_slice(&bytes));
+
+            Self {
+                store,
+                dht,
+                arc,
+                agent_id,
+                discovered_ops: HashMap::new(),
+            }
+        }
+
+        async fn inject_ops(
+            &mut self,
+            op_list: Vec<Kitsune2MemoryOp>,
+        ) -> K2Result<()> {
+            self.store
+                .process_incoming_ops(
+                    op_list
+                        .iter()
+                        .map(|op| op.clone().try_into().unwrap())
+                        .collect(),
+                )
+                .await?;
+
+            self.dht
+                .inform_ops_stored(
+                    self.store.clone(),
+                    op_list.into_iter().map(|op| op.into()).collect(),
+                )
+                .await?;
+
+            Ok(())
+        }
+
+        async fn apply_op_sync(&mut self, other: &mut Self) -> K2Result<()> {
+            // Sync from other to self, using op IDs we've discovered from other
+            if let Some(ops) = self
+                .discovered_ops
+                .get_mut(&other.agent_id)
+                .map(std::mem::take)
+            {
+                transfer_ops(
+                    other.store.clone(),
+                    self.store.clone(),
+                    &mut self.dht,
+                    ops,
+                )
+                .await?;
+            }
+
+            // Sync from self to other, using op that the other has discovered from us
+            if let Some(ops) = other
+                .discovered_ops
+                .get_mut(&self.agent_id)
+                .map(std::mem::take)
+            {
+                transfer_ops(
+                    self.store.clone(),
+                    other.store.clone(),
+                    &mut other.dht,
+                    ops,
+                )
+                .await?;
+            }
+
+            Ok(())
+        }
+
+        async fn is_in_sync_with(&self, other: &Self) -> K2Result<bool> {
+            let arc_set_1 = ArcSet::new(SECTOR_SIZE, vec![self.arc])?;
+            let arc_set_2 = ArcSet::new(SECTOR_SIZE, vec![other.arc])?;
+            let arc_set = arc_set_1.intersection(&arc_set_2);
+            let initial_snapshot = self
+                .dht
+                .snapshot_minimal(&arc_set, self.store.clone())
+                .await?;
+            match other
+                .dht
+                .handle_snapshot(
+                    initial_snapshot,
+                    &arc_set,
+                    other.store.clone(),
+                )
+                .await?
+            {
+                DhtSnapshotCompareOutcome::Identical => Ok(true),
+                _ => Ok(false),
+            }
+        }
+
+        async fn sync_with(
+            &mut self,
+            other: &mut Self,
+        ) -> K2Result<SyncWithOutcome> {
+            let arc_set_1 = ArcSet::new(SECTOR_SIZE, vec![self.arc])?;
+            let arc_set_2 = ArcSet::new(SECTOR_SIZE, vec![other.arc])?;
+            let arc_set = arc_set_1.intersection(&arc_set_2);
+
+            // Create the initial snapshot locally
+            let initial_snapshot = self
+                .dht
+                .snapshot_minimal(&arc_set, self.store.clone())
+                .await?;
+
+            // Send it to the other agent and have them diff against it
+            let outcome = other
+                .dht
+                .handle_snapshot(
+                    initial_snapshot,
+                    &arc_set,
+                    other.store.clone(),
+                )
+                .await?;
+
+            match outcome {
+                DhtSnapshotCompareOutcome::Identical => {
+                    // Nothing to do, the agents are in sync
+                    Ok(SyncWithOutcome::InSync)
+                }
+                DhtSnapshotCompareOutcome::CannotCompare => {
+                    // Permit this for testing purposes, it would be treated as an error in
+                    // real usage
+                    Ok(SyncWithOutcome::CannotCompare)
+                }
+                DhtSnapshotCompareOutcome::NewSnapshot(new_snapshot) => {
+                    match new_snapshot {
+                        DhtSnapshot::Minimal { .. } => {
+                            panic!("A minimal snapshot cannot be produced from a minimal snapshot");
+                        }
+                        DhtSnapshot::DiscSectors { .. } => {
+                            // This means there's a historical mismatch, so we need to continue
+                            // down this path another step. Do that in another function!
+                            self.sync_disc_with(other, &arc_set, new_snapshot)
+                                .await
+                        }
+                        DhtSnapshot::DiscSectorDetails { .. } => {
+                            panic!("A sector details snapshot cannot be produced from a minimal snapshot");
+                        }
+                        DhtSnapshot::RingSectorDetails { .. } => {
+                            // This means there's a recent mismatch in the partial time slices.
+                            // Similar to above, continue in another function.
+                            self.sync_rings_with(other, &arc_set, new_snapshot)
+                                .await
+                        }
+                    }
+                }
+                DhtSnapshotCompareOutcome::HashList(_, _) => {
+                    panic!("A hash list cannot be produced from a minimal snapshot");
+                }
+            }
+        }
+
+        async fn sync_disc_with(
+            &mut self,
+            other: &mut Self,
+            arc_set: &ArcSet,
+            snapshot: DhtSnapshot,
+        ) -> K2Result<SyncWithOutcome> {
+            match snapshot {
+                DhtSnapshot::DiscSectors { .. } => {}
+                _ => panic!("Expected a DiscSectors snapshot"),
+            }
+
+            // We expect the sync to have been initiated by self, so the disc snapshot should be
+            // coming back to us
+            let outcome = self
+                .dht
+                .handle_snapshot(snapshot, arc_set, self.store.clone())
+                .await?;
+
+            let snapshot = match outcome {
+                DhtSnapshotCompareOutcome::NewSnapshot(new_snapshot) => {
+                    new_snapshot
+                }
+                DhtSnapshotCompareOutcome::Identical => {
+                    // This can't happen in tests but in a real implementation it's possible that
+                    // missing ops might show up while we're syncing so this isn't an error, just
+                    // a shortcut and we can stop syncing
+                    return Ok(SyncWithOutcome::DiscoveredInSync);
+                }
+                DhtSnapshotCompareOutcome::HashList(_, _)
+                | DhtSnapshotCompareOutcome::CannotCompare => {
+                    // A real implementation would treat these as errors because they are logic
+                    // errors
+                    panic!("Unexpected outcome: {:?}", outcome);
+                }
+            };
+
+            // At this point, the snapshot must be a disc details snapshot
+            match snapshot {
+                DhtSnapshot::DiscSectorDetails { .. } => {}
+                _ => panic!("Expected a DiscSectorDetails snapshot"),
+            }
+
+            // Now we need to ask the other agent to diff against this details snapshot
+            let outcome = other
+                .dht
+                .handle_snapshot(snapshot, arc_set, other.store.clone())
+                .await?;
+
+            let (snapshot, hash_list_from_other) = match outcome {
+                DhtSnapshotCompareOutcome::HashList(
+                    new_snapshot,
+                    hash_list,
+                ) => (new_snapshot, hash_list),
+                DhtSnapshotCompareOutcome::Identical => {
+                    // Nothing to do, the agents are in sync
+                    return Ok(SyncWithOutcome::InSync);
+                }
+                DhtSnapshotCompareOutcome::NewSnapshot(_)
+                | DhtSnapshotCompareOutcome::CannotCompare => {
+                    // A real implementation would treat these as errors because they are logic
+                    // errors
+                    panic!("Unexpected outcome: {:?}", outcome);
+                }
+            };
+
+            // This snapshot must also be a disc details snapshot
+            match snapshot {
+                DhtSnapshot::DiscSectorDetails { .. } => {}
+                _ => panic!("Expected a DiscSectorDetails snapshot"),
+            }
+
+            // Finally, we need to receive the details snapshot from the other agent and send them
+            // back our ops
+            let outcome = self
+                .dht
+                .handle_snapshot(snapshot, arc_set, self.store.clone())
+                .await?;
+
+            println!("Our final outcome: {:?}", outcome);
+
+            // TODO leaving duplicated code here, there's some inefficiency here that actually needs
+            //      resolving
+            let hash_list_from_self = match outcome {
+                DhtSnapshotCompareOutcome::HashList(_, hash_list) => hash_list,
+                DhtSnapshotCompareOutcome::Identical => {
+                    // Nothing to do, the agents are in sync
+                    return Ok(SyncWithOutcome::InSync);
+                }
+                DhtSnapshotCompareOutcome::NewSnapshot(_)
+                | DhtSnapshotCompareOutcome::CannotCompare => {
+                    // A real implementation would treat these as errors because they are logic
+                    // errors
+                    panic!("Unexpected outcome: {:?}", outcome);
+                }
+            };
+
+            // Capture the discovered ops, but don't actually transfer them yet.
+            // Let the test decide when to do that.
+            if !hash_list_from_other.is_empty() {
+                self.discovered_ops
+                    .entry(other.agent_id.clone())
+                    .or_default()
+                    .extend(hash_list_from_other);
+            }
+            if !hash_list_from_self.is_empty() {
+                other
+                    .discovered_ops
+                    .entry(self.agent_id.clone())
+                    .or_default()
+                    .extend(hash_list_from_self);
+            }
+
+            Ok(SyncWithOutcome::SyncedDisc)
+        }
+
+        async fn sync_rings_with(
+            &mut self,
+            other: &mut Self,
+            arc_set: &ArcSet,
+            snapshot: DhtSnapshot,
+        ) -> K2Result<SyncWithOutcome> {
+            match snapshot {
+                DhtSnapshot::RingSectorDetails { .. } => {}
+                _ => panic!("Expected a RingSectorDetails snapshot"),
+            }
+
+            // We expect the sync to have been initiated by self, so the ring sector details should
+            // have been sent to us
+            let outcome = self
+                .dht
+                .handle_snapshot(snapshot, arc_set, self.store.clone())
+                .await?;
+
+            let (snapshot, hash_list_from_self) = match outcome {
+                DhtSnapshotCompareOutcome::Identical => {
+                    // Nothing to do, the agents are in sync
+                    return Ok(SyncWithOutcome::InSync);
+                }
+                DhtSnapshotCompareOutcome::HashList(
+                    new_snapshot,
+                    hash_list,
+                ) => (new_snapshot, hash_list),
+                DhtSnapshotCompareOutcome::CannotCompare
+                | DhtSnapshotCompareOutcome::NewSnapshot(_) => {
+                    panic!("Unexpected outcome: {:?}", outcome);
+                }
+            };
+
+            // This snapshot must also be a ring sector details snapshot
+            match snapshot {
+                DhtSnapshot::RingSectorDetails { .. } => {}
+                _ => panic!("Expected a RingSectorDetails snapshot"),
+            }
+
+            // Finally, we need to send the ring sector details back to the other agent so they can
+            // produce a hash list for us
+            let outcome = other
+                .dht
+                .handle_snapshot(snapshot, arc_set, other.store.clone())
+                .await?;
+
+            // TODO same problem here, we don't need to have re-computed the snapshot
+            let hash_list_from_other = match outcome {
+                DhtSnapshotCompareOutcome::Identical => {
+                    // Nothing to do, the agents are in sync
+                    return Ok(SyncWithOutcome::InSync);
+                }
+                DhtSnapshotCompareOutcome::HashList(_, hash_list) => hash_list,
+                DhtSnapshotCompareOutcome::CannotCompare
+                | DhtSnapshotCompareOutcome::NewSnapshot(_) => {
+                    panic!("Unexpected outcome: {:?}", outcome);
+                }
+            };
+
+            // Capture the discovered ops, but don't actually transfer them yet.
+            // Let the test decide when to do that.
+            if !hash_list_from_other.is_empty() {
+                self.discovered_ops
+                    .entry(other.agent_id.clone())
+                    .or_default()
+                    .extend(hash_list_from_other);
+            }
+            if !hash_list_from_self.is_empty() {
+                other
+                    .discovered_ops
+                    .entry(self.agent_id.clone())
+                    .or_default()
+                    .extend(hash_list_from_self);
+            }
+
+            Ok(SyncWithOutcome::SyncedRings)
+        }
     }
 
     #[tokio::test]
@@ -697,231 +1081,496 @@ mod dht_tests {
     }
 
     #[tokio::test]
-    async fn sync_ops_in_disc() {
-        let store1 = Arc::new(Kitsune2MemoryOpStore::default());
-        store1
-            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                OpId::from(bytes::Bytes::from(vec![41; 32])),
-                UNIX_TIMESTAMP,
-                vec![],
-            )
-            .try_into()
-            .unwrap()])
-            .await
-            .unwrap();
-        let store2 = Arc::new(Kitsune2MemoryOpStore::default());
-
+    async fn empty_dht_is_in_sync_with_empty() {
         let current_time = Timestamp::now();
-        let mut dht1 = Dht::try_from_store(current_time, store1.clone())
-            .await
-            .unwrap();
-        let mut dht2 = Dht::try_from_store(current_time, store2.clone())
-            .await
-            .unwrap();
+        let dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
-        let arc_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap();
-
-        let snapshot = dht1
-            .snapshot_minimal(&arc_set, store1.clone())
-            .await
-            .unwrap();
-
-        println!("Initial snapshot: {:?}", snapshot);
-
-        let outcome = dht2
-            .handle_snapshot(snapshot, &arc_set, store2.clone())
-            .await
-            .unwrap();
-        let snapshot = match outcome {
-            DhtSnapshotCompareOutcome::NewSnapshot(new_snapshot) => {
-                match new_snapshot {
-                    DhtSnapshot::DiscSectors { .. } => new_snapshot,
-                    s => panic!("Unexpected snapshot type: {:?}", s),
-                }
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
-
-        println!("Sectors snapshot {:?}", snapshot);
-
-        let outcome = dht1
-            .handle_snapshot(snapshot, &arc_set, store1.clone())
-            .await
-            .unwrap();
-        let snapshot = match outcome {
-            DhtSnapshotCompareOutcome::NewSnapshot(new_snapshot) => {
-                match new_snapshot {
-                    DhtSnapshot::DiscSectorDetails { .. } => new_snapshot,
-                    s => panic!("Unexpected snapshot type: {:?}", s),
-                }
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
-
-        println!("Sector details snapshot {:?}", snapshot);
-
-        let outcome = dht2
-            .handle_snapshot(snapshot, &arc_set, store2.clone())
-            .await
-            .unwrap();
-        let (snapshot, hash_list) = match outcome {
-            DhtSnapshotCompareOutcome::HashList(new_snapshot, hash_list) => {
-                assert_eq!(0, hash_list.len());
-
-                (new_snapshot, hash_list)
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
-
-        println!("Sector details snapshot 2 {:?}", snapshot);
-
-        // Test only behaviour, transfer the ops directly to the other store and
-        // update the DHT model
-        transfer_ops(store2.clone(), store1.clone(), &mut dht1, hash_list)
-            .await
-            .unwrap();
-
-        // The final snapshot needs to be checked against by the other peer too
-        let outcome = dht1
-            .handle_snapshot(snapshot, &arc_set, store1.clone())
-            .await
-            .unwrap();
-        let hash_list = match outcome {
-            DhtSnapshotCompareOutcome::HashList(_, hash_list) => {
-                assert_eq!(1, hash_list.len());
-                assert_eq!(
-                    OpId::from(bytes::Bytes::from(vec![41; 32])),
-                    hash_list[0]
-                );
-
-                hash_list
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
-
-        // Test only behaviour, transfer the ops directly to the other store and
-        // update the DHT model
-        transfer_ops(store1.clone(), store2.clone(), &mut dht2, hash_list)
-            .await
-            .unwrap();
-
-        let snapshot = dht2
-            .snapshot_minimal(&arc_set, store2.clone())
-            .await
-            .unwrap();
-        let outcome = dht1
-            .handle_snapshot(snapshot, &arc_set, store1.clone())
-            .await
-            .unwrap();
-        match outcome {
-            DhtSnapshotCompareOutcome::Identical => {}
-            s => panic!("Unexpected outcome: {:?}", s),
-        }
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+        assert!(dht2.is_in_sync_with(&dht1).await.unwrap());
     }
 
     #[tokio::test]
-    async fn sync_ops_in_ring() {
+    async fn one_way_disc_sync_from_initiator() {
         let current_time = Timestamp::now();
-        let full_slice_end = {
-            let temp_store = Arc::new(Kitsune2MemoryOpStore::default());
-            let dht = Dht::try_from_store(current_time, temp_store.clone())
-                .await
-                .unwrap();
-            dht.partition.full_slice_end_timestamp()
-        };
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
-        let store1 = Arc::new(Kitsune2MemoryOpStore::default());
-        store1
-            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                OpId::from(bytes::Bytes::from(vec![43; 32])),
-                // Will place the op in the first partial slice
-                full_slice_end,
+        // Put historical data in the first DHT
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![41; 32])),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try a sync
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedDisc));
+
+        // We shouldn't learn about any ops
+        assert!(dht1.discovered_ops.is_empty());
+
+        // The other agent should have learned about the op
+        assert_eq!(1, dht2.discovered_ops.len());
+        assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn one_way_disc_sync_from_acceptor() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+        // Put historical data in the second DHT
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![41; 32])),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try a sync initiated by the first agent
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedDisc));
+
+        // They shouldn't learn about any ops
+        assert!(dht2.discovered_ops.is_empty());
+
+        // We should have learned about the op
+        assert_eq!(1, dht1.discovered_ops.len());
+        assert_eq!(1, dht1.discovered_ops[&dht2.agent_id].len());
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn two_way_disc_sync() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+        // Put historical data in both DHTs
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![7; 32])),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![43; 32])),
+            // Two weeks later
+            UNIX_TIMESTAMP + Duration::from_secs(14 * 24 * 60 * 60),
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try a sync initiated by the first agent
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedDisc));
+
+        // Each learns about one op
+        assert_eq!(1, dht1.discovered_ops.len());
+        assert_eq!(1, dht1.discovered_ops[&dht2.agent_id].len());
+        assert_eq!(1, dht2.discovered_ops.len());
+        assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn one_way_ring_sync_from_initiator() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+        // Put recent data in the first ring of the first DHT
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![41; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try a sync
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
+
+        // We shouldn't learn about any ops
+        assert!(dht1.discovered_ops.is_empty());
+
+        // The other agent should have learned about the op
+        assert_eq!(1, dht2.discovered_ops.len());
+        assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn one_way_ring_sync_from_acceptor() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+        // Put recent data in the first ring of the second DHT
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![41; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try a sync initiated by the first agent
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
+
+        // They shouldn't learn about any ops
+        assert!(dht2.discovered_ops.is_empty());
+
+        // We should have learned about the op
+        assert_eq!(1, dht1.discovered_ops.len());
+        assert_eq!(1, dht1.discovered_ops[&dht2.agent_id].len());
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn two_way_ring_sync() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+        // Put recent data in the first ring of both DHTs
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![7; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![43; 32])),
+            // Two weeks later
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try a sync initiated by the first agent
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
+
+        // Each learns about one op
+        assert_eq!(1, dht1.discovered_ops.len());
+        assert_eq!(1, dht1.discovered_ops[&dht2.agent_id].len());
+        assert_eq!(1, dht2.discovered_ops.len());
+        assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn ring_sync_with_matching_disc() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+        // Put historical data in both DHTs
+        let historical_ops = vec![
+            Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::from(vec![7; 32])),
+                UNIX_TIMESTAMP,
                 vec![],
-            )
-            .try_into()
-            .unwrap()])
-            .await
-            .unwrap();
-        let store2 = Arc::new(Kitsune2MemoryOpStore::default());
+            ),
+            Kitsune2MemoryOp::new(
+                OpId::from(bytes::Bytes::from(
+                    (u32::MAX / 2).to_le_bytes().to_vec(),
+                )),
+                UNIX_TIMESTAMP + Duration::from_secs(14 * 24 * 60 * 60),
+                vec![],
+            ),
+        ];
+        dht1.inject_ops(historical_ops.clone()).await.unwrap();
+        dht2.inject_ops(historical_ops).await.unwrap();
 
-        let dht1 = Dht::try_from_store(current_time, store1.clone())
-            .await
-            .unwrap();
-        let mut dht2 = Dht::try_from_store(current_time, store2.clone())
-            .await
-            .unwrap();
+        // Put recent data in the first ring of both DHTs
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![7; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
 
-        let arc_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![13; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
 
-        let snapshot = dht1
-            .snapshot_minimal(&arc_set, store1.clone())
-            .await
-            .unwrap();
+        // Try a sync initiated by the first agent
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
 
-        println!("Initial snapshot: {:?}", snapshot);
+        // Each learns about one op
+        assert_eq!(1, dht1.discovered_ops.len());
+        assert_eq!(1, dht1.discovered_ops[&dht2.agent_id].len());
+        assert_eq!(1, dht2.discovered_ops.len());
+        assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
 
-        let outcome = dht2
-            .handle_snapshot(snapshot, &arc_set, store2.clone())
-            .await
-            .unwrap();
-        let snapshot = match outcome {
-            DhtSnapshotCompareOutcome::NewSnapshot(new_snapshot) => {
-                match new_snapshot {
-                    DhtSnapshot::RingSectorDetails { .. } => new_snapshot,
-                    s => panic!("Unexpected snapshot type: {:?}", s),
-                }
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
 
-        println!("Sectors snapshot {:?}", snapshot);
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
 
-        let outcome = dht1
-            .handle_snapshot(snapshot, &arc_set, store1.clone())
-            .await
-            .unwrap();
-        let (snapshot, hash_list) = match outcome {
-            DhtSnapshotCompareOutcome::HashList(new_snapshot, hash_list) => {
-                assert_eq!(1, hash_list.len());
-                assert_eq!(
-                    OpId::from(bytes::Bytes::from(vec![43; 32])),
-                    hash_list[0]
-                );
+    #[tokio::test]
+    async fn two_stage_sync_with_symmetry() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+        let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
-                (new_snapshot, hash_list)
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
+        // Put mismatched historical data in both DHTs
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![7; 32])),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![13; 32])),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
 
-        // Agent 2 then checks diffs against the incoming snapshot but has no new ops to send
-        let outcome = dht2
-            .handle_snapshot(snapshot, &arc_set, store2.clone())
-            .await
-            .unwrap();
-        match outcome {
-            DhtSnapshotCompareOutcome::HashList(_, hash_list) => {
-                assert_eq!(0, hash_list.len());
-            }
-            s => panic!("Unexpected outcome: {:?}", s),
-        };
+        // Put mismatched recent data in the first ring of both DHTs
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![11; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(vec![17; 32])),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
 
-        // Sync the identified ops from agent 1 to agent 2
-        transfer_ops(store1.clone(), store2.clone(), &mut dht2, hash_list)
-            .await
-            .unwrap();
+        // Try a sync initiated by the first agent
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedDisc));
 
-        // Now the snapshots should match
-        let snapshot = dht2
-            .snapshot_minimal(&arc_set, store2.clone())
-            .await
-            .unwrap();
-        let outcome = dht1
-            .handle_snapshot(snapshot, &arc_set, store1.clone())
-            .await
-            .unwrap();
-        match outcome {
-            DhtSnapshotCompareOutcome::Identical => {}
-            s => panic!("Unexpected outcome: {:?}", s),
-        }
+        let learned1 = dht1.discovered_ops.clone();
+        let learned2 = dht2.discovered_ops.clone();
+        dht1.discovered_ops.clear();
+        dht2.discovered_ops.clear();
+
+        // Try a sync initiated by the second agent
+        let outcome = dht2.sync_with(&mut dht1).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedDisc));
+
+        // The outcome should be identical, regardless of who initiated the sync
+        assert_eq!(learned1, dht1.discovered_ops);
+        assert_eq!(learned2, dht2.discovered_ops);
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // That's the disc sync done, now we need to check the rings
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
+
+        let learned1 = dht1.discovered_ops.clone();
+        let learned2 = dht2.discovered_ops.clone();
+        dht1.discovered_ops.clear();
+        dht2.discovered_ops.clear();
+
+        // Try a sync initiated by the second agent
+        let outcome = dht2.sync_with(&mut dht1).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
+
+        // The outcome should be identical, regardless of who initiated the sync
+        assert_eq!(learned1, dht1.discovered_ops);
+        assert_eq!(learned2, dht2.discovered_ops);
+
+        // Move any discovered ops between the two DHTs
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the two DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn disc_sync_respects_arc() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(
+            current_time,
+            DhtArc::Arc(0, 3 * SECTOR_SIZE - 1),
+        )
+        .await;
+        let mut dht2 = DhtSyncHarness::new(
+            current_time,
+            DhtArc::Arc(2 * SECTOR_SIZE, 4 * SECTOR_SIZE - 1),
+        )
+        .await;
+
+        // Put mismatched historical data in both DHTs, but in sectors that don't overlap
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(SECTOR_SIZE.to_le_bytes().to_vec())),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(
+                (3 * SECTOR_SIZE).to_le_bytes().to_vec(),
+            )),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // At this point, the DHTs should be in sync, because the mismatch is not in common sectors
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+
+        // Now put mismatched data in the common sector
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(
+                (2 * SECTOR_SIZE).to_le_bytes().to_vec(),
+            )),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(
+                (2 * SECTOR_SIZE + 1).to_le_bytes().to_vec(),
+            )),
+            UNIX_TIMESTAMP,
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try to sync the DHTs
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedDisc));
+
+        // Sync the ops
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn ring_sync_respects_arc() {
+        let current_time = Timestamp::now();
+        let mut dht1 = DhtSyncHarness::new(
+            current_time,
+            DhtArc::Arc(0, 3 * SECTOR_SIZE - 1),
+        )
+        .await;
+        let mut dht2 = DhtSyncHarness::new(
+            current_time,
+            DhtArc::Arc(2 * SECTOR_SIZE, 4 * SECTOR_SIZE - 1),
+        )
+        .await;
+
+        // Put mismatched recent data in both DHTs, but in sectors that don't overlap
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(SECTOR_SIZE.to_le_bytes().to_vec())),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(
+                (3 * SECTOR_SIZE).to_le_bytes().to_vec(),
+            )),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // At this point, the DHTs should be in sync, because the mismatch is not in common sectors
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+
+        // Now put mismatched data in the common sector
+        dht1.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(
+                (2 * SECTOR_SIZE).to_le_bytes().to_vec(),
+            )),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+        dht2.inject_ops(vec![Kitsune2MemoryOp::new(
+            OpId::from(bytes::Bytes::from(
+                (2 * SECTOR_SIZE + 1).to_le_bytes().to_vec(),
+            )),
+            dht1.dht.partition.full_slice_end_timestamp(),
+            vec![],
+        )])
+        .await
+        .unwrap();
+
+        // Try to sync the DHTs
+        let outcome = dht1.sync_with(&mut dht2).await.unwrap();
+        assert!(matches!(outcome, SyncWithOutcome::SyncedRings));
+
+        // Sync the ops
+        dht1.apply_op_sync(&mut dht2).await.unwrap();
+
+        // Now the DHTs should be in sync
+        assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
     }
 }
