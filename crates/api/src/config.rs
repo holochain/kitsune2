@@ -29,7 +29,10 @@ struct ConfigEntry {
 
 impl std::fmt::Debug for ConfigEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.value.fmt(f)
+        f.debug_struct("ConfigEntry")
+            .field("value", &self.value)
+            .field("has_update_cb", &self.update_cb.is_some())
+            .finish()
     }
 }
 
