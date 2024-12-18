@@ -61,15 +61,13 @@ impl Dht {
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<DhtSnapshot> {
-        let (disc_top_hash, disc_boundary) = self
-            .partition
-            .full_time_slice_disc_top_hash(arc_set, store)
-            .await?;
+        let (disc_top_hash, disc_boundary) =
+            self.partition.disc_top_hash(arc_set, store).await?;
 
         Ok(DhtSnapshot::Minimal {
             disc_top_hash,
             disc_boundary,
-            ring_top_hashes: self.partition.partial_time_rings(arc_set),
+            ring_top_hashes: self.partition.ring_top_hashes(arc_set),
         })
     }
 
@@ -136,9 +134,6 @@ impl Dht {
                         );
                         continue;
                     };
-
-                    // TODO handle an empty list of missing slices here?
-                    //      if that's empty then we actually need to send the whole sector?
 
                     for missing_slice in missing_slices {
                         let Ok((start, end)) = self
