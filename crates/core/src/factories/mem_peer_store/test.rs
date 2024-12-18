@@ -5,7 +5,7 @@ use kitsune2_api::id::Id;
 fn create() -> Inner {
     Inner::new(
         MemPeerStoreConfig {
-            prune_interval: std::time::Duration::from_secs(10),
+            prune_interval_s: 10,
         },
         std::time::Instant::now(),
     )

@@ -132,7 +132,12 @@ mod test {
 
         let k: DynKitsuneHandler = Arc::new(K);
 
-        let k = crate::default_builder().build(k).await.unwrap();
+        let k = crate::default_builder()
+            .with_default_config()
+            .unwrap()
+            .build(k)
+            .await
+            .unwrap();
 
         k.space(bytes::Bytes::from_static(b"space1").into())
             .await

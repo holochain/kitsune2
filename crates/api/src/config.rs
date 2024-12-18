@@ -216,19 +216,23 @@ mod test {
         use std::sync::atomic::*;
         let update = Arc::new(AtomicU32::new(0));
         let update2 = update.clone();
-        c.register_entry_update_cb(&["myModule", "bananas"], Arc::new(move |v| {
-            let v: u32 =
-                serde_json::from_str(&serde_json::to_string(&v).unwrap())
-                    .unwrap();
-            update2.store(v, Ordering::SeqCst);
-        }))
+        c.register_entry_update_cb(
+            &["myModule", "bananas"],
+            Arc::new(move |v| {
+                let v: u32 =
+                    serde_json::from_str(&serde_json::to_string(&v).unwrap())
+                        .unwrap();
+                update2.store(v, Ordering::SeqCst);
+            }),
+        )
         .unwrap();
 
         c.set_module_config(&serde_json::json!({
             "myModule": {
                 "bananas": 99,
             }
-        })).unwrap();
+        }))
+        .unwrap();
 
         assert_eq!(99, update.load(Ordering::SeqCst));
     }

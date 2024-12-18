@@ -9,6 +9,9 @@ pub use core_space::*;
 pub mod mem_peer_store;
 pub use mem_peer_store::MemPeerStoreFactory;
 
+#[cfg(test)]
+pub(crate) use mem_peer_store::test_utils;
+
 mod core_fetch;
 pub use core_fetch::*;
 
