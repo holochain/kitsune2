@@ -91,7 +91,7 @@ impl Transport for MockTransport {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let mock_transport = MockTransport::new(false);
     let config = CoreFetchConfig::default();
@@ -177,7 +177,7 @@ async fn fetch_queue() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_single_agent() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
@@ -236,7 +236,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_multi_op_fetch_from_multiple_agents() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         parallel_request_count: 5,
@@ -347,7 +347,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ops_are_cleared_when_agent_not_in_peer_store() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
@@ -379,7 +379,7 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_cool_down_list() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
@@ -430,7 +430,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn add_ops_for_multiple_unresponsive_agents() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
@@ -531,7 +531,7 @@ async fn add_ops_for_multiple_unresponsive_agents() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_cooling_down_is_removed_from_list() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         cool_down_interval_ms: 10,

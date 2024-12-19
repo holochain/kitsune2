@@ -100,6 +100,8 @@ async fn space_notify_send_recv() {
         verifier: Arc::new(TestCrypto),
         ..crate::default_builder()
     }
+    .with_default_config()
+    .unwrap()
     .build(k)
     .await
     .unwrap();
@@ -111,6 +113,8 @@ async fn space_notify_send_recv() {
         verifier: Arc::new(TestCrypto),
         ..crate::default_builder()
     }
+    .with_default_config()
+    .unwrap()
     .build(k)
     .await
     .unwrap();

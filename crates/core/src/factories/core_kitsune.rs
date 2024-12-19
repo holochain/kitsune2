@@ -4,15 +4,6 @@ use kitsune2_api::{config::*, kitsune::*, *};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const MOD_NAME: &str = "CoreKitsune";
-
-/// Configuration parameters for [CoreKitsuneFactory].
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoreKitsuneConfig {}
-
-impl ModConfig for CoreKitsuneConfig {}
-
 /// The core kitsune implementation provided by Kitsune2.
 /// You probably will have no reason to use something other than this.
 /// This abstraction is mainly here for testing purposes.
@@ -28,9 +19,7 @@ impl CoreKitsuneFactory {
 }
 
 impl KitsuneFactory for CoreKitsuneFactory {
-    fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config
-            .add_default_module_config::<CoreKitsuneConfig>(MOD_NAME.into())?;
+    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
         Ok(())
     }
 
@@ -40,9 +29,6 @@ impl KitsuneFactory for CoreKitsuneFactory {
         handler: DynKitsuneHandler,
     ) -> BoxFut<'static, K2Result<DynKitsune>> {
         Box::pin(async move {
-            let config = builder
-                .config
-                .get_module_config::<CoreKitsuneConfig>(MOD_NAME)?;
             let tx = builder
                 .transport
                 .create(
@@ -50,12 +36,8 @@ impl KitsuneFactory for CoreKitsuneFactory {
                     Arc::new(TxHandlerTranslator(handler.clone())),
                 )
                 .await?;
-            let out: DynKitsune = Arc::new(CoreKitsune::new(
-                builder.clone(),
-                config,
-                handler,
-                tx,
-            ));
+            let out: DynKitsune =
+                Arc::new(CoreKitsune::new(builder.clone(), handler, tx));
             Ok(out)
         })
     }
@@ -106,7 +88,6 @@ struct CoreKitsune {
 impl CoreKitsune {
     pub fn new(
         builder: Arc<builder::Builder>,
-        _config: CoreKitsuneConfig,
         handler: DynKitsuneHandler,
         tx: transport::DynTransport,
     ) -> Self {
@@ -194,7 +175,12 @@ mod test {
 
         let k: DynKitsuneHandler = Arc::new(K);
 
-        let k = crate::default_builder().build(k).await.unwrap();
+        let k = crate::default_builder()
+            .with_default_config()
+            .unwrap()
+            .build(k)
+            .await
+            .unwrap();
 
         k.space(bytes::Bytes::from_static(b"space1").into())
             .await
