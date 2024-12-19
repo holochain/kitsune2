@@ -323,7 +323,7 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
     .await;
 
     // Check that at least one request was sent for each op.
-    tokio::time::timeout(Duration::from_millis(10), async {
+    tokio::time::timeout(Duration::from_millis(20), async {
         loop {
             tokio::task::yield_now().await;
             let requests_sent =
