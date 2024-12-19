@@ -7,7 +7,8 @@
 //! What this adds on top of the inner types is the ability to compare two DHT models and determine
 //! a set of op hashes that may need to be fetched from one model to the other to bring them into
 //! sync. The comparison process is symmetric, meaning that both parties will end up with the same
-//! list of op hashes to fetch regardless of who initiated the comparison.
+//! list of op hashes to fetch regardless of who initiated the comparison. Comparison is initiated
+//! using the [Dht::snapshot_minimal] method which produces a minimal snapshot of the DHT model.
 //!
 //! The set of op hashes to fetch is unlikely to be the exact ops that are missing but rather a
 //! tradeoff between the number of steps required to determine the missing ops and the number of op
