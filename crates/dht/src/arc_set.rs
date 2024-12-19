@@ -10,6 +10,7 @@ use std::collections::HashSet;
 
 /// Represents a set of [DhtArc]s.
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct ArcSet {
     inner: HashSet<u32>,
 }
@@ -197,6 +198,81 @@ mod test {
         assert_eq!(
             "Invalid arc, expected end at 8388607 but arc specifies 4294967295 (src: None)",
             set.unwrap_err().to_string()
+        );
+    }
+
+    #[test]
+    fn intersect_non_overlapping_sets() {
+        let set1 =
+            ArcSet::new(SECTOR_SIZE, vec![DhtArc::Arc(0, SECTOR_SIZE - 1)])
+                .unwrap();
+        let set2 = ArcSet::new(
+            SECTOR_SIZE,
+            vec![DhtArc::Arc(2 * SECTOR_SIZE, 3 * SECTOR_SIZE - 1)],
+        )
+        .unwrap();
+
+        let intersection = set1.intersection(&set2);
+
+        assert!(intersection.inner.is_empty());
+    }
+
+    #[test]
+    fn intersect_overlapping_by_one() {
+        let set1 =
+            ArcSet::new(SECTOR_SIZE, vec![DhtArc::Arc(0, 2 * SECTOR_SIZE - 1)])
+                .unwrap();
+        let set2 = ArcSet::new(
+            SECTOR_SIZE,
+            vec![DhtArc::Arc(SECTOR_SIZE, 3 * SECTOR_SIZE - 1)],
+        )
+        .unwrap();
+
+        let intersection = set1.intersection(&set2);
+
+        assert_eq!(1, intersection.inner.len());
+        assert!(intersection.inner.contains(&1));
+    }
+
+    #[test]
+    fn intersect_overlapping_by_multiple() {
+        let set1 = ArcSet::new(
+            SECTOR_SIZE,
+            vec![DhtArc::Arc(0, 10 * SECTOR_SIZE - 1)],
+        )
+        .unwrap();
+        let set2 = ArcSet::new(
+            SECTOR_SIZE,
+            vec![DhtArc::Arc(SECTOR_SIZE, 3 * SECTOR_SIZE - 1)],
+        )
+        .unwrap();
+
+        let intersection = set1.intersection(&set2);
+
+        assert_eq!(2, intersection.inner.len());
+        assert!(intersection.inner.contains(&1));
+        assert!(intersection.inner.contains(&2));
+    }
+
+    #[test]
+    fn preserves_full_arc() {
+        let full_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap();
+        assert_eq!(
+            full_set,
+            full_set.intersection(
+                &ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn preserves_empty() {
+        let empty_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::Empty]).unwrap();
+        assert_eq!(
+            empty_set,
+            empty_set.intersection(
+                &ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap()
+            )
         );
     }
 }
