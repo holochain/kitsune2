@@ -69,15 +69,20 @@ pub mod config {
     pub struct CoreFetchConfig {
         /// How many parallel op fetch requests can be made at once. Default: 2.  
         pub parallel_request_count: u8,
-        /// Duration in ms to keep an unresponsive agent on the cool-down list. Default: 120_000.
-        pub cool_down_interval_ms: u64,
+        /// Duration in ms to keep an unresponsive agent on the back off list. Default: 20_000.
+        pub back_off_interval_ms: u64,
+        /// Maximum exponent for back off interval. Back off duration is calculated
+        /// back_off_interval * 2^back_off_exponent. Default: 4.
+        pub max_back_off_exponent: u32,
     }
 
     impl Default for CoreFetchConfig {
+        // Maximum back off is 11:40 min.
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                cool_down_interval_ms: 120_000,
+                back_off_interval_ms: 20_000,
+                max_back_off_exponent: 4,
             }
         }
     }
@@ -213,7 +218,8 @@ impl CoreFetch {
             ),
         }));
 
-        let mut fetch_tasks = Vec::new();
+        let mut fetch_tasks =
+            Vec::with_capacity(config.parallel_request_count as usize);
         for _ in 0..config.parallel_request_count {
             let task = tokio::task::spawn(CoreFetch::fetch_task(
                 state.clone(),
@@ -252,7 +258,7 @@ impl CoreFetch {
                     continue;
                 }
 
-                lock.back_off_list.is_agent_backing_off(&agent_id)
+                lock.back_off_list.is_agent_on_back_off(&agent_id)
             };
 
             // Send request if agent is not on back off list.
@@ -265,14 +271,11 @@ impl CoreFetch {
                 {
                     Some(url) => url,
                     None => {
-                        // Agent not in peer store. Remove all associated op ids.
-                        let mut lock = state.lock().unwrap();
-                        lock.requests = lock
+                        state
+                            .lock()
+                            .unwrap()
                             .requests
-                            .clone()
-                            .into_iter()
-                            .filter(|(_, a)| *a != agent_id)
-                            .collect();
+                            .retain(|(_, a)| *a != agent_id);
                         continue;
                     }
                 };
@@ -290,6 +293,7 @@ impl CoreFetch {
                     .await
                 {
                     Ok(()) => {
+                        // If agent was on back off list, remove them.
                         state
                             .lock()
                             .unwrap()
@@ -301,12 +305,13 @@ impl CoreFetch {
                         let mut lock = state.lock().unwrap();
                         lock.back_off_list.back_off_agent(&agent_id);
 
+                        // If max back off interval has expired for the agent,
+                        // give up on requesting ops from them.
                         if lock
                             .back_off_list
-                            .is_agent_at_max_back_off(&agent_id)
+                            .has_max_back_off_expired(&agent_id)
                         {
-                            lock.requests
-                                .remove(&(op_id.clone(), agent_id.clone()));
+                            lock.requests.retain(|(_, a)| *a != agent_id);
                         }
                     }
                 }
@@ -378,8 +383,10 @@ impl BackOffList {
     pub fn back_off_agent(&mut self, agent_id: &AgentId) {
         match self.state.entry(agent_id.clone()) {
             Entry::Occupied(mut o) => {
-                o.get_mut().0 = Instant::now();
-                o.get_mut().1 = self.max_back_off_exponent.min(o.get().1 + 1);
+                if o.get().1 != self.max_back_off_exponent {
+                    o.get_mut().0 = Instant::now();
+                    o.get_mut().1 += 1;
+                }
             }
             Entry::Vacant(v) => {
                 v.insert((Instant::now(), 0));
@@ -387,7 +394,7 @@ impl BackOffList {
         }
     }
 
-    pub fn is_agent_backing_off(&mut self, agent_id: &AgentId) -> bool {
+    pub fn is_agent_on_back_off(&mut self, agent_id: &AgentId) -> bool {
         match self.state.get(agent_id) {
             Some((instant, exponent)) => {
                 instant.elapsed().as_millis()
@@ -397,10 +404,15 @@ impl BackOffList {
         }
     }
 
-    pub fn is_agent_at_max_back_off(&self, agent_id: &AgentId) -> bool {
+    pub fn has_max_back_off_expired(&self, agent_id: &AgentId) -> bool {
         self.state
             .get(agent_id)
-            .map(|v| v.1 == self.max_back_off_exponent)
+            .map(|(instant, exponent)| {
+                *exponent == self.max_back_off_exponent
+                    && instant.elapsed().as_millis()
+                        > (self.back_off_interval * 2_u64.pow(*exponent))
+                            as u128
+            })
             .unwrap_or(false)
     }
 
