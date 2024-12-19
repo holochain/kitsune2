@@ -1,4 +1,17 @@
 //! Top-level DHT model.
+//!
+//! This module is largely implemented in terms of the [PartitionedHashes] and [PartitionedTime](crate::time::PartitionedTime)
+//! types. It combines these types into a single model that can be used to track the state of a
+//! distributed hash table.
+//!
+//! What this adds on top of the inner types is the ability to compare two DHT models and determine
+//! a set of op hashes that may need to be fetched from one model to the other to bring them into
+//! sync. The comparison process is symmetric, meaning that both parties will end up with the same
+//! list of op hashes to fetch regardless of who initiated the comparison.
+//!
+//! The set of op hashes to fetch is unlikely to be the exact ops that are missing but rather a
+//! tradeoff between the number of steps required to determine the missing ops and the number of op
+//! hashes that have to be sent.
 
 use crate::arc_set::ArcSet;
 use crate::PartitionedHashes;
