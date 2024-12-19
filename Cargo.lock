@@ -972,6 +972,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "kitsune2_api",
+ "kitsune2_test_utils",
  "prost",
  "rand",
  "serde",
@@ -1009,6 +1010,9 @@ dependencies = [
 name = "kitsune2_test_utils"
 version = "0.1.0-nopublish"
 dependencies = [
+ "bytes",
+ "futures",
+ "kitsune2_api",
  "tracing",
  "tracing-subscriber",
 ]

@@ -83,11 +83,11 @@ use std::sync::Arc;
 /// Defines a type capable of cryptographic signatures.
 pub trait Signer {
     /// Sign the encoded data, returning the resulting detached signature bytes.
-    fn sign(
-        &self,
-        agent_info: &AgentInfo,
-        message: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>>;
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        agent_info: &'b AgentInfo,
+        message: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>>;
 }
 
 /// Defines a type capable of cryptographic verification.
@@ -121,10 +121,82 @@ impl Verifier for DynVerifier {
 pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
     /// The [AgentId] of this local agent.
     fn agent(&self) -> &AgentId;
+
+    /// Register a callback to be invoked when [Self::invoke_cb] is called.
+    /// Implementations need only track a single cb. If this is called again,
+    /// use only the new one.
+    fn register_cb(&self, cb: Arc<dyn Fn() + 'static + Send + Sync>);
+
+    /// Invoke the registered cb if one has been set.
+    /// This can be ignored if [Self::register_cb] has not yet been called.
+    fn invoke_cb(&self);
+
+    /// Access the current storage arc for this local agent.
+    /// This will be used by the space module to construct [AgentInfoSigned].
+    fn get_cur_storage_arc(&self) -> DhtArc;
+
+    /// Set the current storage arc for this local agent.
+    /// This will be initially set to zero on space join,
+    /// then will be updated by the gossip module as best effort to
+    /// collect data for the range is made.
+    fn set_cur_storage_arc(&self, arc: DhtArc);
+
+    /// This is a chance for the implementor to influence how large
+    /// a storage arc should be for this agent. The gossip module will
+    /// attempt to collect enough data for claiming storage authority
+    /// over this range.
+    fn get_tgt_storage_arc(&self) -> DhtArc;
+
+    /// The sharding module will attempt to determine an ideal target
+    /// arc for this agent. An implementation is free to use or discard
+    /// this information when returning the arc in [Self::get_tgt_storage_arc].
+    /// This will initially be set to zero on join, but the sharding module
+    /// may later update this to FULL or a true target value.
+    fn set_tgt_storage_arc_hint(&self, arc: DhtArc);
 }
 
 /// Trait-object [LocalAgent].
 pub type DynLocalAgent = Arc<dyn LocalAgent>;
+
+impl LocalAgent for DynLocalAgent {
+    fn agent(&self) -> &AgentId {
+        (**self).agent()
+    }
+
+    fn register_cb(&self, cb: Arc<dyn Fn() + 'static + Send + Sync>) {
+        (**self).register_cb(cb);
+    }
+
+    fn invoke_cb(&self) {
+        (**self).invoke_cb();
+    }
+
+    fn get_cur_storage_arc(&self) -> DhtArc {
+        (**self).get_cur_storage_arc()
+    }
+
+    fn set_cur_storage_arc(&self, arc: DhtArc) {
+        (**self).set_cur_storage_arc(arc);
+    }
+
+    fn get_tgt_storage_arc(&self) -> DhtArc {
+        (**self).get_tgt_storage_arc()
+    }
+
+    fn set_tgt_storage_arc_hint(&self, arc: DhtArc) {
+        (**self).set_tgt_storage_arc_hint(arc);
+    }
+}
+
+impl Signer for DynLocalAgent {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        agent_info: &'b AgentInfo,
+        message: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
+        (**self).sign(agent_info, message)
+    }
+}
 
 mod serde_string_timestamp {
     pub fn serialize<S>(
@@ -150,7 +222,9 @@ mod serde_string_timestamp {
 }
 
 /// AgentInfo stores metadata related to agents.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInfo {
     /// The agent id.
@@ -181,6 +255,7 @@ pub struct AgentInfo {
 }
 
 /// Signed agent information.
+#[derive(PartialEq, Eq, Hash)]
 pub struct AgentInfoSigned {
     /// The decoded information associated with this agent.
     agent_info: AgentInfo,
@@ -324,11 +399,11 @@ mod test {
     struct TestCrypto;
 
     impl Signer for TestCrypto {
-        fn sign(
-            &self,
-            _agent_info: &AgentInfo,
-            _encoded: &[u8],
-        ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        fn sign<'a, 'b: 'a, 'c: 'a>(
+            &'a self,
+            _agent_info: &'b AgentInfo,
+            _encoded: &'c [u8],
+        ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
             Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
         }
     }

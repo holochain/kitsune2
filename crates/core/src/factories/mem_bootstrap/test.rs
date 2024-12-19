@@ -7,11 +7,11 @@ struct TestCrypto;
 const SIG: bytes::Bytes = bytes::Bytes::from_static(b"TEST-SIGNATURE");
 
 impl agent::Signer for TestCrypto {
-    fn sign(
-        &self,
-        _agent_info: &agent::AgentInfo,
-        _encoded: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        _agent_info: &'b agent::AgentInfo,
+        _encoded: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         Box::pin(async move { Ok(SIG.clone()) })
     }
 }

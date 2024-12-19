@@ -1,5 +1,5 @@
-use super::{test_utils::AgentBuilder, *};
-use kitsune2_api::id::Id;
+use super::*;
+use kitsune2_test_utils::agent::*;
 
 #[inline(always)]
 fn create() -> Inner {
@@ -11,8 +11,8 @@ fn create() -> Inner {
     )
 }
 
-const AGENT_1: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent1")));
-const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
+const AGENT_1: AgentId = AgentId(id::Id(bytes::Bytes::from_static(b"agent1")));
+const AGENT_2: AgentId = AgentId(id::Id(bytes::Bytes::from_static(b"agent2")));
 
 /// Sneak some test-data into the url field (as the peer id)
 /// this will let us validate store actions when we extract
@@ -43,14 +43,14 @@ fn prune_prunes_only_expired_agents() {
             expires_at: Some(Timestamp::now()),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
         AgentBuilder {
             expires_at: Some(
                 Timestamp::now() + std::time::Duration::from_secs(10),
             ),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
     ]);
 
     s.do_prune(
@@ -69,7 +69,7 @@ fn happy_get() {
         agent: Some(AGENT_1),
         ..Default::default()
     }
-    .build()]);
+    .build(TestLocalAgent::default())]);
 
     let a = s.get(AGENT_1).unwrap();
     assert_eq!(a.agent, AGENT_1);
@@ -84,12 +84,12 @@ fn happy_get_all() {
             agent: Some(AGENT_1),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
         AgentBuilder {
             agent: Some(AGENT_2),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
     ]);
 
     let mut a = s
@@ -143,7 +143,7 @@ fn fixture_get_by_overlapping_storage_arc() {
                 url: Some(Some(sneak_url(arc_name))),
                 ..Default::default()
             }
-            .build()]);
+            .build(TestLocalAgent::default())]);
         }
 
         let mut got = s
@@ -171,7 +171,7 @@ fn fixture_get_near_location() {
             url: Some(Some(sneak_url(&idx.to_string()))),
             ..Default::default()
         }
-        .build()]);
+        .build(TestLocalAgent::default())]);
     }
 
     // these should not be returned because they are invalid.
@@ -181,13 +181,13 @@ fn fixture_get_near_location() {
             url: Some(Some(sneak_url("zero-arc"))),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
         AgentBuilder {
             is_tombstone: Some(true),
             url: Some(Some(sneak_url("tombstone"))),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
         AgentBuilder {
             expires_at: Some(Timestamp::from_micros(
                 Timestamp::now().as_micros()
@@ -196,7 +196,7 @@ fn fixture_get_near_location() {
             url: Some(Some(sneak_url("expired"))),
             ..Default::default()
         }
-        .build(),
+        .build(TestLocalAgent::default()),
     ]);
 
     const F: &[(&[&str], u32)] = &[
