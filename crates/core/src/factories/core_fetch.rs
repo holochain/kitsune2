@@ -293,13 +293,12 @@ impl CoreFetch {
                         lock.back_off_list.back_off_agent(&agent_id);
 
                         // If max back off interval has expired for the agent,
-                        // give up on trequesting his op id from them.
+                        // give up on requesting ops from them.
                         if lock
                             .back_off_list
                             .has_max_back_off_expired(&agent_id)
                         {
-                            lock.requests
-                                .remove(&(op_id.clone(), agent_id.clone()));
+                            lock.requests.retain(|(_, a)| *a != agent_id);
                         }
                     }
                 }
@@ -398,7 +397,7 @@ impl BackOffList {
             .map(|(instant, exponent)| {
                 *exponent == self.max_back_off_exponent
                     && instant.elapsed().as_millis()
-                        >= (self.back_off_interval * 2_u64.pow(*exponent))
+                        > (self.back_off_interval * 2_u64.pow(*exponent))
                             as u128
             })
             .unwrap_or(false)

@@ -487,7 +487,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn request_is_dropped_when_max_number_of_back_off_expired() {
+async fn requests_are_dropped_when_max_number_of_back_off_expired() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
@@ -495,31 +495,44 @@ async fn request_is_dropped_when_max_number_of_back_off_expired() {
         ..Default::default()
     };
     let mock_transport = MockTransport::new(true);
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
 
-    let op_id = random_op_id();
-    let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
+    let op_list_1 = create_op_list(2);
+    let agent_id_1 = random_agent_id();
+    println!("agent_id {agent_id_1}");
+    let agent_info_1 = AgentBuilder {
+        agent: Some(agent_id_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
     .build();
-    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+    peer_store.insert(vec![agent_info_1.clone()]).await.unwrap();
+
+    // Create a second agent to later check that their ops have not been removed.
+    let op_list_2 = create_op_list(2);
+    let agent_id_2 = random_agent_id();
+    let agent_info_2 = AgentBuilder {
+        agent: Some(agent_id_2.clone()),
+        url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
+        ..Default::default()
+    }
+    .build();
+    peer_store.insert(vec![agent_info_2.clone()]).await.unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
-        agent_info.space.clone(),
+        space_id.clone(),
         peer_store,
         mock_transport.clone(),
     );
 
     fetch
-        .add_ops(vec![op_id.clone()], agent_id.clone())
+        .add_ops(op_list_1.clone(), agent_id_1.clone())
         .await
         .unwrap();
 
     // Wait for one request to fail, so agent is put on back off list.
-    tokio::time::timeout(Duration::from_millis(10), async move {
+    tokio::time::timeout(Duration::from_millis(10), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             if !mock_transport
@@ -536,29 +549,60 @@ async fn request_is_dropped_when_max_number_of_back_off_expired() {
     .await
     .unwrap();
 
+    let current_number_of_requests_to_agent =
+        mock_transport.requests_sent.lock().unwrap().len();
+
+    // Back off agent the maximum possible number of times.
     {
         let mut lock = fetch.state.lock().unwrap();
-        assert!(lock.requests.contains(&(op_id, agent_id.clone())));
+        assert!(op_list_1.iter().all(|op_id| lock
+            .requests
+            .contains(&(op_id.clone(), agent_id_1.clone()))));
         for _ in 0..config.max_back_off_exponent {
-            lock.back_off_list.back_off_agent(&agent_id);
+            lock.back_off_list.back_off_agent(&agent_id_1);
         }
     }
 
-    // Wait for back off to pass. Afterwards the request should fail again and be
-    // removed from the set.
+    // Wait for back off to pass. Afterwards the request should fail again and all
+    // of the agent's requests should be removed from the set.
     tokio::time::sleep(Duration::from_millis(
-        config.back_off_interval_ms * 2_u64.pow(config.max_back_off_exponent),
+        config.back_off_interval_ms * 2_u64.pow(config.max_back_off_exponent)
+            + 1,
     ))
     .await;
 
-    fetch
+    assert!(fetch
         .state
         .lock()
         .unwrap()
         .back_off_list
-        .has_max_back_off_expired(&agent_id);
+        .has_max_back_off_expired(&agent_id_1));
 
-    assert!(fetch.state.lock().unwrap().requests.is_empty());
+    // Add control agent's ops to set.
+    fetch.add_ops(op_list_2, agent_id_2.clone()).await.unwrap();
+
+    // Wait for another request attempt, which should remove all of the agent's requests\
+    // from the set.
+    tokio::time::timeout(Duration::from_millis(10), async {
+        loop {
+            if mock_transport.requests_sent.lock().unwrap().len()
+                > current_number_of_requests_to_agent
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(fetch
+        .state
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .all(|(_, agent_id)| *agent_id != agent_id_1));
 }
 
 fn random_id() -> Id {
