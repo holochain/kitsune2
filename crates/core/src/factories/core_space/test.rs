@@ -1,10 +1,65 @@
+use kitsune2_api::{kitsune::*, space::*, *};
 use kitsune2_test_utils::agent::*;
 use std::sync::{Arc, Mutex};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn space_notify_send_recv() {
-    use kitsune2_api::{kitsune::*, space::*, *};
+async fn space_local_agent_join_leave() {
+    #[derive(Debug)]
+    struct S;
 
+    impl SpaceHandler for S {}
+
+    #[derive(Debug)]
+    struct K;
+
+    impl KitsuneHandler for K {
+        fn create_space(
+            &self,
+            _space: SpaceId,
+        ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+            Box::pin(async move {
+                let s: DynSpaceHandler = Arc::new(S);
+                Ok(s)
+            })
+        }
+    }
+
+    let k: DynKitsuneHandler = Arc::new(K);
+    let k1 = builder::Builder {
+        verifier: Arc::new(TestVerifier),
+        ..crate::default_builder()
+    }
+    .with_default_config()
+    .unwrap()
+    .build(k)
+    .await
+    .unwrap();
+
+    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+
+    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
+
+    s1.local_agent_join(bob.clone()).await.unwrap();
+    s1.local_agent_join(ned.clone()).await.unwrap();
+
+    let mut peer_count = 0;
+
+    for _ in 0..5 {
+        peer_count = s1.peer_store().get_all().await.unwrap().len();
+        if peer_count >= 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    if peer_count != 2 {
+        panic!("expected 2 agents, got {peer_count}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn space_notify_send_recv() {
     type Item = (AgentId, AgentId, SpaceId, bytes::Bytes);
     type Recv = Arc<Mutex<Vec<Item>>>;
     let recv = Arc::new(Mutex::new(Vec::new()));
