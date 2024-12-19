@@ -158,3 +158,21 @@ pub fn default_builder() -> Builder {
 }
 
 pub mod factories;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn ed25519_sanity() {
+        use kitsune2_api::agent::*;
+        use kitsune2_test_utils::agent::*;
+
+        let i1 = AgentBuilder::default().build(Ed25519LocalAgent::default());
+        let enc = i1.encode().unwrap();
+        let i2 =
+            AgentInfoSigned::decode(&Ed25519Verifier, enc.as_bytes()).unwrap();
+
+        assert_eq!(i1, i2);
+    }
+}

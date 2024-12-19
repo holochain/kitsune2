@@ -1,51 +1,5 @@
-use kitsune2_api::*;
+use kitsune2_test_utils::agent::*;
 use std::sync::{Arc, Mutex};
-
-const SIG: &[u8] = b"fake-signature";
-
-#[derive(Debug)]
-struct TestCrypto;
-
-impl agent::Signer for TestCrypto {
-    fn sign<'a, 'b: 'a, 'c: 'a>(
-        &'a self,
-        _agent_info: &'b agent::AgentInfo,
-        _encoded: &'c [u8],
-    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
-        Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
-    }
-}
-
-impl agent::Verifier for TestCrypto {
-    fn verify(
-        &self,
-        _agent_info: &agent::AgentInfo,
-        _message: &[u8],
-        signature: &[u8],
-    ) -> bool {
-        signature == SIG
-    }
-}
-
-const S1: SpaceId = SpaceId(id::Id(bytes::Bytes::from_static(b"space1")));
-
-fn make_agent_info(id: AgentId, url: Url) -> Arc<agent::AgentInfoSigned> {
-    let created_at = Timestamp::now();
-    let expires_at = created_at + std::time::Duration::from_secs(60 * 20);
-    futures::executor::block_on(agent::AgentInfoSigned::sign(
-        &TestCrypto,
-        agent::AgentInfo {
-            agent: id,
-            space: S1.clone(),
-            created_at,
-            expires_at,
-            is_tombstone: false,
-            url: Some(url),
-            storage_arc: DhtArc::FULL,
-        },
-    ))
-    .unwrap()
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn space_notify_send_recv() {
@@ -97,65 +51,69 @@ async fn space_notify_send_recv() {
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k1 = builder::Builder {
-        verifier: Arc::new(TestCrypto),
+        verifier: Arc::new(TestVerifier),
         ..crate::default_builder()
     }
     .build(k)
     .await
     .unwrap();
-    let s1 = k1.space(S1.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
     let u1 = u_r.recv().await.unwrap();
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k2 = builder::Builder {
-        verifier: Arc::new(TestCrypto),
+        verifier: Arc::new(TestVerifier),
         ..crate::default_builder()
     }
     .build(k)
     .await
     .unwrap();
-    let s2 = k2.space(S1.clone()).await.unwrap();
+    let s2 = k2.space(TEST_SPACE.clone()).await.unwrap();
     let u2 = u_r.recv().await.unwrap();
 
     println!("url: {u1}, {u2}");
 
-    let bob = AgentId::from(bytes::Bytes::from_static(b"bob"));
-    let ned = AgentId::from(bytes::Bytes::from_static(b"ned"));
+    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let bob_info = AgentBuilder {
+        url: Some(Some(u2)),
+        ..Default::default()
+    }
+    .build(bob.clone());
+    let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let ned_info = AgentBuilder {
+        url: Some(Some(u1)),
+        ..Default::default()
+    }
+    .build(ned.clone());
 
-    s1.peer_store()
-        .insert(vec![make_agent_info(bob.clone(), u2)])
-        .await
-        .unwrap();
-    s2.peer_store()
-        .insert(vec![make_agent_info(ned.clone(), u1)])
-        .await
-        .unwrap();
+    s1.peer_store().insert(vec![bob_info]).await.unwrap();
+    s2.peer_store().insert(vec![ned_info]).await.unwrap();
 
     s1.send_notify(
-        bob.clone(),
-        ned.clone(),
+        bob.agent().clone(),
+        ned.agent().clone(),
         bytes::Bytes::from_static(b"hello"),
     )
     .await
     .unwrap();
 
     let (t, f, s, d) = recv.lock().unwrap().remove(0);
-    assert_eq!(&bob, &t);
-    assert_eq!(&ned, &f);
-    assert_eq!(S1, s);
+    assert_eq!(bob.agent(), &t);
+    assert_eq!(ned.agent(), &f);
+    assert_eq!(TEST_SPACE, s);
     assert_eq!("hello", String::from_utf8_lossy(&d));
 
     s2.send_notify(
-        ned.clone(),
-        bob.clone(),
+        ned.agent().clone(),
+        bob.agent().clone(),
         bytes::Bytes::from_static(b"world"),
     )
     .await
     .unwrap();
 
     let (t, f, s, d) = recv.lock().unwrap().remove(0);
-    assert_eq!(&ned, &t);
-    assert_eq!(&bob, &f);
-    assert_eq!(S1, s);
+    assert_eq!(ned.agent(), &t);
+    assert_eq!(bob.agent(), &f);
+    assert_eq!(TEST_SPACE, s);
     assert_eq!("world", String::from_utf8_lossy(&d));
 }

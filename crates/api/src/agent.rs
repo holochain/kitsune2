@@ -147,6 +147,36 @@ pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
 /// Trait-object [LocalAgent].
 pub type DynLocalAgent = Arc<dyn LocalAgent>;
 
+impl LocalAgent for DynLocalAgent {
+    fn agent(&self) -> &AgentId {
+        (**self).agent()
+    }
+
+    fn register_cb(&self, cb: Arc<dyn Fn() + 'static + Send + Sync>) {
+        (**self).register_cb(cb);
+    }
+
+    fn invoke_cb(&self) {
+        (**self).invoke_cb();
+    }
+
+    fn get_cur_storage_arc(&self) -> DhtArc {
+        (**self).get_cur_storage_arc()
+    }
+
+    fn set_cur_storage_arc(&self, arc: DhtArc) {
+        (**self).set_cur_storage_arc(arc);
+    }
+
+    fn get_tgt_storage_arc(&self) -> DhtArc {
+        (**self).get_tgt_storage_arc()
+    }
+
+    fn set_tgt_storage_arc_hint(&self, arc: DhtArc) {
+        (**self).set_tgt_storage_arc_hint(arc);
+    }
+}
+
 impl Signer for DynLocalAgent {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
@@ -181,7 +211,9 @@ mod serde_string_timestamp {
 }
 
 /// AgentInfo stores metadata related to agents.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInfo {
     /// The agent id.
@@ -212,7 +244,7 @@ pub struct AgentInfo {
 }
 
 /// Signed agent information.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct AgentInfoSigned {
     /// The decoded information associated with this agent.
     agent_info: AgentInfo,
