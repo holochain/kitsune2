@@ -253,16 +253,18 @@ impl DhtSnapshot {
                 let other_ids =
                     other_ring_sector_hashes.keys().collect::<HashSet<_>>();
 
-                // If one side has a hash in a given ring and the other doesn't then that is a
-                // mismatch
-                let mut mismatched_ring_sectors = our_ids
-                    .symmetric_difference(&other_ids)
-                    .map(|id| (**id, Vec::new()))
-                    .collect::<HashMap<_, _>>();
+                // The mismatched rings should have been figured out from the minimal snapshot
+                // or from the ring mismatch in the previous step. They should be identical
+                // regardless of which side computed this snapshot.
+                if our_ids.len() != other_ids.len() || our_ids != other_ids {
+                    return SnapshotDiff::CannotCompare;
+                }
 
                 // Then for any common rings, check if the hashes match
                 let common_ring_ids =
                     our_ids.intersection(&other_ids).collect::<HashSet<_>>();
+                let mut mismatched_ring_sectors =
+                    HashMap::with_capacity(common_ring_ids.len());
                 for ring_id in common_ring_ids {
                     let our_sector_ids = &our_ring_sector_hashes[ring_id]
                         .keys()
@@ -457,6 +459,34 @@ mod tests {
     }
 
     #[test]
+    fn minimal_disc_wrong_number_of_rings() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::Minimal {
+            disc_boundary: timestamp,
+            disc_top_hash: bytes::Bytes::from(vec![1; 32]),
+            ring_top_hashes: vec![
+                bytes::Bytes::from(vec![1]),
+                bytes::Bytes::from(vec![4]),
+            ],
+        };
+
+        let snapshot_2 = DhtSnapshot::Minimal {
+            disc_boundary: timestamp,
+            disc_top_hash: bytes::Bytes::from(vec![1; 32]),
+            ring_top_hashes: vec![
+                bytes::Bytes::from(vec![1]),
+                bytes::Bytes::from(vec![3]),
+                bytes::Bytes::from(vec![5]),
+            ],
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
     fn disc_sector_boundary_mismatch() {
         let timestamp = Timestamp::now();
         let snapshot_1 = DhtSnapshot::DiscSectors {
@@ -633,6 +663,100 @@ mod tests {
             snapshot_1.compare(&snapshot_2),
             SnapshotDiff::DiscSectorSliceMismatches(
                 vec![(1, vec![10])].into_iter().collect()
+            )
+        );
+    }
+
+    #[test]
+    fn ring_sector_details_boundary_mismatch() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: HashMap::new(),
+        };
+
+        let snapshot_2 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp + Duration::from_secs(1),
+            ring_sector_hashes: HashMap::new(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
+    fn ring_sector_details_mismatch_cannot_compare_different_number_of_rings() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: vec![(0, HashMap::new()), (1, HashMap::new())]
+                .into_iter()
+                .collect(),
+        };
+
+        let snapshot_2 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: vec![(0, HashMap::new())].into_iter().collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
+    fn ring_sector_details_mismatch_cannot_compare_different_rings() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: vec![(0, HashMap::new())].into_iter().collect(),
+        };
+
+        let snapshot_2 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: vec![(1, HashMap::new())].into_iter().collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
+    fn ring_sector_details_mismatch_detects_sector_mismatches() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: vec![(
+                0,
+                vec![(0, bytes::Bytes::from_static(&[1]))]
+                    .into_iter()
+                    .collect(),
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let snapshot_2 = DhtSnapshot::RingSectorDetails {
+            disc_boundary: timestamp,
+            ring_sector_hashes: vec![(
+                0,
+                vec![(0, bytes::Bytes::from_static(&[5]))]
+                    .into_iter()
+                    .collect(),
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::RingSectorMismatches(
+                vec![(0, vec![0])].into_iter().collect()
             )
         );
     }
