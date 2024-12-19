@@ -231,30 +231,49 @@ async fn poll_task(
 
     loop {
         let url = format!("{server_url}/bootstrap/{space}");
-        if let Ok(Ok(data)) = tokio::task::spawn_blocking(move || {
+        match tokio::task::spawn_blocking(move || {
             ureq::get(&url)
                 .call()
-                .map_err(std::io::Error::other)?
+                .map_err(K2Error::other)?
                 .into_string()
+                .map_err(K2Error::other)
         })
         .await
+        .map_err(|_| K2Error::other("task join error"))
         {
-            if let Ok(list) = agent::AgentInfoSigned::decode_list(
-                &builder.verifier,
-                data.as_bytes(),
-            ) {
-                // count decoding a success, and set the wait to max
-                wait = config.backoff_max();
+            Err(err) | Ok(Err(err)) => {
+                tracing::debug!(?err, "failure contacting bootstrap server");
+            }
+            Ok(Ok(data)) => {
+                match agent::AgentInfoSigned::decode_list(
+                    &builder.verifier,
+                    data.as_bytes(),
+                ) {
+                    Err(err) => tracing::debug!(
+                        ?err,
+                        "failure decoding bootstrap server response"
+                    ),
+                    Ok(list) => {
+                        // count decoding a success, and set the wait to max
+                        wait = config.backoff_max();
 
-                let list = list
-                    .into_iter()
-                    .filter_map(|l| match l {
-                        Ok(l) => Some(l),
-                        Err(_) => None,
-                    })
-                    .collect::<Vec<_>>();
+                        let list = list
+                            .into_iter()
+                            .filter_map(|l| match l {
+                                Ok(l) => Some(l),
+                                Err(err) => {
+                                    tracing::debug!(
+                                        ?err,
+                                        "failure decoding bootstrap agent info"
+                                    );
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>();
 
-                let _ = peer_store.insert(list).await;
+                        let _ = peer_store.insert(list).await;
+                    }
+                }
             }
         }
 
