@@ -280,6 +280,7 @@ impl CoreFetch {
                     .await
                 {
                     Ok(()) => {
+                        // If agent was on back off list, remove them.
                         state
                             .lock()
                             .unwrap()
@@ -291,9 +292,11 @@ impl CoreFetch {
                         let mut lock = state.lock().unwrap();
                         lock.back_off_list.back_off_agent(&agent_id);
 
+                        // If max back off interval has expired for the agent,
+                        // give up on trequesting his op id from them.
                         if lock
                             .back_off_list
-                            .is_agent_at_max_back_off(&agent_id)
+                            .has_max_back_off_expired(&agent_id)
                         {
                             lock.requests
                                 .remove(&(op_id.clone(), agent_id.clone()));
@@ -368,8 +371,10 @@ impl BackOffList {
     pub fn back_off_agent(&mut self, agent_id: &AgentId) {
         match self.state.entry(agent_id.clone()) {
             Entry::Occupied(mut o) => {
-                o.get_mut().0 = Instant::now();
-                o.get_mut().1 = self.max_back_off_exponent.min(o.get().1 + 1);
+                if o.get().1 != self.max_back_off_exponent {
+                    o.get_mut().0 = Instant::now();
+                    o.get_mut().1 += 1;
+                }
             }
             Entry::Vacant(v) => {
                 v.insert((Instant::now(), 0));
@@ -387,10 +392,15 @@ impl BackOffList {
         }
     }
 
-    pub fn is_agent_at_max_back_off(&self, agent_id: &AgentId) -> bool {
+    pub fn has_max_back_off_expired(&self, agent_id: &AgentId) -> bool {
         self.state
             .get(agent_id)
-            .map(|v| v.1 == self.max_back_off_exponent)
+            .map(|(instant, exponent)| {
+                *exponent == self.max_back_off_exponent
+                    && instant.elapsed().as_millis()
+                        >= (self.back_off_interval * 2_u64.pow(*exponent))
+                            as u128
+            })
             .unwrap_or(false)
     }
 

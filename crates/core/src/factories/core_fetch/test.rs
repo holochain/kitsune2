@@ -602,7 +602,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn request_is_removed_for_agent_on_back_off_when_max_is_hit() {
+async fn request_is_dropped_when_max_number_of_back_off_expired() {
     let builder = Arc::new(default_builder());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
@@ -633,6 +633,7 @@ async fn request_is_removed_for_agent_on_back_off_when_max_is_hit() {
         .await
         .unwrap();
 
+    // Wait for one request to fail, so agent is put on back off list.
     tokio::time::timeout(Duration::from_millis(10), async move {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -664,6 +665,13 @@ async fn request_is_removed_for_agent_on_back_off_when_max_is_hit() {
         config.back_off_interval_ms * 2_u64.pow(config.max_back_off_exponent),
     ))
     .await;
+
+    fetch
+        .state
+        .lock()
+        .unwrap()
+        .back_off_list
+        .has_max_back_off_expired(&agent_id);
 
     assert!(fetch.state.lock().unwrap().requests.is_empty());
 }
