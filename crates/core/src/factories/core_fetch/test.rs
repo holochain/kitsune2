@@ -91,7 +91,7 @@ impl Transport for MockTransport {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let mock_transport = MockTransport::new(false);
     let config = CoreFetchConfig::default();
@@ -177,7 +177,7 @@ async fn fetch_queue() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_op_fetch_from_multiple_agents() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         parallel_request_count: 5,
@@ -288,7 +288,7 @@ async fn happy_op_fetch_from_multiple_agents() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ops_are_cleared_when_agent_not_in_peer_store() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(false);
@@ -355,7 +355,7 @@ fn back_off_max_not_exceeded() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_back_off_list() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig::default();
     let mock_transport = MockTransport::new(true);
@@ -435,7 +435,7 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         back_off_interval_ms: 10,
@@ -488,7 +488,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn requests_are_dropped_when_max_number_of_back_off_expired() {
-    let builder = Arc::new(default_builder());
+    let builder = Arc::new(default_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let config = CoreFetchConfig {
         back_off_interval_ms: 5,

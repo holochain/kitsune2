@@ -4,32 +4,42 @@ use kitsune2_api::{agent::*, config::*, peer_store::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-const MOD_NAME: &str = "MemPeerStore";
+/// MemPeerStore configuration types.
+pub mod config {
+    /// Configuration parameters for [MemPeerStoreFactory](super::MemPeerStoreFactory).
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MemPeerStoreConfig {
+        /// The interval in seconds at which expired infos will be pruned.
+        /// Default: 10s.
+        pub prune_interval_s: u32,
+    }
 
-/// Configuration parameters for [MemPeerStoreFactory]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemPeerStoreConfig {
-    /// The interval in seconds at which expired infos will be pruned.
-    /// Default: 10s.
-    pub prune_interval_secs: u32,
-}
-
-impl Default for MemPeerStoreConfig {
-    fn default() -> Self {
-        Self {
-            prune_interval_secs: 10,
+    impl Default for MemPeerStoreConfig {
+        fn default() -> Self {
+            Self {
+                prune_interval_s: 10,
+            }
         }
     }
-}
 
-impl ModConfig for MemPeerStoreConfig {}
+    impl MemPeerStoreConfig {
+        /// Get the prune interval as a [std::time::Duration].
+        pub fn prune_interval(&self) -> std::time::Duration {
+            std::time::Duration::from_secs(self.prune_interval_s as u64)
+        }
+    }
 
-impl MemPeerStoreConfig {
-    fn prune_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.prune_interval_secs as u64)
+    /// Module-level configuration for MemPeerStore.
+    #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MemPeerStoreModConfig {
+        /// MemPeerStore configuration.
+        pub mem_peer_store: MemPeerStoreConfig,
     }
 }
+
+use config::*;
 
 /// A production-ready memory-based peer store factory.
 ///
@@ -54,9 +64,7 @@ impl MemPeerStoreFactory {
 
 impl PeerStoreFactory for MemPeerStoreFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config
-            .add_default_module_config::<MemPeerStoreConfig>(MOD_NAME.into())?;
-        Ok(())
+        config.set_module_config(&MemPeerStoreModConfig::default())
     }
 
     fn create(
@@ -64,10 +72,10 @@ impl PeerStoreFactory for MemPeerStoreFactory {
         builder: Arc<builder::Builder>,
     ) -> BoxFut<'static, K2Result<DynPeerStore>> {
         Box::pin(async move {
-            let config = builder
-                .config
-                .get_module_config::<MemPeerStoreConfig>(MOD_NAME)?;
-            let out: DynPeerStore = Arc::new(MemPeerStore::new(config));
+            let config: MemPeerStoreModConfig =
+                builder.config.get_module_config()?;
+            let out: DynPeerStore =
+                Arc::new(MemPeerStore::new(config.mem_peer_store));
             Ok(out)
         })
     }
