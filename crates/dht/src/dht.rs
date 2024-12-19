@@ -18,7 +18,8 @@ pub enum DhtSnapshotNextAction {
     Identical,
     CannotCompare,
     NewSnapshot(DhtSnapshot),
-    HashList(DhtSnapshot, Vec<OpId>),
+    NewSnapshotAndHashList(DhtSnapshot, Vec<OpId>),
+    HashList(Vec<OpId>),
 }
 
 impl Dht {
@@ -73,10 +74,22 @@ impl Dht {
 
     pub async fn handle_snapshot(
         &self,
-        their_snapshot: DhtSnapshot,
+        their_snapshot: &DhtSnapshot,
+        our_previous_snapshot: Option<DhtSnapshot>,
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<DhtSnapshotNextAction> {
+        let is_final = matches!(
+            our_previous_snapshot,
+            Some(
+                DhtSnapshot::DiscSectorDetails { .. }
+                    | DhtSnapshot::RingSectorDetails { .. }
+            )
+        );
+
+        // Check what snapshot we've been sent and compute a matching snapshot.
+        // In the case where we've already produced a most details snapshot type, we can use the
+        // already computed snapshot.
         let our_snapshot = match &their_snapshot {
             DhtSnapshot::Minimal { .. } => {
                 self.snapshot_minimal(arc_set, store.clone()).await?
@@ -86,23 +99,72 @@ impl Dht {
             }
             DhtSnapshot::DiscSectorDetails {
                 disc_sector_hashes, ..
-            } => {
-                self.snapshot_disc_sector_details(
-                    disc_sector_hashes.keys().cloned().collect(),
-                    arc_set,
-                    store.clone(),
-                )
-                .await?
-            }
+            } => match our_previous_snapshot {
+                Some(snapshot @ DhtSnapshot::DiscSectorDetails { .. }) => {
+                    #[cfg(test)]
+                    {
+                        let would_have_used = self
+                            .snapshot_disc_sector_details(
+                                disc_sector_hashes.keys().cloned().collect(),
+                                arc_set,
+                                store.clone(),
+                            )
+                            .await?;
+
+                        assert_eq!(would_have_used, snapshot);
+                    }
+
+                    // There is no value in recomputing if we already have a matching snapshot.
+                    // The disc sector details only requires a list of mismatched sectors which
+                    // we already had when we computed the previous detailed snapshot.
+                    // What we were missing previously was the detailed snapshot from the other
+                    // party, which we now have and can use to produce a hash list.
+                    snapshot
+                }
+                _ => {
+                    self.snapshot_disc_sector_details(
+                        disc_sector_hashes.keys().cloned().collect(),
+                        arc_set,
+                        store.clone(),
+                    )
+                    .await?
+                }
+            },
             DhtSnapshot::RingSectorDetails {
                 ring_sector_hashes, ..
-            } => self.snapshot_ring_sector_details(
-                ring_sector_hashes.keys().cloned().collect(),
-                arc_set,
-            )?,
+            } => {
+                match our_previous_snapshot {
+                    Some(snapshot @ DhtSnapshot::RingSectorDetails { .. }) => {
+                        #[cfg(test)]
+                        {
+                            let would_have_used = self
+                                .snapshot_ring_sector_details(
+                                    ring_sector_hashes
+                                        .keys()
+                                        .cloned()
+                                        .collect(),
+                                    arc_set,
+                                )?;
+
+                            assert_eq!(would_have_used, snapshot);
+                        }
+
+                        // No need to recompute, see the comment above for DiscSectorDetails
+                        snapshot
+                    }
+                    _ => self.snapshot_ring_sector_details(
+                        ring_sector_hashes.keys().cloned().collect(),
+                        arc_set,
+                    )?,
+                }
+            }
         };
 
-        match our_snapshot.compare(&their_snapshot) {
+        // Now compare the snapshots to determine what to do next.
+        // We will either send a more detailed snapshot back or a list of possible mismatched op
+        // hashes. In the case that we produce a most detailed snapshot type, we can send the list
+        // of op hashes at the same time.
+        match our_snapshot.compare(their_snapshot) {
             SnapshotDiff::Identical => Ok(DhtSnapshotNextAction::Identical),
             SnapshotDiff::CannotCompare => {
                 Ok(DhtSnapshotNextAction::CannotCompare)
@@ -157,7 +219,14 @@ impl Dht {
                     }
                 }
 
-                Ok(DhtSnapshotNextAction::HashList(our_snapshot, out))
+                Ok(if is_final {
+                    DhtSnapshotNextAction::HashList(out)
+                } else {
+                    DhtSnapshotNextAction::NewSnapshotAndHashList(
+                        our_snapshot,
+                        out,
+                    )
+                })
             }
             SnapshotDiff::RingMismatches(mismatched_rings) => {
                 Ok(DhtSnapshotNextAction::NewSnapshot(
@@ -203,7 +272,14 @@ impl Dht {
                     }
                 }
 
-                Ok(DhtSnapshotNextAction::HashList(our_snapshot, out))
+                Ok(if is_final {
+                    DhtSnapshotNextAction::HashList(out)
+                } else {
+                    DhtSnapshotNextAction::NewSnapshotAndHashList(
+                        our_snapshot,
+                        out,
+                    )
+                })
             }
         }
     }
