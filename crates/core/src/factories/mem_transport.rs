@@ -4,15 +4,6 @@ use kitsune2_api::{config::*, transport::*, *};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-const MOD_NAME: &str = "MemTransport";
-
-/// Configuration parameters for [MemTransportFactory].
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemTransportConfig {}
-
-impl ModConfig for MemTransportConfig {}
-
 /// The core stub transport implementation provided by Kitsune2.
 /// This is NOT a production module. It is for testing only.
 /// It will only establish "connections" within the same process.
@@ -28,23 +19,18 @@ impl MemTransportFactory {
 }
 
 impl TransportFactory for MemTransportFactory {
-    fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config
-            .add_default_module_config::<MemTransportConfig>(MOD_NAME.into())?;
+    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        _builder: Arc<builder::Builder>,
         handler: DynTxHandler,
     ) -> BoxFut<'static, K2Result<DynTransport>> {
         Box::pin(async move {
             let handler = TxImpHnd::new(handler);
-            let config = builder
-                .config
-                .get_module_config::<MemTransportConfig>(MOD_NAME)?;
-            let imp = MemTransport::create(config, handler.clone()).await;
+            let imp = MemTransport::create(handler.clone()).await;
             Ok(DefaultTransport::create(&handler, imp))
         })
     }
@@ -63,10 +49,7 @@ impl Drop for MemTransport {
 }
 
 impl MemTransport {
-    pub async fn create(
-        _config: MemTransportConfig,
-        handler: Arc<TxImpHnd>,
-    ) -> DynTxImp {
+    pub async fn create(handler: Arc<TxImpHnd>) -> DynTxImp {
         let mut listener = get_stat().listen();
         let this_url = listener.url();
         handler.new_listening_address(this_url.clone());

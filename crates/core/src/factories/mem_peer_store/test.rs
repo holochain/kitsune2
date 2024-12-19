@@ -3,7 +3,12 @@ use kitsune2_test_utils::agent::*;
 
 #[inline(always)]
 fn create() -> Inner {
-    Inner::new(MemPeerStoreConfig::default(), std::time::Instant::now())
+    Inner::new(
+        MemPeerStoreConfig {
+            prune_interval_s: 10,
+        },
+        std::time::Instant::now(),
+    )
 }
 
 const AGENT_1: AgentId = AgentId(id::Id(bytes::Bytes::from_static(b"agent1")));

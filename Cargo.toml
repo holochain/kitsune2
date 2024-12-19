@@ -54,6 +54,8 @@ futures = "0.3"
 tempfile = "3.14.0"
 # kitsune2 internally uses a mix of std::io::Error and thiserror derivation.
 thiserror = "2.0.3"
+# ureq is used in the bootstrap client module.
+ureq = "2.10.1"
 # url validation used by the api crate.
 url = "2.5.4"
 # kitsune2 uses tracing to log events. A consumer can choose any subscriber
@@ -71,8 +73,8 @@ prost-build = "0.13.3"
 # Please be careful to only include them in dev dependencies or move them
 # above this section.
 # --- dev-dependencies ---
+kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
 kitsune2_memory = { path = "crates/memory" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
-ureq = "2.10.1"
 tracing-subscriber = "0.3"

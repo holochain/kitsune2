@@ -19,9 +19,16 @@ prost = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["sync", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tracing = { workspace = true }
+ureq = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true, default-features = false, features = [
+  "http1",
+  "tokio",
+] }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
 kitsune2_test_utils = { workspace = true }
+rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

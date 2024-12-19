@@ -2,9 +2,9 @@
 # tasks both in automation and locally until we figure out better
 # release automation tools.
 
-.PHONY: all fmt clippy doc build test
+.PHONY: all static-toml fmt clippy doc build test
 
-all: fmt clippy doc test
+all: static-toml fmt clippy doc build test
 
 static-toml:
 	taplo format --check

@@ -5,15 +5,6 @@ use std::sync::{Arc, Mutex, Weak};
 
 mod protocol;
 
-const MOD_NAME: &str = "CoreSpace";
-
-/// Configuration parameters for [CoreSpaceFactory].
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoreSpaceConfig {}
-
-impl ModConfig for CoreSpaceConfig {}
-
 /// The core space implementation provided by Kitsune2.
 /// You probably will have no reason to use something other than this.
 /// This abstraction is mainly here for testing purposes.
@@ -29,8 +20,7 @@ impl CoreSpaceFactory {
 }
 
 impl SpaceFactory for CoreSpaceFactory {
-    fn default_config(&self, config: &mut Config) -> K2Result<()> {
-        config.add_default_module_config::<CoreSpaceConfig>(MOD_NAME.into())?;
+    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
         Ok(())
     }
 
@@ -42,9 +32,6 @@ impl SpaceFactory for CoreSpaceFactory {
         tx: transport::DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
-            let config = builder
-                .config
-                .get_module_config::<CoreSpaceConfig>(MOD_NAME)?;
             let peer_store = builder.peer_store.create(builder.clone()).await?;
             let inner = Arc::new(Mutex::new(InnerData {
                 local_agent_map: std::collections::HashMap::new(),
@@ -55,7 +42,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     space.clone(),
                     Arc::new(TxHandlerTranslator(handler, this.clone())),
                 );
-                CoreSpace::new(config, space, tx, peer_store, inner)
+                CoreSpace::new(space, tx, peer_store, inner)
             });
             Ok(out)
         })
@@ -117,7 +104,6 @@ impl std::fmt::Debug for CoreSpace {
 
 impl CoreSpace {
     pub fn new(
-        _config: CoreSpaceConfig,
         space: SpaceId,
         tx: transport::DynTransport,
         peer_store: peer_store::DynPeerStore,
