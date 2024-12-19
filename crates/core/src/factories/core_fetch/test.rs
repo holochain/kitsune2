@@ -383,14 +383,14 @@ fn back_off() {
     let mut back_off_list = BackOffList::new(back_off_interval_ms, 2);
     let agent_id = random_agent_id();
     back_off_list.back_off_agent(&agent_id);
-    assert!(back_off_list.is_agent_backing_off(&agent_id));
+    assert!(back_off_list.is_agent_on_back_off(&agent_id));
 
     std::thread::sleep(Duration::from_millis(back_off_interval_ms + 1));
 
-    assert!(!back_off_list.is_agent_backing_off(&agent_id));
+    assert!(!back_off_list.is_agent_on_back_off(&agent_id));
 
     back_off_list.back_off_agent(&agent_id);
-    assert!(back_off_list.is_agent_backing_off(&agent_id));
+    assert!(back_off_list.is_agent_on_back_off(&agent_id));
 
     std::thread::sleep(Duration::from_millis(back_off_interval_ms + 1));
 }
@@ -447,7 +447,7 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
                     .lock()
                     .unwrap()
                     .back_off_list
-                    .is_agent_backing_off(&agent_id)
+                    .is_agent_on_back_off(&agent_id)
             {
                 break;
             }
@@ -537,7 +537,7 @@ async fn add_ops_for_multiple_unresponsive_agents() {
                     &mut fetch.state.lock().unwrap().back_off_list;
                 if expected_agents
                     .iter()
-                    .all(|agent| back_off_list.is_agent_backing_off(agent))
+                    .all(|agent| back_off_list.is_agent_on_back_off(agent))
                 {
                     break;
                 }
@@ -579,7 +579,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
         let mut lock = fetch.state.lock().unwrap();
         lock.back_off_list.back_off_agent(&agent_id);
 
-        assert!(lock.back_off_list.is_agent_backing_off(&agent_id));
+        assert!(lock.back_off_list.is_agent_on_back_off(&agent_id));
     }
 
     tokio::time::sleep(Duration::from_millis(config.back_off_interval_ms + 1))

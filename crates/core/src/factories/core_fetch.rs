@@ -245,7 +245,7 @@ impl CoreFetch {
                     continue;
                 }
 
-                lock.back_off_list.is_agent_backing_off(&agent_id)
+                lock.back_off_list.is_agent_on_back_off(&agent_id)
             };
 
             // Send request if agent is not on back off list.
@@ -377,7 +377,7 @@ impl BackOffList {
         }
     }
 
-    pub fn is_agent_backing_off(&mut self, agent_id: &AgentId) -> bool {
+    pub fn is_agent_on_back_off(&mut self, agent_id: &AgentId) -> bool {
         match self.state.get(agent_id) {
             Some((instant, exponent)) => {
                 instant.elapsed().as_millis()
