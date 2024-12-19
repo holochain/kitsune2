@@ -426,6 +426,7 @@ checksum = "4a3daa8e81a3963a60642bcc1f90a670680bd4a77535faa384e9d1c79d620871"
 dependencies = [
  "curve25519-dalek",
  "ed25519",
+ "rand_core",
  "serde",
  "sha2",
  "subtle",
@@ -966,6 +967,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "kitsune2_api",
+ "kitsune2_test_utils",
  "prost",
  "rand",
  "serde",
@@ -1002,6 +1004,9 @@ dependencies = [
 name = "kitsune2_test_utils"
 version = "0.1.0-nopublish"
 dependencies = [
+ "bytes",
+ "futures",
+ "kitsune2_api",
  "tracing",
  "tracing-subscriber",
 ]

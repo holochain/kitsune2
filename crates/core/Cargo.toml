@@ -16,11 +16,12 @@ ed25519-dalek = { workspace = true }
 futures = { workspace = true }
 kitsune2_api = { workspace = true }
 prost = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
-rand = { workspace = true }
+kitsune2_test_utils = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
