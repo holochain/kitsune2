@@ -5,20 +5,24 @@ use std::sync::Arc;
 
 /// Handler for events coming out of Kitsune2 such as messages from peers.
 pub trait SpaceHandler: 'static + Send + Sync + std::fmt::Debug {
-    /// We have received an incomming message from a remote peer.
-    ///
-    /// If this callback handler returns an `Err` response, the connection
-    /// will be closed immediately.
+    /// The sync handler for receiving notifications sent by a remote
+    /// peer in reference to a particular space. If this callback returns
+    /// an error, then the connection which sent the message will be closed.
     //
     // Note: this is the minimal low-level messaging unit. We can decide
     //       later if we want to handle request/response tracking in
     //       kitsune itself as a convenience or if users of this lib
     //       should have to implement that if they want it.
-    fn incoming_message(
+    fn recv_notify(
         &self,
-        peer: AgentId,
+        to_agent: AgentId,
+        from_agent: AgentId,
+        space: SpaceId,
         data: bytes::Bytes,
-    ) -> K2Result<()>;
+    ) -> K2Result<()> {
+        drop((to_agent, from_agent, space, data));
+        Ok(())
+    }
 }
 
 /// Trait-object [SpaceHandler].
@@ -56,8 +60,12 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     //       later if we want to handle request/response tracking in
     //       kitsune itself as a convenience or if users of this lib
     //       should have to implement that if they want it.
-    fn send_message(&self, peer: AgentId, data: bytes::Bytes)
-        -> BoxFut<'_, ()>;
+    fn send_notify(
+        &self,
+        to_agent: AgentId,
+        from_agent: AgentId,
+        data: bytes::Bytes,
+    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Space].
@@ -75,6 +83,7 @@ pub trait SpaceFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<builder::Builder>,
         handler: DynSpaceHandler,
         space: SpaceId,
+        tx: transport::DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>>;
 }
 
