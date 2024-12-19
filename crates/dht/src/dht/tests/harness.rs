@@ -118,7 +118,12 @@ impl DhtSyncHarness {
             .await?;
         match other
             .dht
-            .handle_snapshot(initial_snapshot, &arc_set, other.store.clone())
+            .handle_snapshot(
+                &initial_snapshot,
+                None,
+                &arc_set,
+                other.store.clone(),
+            )
             .await?
         {
             DhtSnapshotNextAction::Identical => Ok(true),
@@ -143,7 +148,12 @@ impl DhtSyncHarness {
         // Send it to the other agent and have them diff against it
         let outcome = other
             .dht
-            .handle_snapshot(initial_snapshot, &arc_set, other.store.clone())
+            .handle_snapshot(
+                &initial_snapshot,
+                None,
+                &arc_set,
+                other.store.clone(),
+            )
             .await?;
 
         match outcome {
@@ -177,7 +187,8 @@ impl DhtSyncHarness {
                     }
                 }
             }
-            DhtSnapshotNextAction::HashList(_, _) => {
+            DhtSnapshotNextAction::NewSnapshotAndHashList(_, _)
+            | DhtSnapshotNextAction::HashList(_) => {
                 panic!(
                     "A hash list cannot be produced from a minimal snapshot"
                 );
@@ -200,10 +211,10 @@ impl DhtSyncHarness {
         // coming back to us
         let outcome = self
             .dht
-            .handle_snapshot(snapshot, arc_set, self.store.clone())
+            .handle_snapshot(&snapshot, None, arc_set, self.store.clone())
             .await?;
 
-        let snapshot = match outcome {
+        let our_details_snapshot = match outcome {
             DhtSnapshotNextAction::NewSnapshot(new_snapshot) => new_snapshot,
             DhtSnapshotNextAction::Identical => {
                 // This can't happen in tests but in a real implementation it's possible that
@@ -211,7 +222,8 @@ impl DhtSyncHarness {
                 // a shortcut and we can stop syncing
                 return Ok(SyncWithOutcome::DiscoveredInSync);
             }
-            DhtSnapshotNextAction::HashList(_, _)
+            DhtSnapshotNextAction::NewSnapshotAndHashList(_, _)
+            | DhtSnapshotNextAction::HashList(_)
             | DhtSnapshotNextAction::CannotCompare => {
                 // A real implementation would treat these as errors because they are logic
                 // errors
@@ -220,7 +232,7 @@ impl DhtSyncHarness {
         };
 
         // At this point, the snapshot must be a disc details snapshot
-        match snapshot {
+        match our_details_snapshot {
             DhtSnapshot::DiscSectorDetails { .. } => {}
             _ => panic!("Expected a DiscSectorDetails snapshot"),
         }
@@ -228,18 +240,25 @@ impl DhtSyncHarness {
         // Now we need to ask the other agent to diff against this details snapshot
         let outcome = other
             .dht
-            .handle_snapshot(snapshot, arc_set, other.store.clone())
+            .handle_snapshot(
+                &our_details_snapshot,
+                None,
+                arc_set,
+                other.store.clone(),
+            )
             .await?;
 
         let (snapshot, hash_list_from_other) = match outcome {
-            DhtSnapshotNextAction::HashList(new_snapshot, hash_list) => {
-                (new_snapshot, hash_list)
-            }
+            DhtSnapshotNextAction::NewSnapshotAndHashList(
+                new_snapshot,
+                hash_list,
+            ) => (new_snapshot, hash_list),
             DhtSnapshotNextAction::Identical => {
                 // Nothing to do, the agents are in sync
                 return Ok(SyncWithOutcome::InSync);
             }
             DhtSnapshotNextAction::NewSnapshot(_)
+            | DhtSnapshotNextAction::HashList(_)
             | DhtSnapshotNextAction::CannotCompare => {
                 // A real implementation would treat these as errors because they are logic
                 // errors
@@ -257,18 +276,22 @@ impl DhtSyncHarness {
         // back our ops
         let outcome = self
             .dht
-            .handle_snapshot(snapshot, arc_set, self.store.clone())
+            .handle_snapshot(
+                &snapshot,
+                Some(our_details_snapshot),
+                arc_set,
+                self.store.clone(),
+            )
             .await?;
 
-        // TODO leaving duplicated code here, there's some inefficiency here that actually needs
-        //      resolving
         let hash_list_from_self = match outcome {
-            DhtSnapshotNextAction::HashList(_, hash_list) => hash_list,
+            DhtSnapshotNextAction::HashList(hash_list) => hash_list,
             DhtSnapshotNextAction::Identical => {
                 // Nothing to do, the agents are in sync
                 return Ok(SyncWithOutcome::InSync);
             }
             DhtSnapshotNextAction::NewSnapshot(_)
+            | DhtSnapshotNextAction::NewSnapshotAndHashList(_, _)
             | DhtSnapshotNextAction::CannotCompare => {
                 // A real implementation would treat these as errors because they are logic
                 // errors
@@ -299,9 +322,9 @@ impl DhtSyncHarness {
         &mut self,
         other: &mut Self,
         arc_set: &ArcSet,
-        snapshot: DhtSnapshot,
+        other_details_snapshot: DhtSnapshot,
     ) -> K2Result<SyncWithOutcome> {
-        match snapshot {
+        match other_details_snapshot {
             DhtSnapshot::RingSectorDetails { .. } => {}
             _ => panic!("Expected a RingSectorDetails snapshot"),
         }
@@ -310,7 +333,12 @@ impl DhtSyncHarness {
         // have been sent to us
         let outcome = self
             .dht
-            .handle_snapshot(snapshot, arc_set, self.store.clone())
+            .handle_snapshot(
+                &other_details_snapshot,
+                None,
+                arc_set,
+                self.store.clone(),
+            )
             .await?;
 
         let (snapshot, hash_list_from_self) = match outcome {
@@ -318,10 +346,12 @@ impl DhtSyncHarness {
                 // Nothing to do, the agents are in sync
                 return Ok(SyncWithOutcome::InSync);
             }
-            DhtSnapshotNextAction::HashList(new_snapshot, hash_list) => {
-                (new_snapshot, hash_list)
-            }
+            DhtSnapshotNextAction::NewSnapshotAndHashList(
+                new_snapshot,
+                hash_list,
+            ) => (new_snapshot, hash_list),
             DhtSnapshotNextAction::CannotCompare
+            | DhtSnapshotNextAction::HashList(_)
             | DhtSnapshotNextAction::NewSnapshot(_) => {
                 panic!("Unexpected outcome: {:?}", outcome);
             }
@@ -337,17 +367,22 @@ impl DhtSyncHarness {
         // produce a hash list for us
         let outcome = other
             .dht
-            .handle_snapshot(snapshot, arc_set, other.store.clone())
+            .handle_snapshot(
+                &snapshot,
+                Some(other_details_snapshot),
+                arc_set,
+                other.store.clone(),
+            )
             .await?;
 
-        // TODO same problem here, we don't need to have re-computed the snapshot
         let hash_list_from_other = match outcome {
             DhtSnapshotNextAction::Identical => {
                 // Nothing to do, the agents are in sync
                 return Ok(SyncWithOutcome::InSync);
             }
-            DhtSnapshotNextAction::HashList(_, hash_list) => hash_list,
+            DhtSnapshotNextAction::HashList(hash_list) => hash_list,
             DhtSnapshotNextAction::CannotCompare
+            | DhtSnapshotNextAction::NewSnapshotAndHashList(_, _)
             | DhtSnapshotNextAction::NewSnapshot(_) => {
                 panic!("Unexpected outcome: {:?}", outcome);
             }
