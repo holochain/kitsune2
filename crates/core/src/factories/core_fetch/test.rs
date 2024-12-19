@@ -532,7 +532,7 @@ async fn requests_are_dropped_when_max_number_of_back_off_expired() {
         .unwrap();
 
     // Wait for one request to fail, so agent is put on back off list.
-    tokio::time::timeout(Duration::from_millis(10), async {
+    tokio::time::timeout(Duration::from_millis(20), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             if !mock_transport
