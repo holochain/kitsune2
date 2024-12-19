@@ -64,25 +64,30 @@ const MOD_NAME: &str = "Fetch";
 
 /// CoreFetch configuration types.
 pub mod config {
+    use std::time::Duration;
+
     /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct CoreFetchConfig {
         /// How many parallel op fetch requests can be made at once. Default: 2.  
         pub parallel_request_count: u8,
-        /// Duration in ms to keep an unresponsive agent on the back off list. Default: 20_000.
-        pub back_off_interval_ms: u64,
-        /// Maximum exponent for back off interval. Back off duration is calculated
-        /// back_off_interval * 2^back_off_exponent. Default: 4.
-        pub max_back_off_exponent: u32,
+        /// Duration of first interval to back off an unresponsive agent. Default: 20 s.
+        pub first_back_off_interval: Duration,
+        /// Duration of last interval to back off an unresponsive agent. Default: 10 min.
+        pub last_back_off_interval: Duration,
+        /// Number of back off intervals. Default: 4.
+        pub num_back_off_intervals: usize,
     }
 
     impl Default for CoreFetchConfig {
+        // Maximum back off is 11:40 min.
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                back_off_interval_ms: 20_000,
-                max_back_off_exponent: 4,
+                first_back_off_interval: Duration::from_secs(20),
+                last_back_off_interval: Duration::from_secs(60 * 10),
+                num_back_off_intervals: 4,
             }
         }
     }
@@ -213,8 +218,9 @@ impl CoreFetch {
         let state = Arc::new(Mutex::new(State {
             requests: HashSet::new(),
             back_off_list: BackOffList::new(
-                config.back_off_interval_ms,
-                config.max_back_off_exponent,
+                config.first_back_off_interval,
+                config.last_back_off_interval,
+                config.num_back_off_intervals,
             ),
         }));
 
@@ -306,13 +312,12 @@ impl CoreFetch {
                         lock.back_off_list.back_off_agent(&agent_id);
 
                         // If max back off interval has expired for the agent,
-                        // give up on trequesting his op id from them.
+                        // give up on requesting ops from them.
                         if lock
                             .back_off_list
-                            .has_max_back_off_expired(&agent_id)
+                            .has_last_back_off_expired(&agent_id)
                         {
-                            lock.requests
-                                .remove(&(op_id.clone(), agent_id.clone()));
+                            lock.requests.retain(|(_, a)| *a != agent_id);
                         }
                     }
                 }
@@ -368,16 +373,22 @@ impl Drop for CoreFetch {
 #[derive(Debug)]
 struct BackOffList {
     state: HashMap<AgentId, BackOff>,
-    back_off_interval: u64,
-    max_back_off_exponent: u32,
+    first_back_off_interval: Duration,
+    last_back_off_interval: Duration,
+    num_back_off_intervals: usize,
 }
 
 impl BackOffList {
-    pub fn new(back_off_interval: u64, max_back_off_exponent: u32) -> Self {
+    pub fn new(
+        first_back_off_interval: Duration,
+        last_back_off_interval: Duration,
+        num_back_off_intervals: usize,
+    ) -> Self {
         Self {
             state: HashMap::new(),
-            back_off_interval,
-            max_back_off_exponent,
+            first_back_off_interval,
+            last_back_off_interval,
+            num_back_off_intervals,
         }
     }
 
@@ -387,7 +398,11 @@ impl BackOffList {
                 o.get_mut().back_off();
             }
             Entry::Vacant(v) => {
-                v.insert(BackOff::new());
+                v.insert(BackOff::new(
+                    self.first_back_off_interval,
+                    self.last_back_off_interval,
+                    self.num_back_off_intervals,
+                ));
             }
         }
     }
@@ -399,8 +414,11 @@ impl BackOffList {
         }
     }
 
-    pub fn has_max_back_off_expired(&self, agent_id: &AgentId) -> bool {
-        true
+    pub fn has_last_back_off_expired(&self, agent_id: &AgentId) -> bool {
+        match self.state.get(agent_id) {
+            Some(back_off) => back_off.has_last_interval_expired(),
+            None => false,
+        }
     }
 
     pub fn remove_agent(&mut self, agent_id: &AgentId) {
@@ -413,30 +431,35 @@ struct BackOff {
     back_off: backon::ExponentialBackoff,
     current_interval: Duration,
     interval_start: Instant,
-    expired: bool,
+    is_last_interval: bool,
 }
 
 impl BackOff {
-    pub fn new() -> Self {
+    pub fn new(
+        first_back_off_interval: Duration,
+        last_back_off_interval: Duration,
+        num_back_off_intervals: usize,
+    ) -> Self {
         let mut back_off = backon::ExponentialBuilder::default()
             .with_factor(2.0)
-            .with_min_delay(Duration::from_millis(10))
+            .with_min_delay(first_back_off_interval)
+            .with_max_delay(last_back_off_interval)
+            .with_max_times(num_back_off_intervals)
             .build();
         let current_interval = back_off
             .next()
             .expect("back off must have at least one interval");
-        println!("b {back_off:?}");
         Self {
             back_off,
             current_interval,
             interval_start: Instant::now(),
-            expired: false,
+            is_last_interval: false,
         }
     }
 
     pub fn back_off(&mut self) {
         match self.back_off.next() {
-            None => self.expired = true,
+            None => self.is_last_interval = true,
             Some(interval) => {
                 self.interval_start = Instant::now();
                 self.current_interval = interval;
@@ -447,12 +470,11 @@ impl BackOff {
     pub fn is_on_back_off(&self) -> bool {
         self.interval_start.elapsed() < self.current_interval
     }
-}
 
-#[test]
-fn back_off_sanity() {
-    let bo = BackOff::new();
-    println!("bo {bo:?}");
+    pub fn has_last_interval_expired(&self) -> bool {
+        self.is_last_interval
+            && self.interval_start.elapsed() > self.current_interval
+    }
 }
 
 #[cfg(test)]
