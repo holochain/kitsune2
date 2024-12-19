@@ -5,24 +5,46 @@ use crate::PartitionedHashes;
 use kitsune2_api::{DynOpStore, K2Result, OpId, StoredOp, Timestamp};
 use snapshot::{DhtSnapshot, SnapshotDiff};
 
-mod snapshot;
+pub mod snapshot;
 #[cfg(test)]
 mod tests;
 
+/// The top-level DHT model.
+///
+/// Represents a distributed hash table (DHT) model that can be compared with other instances of
+/// itself to determine if they are in sync and which regions to sync if they are not.
 pub struct Dht {
     partition: PartitionedHashes,
 }
 
+/// The next action to take after comparing two DHT snapshots.
 #[derive(Debug)]
 pub enum DhtSnapshotNextAction {
+    /// No further action, these DHTs are in sync.
     Identical,
+    /// The two DHT snapshots cannot be compared.
+    ///
+    /// This can happen if the time slices of the two DHTs are not aligned or one side is following
+    /// a different comparison flow to what we're expecting.
     CannotCompare,
+    /// The two DHT snapshots are different, and we need to drill down to the next level of detail.
     NewSnapshot(DhtSnapshot),
+    /// The two DHT snapshots are different, and we have drilled down to the most detailed level.
+    ///
+    /// The yielded op hashes should be checked by the other party and any missing ops should be
+    /// fetched from us.
     NewSnapshotAndHashList(DhtSnapshot, Vec<OpId>),
+    /// The two DHT snapshots are different, and we have drilled down to the most detailed level.
+    ///
+    /// This is the final step in the comparison process. The yielded op hashes should be fetched
+    /// from the other party. No further snapshots are required for this comparison.
     HashList(Vec<OpId>),
 }
 
 impl Dht {
+    /// Create a new DHT from an op store.
+    ///
+    /// Creates the inner [PartitionedHashes] using the store.
     pub async fn try_from_store(
         current_time: Timestamp,
         store: DynOpStore,
@@ -37,10 +59,19 @@ impl Dht {
         })
     }
 
+    /// Get the next time at which the DHT model should be updated.
+    ///
+    /// When this time is reached, [Dht::update] should be called.
     pub fn next_update_at(&self) -> Timestamp {
         self.partition.next_update_at()
     }
 
+    /// Update the DHT model.
+    ///
+    /// This recomputes the full and partial time slices to be accurate for the provided
+    /// `current_time`.
+    ///
+    /// See also [PartitionedHashes::update] and [PartitionedTime::update](crate::time::PartitionedTime::update).
     pub async fn update(
         &mut self,
         current_time: Timestamp,
@@ -49,6 +80,12 @@ impl Dht {
         self.partition.update(store, current_time).await
     }
 
+    /// Inform the DHT model that some ops have been stored.
+    ///
+    /// This will figure out where the incoming ops belong in the DHT model based on their hash
+    /// and timestamp.
+    ///
+    /// See also [PartitionedHashes::inform_ops_stored] for more details.
     pub async fn inform_ops_stored(
         &mut self,
         store: DynOpStore,
@@ -57,6 +94,11 @@ impl Dht {
         self.partition.inform_ops_stored(store, stored_ops).await
     }
 
+    /// Get a minimal snapshot of the DHT model.
+    ///
+    /// This is the entry point for comparing state with another DHT model. A minimal snapshot may
+    /// be enough to check that two DHTs are in sync. The receiver should call [Dht::handle_snapshot]
+    /// which will determine if the two DHTs are in sync or if a more detailed snapshot is required.
     pub async fn snapshot_minimal(
         &self,
         arc_set: &ArcSet,
@@ -72,6 +114,36 @@ impl Dht {
         })
     }
 
+    /// Handle a snapshot from another DHT model.
+    ///
+    /// This is a two-step process. First the type of the incoming snapshot is checked and a
+    /// snapshot of the same type is computed. Secondly, the two snapshots are compared to determine
+    /// what action should be taken next.
+    ///
+    /// The state flow is as follows:
+    /// - If the two snapshots are identical, the function will return [DhtSnapshotNextAction::Identical].
+    /// - If the two snapshots cannot be compared, the function will return [DhtSnapshotNextAction::CannotCompare].
+    ///   This can happen if the time slices of the two DHTs are not aligned or one side is following
+    ///   a different flow to what we're expecting.
+    /// - If the snapshots are different, the function will return [DhtSnapshotNextAction::NewSnapshot]
+    ///   with a more detailed snapshot of the DHT model.
+    /// - When the most detailed snapshot type is reached, the function will return [DhtSnapshotNextAction::NewSnapshotAndHashList]
+    /// - The new snapshot from [DhtSnapshotNextAction::NewSnapshotAndHashList] should be sent to the
+    ///   other party so that they can compare it with their own snapshot and determine which op hashes
+    ///   they need to fetch.
+    /// - On the final comparison step, the function will return [DhtSnapshotNextAction::HashList]
+    ///   with a list of op hashes. This list should be sent to the other party so that they can fetch
+    ///   any missing ops.
+    ///
+    /// Notice that the final step would require re-computing the most detailed snapshot type. This
+    /// is expensive. To avoid having to recompute a snapshot we've already computed, the caller
+    /// MUST capture the snapshot from [DhtSnapshotNextAction::NewSnapshot] when it contains either
+    /// [DhtSnapshot::DiscSectorDetails] or [DhtSnapshot::RingSectorDetails]. This snapshot can be
+    /// provided back to this function in the `our_previous_snapshot` parameter. In all other cases,
+    /// the caller should provide `None` for `our_previous_snapshot`.
+    ///
+    /// The `arc_set` parameter is used to determine which arcs are relevant to the DHT model. This
+    /// should be the [ArcSet::intersection] of the arc sets of the two DHT models to be compared.
     pub async fn handle_snapshot(
         &self,
         their_snapshot: &DhtSnapshot,
@@ -289,10 +361,8 @@ impl Dht {
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<DhtSnapshot> {
-        let (disc_sector_top_hashes, disc_boundary) = self
-            .partition
-            .full_time_slice_sector_hashes(arc_set, store)
-            .await?;
+        let (disc_sector_top_hashes, disc_boundary) =
+            self.partition.disc_sector_hashes(arc_set, store).await?;
 
         Ok(DhtSnapshot::DiscSectors {
             disc_sector_top_hashes,
@@ -308,11 +378,7 @@ impl Dht {
     ) -> K2Result<DhtSnapshot> {
         let (disc_sector_hashes, disc_boundary) = self
             .partition
-            .full_time_slice_sector_details(
-                mismatched_sector_ids,
-                arc_set,
-                store,
-            )
+            .disc_sector_sector_details(mismatched_sector_ids, arc_set, store)
             .await?;
 
         Ok(DhtSnapshot::DiscSectorDetails {
@@ -326,9 +392,8 @@ impl Dht {
         mismatched_rings: Vec<u32>,
         arc_set: &ArcSet,
     ) -> K2Result<DhtSnapshot> {
-        let (ring_sector_hashes, disc_boundary) = self
-            .partition
-            .partial_time_slice_details(mismatched_rings, arc_set)?;
+        let (ring_sector_hashes, disc_boundary) =
+            self.partition.ring_details(mismatched_rings, arc_set)?;
 
         Ok(DhtSnapshot::RingSectorDetails {
             ring_sector_hashes,

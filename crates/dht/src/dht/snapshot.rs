@@ -1,6 +1,16 @@
+//! A snapshot of the DHT state at a given point in time.
+//!
+//! This module is public because its types need to be communicated between DHT instances, but it is
+//! largely opaque to the user. See [crate::dht::Dht::snapshot_minimal] and
+//! [crate::dht::Dht::handle_snapshot] for more information about using this module.
+
 use kitsune2_api::Timestamp;
 use std::collections::{HashMap, HashSet};
 
+/// A snapshot of the DHT state at a given point in time.
+///
+/// This is largely opaque to the user of the [crate::dht::Dht] model. It is intended to be sent
+/// between nodes to compare their DHT states and compared with [DhtSnapshot::compare].
 #[derive(Debug, Eq, PartialEq)]
 pub enum DhtSnapshot {
     /// The default, smallest snapshot type.
@@ -18,13 +28,18 @@ pub enum DhtSnapshot {
     /// are relevant to the pair of nodes that are comparing snapshots. Also, some sectors may be
     /// empty and will be sent as an empty hash.
     Minimal {
+        /// Disc top hash, representing the combined hash of the full time slice top hashes.
         disc_top_hash: bytes::Bytes,
+        /// The end timestamp of the most recent full time slice.
         disc_boundary: Timestamp,
+        /// Ring top hashes, representing the combined hashes of the partial time slices.
         ring_top_hashes: Vec<bytes::Bytes>,
     },
     /// A snapshot to be used when there is a [DhtSnapshot::Minimal] mismatch in the disc top hash.
     DiscSectors {
+        /// Similar to the `disc_top_hash` except the sector hashes are not combined.
         disc_sector_top_hashes: HashMap<u32, bytes::Bytes>,
+        /// The end timestamp of the most recent full time slice.
         disc_boundary: Timestamp,
     },
     /// A snapshot to be used when there is a [DhtSnapshot::DiscSectors] mismatch.
@@ -32,18 +47,27 @@ pub enum DhtSnapshot {
     /// For each mismatched disc sector, the snapshot will contain the sector id and all the hashes
     /// for that sector.
     DiscSectorDetails {
+        /// Similar to the `disc_sector_top_hashes` except the full time slice hashes are not
+        /// combined.
         disc_sector_hashes: HashMap<u32, HashMap<u64, bytes::Bytes>>,
+        /// The end timestamp of the most recent full time slice.
         disc_boundary: Timestamp,
     },
     /// A snapshot to be used when there is a [DhtSnapshot::Minimal] mismatch in the ring top
     /// hashes.
     RingSectorDetails {
+        /// Similar to the `ring_top_hashes` except the sector hashes are not combined.
         ring_sector_hashes: HashMap<u32, HashMap<u32, bytes::Bytes>>,
+        /// The end timestamp of the most recent full time slice.
         disc_boundary: Timestamp,
     },
 }
 
 impl DhtSnapshot {
+    /// Compare two snapshots to determine how they differ.
+    ///
+    /// Produces a [SnapshotDiff] that describes the differences between the two snapshots.
+    /// This should not be use directly, please see [crate::dht::Dht::handle_snapshot].
     pub fn compare(&self, other: &Self) -> SnapshotDiff {
         // Check if they match exactly, before doing further work to check how they differ.
         if self == other {
@@ -271,17 +295,29 @@ impl DhtSnapshot {
     }
 }
 
+/// The differences between two snapshots.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 pub enum SnapshotDiff {
+    /// The snapshots are identical.
     Identical,
+    /// The snapshots cannot be compared.
+    ///
+    /// This can happen if the historical time boundary doesn't match or if the snapshot types
+    /// don't match.
     CannotCompare,
     // Historical mismatch
+    /// The disc hashes do not match.
     DiscMismatch,
+    /// These disc sectors are missing or do not match.
     DiscSectorMismatches(Vec<u32>),
+    /// These disc sector slices are missing or do not match, and further these slices are missing
+    /// or do not match.
     DiscSectorSliceMismatches(HashMap<u32, Vec<u64>>),
     // Recent mismatch
+    /// These rings do not match.
     RingMismatches(Vec<u32>),
+    /// These rings do not match, and further these sectors within those rings do not match.
     RingSectorMismatches(HashMap<u32, Vec<u32>>),
 }
 
