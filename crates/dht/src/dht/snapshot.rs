@@ -153,9 +153,6 @@ impl DhtSnapshot {
                     }
                 }
 
-                // If the number of sectors is the same, then we can compare the hashes.
-                // There will be at least one mismatched sector, otherwise the snapshots would be
-                // identical which has already been checked.
                 SnapshotDiff::DiscSectorMismatches(mismatched_sector_ids)
             }
             (
@@ -182,7 +179,19 @@ impl DhtSnapshot {
                 // If one side has a sector and the other doesn't then that is a mismatch
                 let mut mismatched_sector_ids = our_ids
                     .symmetric_difference(&other_ids)
-                    .map(|id| (**id, Vec::new()))
+                    .map(|id| {
+                        (
+                            **id,
+                            our_disc_sector_hashes
+                                .get(*id)
+                                .unwrap_or_else(|| {
+                                    &other_disc_sector_hashes[*id]
+                                })
+                                .keys()
+                                .copied()
+                                .collect::<Vec<_>>(),
+                        )
+                    })
                     .collect::<HashMap<_, _>>();
 
                 // Then for any common sectors, check if the hashes match
@@ -213,10 +222,12 @@ impl DhtSnapshot {
                         }
                     }
 
-                    mismatched_sector_ids
-                        .entry(**sector_id)
-                        .or_insert_with(Vec::new)
-                        .extend(mismatched_slice_ids);
+                    if !mismatched_slice_ids.is_empty() {
+                        mismatched_sector_ids
+                            .entry(**sector_id)
+                            .or_insert_with(Vec::new)
+                            .extend(mismatched_slice_ids);
+                    }
                 }
 
                 SnapshotDiff::DiscSectorSliceMismatches(mismatched_sector_ids)
@@ -390,6 +401,239 @@ mod tests {
         assert_eq!(
             snapshot_1.compare(&snapshot_2),
             SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
+    fn minimal_ring_mismatch() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::Minimal {
+            disc_boundary: timestamp,
+            disc_top_hash: bytes::Bytes::from(vec![1; 32]),
+            ring_top_hashes: vec![
+                bytes::Bytes::from(vec![1]),
+                bytes::Bytes::from(vec![2]),
+            ],
+        };
+
+        let snapshot_2 = DhtSnapshot::Minimal {
+            disc_boundary: timestamp,
+            disc_top_hash: bytes::Bytes::from(vec![1; 32]),
+            ring_top_hashes: vec![
+                bytes::Bytes::from(vec![1]),
+                bytes::Bytes::from(vec![3]),
+            ],
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::RingMismatches(vec![1])
+        );
+    }
+
+    #[test]
+    fn minimal_disc_and_ring_mismatch() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::Minimal {
+            disc_boundary: timestamp,
+            disc_top_hash: bytes::Bytes::from(vec![1; 32]),
+            ring_top_hashes: vec![
+                bytes::Bytes::from(vec![1]),
+                bytes::Bytes::from(vec![7]),
+            ],
+        };
+
+        let snapshot_2 = DhtSnapshot::Minimal {
+            disc_boundary: timestamp,
+            disc_top_hash: bytes::Bytes::from(vec![2; 32]),
+            ring_top_hashes: vec![
+                bytes::Bytes::from(vec![1]),
+                bytes::Bytes::from(vec![3]),
+            ],
+        };
+
+        // Always chooses the disc mismatch over the ring mismatch, to prioritise historical data.
+        assert_eq!(snapshot_1.compare(&snapshot_2), SnapshotDiff::DiscMismatch);
+    }
+
+    #[test]
+    fn disc_sector_boundary_mismatch() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::DiscSectors {
+            disc_boundary: timestamp,
+            disc_sector_top_hashes: HashMap::new(),
+        };
+
+        let snapshot_2 = DhtSnapshot::DiscSectors {
+            disc_boundary: timestamp + Duration::from_secs(1),
+            disc_sector_top_hashes: HashMap::new(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
+    fn disc_sector_mismatch_finds_missing_sectors() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::DiscSectors {
+            disc_boundary: timestamp,
+            disc_sector_top_hashes: vec![
+                (0, bytes::Bytes::new()),
+                (1, bytes::Bytes::new()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let snapshot_2 = DhtSnapshot::DiscSectors {
+            disc_boundary: timestamp,
+            disc_sector_top_hashes: vec![
+                (0, bytes::Bytes::new()),
+                (2, bytes::Bytes::new()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::DiscSectorMismatches(vec![1, 2])
+        );
+    }
+
+    #[test]
+    fn disc_sector_mismatch_finds_mismatched_sectors() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::DiscSectors {
+            disc_boundary: timestamp,
+            disc_sector_top_hashes: vec![
+                (0, bytes::Bytes::new()),
+                (1, bytes::Bytes::from_static(&[1])),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        let snapshot_2 = DhtSnapshot::DiscSectors {
+            disc_boundary: timestamp,
+            disc_sector_top_hashes: vec![
+                (0, bytes::Bytes::new()),
+                (1, bytes::Bytes::from_static(&[2])),
+            ]
+            .into_iter()
+            .collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::DiscSectorMismatches(vec![1])
+        );
+    }
+
+    #[test]
+    fn disc_sector_details_boundary_mismatch() {
+        let timestamp = Timestamp::now();
+        let snapshot_1 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: HashMap::new(),
+        };
+
+        let snapshot_2 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp + Duration::from_secs(1),
+            disc_sector_hashes: HashMap::new(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::CannotCompare
+        );
+    }
+
+    #[test]
+    fn disc_sector_details_mismatch_preserves_missing_sectors() {
+        let timestamp = Timestamp::now();
+        let slices_1 = vec![(0, bytes::Bytes::from_static(&[1]))]
+            .into_iter()
+            .collect();
+        let snapshot_1 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: vec![(0, HashMap::new()), (1, slices_1)]
+                .into_iter()
+                .collect(),
+        };
+
+        let slices_2 = vec![(0, bytes::Bytes::from_static(&[7]))]
+            .into_iter()
+            .collect();
+        let snapshot_2 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: vec![(0, HashMap::new()), (2, slices_2)]
+                .into_iter()
+                .collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::DiscSectorSliceMismatches(
+                vec![(1, vec![0]), (2, vec![0])].into_iter().collect()
+            )
+        );
+    }
+
+    #[test]
+    fn disc_sector_details_mismatch_finds_missing_slices() {
+        let timestamp = Timestamp::now();
+        let slices_1 = vec![(10, bytes::Bytes::from_static(&[1]))]
+            .into_iter()
+            .collect();
+        let snapshot_1 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: vec![(1, slices_1)].into_iter().collect(),
+        };
+
+        let slices_2 = vec![(20, bytes::Bytes::from_static(&[7]))]
+            .into_iter()
+            .collect();
+        let snapshot_2 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: vec![(1, slices_2)].into_iter().collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::DiscSectorSliceMismatches(
+                vec![(1, vec![10, 20])].into_iter().collect()
+            )
+        );
+    }
+
+    #[test]
+    fn disc_sector_details_mismatch_finds_slice_mismatches() {
+        let timestamp = Timestamp::now();
+        let slices_1 = vec![(10, bytes::Bytes::from_static(&[1]))]
+            .into_iter()
+            .collect();
+        let snapshot_1 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: vec![(1, slices_1)].into_iter().collect(),
+        };
+
+        let slices_2 = vec![(10, bytes::Bytes::from_static(&[7]))]
+            .into_iter()
+            .collect();
+        let snapshot_2 = DhtSnapshot::DiscSectorDetails {
+            disc_boundary: timestamp,
+            disc_sector_hashes: vec![(1, slices_2)].into_iter().collect(),
+        };
+
+        assert_eq!(
+            snapshot_1.compare(&snapshot_2),
+            SnapshotDiff::DiscSectorSliceMismatches(
+                vec![(1, vec![10])].into_iter().collect()
+            )
         );
     }
 }
