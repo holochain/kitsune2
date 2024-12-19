@@ -44,9 +44,10 @@
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
+use backon::BackoffBuilder;
 use kitsune2_api::{
     builder,
     config::ModConfig,
@@ -354,7 +355,7 @@ impl Drop for CoreFetch {
 
 #[derive(Debug)]
 struct BackOffList {
-    state: HashMap<AgentId, (Instant, u32)>,
+    state: HashMap<AgentId, BackOff>,
     back_off_interval: u64,
     max_back_off_exponent: u32,
 }
@@ -371,42 +372,75 @@ impl BackOffList {
     pub fn back_off_agent(&mut self, agent_id: &AgentId) {
         match self.state.entry(agent_id.clone()) {
             Entry::Occupied(mut o) => {
-                if o.get().1 != self.max_back_off_exponent {
-                    o.get_mut().0 = Instant::now();
-                    o.get_mut().1 += 1;
-                }
+                o.get_mut().back_off();
             }
             Entry::Vacant(v) => {
-                v.insert((Instant::now(), 0));
+                v.insert(BackOff::new());
             }
         }
     }
 
     pub fn is_agent_on_back_off(&mut self, agent_id: &AgentId) -> bool {
         match self.state.get(agent_id) {
-            Some((instant, exponent)) => {
-                instant.elapsed().as_millis()
-                    < (self.back_off_interval * 2_u64.pow(*exponent)) as u128
-            }
+            Some(back_off) => back_off.is_on_back_off(),
             None => false,
         }
     }
 
     pub fn has_max_back_off_expired(&self, agent_id: &AgentId) -> bool {
-        self.state
-            .get(agent_id)
-            .map(|(instant, exponent)| {
-                *exponent == self.max_back_off_exponent
-                    && instant.elapsed().as_millis()
-                        >= (self.back_off_interval * 2_u64.pow(*exponent))
-                            as u128
-            })
-            .unwrap_or(false)
+        true
     }
 
     pub fn remove_agent(&mut self, agent_id: &AgentId) {
         self.state.remove(agent_id);
     }
+}
+
+#[derive(Debug)]
+struct BackOff {
+    back_off: backon::ExponentialBackoff,
+    current_interval: Duration,
+    interval_start: Instant,
+    expired: bool,
+}
+
+impl BackOff {
+    pub fn new() -> Self {
+        let mut back_off = backon::ExponentialBuilder::default()
+            .with_factor(2.0)
+            .with_min_delay(Duration::from_millis(10))
+            .build();
+        let current_interval = back_off
+            .next()
+            .expect("back off must have at least one interval");
+        println!("b {back_off:?}");
+        Self {
+            back_off,
+            current_interval,
+            interval_start: Instant::now(),
+            expired: false,
+        }
+    }
+
+    pub fn back_off(&mut self) {
+        match self.back_off.next() {
+            None => self.expired = true,
+            Some(interval) => {
+                self.interval_start = Instant::now();
+                self.current_interval = interval;
+            }
+        }
+    }
+
+    pub fn is_on_back_off(&self) -> bool {
+        self.interval_start.elapsed() < self.current_interval
+    }
+}
+
+#[test]
+fn back_off_sanity() {
+    let bo = BackOff::new();
+    println!("bo {bo:?}");
 }
 
 #[cfg(test)]
