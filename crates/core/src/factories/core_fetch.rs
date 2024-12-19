@@ -107,7 +107,7 @@ impl FetchFactory for CoreFetchFactory {
 pub struct CoreFetchConfig {
     /// How many parallel op fetch requests can be made at once. Default: 2.  
     pub parallel_request_count: u8,
-    /// Duration in ms to keep an unresponsive agent on the back off list. Default: 120_000.
+    /// Duration in ms to keep an unresponsive agent on the back off list. Default: 20_000.
     pub back_off_interval_ms: u64,
     /// Maximum exponent for back off interval. Back off duration is calculated
     /// back_off_interval * 2^back_off_exponent. Default: 4.
@@ -118,7 +118,7 @@ impl Default for CoreFetchConfig {
     fn default() -> Self {
         Self {
             parallel_request_count: 2,
-            back_off_interval_ms: 120_000,
+            back_off_interval_ms: 20_000,
             max_back_off_exponent: 4,
         }
     }
