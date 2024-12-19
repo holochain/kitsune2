@@ -156,6 +156,14 @@ impl Dht {
     /// provided back to this function in the `our_previous_snapshot` parameter. In all other cases,
     /// the caller should provide `None` for `our_previous_snapshot`.
     ///
+    /// Note also that there are two possible routes through the comparison process. The first is
+    /// when the historical disc mismatches, the second is when the recent rings mismatch. The
+    /// historical disc mismatch is prioritised, so if a mismatch is detected there then the sync
+    /// process will resolve that. Otherwise, the recent rings mismatch will be resolved. That means
+    /// that it may take up to two rounds of sync to resolve all mismatches. Of course, both the
+    /// disc and the rings must be considered a moving target so it cannot be assumed that 2 rounds
+    /// are actually enough to resolve all mismatches.
+    ///
     /// The `arc_set` parameter is used to determine which arcs are relevant to the DHT model. This
     /// should be the [ArcSet::intersection] of the arc sets of the two DHT models to be compared.
     pub async fn handle_snapshot(
