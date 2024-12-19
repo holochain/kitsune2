@@ -1,6 +1,14 @@
+//! Represents a set of [DhtArc]s.
+//!
+//! A set of [DhtArc]s is combined as a set union into an [ArcSet].
+//!
+//! To restrict [crate::dht::Dht] operations to a specific set of sectors, the [ArcSet]s of two
+//! DHTs can be intersected to find the common sectors, using [ArcSet::intersection].
+
 use kitsune2_api::{DhtArc, K2Error, K2Result};
 use std::collections::HashSet;
 
+/// Represents a set of [DhtArc]s.
 #[derive(Debug)]
 pub struct ArcSet {
     inner: HashSet<u32>,
@@ -58,6 +66,7 @@ impl ArcSet {
         Ok(ArcSet { inner })
     }
 
+    /// Get the intersection of two arc sets as a new [ArcSet].
     pub fn intersection(&self, other: &Self) -> Self {
         ArcSet {
             inner: self.inner.intersection(&other.inner).copied().collect(),

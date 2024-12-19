@@ -83,7 +83,8 @@ pub struct PartitionedHashes {
     partitioned_hashes: Vec<PartitionedTime>,
 }
 
-pub type PartialTimeSliceDetails = HashMap<u32, HashMap<u32, bytes::Bytes>>;
+pub(crate) type PartialTimeSliceDetails =
+    HashMap<u32, HashMap<u32, bytes::Bytes>>;
 
 impl PartitionedHashes {
     /// Create a new partitioned hash structure.
@@ -197,7 +198,14 @@ impl PartitionedHashes {
         Ok(())
     }
 
-    pub fn dht_arc_for_sector_id(&self, sector_id: u32) -> K2Result<DhtArc> {
+    /// For a given sector ID, return the DHT arc that the sector is responsible for.
+    ///
+    /// This is actually stored on the [PartitionedTime] structure, so this function must find the
+    /// relevant [PartitionedTime] structure and then return the arc constraint from that.
+    pub(crate) fn dht_arc_for_sector_id(
+        &self,
+        sector_id: u32,
+    ) -> K2Result<DhtArc> {
         let sector_id = sector_id as usize;
         if sector_id >= self.partitioned_hashes.len() {
             return Err(K2Error::other("Sector ID out of bounds"));
@@ -206,14 +214,22 @@ impl PartitionedHashes {
         Ok(*self.partitioned_hashes[sector_id].arc_constraint())
     }
 
-    pub fn time_bounds_for_full_slice_id(
+    /// Get the time bounds for a full slice ID.
+    ///
+    /// This is actually stored on the [PartitionedTime] structure, so this function must find the
+    /// relevant [PartitionedTime] structure and then return the time bounds from that.
+    pub(crate) fn time_bounds_for_full_slice_id(
         &self,
         slice_id: u64,
     ) -> K2Result<(Timestamp, Timestamp)> {
         self.partitioned_hashes[0].time_bounds_for_full_slice_id(slice_id)
     }
 
-    pub fn time_bounds_for_partial_slice_id(
+    /// Get the time bounds for a partial slice ID.
+    ///
+    /// This is actually stored on the [PartitionedTime] structure, so this function must find the
+    /// relevant [PartitionedTime] structure and then return the time bounds from that.
+    pub(crate) fn time_bounds_for_partial_slice_id(
         &self,
         slice_id: u32,
     ) -> K2Result<(Timestamp, Timestamp)> {
@@ -235,7 +251,7 @@ impl PartitionedHashes {
     /// Along with the disc top hash, the end timestamp of the last full time slice is returned.
     /// This should be used when comparing disc top hash of one DHT model with that of another node
     /// to ensure that both nodes are using a common reference point.
-    pub async fn disc_top_hash(
+    pub(crate) async fn disc_top_hash(
         &self,
         arc_set: &ArcSet,
         store: DynOpStore,
@@ -257,7 +273,18 @@ impl PartitionedHashes {
         Ok((combined.freeze(), timestamp))
     }
 
-    pub fn ring_top_hashes(&self, arc_set: &ArcSet) -> Vec<bytes::Bytes> {
+    /// Computes a top hash over the sector hashes for each partial time slice.
+    ///
+    /// Retrieves the partial slice combined hashes for each sector in the arc set. It then combines
+    /// the hashes for each partial time slice, working around the circle from 0.
+    ///
+    /// Note that this function does not return a disc boundary. This means it MUST be used with
+    /// [PartitionedHashes::disc_top_hash] to ensure that the result from this function can be
+    /// compared.
+    pub(crate) fn ring_top_hashes(
+        &self,
+        arc_set: &ArcSet,
+    ) -> Vec<bytes::Bytes> {
         let mut partials = Vec::with_capacity(arc_set.covered_sector_count());
 
         for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
@@ -285,7 +312,16 @@ impl PartitionedHashes {
         out
     }
 
-    pub async fn full_time_slice_sector_hashes(
+    /// Compute the disc sector hashes for the given arc set.
+    ///
+    /// This function does a similar job to [PartitionedHashes::disc_top_hash] but, it does not
+    /// combine the sector hashes. Instead, any sector that has a non-empty hash is returned in the
+    /// hash set.
+    ///
+    /// Along with the sector hashes, the end timestamp of the last full time slice is returned.
+    /// This should be used when comparing sector hashes of one DHT model with that of another node
+    /// to ensure that both nodes are using a common reference point.
+    pub(crate) async fn disc_sector_hashes(
         &self,
         arc_set: &ArcSet,
         store: DynOpStore,
@@ -307,7 +343,16 @@ impl PartitionedHashes {
         Ok((out, timestamp))
     }
 
-    pub async fn full_time_slice_sector_details(
+    /// Compute the disc sector details for the given arc set.
+    ///
+    /// Does a similar job to [PartitionedHashes::disc_sector_hashes] but, it returns the full time
+    /// slice combined hashes for each sector that is both in the arc set and in the `sector_ids`
+    /// input.
+    ///
+    /// Along with the sector detail hashes, the end timestamp of the last full time slice is
+    /// returned. This should be used when comparing sector details hashes of one DHT model with
+    /// that of another node to ensure that both nodes are using a common reference point.
+    pub(crate) async fn disc_sector_sector_details(
         &self,
         sector_ids: Vec<u32>,
         arc_set: &ArcSet,
@@ -341,7 +386,15 @@ impl PartitionedHashes {
         Ok((out, timestamp))
     }
 
-    pub fn partial_time_slice_details(
+    /// Compute the ring details for the given arc set.
+    ///
+    /// Does a similar job to [PartitionedHashes::ring_top_hashes] but, it returns the partial time
+    /// slice combined hashes for each sector that is both in the arc set and in the `ring_ids`.
+    ///
+    /// Along with the ring details hashes, the end timestamp of the last full time slice is
+    /// returned. This should be used when comparing ring details hashes of one DHT model with
+    /// that of another node to ensure that both nodes are using a common reference point.
+    pub(crate) fn ring_details(
         &self,
         ring_ids: Vec<u32>,
         arc_set: &ArcSet,
