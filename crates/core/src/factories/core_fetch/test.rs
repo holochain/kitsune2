@@ -79,7 +79,7 @@ impl Transport for MockTransport {
         &self,
         _space: SpaceId,
         _handler: kitsune2_api::transport::DynTxSpaceHandler,
-    ) {
+    ) -> Option<Url> {
         unimplemented!()
     }
 

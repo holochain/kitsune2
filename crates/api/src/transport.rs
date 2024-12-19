@@ -119,6 +119,9 @@ impl TxImpHnd {
 
 /// A low-level transport implementation.
 pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
+    /// Get the current url if any.
+    fn url(&self) -> Option<Url>;
+
     /// Indicates that the implementation should close any open connections to
     /// the given peer. If a payload is provided, the implementation can
     /// make a best effort to send it to the remote first on a short timeout.
@@ -144,11 +147,13 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// Panics if you attempt to register a duplicate handler for
     /// a space.
+    ///
+    /// Returns the current url if any.
     fn register_space_handler(
         &self,
         space: SpaceId,
         handler: DynTxSpaceHandler,
-    );
+    ) -> Option<Url>;
 
     /// Register a module handler for receiving incoming module messages.
     ///
@@ -224,16 +229,13 @@ impl Transport for DefaultTransport {
         &self,
         space: SpaceId,
         handler: DynTxSpaceHandler,
-    ) {
-        if self
-            .space_map
-            .lock()
-            .unwrap()
-            .insert(space.clone(), handler)
-            .is_some()
-        {
+    ) -> Option<Url> {
+        let mut lock = self.space_map.lock().unwrap();
+        if lock.insert(space.clone(), handler).is_some() {
             panic!("Attempted to register duplicate space handler! {space}");
         }
+        // keep the lock locked while we fetch the url for atomicity.
+        self.imp.url()
     }
 
     fn register_module_handler(

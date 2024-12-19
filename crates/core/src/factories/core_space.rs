@@ -38,10 +38,11 @@ impl SpaceFactory for CoreSpaceFactory {
                 current_url: None,
             }));
             let out: DynSpace = Arc::new_cyclic(move |this| {
-                tx.register_space_handler(
+                let current_url = tx.register_space_handler(
                     space.clone(),
                     Arc::new(TxHandlerTranslator(handler, this.clone())),
                 );
+                inner.lock().unwrap().current_url = current_url;
                 CoreSpace::new(space, tx, peer_store, inner)
             });
             Ok(out)

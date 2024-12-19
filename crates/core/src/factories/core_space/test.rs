@@ -43,18 +43,42 @@ async fn space_local_agent_join_leave() {
     s1.local_agent_join(bob.clone()).await.unwrap();
     s1.local_agent_join(ned.clone()).await.unwrap();
 
-    let mut peer_count = 0;
+    let mut active_peer_count = 0;
 
     for _ in 0..5 {
-        peer_count = s1.peer_store().get_all().await.unwrap().len();
-        if peer_count >= 2 {
+        active_peer_count = 0;
+        for peer in s1.peer_store().get_all().await.unwrap() {
+            if !peer.is_tombstone {
+                active_peer_count += 1;
+            }
+        }
+        if active_peer_count == 2 {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
-    if peer_count != 2 {
-        panic!("expected 2 agents, got {peer_count}");
+    if active_peer_count != 2 {
+        panic!("expected 2 active agents, got {active_peer_count}");
+    }
+
+    s1.local_agent_leave(bob.agent().clone()).await;
+
+    for _ in 0..5 {
+        active_peer_count = 0;
+        for peer in s1.peer_store().get_all().await.unwrap() {
+            if !peer.is_tombstone {
+                active_peer_count += 1;
+            }
+        }
+        if active_peer_count == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    if active_peer_count != 1 {
+        panic!("expected 1 active agents, got {active_peer_count}");
     }
 }
 
