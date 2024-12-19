@@ -45,6 +45,16 @@
 ///
 /// Any other properties on these objects will be ignored and pass through.
 ///
+/// A note on the "isTombstone" field: This is named "tombstone" because the
+/// end-user nodes using this bootstrap service will be exchanging infos
+/// directly and must keep these tombstone records around to prevent older
+/// but not-yet-expired entries from re-appearing. In the nominal case for
+/// bootstrapping, only the author is publishing these entries, so we don't
+/// need to worry about any re-appearance. We believe the 3 minute acceptance
+/// window mitigates any griefing attempt sufficiently, but a server
+/// implementation MAY keep a short list of tombstones around if it notices
+/// the entry it is deleting is still valid.
+///
 /// #### 2. REST API
 ///
 /// ##### 2.1. In Brief

@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+//! Shared testing types for kitsune2 crates.
+
 /// Enable tracing with the RUST_LOG environment variable.
 ///
 /// This is intended to be used in tests, so it defaults to DEBUG level.
