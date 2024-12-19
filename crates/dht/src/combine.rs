@@ -24,6 +24,11 @@ pub fn combine_op_hashes<
     out
 }
 
+/// Combine a hash into an existing, mutable hash.
+///
+/// This is intended to be used for incrementally updating an existing combined hash. That makes it
+/// an alternative to [combine_op_hashes] when it is possible to avoid loading all the existing
+/// hashes and computing a new combined hash that includes this incoming hash.
 pub fn combine_hashes(into: &mut bytes::BytesMut, other: bytes::Bytes) {
     // Properly initialise the target from the source if the target is empty.
     // Otherwise, the loop below would run 0 times.
