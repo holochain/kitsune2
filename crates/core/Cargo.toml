@@ -12,7 +12,7 @@ edition = "2021"
 
 [dependencies]
 bytes = { workspace = true }
-ed25519-dalek = { workspace = true }
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
 futures = { workspace = true }
 kitsune2_api = { workspace = true }
 prost = { workspace = true }
