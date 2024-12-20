@@ -16,7 +16,7 @@
 
 use crate::arc_set::ArcSet;
 use crate::PartitionedHashes;
-use kitsune2_api::{DynOpStore, K2Result, OpId, StoredOp, Timestamp};
+use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp};
 use snapshot::{DhtSnapshot, SnapshotDiff};
 
 pub mod snapshot;
@@ -113,11 +113,22 @@ impl Dht {
     /// This is the entry point for comparing state with another DHT model. A minimal snapshot may
     /// be enough to check that two DHTs are in sync. The receiver should call [Dht::handle_snapshot]
     /// which will determine if the two DHTs are in sync or if a more detailed snapshot is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are no arcs to snapshot. If there is no overlap between the arc
+    /// sets of two DHT models then there is no point in comparing them because it will always
+    /// yield an empty diff. The [ArcSet::covered_sector_count] should be checked before calling
+    /// this method.
     pub async fn snapshot_minimal(
         &self,
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<DhtSnapshot> {
+        if arc_set.covered_sector_count() == 0 {
+            return Err(K2Error::other("No arcs to snapshot"));
+        }
+
         let (disc_top_hash, disc_boundary) =
             self.partition.disc_top_hash(arc_set, store).await?;
 
@@ -166,6 +177,13 @@ impl Dht {
     ///
     /// The `arc_set` parameter is used to determine which arcs are relevant to the DHT model. This
     /// should be the [ArcSet::intersection] of the arc sets of the two DHT models to be compared.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are no arcs to snapshot. If there is no overlap between the arc
+    /// sets of two DHT models then there is no point in comparing them because it will always
+    /// yield an empty diff. The [ArcSet::covered_sector_count] should be checked before calling
+    /// this method.
     pub async fn handle_snapshot(
         &self,
         their_snapshot: &DhtSnapshot,
@@ -173,6 +191,10 @@ impl Dht {
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<DhtSnapshotNextAction> {
+        if arc_set.covered_sector_count() == 0 {
+            return Err(K2Error::other("No arcs to snapshot"));
+        }
+
         let is_final = matches!(
             our_previous_snapshot,
             Some(

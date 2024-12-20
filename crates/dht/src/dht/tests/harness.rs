@@ -13,9 +13,9 @@ use std::sync::Arc;
 /// Intended to represent a single agent in a network, which knows how to sync with
 /// some other agent.
 pub(crate) struct DhtSyncHarness {
-    store: Arc<Kitsune2MemoryOpStore>,
+    pub(crate) store: Arc<Kitsune2MemoryOpStore>,
     pub(crate) dht: Dht,
-    arc: DhtArc,
+    pub(crate) arc: DhtArc,
     pub(crate) agent_id: AgentId,
     pub(crate) discovered_ops: HashMap<AgentId, Vec<OpId>>,
 }

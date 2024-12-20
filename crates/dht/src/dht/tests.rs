@@ -52,6 +52,52 @@ async fn take_minimal_snapshot() {
 }
 
 #[tokio::test]
+async fn cannot_take_minimal_snapshot_with_empty_arc_set() {
+    let current_time = Timestamp::now();
+    let dht1 = DhtSyncHarness::new(current_time, DhtArc::Empty).await;
+
+    let err = dht1
+        .dht
+        .snapshot_minimal(
+            &ArcSet::new(SECTOR_SIZE, vec![dht1.arc]).unwrap(),
+            dht1.store.clone(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!("No arcs to snapshot (src: None)", err.to_string());
+}
+
+#[tokio::test]
+async fn cannot_handle_snapshot_with_empty_arc_set() {
+    let current_time = Timestamp::now();
+    let dht1 = DhtSyncHarness::new(current_time, DhtArc::Empty).await;
+
+    // Declare a full arc to get a snapshot
+    let snapshot = dht1
+        .dht
+        .snapshot_minimal(
+            &ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap(),
+            dht1.store.clone(),
+        )
+        .await
+        .unwrap();
+
+    // Now try to compare that snapshot to ourselves with an empty arc set
+    let err = dht1
+        .dht
+        .handle_snapshot(
+            &snapshot,
+            None,
+            &ArcSet::new(SECTOR_SIZE, vec![DhtArc::Empty]).unwrap(),
+            dht1.store.clone(),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!("No arcs to snapshot (src: None)", err.to_string());
+}
+
+#[tokio::test]
 async fn empty_dht_is_in_sync_with_empty() {
     let current_time = Timestamp::now();
     let dht1 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
