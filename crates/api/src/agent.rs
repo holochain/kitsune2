@@ -128,10 +128,11 @@ pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
     fn register_cb(&self, cb: Arc<dyn Fn() + 'static + Send + Sync>);
 
     /// Invoke the registered cb if one has been set.
-    /// This can be ignored if [Self::register_cb] has not yet been called.
+    /// This can be treated as a no-op rather than an error if [Self::register_cb] has not yet been called.
     fn invoke_cb(&self);
 
     /// Access the current storage arc for this local agent.
+    ///
     /// This will be used by the space module to construct [AgentInfoSigned].
     fn get_cur_storage_arc(&self) -> DhtArc;
 
