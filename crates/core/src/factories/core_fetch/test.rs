@@ -1,24 +1,18 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
+use super::{CoreFetch, CoreFetchConfig};
+use crate::default_builder;
 use bytes::Bytes;
-
 use kitsune2_api::{
     fetch::{deserialize_op_ids, Fetch},
     id::Id,
     transport::Transport,
     AgentId, K2Error, OpId, SpaceId, Url,
 };
-
 use kitsune2_test_utils::agent::*;
-
 use rand::Rng;
-
-use crate::default_builder;
-
-use super::{CoreFetch, CoreFetchConfig};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 #[derive(Debug)]
 pub struct MockTransport {
