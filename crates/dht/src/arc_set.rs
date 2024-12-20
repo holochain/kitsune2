@@ -68,18 +68,56 @@ impl ArcSet {
     }
 
     /// Get the intersection of two arc sets as a new [ArcSet].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use kitsune2_api::DhtArc;
+    /// use kitsune2_dht::ArcSet;
+    ///
+    /// # fn main() -> kitsune2_api::K2Result<()> {
+    /// use tracing::Instrument;
+    /// let arc_size = 1 << 23;
+    /// let arc_1 = DhtArc::Arc(0, 2 * arc_size - 1);
+    /// let arc_set_1 = ArcSet::new(arc_size, vec![arc_1])?;
+    ///
+    /// let arc_2 = DhtArc::Arc(arc_size, 4 * arc_size - 1);
+    /// let arc_set_2 = ArcSet::new(arc_size, vec![arc_2])?;
+    ///
+    /// assert_eq!(1, arc_set_1.intersection(&arc_set_2).covered_sector_count());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn intersection(&self, other: &Self) -> Self {
         ArcSet {
             inner: self.inner.intersection(&other.inner).copied().collect(),
         }
     }
 
-    pub(crate) fn includes_sector_id(&self, value: u32) -> bool {
-        self.inner.contains(&value)
+    /// The number of sectors covered by this arc set.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use kitsune2_api::DhtArc;
+    /// use kitsune2_dht::ArcSet;
+    ///
+    /// # fn main() -> kitsune2_api::K2Result<()> {
+    /// let arc_size = 1 << 23;
+    /// let arc_1 = DhtArc::Arc(0, 2 * arc_size - 1);
+    /// let arc_2 = DhtArc::Arc(2 * arc_size, 4 * arc_size - 1);
+    /// let arc_set = ArcSet::new(arc_size, vec![arc_1, arc_2])?;
+    ///
+    /// assert_eq!(4, arc_set.covered_sector_count());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn covered_sector_count(&self) -> usize {
+        self.inner.len()
     }
 
-    pub(crate) fn covered_sector_count(&self) -> usize {
-        self.inner.len()
+    pub(crate) fn includes_sector_id(&self, value: u32) -> bool {
+        self.inner.contains(&value)
     }
 }
 
