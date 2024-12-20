@@ -38,7 +38,7 @@ pub fn combine_hashes(into: &mut bytes::BytesMut, other: bytes::Bytes) {
     }
 
     if into.len() != other.len() {
-        tracing::debug!("Combining hashes of different lengths ({} != {}). This is undefined behaviour.", into.len(), other.len());
+        tracing::error!("Combining hashes of different lengths ({} != {}). This is undefined behaviour.", into.len(), other.len());
     }
 
     for (into_byte, other_byte) in into.iter_mut().zip(other.iter()) {
