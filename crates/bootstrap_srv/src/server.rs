@@ -19,7 +19,7 @@ struct ThreadGuard(&'static str);
 
 impl Drop for ThreadGuard {
     fn drop(&mut self) {
-        eprintln!("{}", self.0);
+        tracing::debug!("{}", self.0);
     }
 }
 
@@ -37,6 +37,9 @@ pub struct BootstrapSrv {
 
 impl Drop for BootstrapSrv {
     fn drop(&mut self) {
+        let _g = ThreadGuard("Server Shutdown Complete!");
+
+        tracing::debug!("begin server shutdown...");
         let _ = self.shutdown();
     }
 }
@@ -68,7 +71,12 @@ impl BootstrapSrv {
 
         // get the address that was assigned
         let addrs = server.server_addrs().to_vec();
-        println!("Listening at {:?}", addrs);
+        tracing::info!(?addrs, "Listening");
+        for addr in addrs.iter() {
+            // print these incase someone wants to parse for them
+            println!("#kitsune2_bootstrap_srv#listening#{addr:?}#");
+        }
+        println!("#kitsune2_bootstrap_srv#running#");
 
         // spawn our worker threads
         let mut workers = Vec::with_capacity(config.worker_thread_count + 1);
@@ -104,11 +112,16 @@ impl BootstrapSrv {
         let mut is_err = false;
         self.cont.store(false, std::sync::atomic::Ordering::SeqCst);
         drop(self.server.take());
-        for worker in self.workers.drain(..) {
-            if worker.join().is_err() {
+        while !self.workers.is_empty() {
+            tracing::debug!(
+                "waiting on {} threads to close...",
+                self.workers.len()
+            );
+            if self.workers.pop().unwrap().join().is_err() {
                 is_err = true;
             }
         }
+        tracing::debug!("all threads closed.");
         if is_err {
             Err(std::io::Error::other("Failure shutting down worker thread"))
         } else {
@@ -127,7 +140,7 @@ fn prune_worker(
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
-    let _g = ThreadGuard("WARN: prune_worker thread has ended");
+    let _g = ThreadGuard("prune_worker thread has ended");
 
     let mut last_check = std::time::Instant::now();
 
@@ -151,7 +164,7 @@ fn worker(
     recv: HttpReceiver,
     space_map: crate::SpaceMap,
 ) -> std::io::Result<()> {
-    let _g = ThreadGuard("WARN: worker thread has ended");
+    let _g = ThreadGuard("worker thread has ended");
 
     while cont.load(std::sync::atomic::Ordering::SeqCst) {
         let (req, res) = match recv.recv() {
@@ -168,6 +181,7 @@ fn worker(
 
         handler.handle(req)?;
     }
+
     Ok(())
 }
 

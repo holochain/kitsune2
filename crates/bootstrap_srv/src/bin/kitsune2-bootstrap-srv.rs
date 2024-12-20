@@ -14,6 +14,9 @@ pub struct Args {
     /// on a single given machine, you can set this "production" mode.
     #[arg(long)]
     pub production: bool,
+    /// Output tracing in json format.
+    #[arg(long)]
+    pub json: bool,
     // TODO - Implement the ability to specify TLS certificates
     // TODO - Implement the ability to specify the listening address
     // TODO - Implement the ability to override any other relevant
@@ -23,13 +26,29 @@ pub struct Args {
 fn main() {
     let args = <Args as clap::Parser>::parse();
 
+    let t = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing::Level::DEBUG.into())
+                .from_env_lossy(),
+        )
+        .with_file(true)
+        .with_line_number(true);
+
+    if args.json {
+        t.json().try_init()
+    } else {
+        t.try_init()
+    }
+    .expect("failed to init tracing");
+
     let config = if args.production {
         Config::production()
     } else {
         Config::testing()
     };
 
-    println!("{args:?}--{config:?}");
+    tracing::info!(?args, ?config);
 
     let (send, recv) = std::sync::mpsc::channel();
 
@@ -42,8 +61,8 @@ fn main() {
 
     let _ = recv.recv();
 
-    println!("Terminating...");
+    tracing::info!("Terminating...");
     drop(srv);
-    println!("Done.");
+    tracing::info!("Exit Process.");
     std::process::exit(0);
 }
