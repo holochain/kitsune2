@@ -452,14 +452,16 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
         mock_transport.clone(),
     );
 
-    {
+    let first_back_off_interval = {
         let mut lock = fetch.state.lock().unwrap();
         lock.back_off_list.back_off_agent(&agent_id);
 
         assert!(lock.back_off_list.is_agent_on_back_off(&agent_id));
 
-        tokio::time::sleep(lock.back_off_list.first_back_off_interval).await;
-    }
+        lock.back_off_list.first_back_off_interval
+    };
+
+    tokio::time::sleep(first_back_off_interval).await;
 
     fetch.add_ops(op_list, agent_id.clone()).await.unwrap();
 
@@ -550,7 +552,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .count();
 
     // Back off agent the maximum possible number of times.
-    {
+    let last_back_off_interval = {
         let mut lock = fetch.state.lock().unwrap();
         assert!(op_list_1.iter().all(|op_id| lock
             .requests
@@ -559,10 +561,12 @@ async fn requests_are_dropped_when_max_back_off_expired() {
             lock.back_off_list.back_off_agent(&agent_id_1);
         }
 
-        // Wait for back off interval to expire. Afterwards the request should fail again and all
-        // of the agent's requests should be removed from the set.
-        tokio::time::sleep(lock.back_off_list.last_back_off_interval).await;
-    }
+        lock.back_off_list.last_back_off_interval
+    };
+
+    // Wait for back off interval to expire. Afterwards the request should fail again and all
+    // of the agent's requests should be removed from the set.
+    tokio::time::sleep(last_back_off_interval).await;
 
     assert!(fetch
         .state
