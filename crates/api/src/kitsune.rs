@@ -5,6 +5,18 @@ use std::sync::Arc;
 
 /// Handler for events coming out of Kitsune2.
 pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
+    /// A notification that a new listening address has been bound.
+    /// Peers should now go to this new address to reach this node.
+    fn new_listening_address(&self, this_url: Url) {
+        drop(this_url);
+    }
+
+    /// A peer has disconnected from us. If they did so gracefully
+    /// the reason will be is_some().
+    fn peer_disconnect(&self, peer: Url, reason: Option<String>) {
+        drop((peer, reason));
+    }
+
     /// Gather preflight data to send to a new opening connection.
     /// Returning an Err result will close this connection.
     ///

@@ -29,10 +29,47 @@ impl KitsuneFactory for CoreKitsuneFactory {
         handler: DynKitsuneHandler,
     ) -> BoxFut<'static, K2Result<DynKitsune>> {
         Box::pin(async move {
+            let tx = builder
+                .transport
+                .create(
+                    builder.clone(),
+                    Arc::new(TxHandlerTranslator(handler.clone())),
+                )
+                .await?;
             let out: DynKitsune =
-                Arc::new(CoreKitsune::new(builder.clone(), handler));
+                Arc::new(CoreKitsune::new(builder.clone(), handler, tx));
             Ok(out)
         })
+    }
+}
+
+#[derive(Debug)]
+struct TxHandlerTranslator(DynKitsuneHandler);
+
+impl transport::TxBaseHandler for TxHandlerTranslator {
+    fn new_listening_address(&self, this_url: Url) {
+        self.0.new_listening_address(this_url);
+    }
+
+    fn peer_disconnect(&self, peer: Url, reason: Option<String>) {
+        self.0.peer_disconnect(peer, reason);
+    }
+}
+
+impl transport::TxHandler for TxHandlerTranslator {
+    fn preflight_gather_outgoing(
+        &self,
+        peer_url: Url,
+    ) -> K2Result<bytes::Bytes> {
+        self.0.preflight_gather_outgoing(peer_url)
+    }
+
+    fn preflight_validate_incoming(
+        &self,
+        peer_url: Url,
+        data: bytes::Bytes,
+    ) -> K2Result<()> {
+        self.0.preflight_validate_incoming(peer_url, data)
     }
 }
 
@@ -45,17 +82,20 @@ struct CoreKitsune {
     builder: Arc<builder::Builder>,
     handler: DynKitsuneHandler,
     map: std::sync::Mutex<Map>,
+    tx: transport::DynTransport,
 }
 
 impl CoreKitsune {
     pub fn new(
         builder: Arc<builder::Builder>,
         handler: DynKitsuneHandler,
+        tx: transport::DynTransport,
     ) -> Self {
         Self {
             builder,
             handler,
             map: std::sync::Mutex::new(HashMap::new()),
+            tx,
         }
     }
 }
@@ -73,13 +113,14 @@ impl Kitsune for CoreKitsune {
                 Entry::Vacant(e) => {
                     let builder = self.builder.clone();
                     let handler = self.handler.clone();
+                    let tx = self.tx.clone();
                     e.insert(futures::future::FutureExt::shared(Box::pin(
                         async move {
                             let sh =
                                 handler.create_space(space.clone()).await?;
                             let s = builder
                                 .space
-                                .create(builder.clone(), sh, space)
+                                .create(builder.clone(), sh, space, tx)
                                 .await?;
                             Ok(s)
                         },
@@ -104,9 +145,11 @@ mod test {
         struct S;
 
         impl SpaceHandler for S {
-            fn incoming_message(
+            fn recv_notify(
                 &self,
-                _peer: AgentId,
+                _to_agent: AgentId,
+                _from_agent: AgentId,
+                _space: SpaceId,
                 _data: bytes::Bytes,
             ) -> K2Result<()> {
                 // this test is a bit of a stub for now until we have the
