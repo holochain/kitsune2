@@ -352,7 +352,7 @@ impl PartitionedTime {
     }
 }
 
-// Public, query methods
+// Public query methods
 impl PartitionedTime {
     /// Compute a top hash over the full time slice combined hashes owned by this [PartitionedTime].
     ///
