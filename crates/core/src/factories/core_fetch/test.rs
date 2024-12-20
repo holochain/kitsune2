@@ -14,16 +14,16 @@ use rand::Rng;
 
 use crate::{default_builder, factories::test_utils::AgentBuilder};
 
-use super::{BackOffList, CoreFetch, CoreFetchConfig};
+use super::{CoreFetch, CoreFetchConfig};
 
 #[derive(Debug)]
 pub struct MockTransport {
-    requests_sent: Arc<Mutex<Vec<(OpId, Url)>>>,
-    fail: bool,
+    pub requests_sent: Arc<Mutex<Vec<(OpId, Url)>>>,
+    pub fail: bool,
 }
 
 impl MockTransport {
-    fn new(fail: bool) -> Arc<MockTransport> {
+    pub fn new(fail: bool) -> Arc<MockTransport> {
         Arc::new(Self {
             requests_sent: Arc::new(Mutex::new(Vec::new())),
             fail,
@@ -318,33 +318,6 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
     assert!(fetch.state.lock().unwrap().requests.is_empty());
 }
 
-#[test]
-fn back_off() {
-    let mut back_off_list = BackOffList::new(
-        Duration::from_millis(10),
-        Duration::from_millis(10),
-        2,
-    );
-    let agent_id = random_agent_id();
-    back_off_list.back_off_agent(&agent_id);
-    assert!(back_off_list.is_agent_on_back_off(&agent_id));
-
-    std::thread::sleep(
-        back_off_list.state.get(&agent_id).unwrap().current_interval,
-    );
-
-    assert!(!back_off_list.is_agent_on_back_off(&agent_id));
-
-    back_off_list.back_off_agent(&agent_id);
-    assert!(back_off_list.is_agent_on_back_off(&agent_id));
-
-    std::thread::sleep(
-        back_off_list.state.get(&agent_id).unwrap().current_interval,
-    );
-
-    assert!(!back_off_list.is_agent_on_back_off(&agent_id));
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_back_off_list() {
     let builder = Arc::new(default_builder().with_default_config().unwrap());
@@ -425,189 +398,6 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
     .unwrap();
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let config = CoreFetchConfig {
-        first_back_off_interval: Duration::from_millis(10),
-        ..Default::default()
-    };
-    let mock_transport = MockTransport::new(false);
-
-    let op_list = create_op_list(1);
-    let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        ..Default::default()
-    }
-    .build();
-    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        agent_info.space.clone(),
-        peer_store,
-        mock_transport.clone(),
-    );
-
-    let first_back_off_interval = {
-        let mut lock = fetch.state.lock().unwrap();
-        lock.back_off_list.back_off_agent(&agent_id);
-
-        assert!(lock.back_off_list.is_agent_on_back_off(&agent_id));
-
-        lock.back_off_list.first_back_off_interval
-    };
-
-    tokio::time::sleep(first_back_off_interval).await;
-
-    fetch.add_ops(op_list, agent_id.clone()).await.unwrap();
-
-    tokio::time::timeout(Duration::from_millis(10), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if !mock_transport.requests_sent.lock().unwrap().is_empty() {
-                break;
-            }
-        }
-    })
-    .await
-    .unwrap();
-
-    assert!(fetch.state.lock().unwrap().back_off_list.state.is_empty());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn requests_are_dropped_when_max_back_off_expired() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let config = CoreFetchConfig {
-        first_back_off_interval: Duration::from_millis(10),
-        last_back_off_interval: Duration::from_millis(10),
-        ..Default::default()
-    };
-    let mock_transport = MockTransport::new(true);
-    let space_id = SpaceId::from(bytes::Bytes::from_static(b"space_1"));
-
-    let op_list_1 = create_op_list(2);
-    let agent_id_1 = random_agent_id();
-    let agent_info_1 = AgentBuilder {
-        agent: Some(agent_id_1.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        ..Default::default()
-    }
-    .build();
-    let agent_url_1 = agent_info_1.url.clone().unwrap();
-    peer_store.insert(vec![agent_info_1.clone()]).await.unwrap();
-
-    // Create a second agent to later check that their ops have not been removed.
-    let op_list_2 = create_op_list(2);
-    let agent_id_2 = random_agent_id();
-    let agent_info_2 = AgentBuilder {
-        agent: Some(agent_id_2.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        ..Default::default()
-    }
-    .build();
-    peer_store.insert(vec![agent_info_2.clone()]).await.unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        space_id.clone(),
-        peer_store,
-        mock_transport.clone(),
-    );
-
-    fetch
-        .add_ops(op_list_1.clone(), agent_id_1.clone())
-        .await
-        .unwrap();
-
-    // Wait for one request to fail, so agent is put on back off list.
-    tokio::time::timeout(Duration::from_millis(10), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if !mock_transport
-                .requests_sent
-                .lock()
-                .unwrap()
-                .clone()
-                .is_empty()
-            {
-                break;
-            }
-        }
-    })
-    .await
-    .unwrap();
-
-    let current_number_of_requests_to_agent_1 = mock_transport
-        .requests_sent
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(_, a)| *a != agent_url_1)
-        .count();
-
-    // Back off agent the maximum possible number of times.
-    let last_back_off_interval = {
-        let mut lock = fetch.state.lock().unwrap();
-        assert!(op_list_1.iter().all(|op_id| lock
-            .requests
-            .contains(&(op_id.clone(), agent_id_1.clone()))));
-        for _ in 0..config.num_back_off_intervals {
-            lock.back_off_list.back_off_agent(&agent_id_1);
-        }
-
-        lock.back_off_list.last_back_off_interval
-    };
-
-    // Wait for back off interval to expire. Afterwards the request should fail again and all
-    // of the agent's requests should be removed from the set.
-    tokio::time::sleep(last_back_off_interval).await;
-
-    assert!(fetch
-        .state
-        .lock()
-        .unwrap()
-        .back_off_list
-        .has_last_back_off_expired(&agent_id_1));
-
-    // Add control agent's ops to set.
-    fetch.add_ops(op_list_2, agent_id_2.clone()).await.unwrap();
-
-    // Wait for another request attempt to agent 1, which should remove all of their requests
-    // from the set.
-    tokio::time::timeout(Duration::from_millis(10), async {
-        loop {
-            if mock_transport
-                .requests_sent
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(_, a)| *a != agent_url_1)
-                .count()
-                > current_number_of_requests_to_agent_1
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .unwrap();
-
-    assert!(fetch
-        .state
-        .lock()
-        .unwrap()
-        .requests
-        .iter()
-        .all(|(_, agent_id)| *agent_id != agent_id_1),);
-}
-
 fn random_id() -> Id {
     let mut rng = rand::thread_rng();
     let mut bytes = [0u8; 32];
@@ -616,15 +406,15 @@ fn random_id() -> Id {
     Id(bytes)
 }
 
-fn random_op_id() -> OpId {
+pub(super) fn random_op_id() -> OpId {
     OpId(random_id())
 }
 
-fn random_agent_id() -> AgentId {
+pub(super) fn random_agent_id() -> AgentId {
     AgentId(random_id())
 }
 
-fn create_op_list(num_ops: u16) -> Vec<OpId> {
+pub(super) fn create_op_list(num_ops: u16) -> Vec<OpId> {
     let mut ops = Vec::new();
     for _ in 0..num_ops {
         let op = random_op_id();
