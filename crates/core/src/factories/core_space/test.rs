@@ -2,6 +2,22 @@ use kitsune2_api::{kitsune::*, space::*, *};
 use kitsune2_test_utils::agent::*;
 use std::sync::{Arc, Mutex};
 
+macro_rules! iter_check {
+    ($millis:literal, $code:block) => {
+        tokio::time::timeout(
+            std::time::Duration::from_millis($millis),
+            async {
+                loop {
+                    $code
+                    tokio::time::sleep(
+                        std::time::Duration::from_millis(1)
+                    ).await;
+                }
+            }
+        ).await.unwrap();
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn space_local_agent_join_leave() {
     #[derive(Debug)]
@@ -45,7 +61,7 @@ async fn space_local_agent_join_leave() {
 
     let mut active_peer_count = 0;
 
-    for _ in 0..5 {
+    iter_check!(1000, {
         active_peer_count = 0;
         for peer in s1.peer_store().get_all().await.unwrap() {
             if !peer.is_tombstone {
@@ -55,8 +71,7 @@ async fn space_local_agent_join_leave() {
         if active_peer_count == 2 {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
+    });
 
     if active_peer_count != 2 {
         panic!("expected 2 active agents, got {active_peer_count}");
@@ -64,7 +79,7 @@ async fn space_local_agent_join_leave() {
 
     s1.local_agent_leave(bob.agent().clone()).await;
 
-    for _ in 0..5 {
+    iter_check!(1000, {
         active_peer_count = 0;
         for peer in s1.peer_store().get_all().await.unwrap() {
             if !peer.is_tombstone {
@@ -74,8 +89,7 @@ async fn space_local_agent_join_leave() {
         if active_peer_count == 1 {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
+    });
 
     if active_peer_count != 1 {
         panic!("expected 1 active agents, got {active_peer_count}");
