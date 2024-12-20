@@ -37,6 +37,8 @@ ed25519-dalek = "2.1.1"
 num_cpus = "1.16.0"
 # api uses this for the kitsune2 wire protocol.
 prost = "0.13.3"
+# used to generate private cryptography keys.
+rand = "0.8.5"
 # kitsune types need to be serializable for network transmission.
 serde = { version = "1.0.215", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
@@ -75,5 +77,4 @@ kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
 kitsune2_memory = { path = "crates/memory" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
-rand = "0.8.5"
 tracing-subscriber = "0.3"

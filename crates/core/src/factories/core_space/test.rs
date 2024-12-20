@@ -1,56 +1,103 @@
-use kitsune2_api::*;
+use kitsune2_api::{kitsune::*, space::*, *};
+use kitsune2_test_utils::agent::*;
 use std::sync::{Arc, Mutex};
 
-const SIG: &[u8] = b"fake-signature";
-
-#[derive(Debug)]
-struct TestCrypto;
-
-impl agent::Signer for TestCrypto {
-    fn sign(
-        &self,
-        _agent_info: &agent::AgentInfo,
-        _encoded: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
-        Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
+macro_rules! iter_check {
+    ($millis:literal, $code:block) => {
+        tokio::time::timeout(
+            std::time::Duration::from_millis($millis),
+            async {
+                loop {
+                    $code
+                    tokio::time::sleep(
+                        std::time::Duration::from_millis(1)
+                    ).await;
+                }
+            }
+        ).await.unwrap();
     }
 }
 
-impl agent::Verifier for TestCrypto {
-    fn verify(
-        &self,
-        _agent_info: &agent::AgentInfo,
-        _message: &[u8],
-        signature: &[u8],
-    ) -> bool {
-        signature == SIG
+#[tokio::test(flavor = "multi_thread")]
+async fn space_local_agent_join_leave() {
+    #[derive(Debug)]
+    struct S;
+
+    impl SpaceHandler for S {}
+
+    #[derive(Debug)]
+    struct K;
+
+    impl KitsuneHandler for K {
+        fn create_space(
+            &self,
+            _space: SpaceId,
+        ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+            Box::pin(async move {
+                let s: DynSpaceHandler = Arc::new(S);
+                Ok(s)
+            })
+        }
     }
-}
 
-const S1: SpaceId = SpaceId(id::Id(bytes::Bytes::from_static(b"space1")));
-
-fn make_agent_info(id: AgentId, url: Url) -> Arc<agent::AgentInfoSigned> {
-    let created_at = Timestamp::now();
-    let expires_at = created_at + std::time::Duration::from_secs(60 * 20);
-    futures::executor::block_on(agent::AgentInfoSigned::sign(
-        &TestCrypto,
-        agent::AgentInfo {
-            agent: id,
-            space: S1.clone(),
-            created_at,
-            expires_at,
-            is_tombstone: false,
-            url: Some(url),
-            storage_arc: DhtArc::FULL,
-        },
-    ))
+    let k: DynKitsuneHandler = Arc::new(K);
+    let k1 = builder::Builder {
+        verifier: Arc::new(TestVerifier),
+        ..crate::default_builder()
+    }
+    .with_default_config()
     .unwrap()
+    .build(k)
+    .await
+    .unwrap();
+
+    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+
+    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
+
+    s1.local_agent_join(bob.clone()).await.unwrap();
+    s1.local_agent_join(ned.clone()).await.unwrap();
+
+    let mut active_peer_count = 0;
+
+    iter_check!(1000, {
+        active_peer_count = 0;
+        for peer in s1.peer_store().get_all().await.unwrap() {
+            if !peer.is_tombstone {
+                active_peer_count += 1;
+            }
+        }
+        if active_peer_count == 2 {
+            break;
+        }
+    });
+
+    if active_peer_count != 2 {
+        panic!("expected 2 active agents, got {active_peer_count}");
+    }
+
+    s1.local_agent_leave(bob.agent().clone()).await;
+
+    iter_check!(1000, {
+        active_peer_count = 0;
+        for peer in s1.peer_store().get_all().await.unwrap() {
+            if !peer.is_tombstone {
+                active_peer_count += 1;
+            }
+        }
+        if active_peer_count == 1 {
+            break;
+        }
+    });
+
+    if active_peer_count != 1 {
+        panic!("expected 1 active agents, got {active_peer_count}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn space_notify_send_recv() {
-    use kitsune2_api::{kitsune::*, space::*, *};
-
     type Item = (AgentId, AgentId, SpaceId, bytes::Bytes);
     type Recv = Arc<Mutex<Vec<Item>>>;
     let recv = Arc::new(Mutex::new(Vec::new()));
@@ -97,7 +144,7 @@ async fn space_notify_send_recv() {
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k1 = builder::Builder {
-        verifier: Arc::new(TestCrypto),
+        verifier: Arc::new(TestVerifier),
         ..crate::default_builder()
     }
     .with_default_config()
@@ -105,12 +152,12 @@ async fn space_notify_send_recv() {
     .build(k)
     .await
     .unwrap();
-    let s1 = k1.space(S1.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
     let u1 = u_r.recv().await.unwrap();
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k2 = builder::Builder {
-        verifier: Arc::new(TestCrypto),
+        verifier: Arc::new(TestVerifier),
         ..crate::default_builder()
     }
     .with_default_config()
@@ -118,48 +165,52 @@ async fn space_notify_send_recv() {
     .build(k)
     .await
     .unwrap();
-    let s2 = k2.space(S1.clone()).await.unwrap();
+    let s2 = k2.space(TEST_SPACE.clone()).await.unwrap();
     let u2 = u_r.recv().await.unwrap();
 
     println!("url: {u1}, {u2}");
 
-    let bob = AgentId::from(bytes::Bytes::from_static(b"bob"));
-    let ned = AgentId::from(bytes::Bytes::from_static(b"ned"));
+    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let bob_info = AgentBuilder {
+        url: Some(Some(u2)),
+        ..Default::default()
+    }
+    .build(bob.clone());
+    let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let ned_info = AgentBuilder {
+        url: Some(Some(u1)),
+        ..Default::default()
+    }
+    .build(ned.clone());
 
-    s1.peer_store()
-        .insert(vec![make_agent_info(bob.clone(), u2)])
-        .await
-        .unwrap();
-    s2.peer_store()
-        .insert(vec![make_agent_info(ned.clone(), u1)])
-        .await
-        .unwrap();
+    s1.peer_store().insert(vec![bob_info]).await.unwrap();
+    s2.peer_store().insert(vec![ned_info]).await.unwrap();
 
     s1.send_notify(
-        bob.clone(),
-        ned.clone(),
+        bob.agent().clone(),
+        ned.agent().clone(),
         bytes::Bytes::from_static(b"hello"),
     )
     .await
     .unwrap();
 
     let (t, f, s, d) = recv.lock().unwrap().remove(0);
-    assert_eq!(&bob, &t);
-    assert_eq!(&ned, &f);
-    assert_eq!(S1, s);
+    assert_eq!(bob.agent(), &t);
+    assert_eq!(ned.agent(), &f);
+    assert_eq!(TEST_SPACE, s);
     assert_eq!("hello", String::from_utf8_lossy(&d));
 
     s2.send_notify(
-        ned.clone(),
-        bob.clone(),
+        ned.agent().clone(),
+        bob.agent().clone(),
         bytes::Bytes::from_static(b"world"),
     )
     .await
     .unwrap();
 
     let (t, f, s, d) = recv.lock().unwrap().remove(0);
-    assert_eq!(&ned, &t);
-    assert_eq!(&bob, &f);
-    assert_eq!(S1, s);
+    assert_eq!(ned.agent(), &t);
+    assert_eq!(bob.agent(), &f);
+    assert_eq!(TEST_SPACE, s);
     assert_eq!("world", String::from_utf8_lossy(&d));
 }

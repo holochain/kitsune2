@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 struct TestCrypto;
 
 impl agent::Signer for TestCrypto {
-    fn sign(
-        &self,
-        agent_info: &agent::AgentInfo,
-        encoded: &[u8],
-    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        agent_info: &'b agent::AgentInfo,
+        encoded: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         use ed25519_dalek::*;
 
         let s1: AgentId = serde_json::from_str(&format!(

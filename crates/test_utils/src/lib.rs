@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Shared testing types for kitsune2 crates.
+//! Test Utilities to help with testing Kitsune2.
 
 /// Enable tracing with the RUST_LOG environment variable.
 ///
@@ -14,3 +14,5 @@ pub fn enable_tracing() {
         )
         .try_init();
 }
+
+pub mod agent;

@@ -1,8 +1,5 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
+use super::{CoreFetch, CoreFetchConfig};
+use crate::default_builder;
 use bytes::Bytes;
 use kitsune2_api::{
     fetch::{deserialize_op_ids, Fetch},
@@ -10,11 +7,12 @@ use kitsune2_api::{
     transport::Transport,
     AgentId, K2Error, OpId, SpaceId, Url,
 };
+use kitsune2_test_utils::agent::*;
 use rand::Rng;
-
-use crate::{default_builder, factories::test_utils::AgentBuilder};
-
-use super::{CoreFetch, CoreFetchConfig};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 #[derive(Debug)]
 pub struct MockTransport {
@@ -75,7 +73,7 @@ impl Transport for MockTransport {
         &self,
         _space: SpaceId,
         _handler: kitsune2_api::transport::DynTxSpaceHandler,
-    ) {
+    ) -> Option<Url> {
         unimplemented!()
     }
 
@@ -104,7 +102,7 @@ async fn fetch_queue() {
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
@@ -190,7 +188,7 @@ async fn happy_multi_op_fetch_from_single_agent() {
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
@@ -259,21 +257,21 @@ async fn happy_multi_op_fetch_from_multiple_agents() {
         space: Some(space_id.clone()),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_info_3 = AgentBuilder {
         agent: Some(agent_3.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_url_1 = agent_info_1.url.clone().unwrap();
     let agent_url_2 = agent_info_2.url.clone().unwrap();
     let agent_url_3 = agent_info_3.url.clone().unwrap();
@@ -359,7 +357,7 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
 
     let fetch = CoreFetch::new(
         config.clone(),
@@ -391,7 +389,7 @@ async fn unresponsive_agents_are_put_on_cool_down_list() {
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
     let fetch = CoreFetch::new(
@@ -449,21 +447,21 @@ async fn add_ops_for_multiple_unresponsive_agents() {
         space: Some(space_id.clone()),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_info_3 = AgentBuilder {
         agent: Some(agent_3.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
         space: Some(space_id.clone()),
         ..Default::default()
     }
-    .build();
+    .build(TestLocalAgent::default());
     let agent_url_1 = agent_info_1.url.clone().unwrap();
     let agent_url_2 = agent_info_2.url.clone().unwrap();
     let agent_url_3 = agent_info_3.url.clone().unwrap();
