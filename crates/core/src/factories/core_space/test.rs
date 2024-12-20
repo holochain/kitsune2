@@ -214,3 +214,94 @@ async fn space_notify_send_recv() {
     assert_eq!(TEST_SPACE, s);
     assert_eq!("world", String::from_utf8_lossy(&d));
 }
+
+// this is a bit of an integration test...
+// but the space module is a bit of an integration module...
+#[tokio::test(flavor = "multi_thread")]
+async fn space_local_agent_periodic_re_sign_and_bootstrap() {
+    #[derive(Debug)]
+    struct B(pub Mutex<Vec<Arc<agent::AgentInfoSigned>>>);
+
+    impl bootstrap::Bootstrap for B {
+        fn put(&self, info: Arc<agent::AgentInfoSigned>) {
+            self.0.lock().unwrap().push(info);
+        }
+    }
+
+    #[derive(Debug)]
+    struct BF(pub Arc<B>);
+
+    impl bootstrap::BootstrapFactory for BF {
+        fn default_config(&self, _config: &mut config::Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn create(
+            &self,
+            _builder: Arc<builder::Builder>,
+            _peer_store: peer_store::DynPeerStore,
+            _space: SpaceId,
+        ) -> BoxFut<'static, K2Result<bootstrap::DynBootstrap>> {
+            let out: bootstrap::DynBootstrap = self.0.clone();
+            Box::pin(async move { Ok(out) })
+        }
+    }
+
+    #[derive(Debug)]
+    struct S;
+
+    impl SpaceHandler for S {}
+
+    #[derive(Debug)]
+    struct K;
+
+    impl KitsuneHandler for K {
+        fn create_space(
+            &self,
+            _space: SpaceId,
+        ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+            Box::pin(async move {
+                let s: DynSpaceHandler = Arc::new(S);
+                Ok(s)
+            })
+        }
+    }
+
+    let b = Arc::new(B(Mutex::new(Vec::new())));
+
+    let builder = builder::Builder {
+        verifier: Arc::new(TestVerifier),
+        bootstrap: Arc::new(BF(b.clone())),
+        ..crate::default_builder()
+    }
+    .with_default_config()
+    .unwrap();
+
+    builder
+        .config
+        .set_module_config(&super::CoreSpaceModConfig {
+            core_space: super::CoreSpaceConfig {
+                // check every 5 millis if we need to re-sign
+                re_sign_freq_ms: 5,
+                // set it so we have to re-sign ALL agent infos always
+                re_sign_expire_time_ms: 1000 * 60 * 20,
+            },
+        })
+        .unwrap();
+
+    let k: DynKitsuneHandler = Arc::new(K);
+    let k1 = builder.build(k).await.unwrap();
+
+    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+
+    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
+
+    s1.local_agent_join(bob.clone()).await.unwrap();
+
+    iter_check!(1000, {
+        // see if bootstrap has received at least 5 new updated agent infos
+        if b.0.lock().unwrap().len() >= 5 {
+            break;
+        }
+    });
+}
