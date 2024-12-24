@@ -100,7 +100,6 @@ async fn respond_to_multiple_requests() {
     }
     .build();
     let agent_url_1 = agent_info_1.url.clone().unwrap();
-    peer_store.insert(vec![agent_info_1.clone()]).await.unwrap();
 
     let op_id_3 = random_op_id();
     let op_id_4 = random_op_id();
@@ -112,7 +111,10 @@ async fn respond_to_multiple_requests() {
     }
     .build();
     let agent_url_2 = agent_info_2.url.clone().unwrap();
-    peer_store.insert(vec![agent_info_2.clone()]).await.unwrap();
+    peer_store
+        .insert(vec![agent_info_1.clone(), agent_info_2.clone()])
+        .await
+        .unwrap();
 
     // Insert ops to be read and sent into op store.
     let op_1 = MetaOp {

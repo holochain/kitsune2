@@ -2,6 +2,7 @@
 
 use crate::{DhtArc, K2Result, OpId, Timestamp};
 use futures::future::BoxFuture;
+use mockall::automock;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
@@ -69,6 +70,7 @@ impl PartialOrd for StoredOp {
 }
 
 /// The API that a kitsune2 host must implement to provide data persistence for kitsune2.
+#[automock]
 pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// Process incoming ops.
     ///

@@ -78,6 +78,10 @@ pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
         ops: Vec<OpId>,
         to: AgentId,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Receive a response with requested ops.
+    fn handle_incoming_ops(&self, ops: Vec<MetaOp>)
+        -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait object [Fetch].

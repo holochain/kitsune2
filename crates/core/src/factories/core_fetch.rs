@@ -49,10 +49,12 @@
 //! - If none of the requested ops could be read from the store, no response is sent.
 //! - If sending or reception fails, it's the caller's responsibility to request again.
 //!
-//! ### Incoming op task
+//! ### Process incoming responses
 //!
+//! When a response to a requested op is received, it must be processed as follows:
 //! - Incoming op is written to the data store.
-//! - Once persisted successfully, op is removed from the set of ops to fetch.
+//! - Once persisted successfully, the op is removed from the set of ops to fetch.
+//! - If persisting fails, the op is not removed from ops to fetch.
 
 use kitsune2_api::{
     builder,
@@ -62,7 +64,7 @@ use kitsune2_api::{
     },
     op_store, peer_store,
     transport::DynTransport,
-    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
+    AgentId, BoxFut, DynOpStore, K2Result, OpId, SpaceId, Url,
 };
 use std::{
     collections::HashSet,
@@ -177,6 +179,7 @@ struct CoreFetch {
     state: Arc<Mutex<State>>,
     request_tx: Sender<FetchRequest>,
     response_tx: Sender<FetchResponse>,
+    op_store: DynOpStore,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -241,6 +244,31 @@ impl Fetch for CoreFetch {
             Ok(())
         })
     }
+
+    fn handle_incoming_ops(
+        &self,
+        ops: Vec<op_store::MetaOp>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            match self.op_store.process_incoming_ops(ops.clone()).await {
+                Err(err) => {
+                    tracing::error!(
+                        "could not write incoming ops to store: {err}"
+                    );
+                }
+                Ok(()) => {
+                    let op_ids =
+                        ops.into_iter().map(|op| op.op_id).collect::<Vec<_>>();
+                    self.state
+                        .lock()
+                        .unwrap()
+                        .requests
+                        .retain(|(op_id, _)| !op_ids.contains(op_id));
+                }
+            }
+            Ok(())
+        })
+    }
 }
 
 impl CoreFetch {
@@ -288,7 +316,7 @@ impl CoreFetch {
         let response_task = tokio::task::spawn(CoreFetch::spawn_response_task(
             response_rx,
             peer_store,
-            op_store,
+            op_store.clone(),
             transport.clone(),
             space_id.clone(),
         ));
@@ -298,6 +326,7 @@ impl CoreFetch {
             state,
             request_tx,
             response_tx,
+            op_store,
             tasks,
         }
     }
@@ -334,6 +363,7 @@ impl CoreFetch {
                 {
                     Some(url) => url,
                     None => {
+                        // If agent is not in peer store, remove all requests to them.
                         state
                             .lock()
                             .unwrap()
@@ -401,7 +431,6 @@ impl CoreFetch {
         while let Some((op_ids, agent_id)) =
             response_rx.lock().await.recv().await
         {
-            tracing::debug!(?op_ids, ?agent_id, "incoming request");
             let peer = match CoreFetch::get_peer_url_from_store(
                 &agent_id,
                 peer_store.clone(),
