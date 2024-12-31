@@ -17,6 +17,26 @@ pub struct MetaOp {
     pub op_data: Vec<u8>,
 }
 
+include!("../proto/gen/kitsune2.op_store.rs");
+
+impl From<MetaOp> for Op {
+    fn from(value: MetaOp) -> Self {
+        Self {
+            op_id: value.op_id.into(),
+            op_data: value.op_data.into(),
+        }
+    }
+}
+
+impl From<Op> for MetaOp {
+    fn from(value: Op) -> Self {
+        Self {
+            op_id: value.op_id.into(),
+            op_data: value.op_data.into(),
+        }
+    }
+}
+
 /// An op that has been stored by the Kitsune host.
 ///
 /// This is the basic unit of data that the host is expected to store. Whether that storage is
@@ -70,6 +90,12 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         end: Timestamp,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
+    /// Read a list of ops from the store.
+    fn read_ops(
+        &self,
+        op_ids: Vec<OpId>,
+    ) -> BoxFuture<'_, K2Result<Vec<MetaOp>>>;
+
     /// Store the combined hash of a time slice.
     fn store_slice_hash(
         &self,
@@ -95,3 +121,24 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait-object version of kitsune2 op store.
 pub type DynOpStore = Arc<dyn OpStore>;
+
+#[cfg(test)]
+mod test {
+    use crate::MetaOp;
+
+    use super::*;
+    use prost::Message;
+
+    #[test]
+    fn happy_meta_op_encode_decode() {
+        let meta_op = MetaOp {
+            op_id: OpId::from(bytes::Bytes::from_static(b"some_op_id")),
+            op_data: vec![1; 128],
+        };
+        let op = Op::from(meta_op);
+        let op_enc = op.encode_to_vec();
+        let op_dec = Op::decode(op_enc.as_slice()).unwrap();
+
+        assert_eq!(op_dec, op);
+    }
+}
