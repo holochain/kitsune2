@@ -36,7 +36,7 @@ async fn take_minimal_snapshot() {
 
     let arc_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap();
 
-    let snapshot = dht.snapshot_minimal(&arc_set, store.clone()).await.unwrap();
+    let snapshot = dht.snapshot_minimal(&arc_set).await.unwrap();
     match snapshot {
         DhtSnapshot::Minimal {
             disc_boundary,
@@ -58,10 +58,7 @@ async fn cannot_take_minimal_snapshot_with_empty_arc_set() {
 
     let err = dht1
         .dht
-        .snapshot_minimal(
-            &ArcSet::new(SECTOR_SIZE, vec![dht1.arc]).unwrap(),
-            dht1.store.clone(),
-        )
+        .snapshot_minimal(&ArcSet::new(SECTOR_SIZE, vec![dht1.arc]).unwrap())
         .await
         .unwrap_err();
     assert_eq!("No arcs to snapshot (src: None)", err.to_string());
@@ -77,7 +74,6 @@ async fn cannot_handle_snapshot_with_empty_arc_set() {
         .dht
         .snapshot_minimal(
             &ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap(),
-            dht1.store.clone(),
         )
         .await
         .unwrap();
@@ -89,7 +85,6 @@ async fn cannot_handle_snapshot_with_empty_arc_set() {
             &snapshot,
             None,
             &ArcSet::new(SECTOR_SIZE, vec![DhtArc::Empty]).unwrap(),
-            dht1.store.clone(),
         )
         .await
         .unwrap_err();

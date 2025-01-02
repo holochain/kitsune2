@@ -63,7 +63,6 @@ impl DhtSyncHarness {
 
         self.dht
             .inform_ops_stored(
-                self.store.clone(),
                 op_list.into_iter().map(|op| op.into()).collect(),
             )
             .await?;
@@ -112,18 +111,10 @@ impl DhtSyncHarness {
         let arc_set_1 = ArcSet::new(SECTOR_SIZE, vec![self.arc])?;
         let arc_set_2 = ArcSet::new(SECTOR_SIZE, vec![other.arc])?;
         let arc_set = arc_set_1.intersection(&arc_set_2);
-        let initial_snapshot = self
-            .dht
-            .snapshot_minimal(&arc_set, self.store.clone())
-            .await?;
+        let initial_snapshot = self.dht.snapshot_minimal(&arc_set).await?;
         match other
             .dht
-            .handle_snapshot(
-                &initial_snapshot,
-                None,
-                &arc_set,
-                other.store.clone(),
-            )
+            .handle_snapshot(&initial_snapshot, None, &arc_set)
             .await?
         {
             DhtSnapshotNextAction::Identical => Ok(true),
@@ -140,20 +131,12 @@ impl DhtSyncHarness {
         let arc_set = arc_set_1.intersection(&arc_set_2);
 
         // Create the initial snapshot locally
-        let initial_snapshot = self
-            .dht
-            .snapshot_minimal(&arc_set, self.store.clone())
-            .await?;
+        let initial_snapshot = self.dht.snapshot_minimal(&arc_set).await?;
 
         // Send it to the other agent and have them diff against it
         let outcome = other
             .dht
-            .handle_snapshot(
-                &initial_snapshot,
-                None,
-                &arc_set,
-                other.store.clone(),
-            )
+            .handle_snapshot(&initial_snapshot, None, &arc_set)
             .await?;
 
         match outcome {
@@ -209,10 +192,8 @@ impl DhtSyncHarness {
 
         // We expect the sync to have been initiated by self, so the disc snapshot should be
         // coming back to us
-        let outcome = self
-            .dht
-            .handle_snapshot(&snapshot, None, arc_set, self.store.clone())
-            .await?;
+        let outcome =
+            self.dht.handle_snapshot(&snapshot, None, arc_set).await?;
 
         let our_details_snapshot = match outcome {
             DhtSnapshotNextAction::NewSnapshot(new_snapshot) => new_snapshot,
@@ -240,12 +221,7 @@ impl DhtSyncHarness {
         // Now we need to ask the other agent to diff against this details snapshot
         let outcome = other
             .dht
-            .handle_snapshot(
-                &our_details_snapshot,
-                None,
-                arc_set,
-                other.store.clone(),
-            )
+            .handle_snapshot(&our_details_snapshot, None, arc_set)
             .await?;
 
         let (snapshot, hash_list_from_other) = match outcome {
@@ -276,12 +252,7 @@ impl DhtSyncHarness {
         // back our ops
         let outcome = self
             .dht
-            .handle_snapshot(
-                &snapshot,
-                Some(our_details_snapshot),
-                arc_set,
-                self.store.clone(),
-            )
+            .handle_snapshot(&snapshot, Some(our_details_snapshot), arc_set)
             .await?;
 
         let hash_list_from_self = match outcome {
@@ -333,12 +304,7 @@ impl DhtSyncHarness {
         // have been sent to us
         let outcome = self
             .dht
-            .handle_snapshot(
-                &other_details_snapshot,
-                None,
-                arc_set,
-                self.store.clone(),
-            )
+            .handle_snapshot(&other_details_snapshot, None, arc_set)
             .await?;
 
         let (snapshot, hash_list_from_self) = match outcome {
@@ -367,12 +333,7 @@ impl DhtSyncHarness {
         // produce a hash list for us
         let outcome = other
             .dht
-            .handle_snapshot(
-                &snapshot,
-                Some(other_details_snapshot),
-                arc_set,
-                other.store.clone(),
-            )
+            .handle_snapshot(&snapshot, Some(other_details_snapshot), arc_set)
             .await?;
 
         let hash_list_from_other = match outcome {
@@ -421,9 +382,7 @@ async fn transfer_ops(
         .into_iter()
         .map(|op| Kitsune2MemoryOp::try_from(op).unwrap().into())
         .collect::<Vec<StoredOp>>();
-    target_dht
-        .inform_ops_stored(target.clone(), stored_ops)
-        .await?;
+    target_dht.inform_ops_stored(stored_ops).await?;
 
     Ok(())
 }

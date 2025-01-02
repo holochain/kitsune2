@@ -29,6 +29,7 @@ mod tests;
 /// itself to determine if they are in sync and which regions to sync if they are not.
 pub struct Dht {
     partition: PartitionedHashes,
+    store: DynOpStore,
 }
 
 /// The next action to take after comparing two DHT snapshots.
@@ -67,9 +68,10 @@ impl Dht {
             partition: PartitionedHashes::try_from_store(
                 14,
                 current_time,
-                store,
+                store.clone(),
             )
             .await?,
+            store,
         })
     }
 
@@ -86,12 +88,10 @@ impl Dht {
     /// `current_time`.
     ///
     /// See also [PartitionedHashes::update] and [PartitionedTime::update](crate::time::PartitionedTime::update).
-    pub async fn update(
-        &mut self,
-        current_time: Timestamp,
-        store: DynOpStore,
-    ) -> K2Result<()> {
-        self.partition.update(store, current_time).await
+    pub async fn update(&mut self, current_time: Timestamp) -> K2Result<()> {
+        self.partition
+            .update(self.store.clone(), current_time)
+            .await
     }
 
     /// Inform the DHT model that some ops have been stored.
@@ -102,10 +102,11 @@ impl Dht {
     /// See also [PartitionedHashes::inform_ops_stored] for more details.
     pub async fn inform_ops_stored(
         &mut self,
-        store: DynOpStore,
         stored_ops: Vec<StoredOp>,
     ) -> K2Result<()> {
-        self.partition.inform_ops_stored(store, stored_ops).await
+        self.partition
+            .inform_ops_stored(self.store.clone(), stored_ops)
+            .await
     }
 
     /// Get a minimal snapshot of the DHT model.
@@ -123,14 +124,15 @@ impl Dht {
     pub async fn snapshot_minimal(
         &self,
         arc_set: &ArcSet,
-        store: DynOpStore,
     ) -> K2Result<DhtSnapshot> {
         if arc_set.covered_sector_count() == 0 {
             return Err(K2Error::other("No arcs to snapshot"));
         }
 
-        let (disc_top_hash, disc_boundary) =
-            self.partition.disc_top_hash(arc_set, store).await?;
+        let (disc_top_hash, disc_boundary) = self
+            .partition
+            .disc_top_hash(arc_set, self.store.clone())
+            .await?;
 
         Ok(DhtSnapshot::Minimal {
             disc_top_hash,
@@ -189,7 +191,6 @@ impl Dht {
         their_snapshot: &DhtSnapshot,
         our_previous_snapshot: Option<DhtSnapshot>,
         arc_set: &ArcSet,
-        store: DynOpStore,
     ) -> K2Result<DhtSnapshotNextAction> {
         if arc_set.covered_sector_count() == 0 {
             return Err(K2Error::other("No arcs to snapshot"));
@@ -208,10 +209,10 @@ impl Dht {
         // already computed snapshot.
         let our_snapshot = match &their_snapshot {
             DhtSnapshot::Minimal { .. } => {
-                self.snapshot_minimal(arc_set, store.clone()).await?
+                self.snapshot_minimal(arc_set).await?
             }
             DhtSnapshot::DiscSectors { .. } => {
-                self.snapshot_disc_sectors(arc_set, store.clone()).await?
+                self.snapshot_disc_sectors(arc_set).await?
             }
             DhtSnapshot::DiscSectorDetails {
                 disc_sector_hashes, ..
@@ -223,7 +224,7 @@ impl Dht {
                             .snapshot_disc_sector_details(
                                 disc_sector_hashes.keys().cloned().collect(),
                                 arc_set,
-                                store.clone(),
+                                self.store.clone(),
                             )
                             .await?;
 
@@ -241,7 +242,7 @@ impl Dht {
                     self.snapshot_disc_sector_details(
                         disc_sector_hashes.keys().cloned().collect(),
                         arc_set,
-                        store.clone(),
+                        self.store.clone(),
                     )
                     .await?
                 }
@@ -287,7 +288,7 @@ impl Dht {
             }
             SnapshotDiff::DiscMismatch => {
                 Ok(DhtSnapshotNextAction::NewSnapshot(
-                    self.snapshot_disc_sectors(arc_set, store).await?,
+                    self.snapshot_disc_sectors(arc_set).await?,
                 ))
             }
             SnapshotDiff::DiscSectorMismatches(mismatched_sectors) => {
@@ -295,7 +296,7 @@ impl Dht {
                     self.snapshot_disc_sector_details(
                         mismatched_sectors,
                         arc_set,
-                        store,
+                        self.store.clone(),
                     )
                     .await?,
                 ))
@@ -328,7 +329,7 @@ impl Dht {
                         };
 
                         out.extend(
-                            store
+                            self.store
                                 .retrieve_op_hashes_in_time_slice(
                                     arc, start, end,
                                 )
@@ -382,7 +383,7 @@ impl Dht {
                         };
 
                         out.extend(
-                            store
+                            self.store
                                 .retrieve_op_hashes_in_time_slice(
                                     arc, start, end,
                                 )
@@ -406,10 +407,11 @@ impl Dht {
     async fn snapshot_disc_sectors(
         &self,
         arc_set: &ArcSet,
-        store: DynOpStore,
     ) -> K2Result<DhtSnapshot> {
-        let (disc_sector_top_hashes, disc_boundary) =
-            self.partition.disc_sector_hashes(arc_set, store).await?;
+        let (disc_sector_top_hashes, disc_boundary) = self
+            .partition
+            .disc_sector_hashes(arc_set, self.store.clone())
+            .await?;
 
         Ok(DhtSnapshot::DiscSectors {
             disc_sector_top_hashes,
