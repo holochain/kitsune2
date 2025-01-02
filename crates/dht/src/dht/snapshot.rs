@@ -44,8 +44,8 @@ pub enum DhtSnapshot {
     },
     /// A snapshot to be used when there is a [DhtSnapshot::DiscSectors] mismatch.
     ///
-    /// For each mismatched disc sector, the snapshot will contain the sector id and all the hashes
-    /// for that sector.
+    /// For each mismatched disc sector, the snapshot will contain the sector index and all the
+    /// hashes for that sector.
     DiscSectorDetails {
         /// Similar to the `disc_sector_top_hashes` except the full time slice hashes are not
         /// combined.
@@ -132,28 +132,29 @@ impl DhtSnapshot {
                 }
 
                 // If one side has a hash for a sector and the other doesn't then that is a mismatch
-                let our_ids =
+                let our_indices =
                     our_disc_sector_top_hashes.keys().collect::<HashSet<_>>();
-                let other_ids =
+                let other_indices =
                     other_disc_sector_top_hashes.keys().collect::<HashSet<_>>();
-                let mut mismatched_sector_ids = our_ids
-                    .symmetric_difference(&other_ids)
-                    .map(|id| **id)
+                let mut mismatched_sector_indices = our_indices
+                    .symmetric_difference(&other_indices)
+                    .map(|index| **index)
                     .collect::<Vec<_>>();
 
                 // Then for any common sectors, check if the hashes match
-                let common_ids =
-                    our_ids.intersection(&other_ids).collect::<HashSet<_>>();
-                for id in common_ids {
-                    if our_disc_sector_top_hashes[id]
-                        != other_disc_sector_top_hashes[id]
+                let common_indices = our_indices
+                    .intersection(&other_indices)
+                    .collect::<HashSet<_>>();
+                for index in common_indices {
+                    if our_disc_sector_top_hashes[index]
+                        != other_disc_sector_top_hashes[index]
                     {
                         // We found a mismatched sector, store it
-                        mismatched_sector_ids.push(**id);
+                        mismatched_sector_indices.push(**index);
                     }
                 }
 
-                SnapshotDiff::DiscSectorMismatches(mismatched_sector_ids)
+                SnapshotDiff::DiscSectorMismatches(mismatched_sector_indices)
             }
             (
                 DhtSnapshot::DiscSectorDetails {
@@ -171,21 +172,21 @@ impl DhtSnapshot {
                     return SnapshotDiff::CannotCompare;
                 }
 
-                let our_ids =
+                let our_indices =
                     our_disc_sector_hashes.keys().collect::<HashSet<_>>();
-                let other_ids =
+                let other_indices =
                     other_disc_sector_hashes.keys().collect::<HashSet<_>>();
 
                 // If one side has a sector and the other doesn't then that is a mismatch
-                let mut mismatched_sector_ids = our_ids
-                    .symmetric_difference(&other_ids)
-                    .map(|id| {
+                let mut mismatched_sector_indices = our_indices
+                    .symmetric_difference(&other_indices)
+                    .map(|index| {
                         (
-                            **id,
+                            **index,
                             our_disc_sector_hashes
-                                .get(*id)
+                                .get(*index)
                                 .unwrap_or_else(|| {
-                                    &other_disc_sector_hashes[*id]
+                                    &other_disc_sector_hashes[*index]
                                 })
                                 .keys()
                                 .copied()
@@ -195,42 +196,48 @@ impl DhtSnapshot {
                     .collect::<HashMap<_, _>>();
 
                 // Then for any common sectors, check if the hashes match
-                let common_sector_ids =
-                    our_ids.intersection(&other_ids).collect::<HashSet<_>>();
-                for sector_id in common_sector_ids {
-                    let our_slice_ids = &our_disc_sector_hashes[sector_id]
+                let common_sector_indices = our_indices
+                    .intersection(&other_indices)
+                    .collect::<HashSet<_>>();
+                for sector_index in common_sector_indices {
+                    let our_slice_indices = &our_disc_sector_hashes
+                        [sector_index]
                         .keys()
                         .collect::<HashSet<_>>();
-                    let other_slice_ids = &other_disc_sector_hashes[sector_id]
+                    let other_slice_indices = &other_disc_sector_hashes
+                        [sector_index]
                         .keys()
                         .collect::<HashSet<_>>();
 
-                    let mut mismatched_slice_ids = our_slice_ids
-                        .symmetric_difference(other_slice_ids)
-                        .map(|id| **id)
+                    let mut mismatched_slice_indices = our_slice_indices
+                        .symmetric_difference(other_slice_indices)
+                        .map(|index| **index)
                         .collect::<Vec<_>>();
 
-                    let common_slice_ids = our_slice_ids
-                        .intersection(other_slice_ids)
+                    let common_slice_indices = our_slice_indices
+                        .intersection(other_slice_indices)
                         .collect::<HashSet<_>>();
 
-                    for slice_id in common_slice_ids {
-                        if our_disc_sector_hashes[sector_id][slice_id]
-                            != other_disc_sector_hashes[sector_id][slice_id]
+                    for slice_index in common_slice_indices {
+                        if our_disc_sector_hashes[sector_index][slice_index]
+                            != other_disc_sector_hashes[sector_index]
+                                [slice_index]
                         {
-                            mismatched_slice_ids.push(**slice_id);
+                            mismatched_slice_indices.push(**slice_index);
                         }
                     }
 
-                    if !mismatched_slice_ids.is_empty() {
-                        mismatched_sector_ids
-                            .entry(**sector_id)
+                    if !mismatched_slice_indices.is_empty() {
+                        mismatched_sector_indices
+                            .entry(**sector_index)
                             .or_insert_with(Vec::new)
-                            .extend(mismatched_slice_ids);
+                            .extend(mismatched_slice_indices);
                     }
                 }
 
-                SnapshotDiff::DiscSectorSliceMismatches(mismatched_sector_ids)
+                SnapshotDiff::DiscSectorSliceMismatches(
+                    mismatched_sector_indices,
+                )
             }
             (
                 DhtSnapshot::RingSectorDetails {
@@ -248,50 +255,56 @@ impl DhtSnapshot {
                     return SnapshotDiff::CannotCompare;
                 }
 
-                let our_ids =
+                let our_indices =
                     our_ring_sector_hashes.keys().collect::<HashSet<_>>();
-                let other_ids =
+                let other_indices =
                     other_ring_sector_hashes.keys().collect::<HashSet<_>>();
 
                 // The mismatched rings should have been figured out from the minimal snapshot
                 // or from the ring mismatch in the previous step. They should be identical
                 // regardless of which side computed this snapshot.
-                if our_ids.len() != other_ids.len() || our_ids != other_ids {
+                if our_indices.len() != other_indices.len()
+                    || our_indices != other_indices
+                {
                     return SnapshotDiff::CannotCompare;
                 }
 
                 // Then for any common rings, check if the hashes match
-                let common_ring_ids =
-                    our_ids.intersection(&other_ids).collect::<HashSet<_>>();
+                let common_ring_indices = our_indices
+                    .intersection(&other_indices)
+                    .collect::<HashSet<_>>();
                 let mut mismatched_ring_sectors =
-                    HashMap::with_capacity(common_ring_ids.len());
-                for ring_id in common_ring_ids {
-                    let our_sector_ids = &our_ring_sector_hashes[ring_id]
+                    HashMap::with_capacity(common_ring_indices.len());
+                for ring_index in common_ring_indices {
+                    let our_sector_indices = &our_ring_sector_hashes
+                        [ring_index]
                         .keys()
                         .collect::<HashSet<_>>();
-                    let other_sector_ids = &other_ring_sector_hashes[ring_id]
+                    let other_sector_indices = &other_ring_sector_hashes
+                        [ring_index]
                         .keys()
                         .collect::<HashSet<_>>();
 
-                    let mut mismatched_sector_ids = our_sector_ids
-                        .symmetric_difference(other_sector_ids)
-                        .map(|id| **id)
+                    let mut mismatched_sector_indices = our_sector_indices
+                        .symmetric_difference(other_sector_indices)
+                        .map(|index| **index)
                         .collect::<Vec<_>>();
 
-                    let common_sector_ids = our_sector_ids
-                        .intersection(other_sector_ids)
+                    let common_sector_indices = our_sector_indices
+                        .intersection(other_sector_indices)
                         .collect::<HashSet<_>>();
 
-                    for sector_id in common_sector_ids {
-                        if our_ring_sector_hashes[ring_id][sector_id]
-                            != other_ring_sector_hashes[ring_id][sector_id]
+                    for sector_index in common_sector_indices {
+                        if our_ring_sector_hashes[ring_index][sector_index]
+                            != other_ring_sector_hashes[ring_index]
+                                [sector_index]
                         {
-                            mismatched_sector_ids.push(**sector_id);
+                            mismatched_sector_indices.push(**sector_index);
                         }
                     }
 
                     mismatched_ring_sectors
-                        .insert(**ring_id, mismatched_sector_ids);
+                        .insert(**ring_index, mismatched_sector_indices);
                 }
 
                 SnapshotDiff::RingSectorMismatches(mismatched_ring_sectors)

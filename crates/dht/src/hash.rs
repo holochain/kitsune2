@@ -198,42 +198,43 @@ impl PartitionedHashes {
         Ok(())
     }
 
-    /// For a given sector ID, return the DHT arc that the sector is responsible for.
+    /// For a given sector index, return the DHT arc that the sector is responsible for.
     ///
     /// This is actually stored on the [PartitionedTime] structure, so this function must find the
     /// relevant [PartitionedTime] structure and then return the arc constraint from that.
-    pub(crate) fn dht_arc_for_sector_id(
+    pub(crate) fn dht_arc_for_sector_index(
         &self,
-        sector_id: u32,
+        sector_index: u32,
     ) -> K2Result<DhtArc> {
-        let sector_id = sector_id as usize;
-        if sector_id >= self.partitioned_hashes.len() {
-            return Err(K2Error::other("Sector ID out of bounds"));
+        let sector_index = sector_index as usize;
+        if sector_index >= self.partitioned_hashes.len() {
+            return Err(K2Error::other("Sector index out of bounds"));
         }
 
-        Ok(*self.partitioned_hashes[sector_id].arc_constraint())
+        Ok(*self.partitioned_hashes[sector_index].arc_constraint())
     }
 
-    /// Get the time bounds for a full slice ID.
+    /// Get the time bounds for a full slice index.
     ///
     /// This is actually stored on the [PartitionedTime] structure, so this function must find the
     /// relevant [PartitionedTime] structure and then return the time bounds from that.
-    pub(crate) fn time_bounds_for_full_slice_id(
+    pub(crate) fn time_bounds_for_full_slice_index(
         &self,
-        slice_id: u64,
+        slice_index: u64,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        self.partitioned_hashes[0].time_bounds_for_full_slice_id(slice_id)
+        self.partitioned_hashes[0].time_bounds_for_full_slice_index(slice_index)
     }
 
-    /// Get the time bounds for a partial slice ID.
+    /// Get the time bounds for a partial slice index.
     ///
     /// This is actually stored on the [PartitionedTime] structure, so this function must find the
     /// relevant [PartitionedTime] structure and then return the time bounds from that.
-    pub(crate) fn time_bounds_for_partial_slice_id(
+    pub(crate) fn time_bounds_for_partial_slice_index(
         &self,
-        slice_id: u32,
+        slice_index: u32,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        self.partitioned_hashes[0].time_bounds_for_partial_slice_id(slice_id)
+        self.partitioned_hashes[0]
+            .time_bounds_for_partial_slice_index(slice_index)
     }
 }
 
@@ -257,8 +258,9 @@ impl PartitionedHashes {
         store: DynOpStore,
     ) -> K2Result<(bytes::Bytes, Timestamp)> {
         let mut combined = bytes::BytesMut::new();
-        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
-            if !arc_set.includes_sector_id(sector_id as u32) {
+        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        {
+            if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
 
@@ -287,8 +289,9 @@ impl PartitionedHashes {
     ) -> Vec<bytes::Bytes> {
         let mut partials = Vec::with_capacity(arc_set.covered_sector_count());
 
-        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
-            if !arc_set.includes_sector_id(sector_id as u32) {
+        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        {
+            if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
 
@@ -327,14 +330,15 @@ impl PartitionedHashes {
         store: DynOpStore,
     ) -> K2Result<(HashMap<u32, bytes::Bytes>, Timestamp)> {
         let mut out = HashMap::new();
-        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
-            if !arc_set.includes_sector_id(sector_id as u32) {
+        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        {
+            if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
 
             let hash = sector.full_time_slice_top_hash(store.clone()).await?;
             if !hash.is_empty() {
-                out.insert(sector_id as u32, hash);
+                out.insert(sector_index as u32, hash);
             }
         }
 
@@ -346,33 +350,34 @@ impl PartitionedHashes {
     /// Compute the disc sector details for the given arc set.
     ///
     /// Does a similar job to [PartitionedHashes::disc_sector_hashes] but, it returns the full time
-    /// slice combined hashes for each sector that is both in the arc set and in the `sector_ids`
-    /// input.
+    /// slice combined hashes for each sector that is both in the arc set and in the
+    /// `sector_indices` input.
     ///
     /// Along with the sector detail hashes, the end timestamp of the last full time slice is
     /// returned. This should be used when comparing sector details hashes of one DHT model with
     /// that of another node to ensure that both nodes are using a common reference point.
     pub(crate) async fn disc_sector_sector_details(
         &self,
-        sector_ids: Vec<u32>,
+        sector_indices: Vec<u32>,
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<(HashMap<u32, HashMap<u64, bytes::Bytes>>, Timestamp)> {
-        let sectors_ids = sector_ids
+        let sectors_indices = sector_indices
             .into_iter()
             .collect::<std::collections::HashSet<_>>();
 
         let mut out = HashMap::new();
 
-        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
-            if !arc_set.includes_sector_id(sector_id as u32)
-                || !sectors_ids.contains(&(sector_id as u32))
+        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        {
+            if !arc_set.includes_sector_index(sector_index as u32)
+                || !sectors_indices.contains(&(sector_index as u32))
             {
                 continue;
             }
 
             out.insert(
-                sector_id as u32,
+                sector_index as u32,
                 sector
                     .full_time_slice_hashes(store.clone())
                     .await?
@@ -389,31 +394,32 @@ impl PartitionedHashes {
     /// Compute the ring details for the given arc set.
     ///
     /// Does a similar job to [PartitionedHashes::ring_top_hashes] but, it returns the partial time
-    /// slice combined hashes for each sector that is both in the arc set and in the `ring_ids`.
+    /// slice combined hashes for each sector that is both in the arc set and in the `ring_indices`.
     ///
     /// Along with the ring details hashes, the end timestamp of the last full time slice is
     /// returned. This should be used when comparing ring details hashes of one DHT model with
     /// that of another node to ensure that both nodes are using a common reference point.
     pub(crate) fn ring_details(
         &self,
-        ring_ids: Vec<u32>,
+        ring_indices: Vec<u32>,
         arc_set: &ArcSet,
     ) -> K2Result<(PartialTimeSliceDetails, Timestamp)> {
         let mut out = HashMap::new();
 
-        for (sector_id, sector) in self.partitioned_hashes.iter().enumerate() {
-            if !arc_set.includes_sector_id(sector_id as u32) {
+        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        {
+            if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
 
-            for ring_id in &ring_ids {
-                let hash = sector.partial_slice_hash(*ring_id)?;
+            for ring_index in &ring_indices {
+                let hash = sector.partial_slice_hash(*ring_index)?;
 
                 // Important to capture that the ring didn't match even if the hash is empty and
                 // therefore we won't communicate this sector.
-                let entry = out.entry(*ring_id).or_insert_with(HashMap::new);
+                let entry = out.entry(*ring_index).or_insert_with(HashMap::new);
                 if !hash.is_empty() {
-                    entry.insert(sector_id as u32, hash);
+                    entry.insert(sector_index as u32, hash);
                 }
             }
         }
@@ -535,7 +541,7 @@ mod tests {
             .slice_hash_count(DhtArc::Arc(ph.size, 2 * ph.size - 1))
             .await
             .unwrap();
-        // Note that this is because we've stored at id 1, not that two hashes ended up in this
+        // Note that this is because we've stored at index 1, not that two hashes ended up in this
         // partition.
         assert_eq!(2, count);
 

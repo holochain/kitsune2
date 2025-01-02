@@ -116,7 +116,7 @@ impl ArcSet {
         self.inner.len()
     }
 
-    pub(crate) fn includes_sector_id(&self, value: u32) -> bool {
+    pub(crate) fn includes_sector_index(&self, value: u32) -> bool {
         self.inner.contains(&value)
     }
 }

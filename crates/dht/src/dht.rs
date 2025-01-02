@@ -300,15 +300,17 @@ impl Dht {
                     .await?,
                 ))
             }
-            SnapshotDiff::DiscSectorSliceMismatches(mismatched_slice_ids) => {
+            SnapshotDiff::DiscSectorSliceMismatches(
+                mismatched_slice_indices,
+            ) => {
                 let mut out = Vec::new();
-                for (sector_id, missing_slices) in mismatched_slice_ids {
+                for (sector_index, missing_slices) in mismatched_slice_indices {
                     let Ok(arc) =
-                        self.partition.dht_arc_for_sector_id(sector_id)
+                        self.partition.dht_arc_for_sector_index(sector_index)
                     else {
                         tracing::error!(
-                            "Sector id {} out of bounds, ignoring",
-                            sector_id
+                            "Sector index {} out of bounds, ignoring",
+                            sector_index
                         );
                         continue;
                     };
@@ -316,7 +318,7 @@ impl Dht {
                     for missing_slice in missing_slices {
                         let Ok((start, end)) = self
                             .partition
-                            .time_bounds_for_full_slice_id(missing_slice)
+                            .time_bounds_for_full_slice_index(missing_slice)
                         else {
                             tracing::error!(
                                 "Missing slice {} out of bounds, ignoring",
@@ -355,25 +357,26 @@ impl Dht {
             SnapshotDiff::RingSectorMismatches(mismatched_sectors) => {
                 let mut out = Vec::new();
 
-                for (ring_id, missing_sectors) in mismatched_sectors {
-                    for sector_id in missing_sectors {
-                        let Ok(arc) =
-                            self.partition.dht_arc_for_sector_id(sector_id)
+                for (ring_index, missing_sectors) in mismatched_sectors {
+                    for sector_index in missing_sectors {
+                        let Ok(arc) = self
+                            .partition
+                            .dht_arc_for_sector_index(sector_index)
                         else {
                             tracing::error!(
-                                "Sector id {} out of bounds, ignoring",
-                                sector_id
+                                "Sector index {} out of bounds, ignoring",
+                                sector_index
                             );
                             continue;
                         };
 
                         let Ok((start, end)) = self
                             .partition
-                            .time_bounds_for_partial_slice_id(ring_id)
+                            .time_bounds_for_partial_slice_index(ring_index)
                         else {
                             tracing::error!(
-                                "Partial slice id {} out of bounds, ignoring",
-                                ring_id
+                                "Partial slice index {} out of bounds, ignoring",
+                                ring_index
                             );
                             continue;
                         };
@@ -416,13 +419,17 @@ impl Dht {
 
     async fn snapshot_disc_sector_details(
         &self,
-        mismatched_sector_ids: Vec<u32>,
+        mismatched_sector_indices: Vec<u32>,
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<DhtSnapshot> {
         let (disc_sector_hashes, disc_boundary) = self
             .partition
-            .disc_sector_sector_details(mismatched_sector_ids, arc_set, store)
+            .disc_sector_sector_details(
+                mismatched_sector_indices,
+                arc_set,
+                store,
+            )
             .await?;
 
         Ok(DhtSnapshot::DiscSectorDetails {

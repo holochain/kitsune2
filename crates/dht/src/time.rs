@@ -244,10 +244,13 @@ impl PartitionedTime {
                 // here.
                 tracing::info!("Historical update detected. Seeing many of these places load on our system, but it is expected if we've been offline or a network partition has been resolved.");
 
-                let slice_id = op.timestamp.as_micros()
+                let slice_index = op.timestamp.as_micros()
                     / (self.full_slice_duration.as_micros() as i64);
                 let current_hash = store
-                    .retrieve_slice_hash(self.arc_constraint, slice_id as u64)
+                    .retrieve_slice_hash(
+                        self.arc_constraint,
+                        slice_index as u64,
+                    )
                     .await?;
                 match current_hash {
                     Some(hash) => {
@@ -259,7 +262,7 @@ impl PartitionedTime {
                         store
                             .store_slice_hash(
                                 self.arc_constraint,
-                                slice_id as u64,
+                                slice_index as u64,
                                 hash.freeze(),
                             )
                             .await?;
@@ -269,7 +272,7 @@ impl PartitionedTime {
                         store
                             .store_slice_hash(
                                 self.arc_constraint,
-                                slice_id as u64,
+                                slice_index as u64,
                                 op.op_id.0 .0,
                             )
                             .await?;
@@ -317,37 +320,37 @@ impl PartitionedTime {
         Ok(())
     }
 
-    pub(crate) fn time_bounds_for_full_slice_id(
+    pub(crate) fn time_bounds_for_full_slice_index(
         &self,
-        slice_id: u64,
+        slice_index: u64,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        if slice_id > self.full_slices {
+        if slice_index > self.full_slices {
             return Err(K2Error::other(
-                "Requested slice id is beyond the current full slices",
+                "Requested slice index is beyond the current full slices",
             ));
         }
 
         let start = UNIX_TIMESTAMP
             + Duration::from_secs(
-                slice_id * self.full_slice_duration.as_secs(),
+                slice_index * self.full_slice_duration.as_secs(),
             );
         let end = start + self.full_slice_duration;
 
         Ok((start, end))
     }
 
-    pub(crate) fn time_bounds_for_partial_slice_id(
+    pub(crate) fn time_bounds_for_partial_slice_index(
         &self,
-        slice_id: u32,
+        slice_index: u32,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        let slice_id = slice_id as usize;
-        if slice_id > self.partial_slices.len() {
+        let slice_index = slice_index as usize;
+        if slice_index > self.partial_slices.len() {
             return Err(K2Error::other(
-                "Requested slice id is beyond the current partial slices",
+                "Requested slice index is beyond the current partial slices",
             ));
         }
 
-        let partial = &self.partial_slices[slice_id];
+        let partial = &self.partial_slices[slice_index];
         Ok((partial.start, partial.end()))
     }
 }
@@ -357,7 +360,7 @@ impl PartitionedTime {
     /// Compute a top hash over the full time slice combined hashes owned by this [PartitionedTime].
     ///
     /// This method will fetch the hashes of all the full time slices within the arc constraint
-    /// for this [PartitionedTime]. Those are expected to be ordered by slice id, which implies
+    /// for this [PartitionedTime]. Those are expected to be ordered by slice index, which implies
     /// that they are ordered by time. It will then combine those hashes into a single hash.
     pub async fn full_time_slice_top_hash(
         &self,
@@ -394,25 +397,29 @@ impl PartitionedTime {
         store.retrieve_slice_hashes(self.arc_constraint).await
     }
 
-    /// Get the combined hash of a partial slice by its slice id.
+    /// Get the combined hash of a partial slice by its slice index.
     ///
     /// Note that the number of partial slices changes over time and the start point of the partial
-    /// slices moves. It is important that the slice id is only used to refer to a specific slice
+    /// slices moves. It is important that the slice index is only used to refer to a specific slice
     /// at a specific point in time. This can be achieved by not calling [PartitionedTime::update]
-    /// while expecting the slice id to refer to the same slice.
+    /// while expecting the slice index to refer to the same slice.
     ///
     /// # Errors
     ///
-    /// This method will return an error if the requested slice id is beyond the current partial slices.
-    pub fn partial_slice_hash(&self, slice_id: u32) -> K2Result<bytes::Bytes> {
-        let slice_id = slice_id as usize;
-        if slice_id > self.partial_slices.len() {
+    /// This method will return an error if the requested slice index is beyond the current partial
+    /// slices.
+    pub fn partial_slice_hash(
+        &self,
+        slice_index: u32,
+    ) -> K2Result<bytes::Bytes> {
+        let slice_index = slice_index as usize;
+        if slice_index > self.partial_slices.len() {
             return Err(K2Error::other(
-                "Requested slice id is beyond the current partial slices",
+                "Requested slice index is beyond the current partial slices",
             ));
         }
 
-        Ok(self.partial_slices[slice_id].hash.clone().freeze())
+        Ok(self.partial_slices[slice_index].hash.clone().freeze())
     }
 }
 
