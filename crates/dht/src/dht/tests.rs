@@ -114,8 +114,9 @@ async fn one_way_disc_sync_from_initiator() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put historical data in the first DHT
+    let op_id = OpId::from(bytes::Bytes::from(vec![41; 32]));
     dht1.inject_ops(vec![Kitsune2MemoryOp::new(
-        OpId::from(bytes::Bytes::from(vec![41; 32])),
+        op_id.clone(),
         UNIX_TIMESTAMP,
         vec![],
     )])
@@ -132,6 +133,7 @@ async fn one_way_disc_sync_from_initiator() {
     // The other agent should have learned about the op
     assert_eq!(1, dht2.discovered_ops.len());
     assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
+    assert_eq!(vec![op_id], dht2.discovered_ops[&dht1.agent_id]);
 
     // Move any discovered ops between the two DHTs
     dht1.apply_op_sync(&mut dht2).await.unwrap();
