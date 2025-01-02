@@ -150,17 +150,17 @@ impl Dht {
     /// The state flow is as follows:
     /// - If the two snapshots are identical, the function will return [DhtSnapshotNextAction::Identical].
     /// - If the two snapshots cannot be compared, the function will return [DhtSnapshotNextAction::CannotCompare].
-    ///   This can happen if the time slices of the two DHTs are not aligned or one side is following
-    ///   a different flow to what we're expecting.
+    ///   This can happen if the time slices of the two DHTs are not aligned or one side is
+    ///   following a different flow to what we're expecting.
     /// - If the snapshots are different, the function will return [DhtSnapshotNextAction::NewSnapshot]
     ///   with a more detailed snapshot of the DHT model.
     /// - When the most detailed snapshot type is reached, the function will return [DhtSnapshotNextAction::NewSnapshotAndHashList]
-    /// - The new snapshot from [DhtSnapshotNextAction::NewSnapshotAndHashList] should be sent to the
-    ///   other party so that they can compare it with their own snapshot and determine which op hashes
-    ///   they need to fetch.
+    /// - The new snapshot from [DhtSnapshotNextAction::NewSnapshotAndHashList] should be sent to
+    ///   the other party so that they can compare it with their own snapshot and determine which op
+    ///   hashes they need to fetch.
     /// - On the final comparison step, the function will return [DhtSnapshotNextAction::HashList]
-    ///   with a list of op hashes. This list should be sent to the other party so that they can fetch
-    ///   any missing ops.
+    ///   with a list of op hashes. This list should be sent to the other party so that they can
+    ///   fetch any missing ops.
     ///
     /// Notice that the final step would require re-computing the most detailed snapshot type. This
     /// is expensive. To avoid having to recompute a snapshot we've already computed, the caller
