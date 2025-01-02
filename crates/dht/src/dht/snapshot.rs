@@ -103,7 +103,7 @@ impl DhtSnapshot {
                 // This is more common, it can happen if we're close to a UNIT_TIME boundary
                 // and there is a small clock difference or just one node calculated this snapshot
                 // before the other did. Still, we'll have to wait until we next compare to
-                // compare our DHT state.
+                // our DHT state.
                 if our_ring_top_hashes.len() != other_ring_top_hashes.len() {
                     return SnapshotDiff::CannotCompare;
                 }
