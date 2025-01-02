@@ -135,6 +135,8 @@ async fn one_way_disc_sync_from_initiator() {
     assert_eq!(1, dht2.discovered_ops[&dht1.agent_id].len());
     assert_eq!(vec![op_id], dht2.discovered_ops[&dht1.agent_id]);
 
+    assert!(!dht1.is_in_sync_with(&dht2).await.unwrap());
+
     // Move any discovered ops between the two DHTs
     dht1.apply_op_sync(&mut dht2).await.unwrap();
 
