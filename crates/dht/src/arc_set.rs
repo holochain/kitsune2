@@ -18,6 +18,10 @@ pub struct ArcSet {
 impl ArcSet {
     /// Create a new arc set from a list of arcs.
     ///
+    /// The size parameter determines the size of each sector. When divided into U32::MAX + 1, the
+    /// resulting factor must be a power of 2. This is the same sizing logic found in
+    /// [PartitionedHashes::try_from_store](crate::hash::PartitionedHashes::try_from_store).
+    ///
     /// The resulting arc set represents the union of the input arcs.
     pub fn new(size: u32, arcs: Vec<DhtArc>) -> K2Result<Self> {
         let factor = u32::MAX / size + 1;
