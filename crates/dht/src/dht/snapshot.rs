@@ -17,7 +17,7 @@ pub enum DhtSnapshot {
     ///
     /// It contains enough information to make further decisions about where mismatches might be
     /// but does its best to compress historical information. The assumption being that the more
-    /// recent data is more likely to contains mismatches than older data.
+    /// recent data is more likely to contain mismatches than older data.
     ///
     /// Requires 4 bytes for the timestamp. It then requires at most
     /// 2 * (`time_factor` - 1) * `HASH_SIZE` + 1 bytes for the disc hash and the ring hashes.
