@@ -328,7 +328,7 @@ async fn ring_sync_with_matching_disc() {
     // Put historical data in both DHTs
     let historical_ops = vec![
         Kitsune2MemoryOp::new(
-            OpId::from(bytes::Bytes::from(vec![7; 32])),
+            OpId::from(bytes::Bytes::from(vec![7; 4])),
             UNIX_TIMESTAMP,
             vec![],
         ),
@@ -345,7 +345,7 @@ async fn ring_sync_with_matching_disc() {
 
     // Put recent data in the first ring of both DHTs
     dht1.inject_ops(vec![Kitsune2MemoryOp::new(
-        OpId::from(bytes::Bytes::from(vec![7; 32])),
+        OpId::from(bytes::Bytes::from(vec![7; 4])),
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![],
     )])
@@ -353,7 +353,7 @@ async fn ring_sync_with_matching_disc() {
     .unwrap();
 
     dht2.inject_ops(vec![Kitsune2MemoryOp::new(
-        OpId::from(bytes::Bytes::from(vec![13; 32])),
+        OpId::from(bytes::Bytes::from(vec![13; 4])),
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![],
     )])
