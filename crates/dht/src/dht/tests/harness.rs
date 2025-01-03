@@ -1,6 +1,5 @@
 use crate::arc_set::ArcSet;
 use crate::dht::snapshot::DhtSnapshot;
-use crate::dht::tests::SECTOR_SIZE;
 use crate::{Dht, DhtSnapshotNextAction};
 use kitsune2_api::{
     AgentId, DhtArc, DynOpStore, K2Result, OpId, OpStore, StoredOp, Timestamp,
@@ -108,8 +107,8 @@ impl DhtSyncHarness {
     }
 
     pub(crate) async fn is_in_sync_with(&self, other: &Self) -> K2Result<bool> {
-        let arc_set_1 = ArcSet::new(SECTOR_SIZE, vec![self.arc])?;
-        let arc_set_2 = ArcSet::new(SECTOR_SIZE, vec![other.arc])?;
+        let arc_set_1 = ArcSet::new(vec![self.arc])?;
+        let arc_set_2 = ArcSet::new(vec![other.arc])?;
         let arc_set = arc_set_1.intersection(&arc_set_2);
         let initial_snapshot = self.dht.snapshot_minimal(&arc_set).await?;
         match other
@@ -126,8 +125,8 @@ impl DhtSyncHarness {
         &mut self,
         other: &mut Self,
     ) -> K2Result<SyncWithOutcome> {
-        let arc_set_1 = ArcSet::new(SECTOR_SIZE, vec![self.arc])?;
-        let arc_set_2 = ArcSet::new(SECTOR_SIZE, vec![other.arc])?;
+        let arc_set_1 = ArcSet::new(vec![self.arc])?;
+        let arc_set_2 = ArcSet::new(vec![other.arc])?;
         let arc_set = arc_set_1.intersection(&arc_set_2);
 
         // Create the initial snapshot locally
