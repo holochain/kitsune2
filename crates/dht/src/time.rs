@@ -36,7 +36,7 @@
 //!     size. Larger slices are allocated before smaller slices.
 //!
 //! As time progresses, the partitioning needs to be updated. This is done by calling the
-//! [PartitionedTime::update] method. The update method will:
+//! [TimePartition::update] method. The update method will:
 //!    - Run the partitioning algorithm to determine whether new full slices can be allocated and
 //!      how to partition the remaining time into partial slices.
 //!    - Store the combined hash of any new full slices in the Kitsune2 op store.
@@ -63,7 +63,7 @@ use std::time::Duration;
 /// The partitioned time structure.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
-pub struct PartitionedTime {
+pub struct TimePartition {
     /// The factor used to determine the size of the time slices.
     ///
     /// The size of a time slice is 2^factor * [UNIT_TIME].
@@ -80,7 +80,7 @@ pub struct PartitionedTime {
     partial_slices: Vec<PartialSlice>,
     /// The duration of a full slice.
     ///
-    /// This is used regularly and is a constant based on [PartitionedTime::factor], so it is
+    /// This is used regularly and is a constant based on [TimePartition::factor], so it is
     /// calculated at construction and stored. It is computed as 2^factor * [UNIT_TIME].
     full_slice_duration: Duration,
     /// The minimum amount of time that must be reserved for recent time.
@@ -92,8 +92,8 @@ pub struct PartitionedTime {
     ///
     /// After this time, there will be an excess amount of time that could be allocated into a
     /// partial slice. The data structure is still usable but will get behind if
-    /// [PartitionedTime::update] is not called.
-    /// It is idempotent to call [PartitionedTime::update] more often than required, but it is not
+    /// [TimePartition::update] is not called.
+    /// It is idempotent to call [TimePartition::update] more often than required, but it is not
     /// efficient.
     next_update_at: Timestamp,
     /// The storage arc that this partitioned time is associated with.
@@ -137,18 +137,18 @@ impl PartialSlice {
 }
 
 // Public methods
-impl PartitionedTime {
-    /// Create a new instance of [PartitionedTime] from the given store.
+impl TimePartition {
+    /// Create a new instance of [TimePartition] from the given store.
     ///
     /// The store is needed to check how many time slices were created last time this
-    /// [PartitionedTime] was updated, if any.
+    /// [TimePartition] was updated, if any.
     ///
-    /// The method will then update the state of the [PartitionedTime] to the current time.
-    /// It does this by checking that the construction of this [PartitionedTime] is consistent
-    /// and then calling [PartitionedTime::update].
+    /// The method will then update the state of the [TimePartition] to the current time.
+    /// It does this by checking that the construction of this [TimePartition] is consistent
+    /// and then calling [TimePartition::update].
     ///
-    /// The resulting [PartitionedTime] will be consistent with the store and the current time.
-    /// It should be updated again after [PartitionedTime::next_update_at].
+    /// The resulting [TimePartition] will be consistent with the store and the current time.
+    /// It should be updated again after [TimePartition::next_update_at].
     pub async fn try_from_store(
         factor: u8,
         current_time: Timestamp,
@@ -183,15 +183,15 @@ impl PartitionedTime {
 
     /// The timestamp at which the next update is required.
     ///
-    /// See the field [PartitionedTime::next_update_at] for more information.
+    /// See the field [TimePartition::next_update_at] for more information.
     ///
-    /// This value is updated by [PartitionedTime::update], so you can check the next update time
+    /// This value is updated by [TimePartition::update], so you can check the next update time
     /// after calling that method.
     pub fn next_update_at(&self) -> Timestamp {
         self.next_update_at
     }
 
-    /// Update the state of the [PartitionedTime] to the current time.
+    /// Update the state of the [TimePartition] to the current time.
     ///
     /// This method will:
     ///   - Check if there is space for any new full slices
@@ -221,10 +221,10 @@ impl PartitionedTime {
         Ok(())
     }
 
-    /// Inform the [PartitionedTime] that some ops have been stored.
+    /// Inform the [TimePartition] that some ops have been stored.
     ///
     /// It is expected that the caller ensures that the ops belong to the hash range managed by this
-    /// [PartitionedTime]. This method will update the hashes of the full and partial slices that
+    /// [TimePartition]. This method will update the hashes of the full and partial slices that
     /// the incoming ops belong to.
     ///
     /// If the op happens to be new enough to not belong in a slice, then it will be ignored. The
@@ -356,11 +356,11 @@ impl PartitionedTime {
 }
 
 // Public query methods
-impl PartitionedTime {
-    /// Compute a top hash over the full time slice combined hashes owned by this [PartitionedTime].
+impl TimePartition {
+    /// Compute a top hash over the full time slice combined hashes owned by this [TimePartition].
     ///
     /// This method will fetch the hashes of all the full time slices within the arc constraint
-    /// for this [PartitionedTime]. Those are expected to be ordered by slice index, which implies
+    /// for this [TimePartition]. Those are expected to be ordered by slice index, which implies
     /// that they are ordered by time. It will then combine those hashes into a single hash.
     pub async fn full_time_slice_top_hash(
         &self,
@@ -375,7 +375,7 @@ impl PartitionedTime {
         )
     }
 
-    /// Get the combined hash of all the partial slices owned by this [PartitionedTime].
+    /// Get the combined hash of all the partial slices owned by this [TimePartition].
     ///
     /// This method takes the current partial slices and returns their pre-computed hashes.
     /// These are combined hashes over all the ops in each partial slice, ordered by time.
@@ -387,9 +387,9 @@ impl PartitionedTime {
             .map(|partial| partial.hash.clone().freeze())
     }
 
-    /// Gets the combined hashes of all the full time slices owned by this [PartitionedTime].
+    /// Gets the combined hashes of all the full time slices owned by this [TimePartition].
     ///
-    /// This is a pass-through to the provided store, using the arc constraint of this [PartitionedTime].
+    /// This is a pass-through to the provided store, using the arc constraint of this [TimePartition].
     pub async fn full_time_slice_hashes(
         &self,
         store: DynOpStore,
@@ -401,7 +401,7 @@ impl PartitionedTime {
     ///
     /// Note that the number of partial slices changes over time and the start point of the partial
     /// slices moves. It is important that the slice index is only used to refer to a specific slice
-    /// at a specific point in time. This can be achieved by not calling [PartitionedTime::update]
+    /// at a specific point in time. This can be achieved by not calling [TimePartition::update]
     /// while expecting the slice index to refer to the same slice.
     ///
     /// # Errors
@@ -424,8 +424,8 @@ impl PartitionedTime {
 }
 
 // Private methods
-impl PartitionedTime {
-    /// Private constructor, see [PartitionedTime::try_from_store].
+impl TimePartition {
+    /// Private constructor, see [TimePartition::try_from_store].
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
     /// state with full and partial slices for the current time.
@@ -491,7 +491,7 @@ impl PartitionedTime {
 
     /// Update full slice hashes for the current time.
     ///
-    /// This method will use [PartitionedTime::layout_full_slices] to determine how many new full
+    /// This method will use [TimePartition::layout_full_slices] to determine how many new full
     /// slices should be allocated. It will then fetch the op hashes for each full slice and
     /// combine them into a single hash. That combined hash is then stored on the host.
     async fn update_full_slice_hashes(
@@ -573,7 +573,7 @@ impl PartitionedTime {
 
     /// Update the partial slices for the current time.
     ///
-    /// This method will use [PartitionedTime::layout_partials] to determine how to partition
+    /// This method will use [TimePartition::layout_partials] to determine how to partition
     /// recent time into partial slices. It will then fetch the op hashes for each partial slice
     /// and combine them into a single hash. That combined hash is then stored in memory.
     ///
@@ -701,7 +701,7 @@ mod tests {
     #[test]
     fn new() {
         let factor = 4;
-        let pt = PartitionedTime::new(factor, DhtArc::FULL).unwrap();
+        let pt = TimePartition::new(factor, DhtArc::FULL).unwrap();
 
         // Full slices would have size 2^4 = 16, so we should reserve space for at least one
         // of each smaller slice size
@@ -712,7 +712,7 @@ mod tests {
     async fn from_store() {
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             UNIX_TIMESTAMP,
             DhtArc::FULL,
@@ -731,7 +731,7 @@ mod tests {
             UNIX_TIMESTAMP + Duration::from_secs(UNIT_TIME.as_secs() + 1);
         let factor = 4;
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             DhtArc::FULL,
@@ -766,7 +766,7 @@ mod tests {
                 min_recent_time(factor).as_secs() + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             DhtArc::FULL,
@@ -792,7 +792,7 @@ mod tests {
                 + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             DhtArc::FULL,
@@ -817,7 +817,7 @@ mod tests {
                 2 * min_recent_time(factor).as_secs() + 1,
             );
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             DhtArc::FULL,
@@ -861,7 +861,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             DhtArc::FULL,
@@ -900,7 +900,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -951,7 +951,7 @@ mod tests {
             .unwrap();
 
         let arc_constraint = DhtArc::Arc(0, 2);
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1027,7 +1027,7 @@ mod tests {
             .unwrap();
 
         let arc_constraint = DhtArc::Arc(0, 2);
-        let pt = PartitionedTime::try_from_store(
+        let pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1091,7 +1091,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             DhtArc::FULL,
@@ -1154,7 +1154,7 @@ mod tests {
             .await
             .unwrap();
 
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1227,7 +1227,7 @@ mod tests {
             .unwrap();
 
         let arc_constraint = DhtArc::Arc(0, 2);
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_times,
             arc_constraint,
@@ -1299,7 +1299,7 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
         let arc_constraint = DhtArc::Arc(0, 2);
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1382,7 +1382,7 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
         let arc_constraint = DhtArc::FULL;
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1448,7 +1448,7 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
         let arc_constraint = DhtArc::Arc(0, 32);
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1503,7 +1503,7 @@ mod tests {
             .unwrap();
 
         let arc_constraint = DhtArc::Arc(0, 32);
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1551,7 +1551,7 @@ mod tests {
         let store = Arc::new(Kitsune2MemoryOpStore::default());
 
         let arc_constraint = DhtArc::Arc(0, 32);
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1617,7 +1617,7 @@ mod tests {
             .unwrap();
 
         let arc_constraint = DhtArc::Arc(0, 32);
-        let mut pt = PartitionedTime::try_from_store(
+        let mut pt = TimePartition::try_from_store(
             factor,
             current_time,
             arc_constraint,
@@ -1660,7 +1660,7 @@ mod tests {
         );
     }
 
-    fn validate_partial_slices(pt: &PartitionedTime) {
+    fn validate_partial_slices(pt: &TimePartition) {
         let mut start_at = UNIX_TIMESTAMP
             + Duration::from_secs(
                 pt.full_slices * full_slice_duration(pt.factor).as_secs(),
@@ -1695,13 +1695,13 @@ mod tests {
     }
 
     fn min_recent_time(factor: u8) -> Duration {
-        PartitionedTime::new(factor, DhtArc::FULL)
+        TimePartition::new(factor, DhtArc::FULL)
             .unwrap()
             .min_recent_time
     }
 
     fn full_slice_duration(factor: u8) -> Duration {
-        PartitionedTime::new(factor, DhtArc::FULL)
+        TimePartition::new(factor, DhtArc::FULL)
             .unwrap()
             .full_slice_duration
     }
