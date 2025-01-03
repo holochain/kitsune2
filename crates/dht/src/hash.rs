@@ -1,57 +1,57 @@
 //! Partition of the hash space.
 //!
-//! The space of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::id::Id::loc)
+//! The set of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::id::Id::loc)
 //! for more information about this. Each agent is responsible for storing and serving some part of
 //! the hash space. This module provides a structure that partitions the hash space into 512
-//! equally-sized DHT arcs.
+//! equally-sized DHT sectors.
 //!
-//! Each space partition manages a [PartitionedTime] structure that is responsible for managing the
-//! time slices for that space partition. The interface of this module is largely responsible for
-//! delegating the updating of time slices to the inner time partitions. This ensures all the time
-//! partitions are updated in lockstep, which makes reasoning about the space-time partitioning
+//! Each sector manages a [TimePartition] structure that is responsible for managing the time
+//! slices for that sector. The interface of this module is largely responsible for delegating
+//! the updating of time slices to the inner [TimePartition]s. This ensures all the
+//! [TimePartition]s are updated in lockstep, which makes reasoning about the space-time state
 //! easier.
 //!
 //! This module must be informed about ops that have been stored. There is no active process here
-//! that can look for newly stored ops. When a batch of ops is stored, the [PartitionedHashes] must
-//! be informed and will split the ops into the right space partition based on the location of the op.
-//! Ops are then pushed to the inner time partition for each space partition. It is the time
-//! partitions that are responsible for updating the combined hash values.
+//! that can look for newly stored ops. When a batch of ops is stored, the [HashPartition] must
+//! be informed and will split the ops into the right sector based on the location of the op. Ops
+//! are then pushed to the inner [TimePartition] for each sector. That determines which time slice
+//! the ops belong to and update the combined hash values for affected slices.
 //!
 //! That completes the high level information for this module, what follows is a more detailed
 //! explanation of the design.
 //!
 //! The bit-depth of the location roughly determines how evenly ops are distributed across the
-//! partitions. For example, an 8-bit location can only map op hashes to 256 possible locations,
-//! which would not use the top half of the partitions here. A 32-bit location retains enough
-//! information to use the full range of partitions and can be calculated inside a 32-bit integer.
-//! A 16-bit or 64-bit location would work too, and the choice between the options is not
-//! quantified here.
+//! sectors. For example, an 8-bit location can only map op hashes to 256 possible locations,
+//! which would not use the top half of the sectors here. A 32-bit location retains enough
+//! information to use the full range of sectors. A 16-bit or 64-bit location would work too, and
+//! the choice between the options is not quantified here.
 //!
-//! The choice of 512 partitions is a tradeoff between the minimum amount of data that a node must
+//! The choice of 512 sectors is a tradeoff between the minimum amount of data that a node must
 //! store to participate in the network and the amount of data that must be sent over the network
 //! to discover what op data needs to be fetched. Every node will store between 0 and 512
-//! partitions. For nodes that are choosing to store data, the minimum they can store is 1
-//! partition. Or in other words, 1/512th of the total data. To put this in context, an application
+//! sectors. For nodes that are choosing to store data, the minimum they can store is 1
+//! sector. Or in other words, 1/512th of the total data. To put this in context, an application
 //! that has a complete data set of 5TB would require a minimum of 10GB of storage dedicated to
 //! that app to be able to participate in the network.
-//! It is important to note though, that each partition is managing a [PartitionedTime] structure
+//! It is important to note though, that each sector is managing a [TimePartition] structure
 //! which requires some memory and processing to maintain. Nodes that take on more partitions will
-//! have more work to do and will have to send more data during gossip rounds. That happens when
-//! there are changes to data that has made it into a time slice and become part of a combined
-//! hash. Generally, nodes will be able to just sync "what's new" but for catch-up, this is true.
+//! have more work to do and will have to send more data to sync [Dht](crate::dht::Dht)s.
+//! That happens when there are changes to data that has made it into a time slice and become part
+//! of a combined hash. Generally, nodes will be able to just sync "what's new" but for catch-up,
+//! this is true.
 //! As a consequence, a new network that hasn't yet gained enough members to start reducing how
-//! many partitions are covered by each node will have a higher overhead for each node.
+//! many sectors are covered by each node will have a higher overhead for each node.
 //! It is the responsibility of the gossip module to work out how to be efficient about sending
 //! the minimum amount of data required to keep all nodes up to date. However, the worst case is
-//! that 512 combined hashes must be sent to find out which partition has a mismatch for a given
+//! that 512 combined hashes must be sent to find out which sector has a mismatch for a given
 //! time slice. Over time, there will be more time slices to check.
 //! Therefore, the choice of 512 should be thought of as a best-effort choice to ask a reasonable
 //! amount of work and storage from each node in a large network but being no larger than that
 //! so we don't add overhead to gossip.
 //!
-//! It is also important to note that nodes may have to store the full 512 partitions if the
+//! It is also important to note that nodes may have to store the full 512 sectors if the
 //! number of peers in the network is not high enough. The network must have enough peers that
-//! data is still stored redundantly before the number of partitions per node can be reduced.
+//! data is still stored redundantly before the number of sectors per node can be reduced.
 //!
 //! It should also be understood that as well as the minimum storage requirement and the
 //! possibility of having to store more data on smaller networks, a user of a Kitsune2 app is
@@ -62,84 +62,84 @@
 
 use crate::arc_set::ArcSet;
 use crate::combine::combine_hashes;
-use crate::PartitionedTime;
+use crate::{TimePartition, SECTOR_SIZE};
 use kitsune2_api::{
     DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
 };
 use std::collections::HashMap;
 
-/// A partitioned hash structure.
+/// A partition of the hash space into sectors.
 ///
-/// Partitions the hash structure into a fixed number of partitions. Each partition is
-/// responsible for managing the time slices for that partition using a [PartitionedTime].
+/// Partitions the hash structure into a fixed number of sectors. Each sector is
+/// responsible for managing the time slices for that sector using a [TimePartition].
 #[derive(Debug)]
-pub struct PartitionedHashes {
+pub struct HashPartition {
     /// This is just a convenience for internal function use.
     /// This should always be exactly `(u32::MAX / self.partitioned_hashes.len()) + 1`.
     size: u32,
-    /// The partition count here (length of Vec) is always a power of 2.
+    /// The sector count here (length of Vec) is always a power of 2.
     ///
     /// That is, (2**0, 2**1, etc). It is currently always 512 and is not configurable.
-    partitioned_hashes: Vec<PartitionedTime>,
+    sectors: Vec<TimePartition>,
 }
 
 pub(crate) type PartialTimeSliceDetails =
     HashMap<u32, HashMap<u32, bytes::Bytes>>;
 
-impl PartitionedHashes {
+impl HashPartition {
     /// Create a new partitioned hash structure.
     ///
-    /// This creates a new partitioned hash structure which has 512 partitions. This is currently
-    /// not configurable. See the module documentation for more details.
+    /// This creates a new partitioned hash structure which has 512 sectors. This is currently not
+    /// configurable. See the module documentation for more details.
     ///
-    /// Each space partition owns a [PartitionedTime] structure that is responsible for managing
-    /// the time slices for that space partition. Other parameters to this function are used to
-    /// create the [PartitionedTime] structure.
+    /// Each sector owns a [TimePartition] structure that is responsible for managing the time
+    /// slices for that sector. The parameters to this function are used to create the
+    /// [TimePartition] structure.
     pub async fn try_from_store(
         time_factor: u8,
         current_time: Timestamp,
         store: DynOpStore,
     ) -> K2Result<Self> {
-        // Creates 512 partitions, because 32 - 23 = 9, and 2^9 = 512.
-        const SIZE: u32 = 1u32 << 23;
-
         // We will always be one bucket short because u32::MAX is not a power of two. It is one less
         // than a power of two, so the last bucket is always one short.
-        let num_partitions = (u32::MAX / SIZE) + 1;
-        let mut partitioned_hashes =
+        let num_partitions = (u32::MAX / SECTOR_SIZE) + 1;
+        let mut sectors =
             Vec::with_capacity(num_partitions as usize);
         for i in 0..(num_partitions - 1) {
-            partitioned_hashes.push(
-                PartitionedTime::try_from_store(
+            sectors.push(
+                TimePartition::try_from_store(
                     time_factor,
                     current_time,
-                    DhtArc::Arc(i * SIZE, (i + 1).saturating_mul(SIZE) - 1),
+                    DhtArc::Arc(
+                        i * SECTOR_SIZE,
+                        (i + 1).saturating_mul(SECTOR_SIZE) - 1,
+                    ),
                     store.clone(),
                 )
                 .await?,
             );
         }
 
-        // The last partition must be handled separately because it needs to include the
+        // The last sector must be handled separately because it needs to include the
         // remainder of the hash space.
-        partitioned_hashes.push(
-            PartitionedTime::try_from_store(
+        sectors.push(
+            TimePartition::try_from_store(
                 time_factor,
                 current_time,
-                DhtArc::Arc((num_partitions - 1) * SIZE, u32::MAX),
+                DhtArc::Arc((num_partitions - 1) * SECTOR_SIZE, u32::MAX),
                 store.clone(),
             )
             .await?,
         );
 
         tracing::info!(
-            "Allocated [{}] space partitions",
-            partitioned_hashes.len()
+            "Allocated [{}] sectors",
+            sectors.len()
         );
 
         Ok(Self {
-            size: SIZE,
-            partitioned_hashes,
+            size: SECTOR_SIZE,
+            sectors,
         })
     }
 
@@ -147,29 +147,29 @@ impl PartitionedHashes {
     pub fn next_update_at(&self) -> Timestamp {
         // We know that a fixed number of partitions is always present,
         // so this is safe to unwrap here.
-        self.partitioned_hashes
+        self.sectors
             .first()
-            .expect("Always at least one space partition")
+            .expect("Always at least one sector")
             .next_update_at()
     }
 
-    /// Update the time partitions for each space partition.
+    /// Update the time partitions for each sector.
     pub async fn update(
         &mut self,
         store: DynOpStore,
         current_time: Timestamp,
     ) -> K2Result<()> {
-        for partition in self.partitioned_hashes.iter_mut() {
+        for partition in self.sectors.iter_mut() {
             partition.update(store.clone(), current_time).await?;
         }
 
         Ok(())
     }
 
-    /// Inform the time partitions of ops that have been stored.
+    /// Inform the hash partition of ops that have been stored.
     ///
-    /// The ops are placed into the right space partition based on the location of the op. Then the
-    /// updating of hashes is delegated to the inner time partition for each space partition.
+    /// The ops are placed into the right sector based on the location of the op. Then the updating
+    /// of combined hashes is delegated to the inner [TimePartition]s.
     pub async fn inform_ops_stored(
         &mut self,
         store: DynOpStore,
@@ -190,62 +190,69 @@ impl PartitionedHashes {
             );
 
         for (location, ops) in by_location {
-            self.partitioned_hashes[location as usize]
+            self.sectors[location as usize]
                 .inform_ops_stored(store.clone(), ops)
                 .await?;
         }
 
         Ok(())
     }
+}
 
-    /// For a given sector index, return the DHT arc that the sector is responsible for.
+// Query implementation
+impl HashPartition {
+    /// For a given sector index, return the DHT arc that the sector covers.
     ///
-    /// This is actually stored on the [PartitionedTime] structure, so this function must find the
-    /// relevant [PartitionedTime] structure and then return the arc constraint from that.
+    /// This is actually stored on the [TimePartition] structure, so this function must find the
+    /// relevant [TimePartition] structure and then return the arc constraint from that.
     pub(crate) fn dht_arc_for_sector_index(
         &self,
         sector_index: u32,
     ) -> K2Result<DhtArc> {
         let sector_index = sector_index as usize;
-        if sector_index >= self.partitioned_hashes.len() {
+        if sector_index >= self.sectors.len() {
             return Err(K2Error::other("Sector index out of bounds"));
         }
 
-        Ok(*self.partitioned_hashes[sector_index].arc_constraint())
+        Ok(*self.sectors[sector_index].arc_constraint())
     }
 
     /// Get the time bounds for a full slice index.
     ///
-    /// This is actually stored on the [PartitionedTime] structure, so this function must find the
-    /// relevant [PartitionedTime] structure and then return the time bounds from that.
+    /// This is actually stored on the [TimePartition] structure, so this function must find the
+    /// relevant [TimePartition] structure and then return the time bounds from that.
+    ///
+    /// Note that it doesn't matter which sector we choose because all sectors are updated in lock
+    /// step by [HashPartition::update].
     pub(crate) fn time_bounds_for_full_slice_index(
         &self,
         slice_index: u64,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        self.partitioned_hashes[0].time_bounds_for_full_slice_index(slice_index)
+        self.sectors[0].time_bounds_for_full_slice_index(slice_index)
     }
 
     /// Get the time bounds for a partial slice index.
     ///
-    /// This is actually stored on the [PartitionedTime] structure, so this function must find the
-    /// relevant [PartitionedTime] structure and then return the time bounds from that.
+    /// This is actually stored on the [TimePartition] structure, so this function must find the
+    /// relevant [TimePartition] structure and then return the time bounds from that.
+    ///
+    /// Note that it doesn't matter which sector we choose because all sectors are updated in lock
+    /// step by [HashPartition::update].
     pub(crate) fn time_bounds_for_partial_slice_index(
         &self,
         slice_index: u32,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        self.partitioned_hashes[0]
+        self.sectors[0]
             .time_bounds_for_partial_slice_index(slice_index)
     }
-}
 
-// Query implementation
-impl PartitionedHashes {
     /// Compute the disc top hash for the given arc set.
     ///
     /// Considering the hash space as a circle, with time represented outwards from the center in
-    /// each sector. This function requests the top hash of each sector, over full time slices, and
-    /// then combines them into a single hash. It works around the circle from 0 and skips any
-    /// sectors that are not included in the arc set.
+    /// each sector. This function requests the top hash of each sector, by asking the
+    /// [TimePartition] to combine all its combined full time slices into a single hash. It works
+    /// around the circle from 0, skipping any sectors that are not included in the arc set,
+    /// combining all the top hashes into a single hash.
     ///
     /// If there are no sectors included in the arc set, then an empty hash is returned.
     ///
@@ -258,7 +265,7 @@ impl PartitionedHashes {
         store: DynOpStore,
     ) -> K2Result<(bytes::Bytes, Timestamp)> {
         let mut combined = bytes::BytesMut::new();
-        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        for (sector_index, sector) in self.sectors.iter().enumerate()
         {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
@@ -270,18 +277,18 @@ impl PartitionedHashes {
             }
         }
 
-        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+        let timestamp = self.sectors[0].full_slice_end_timestamp();
 
         Ok((combined.freeze(), timestamp))
     }
 
-    /// Computes a top hash over the sector hashes for each partial time slice.
+    /// Computes a ring top hash for each sector.
     ///
     /// Retrieves the partial slice combined hashes for each sector in the arc set. It then combines
     /// the hashes for each partial time slice, working around the circle from 0.
     ///
     /// Note that this function does not return a disc boundary. This means it MUST be used with
-    /// [PartitionedHashes::disc_top_hash] to ensure that the result from this function can be
+    /// [HashPartition::disc_top_hash] to ensure that the result from this function can be
     /// compared.
     pub(crate) fn ring_top_hashes(
         &self,
@@ -289,7 +296,7 @@ impl PartitionedHashes {
     ) -> Vec<bytes::Bytes> {
         let mut partials = Vec::with_capacity(arc_set.covered_sector_count());
 
-        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        for (sector_index, sector) in self.sectors.iter().enumerate()
         {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
@@ -300,7 +307,7 @@ impl PartitionedHashes {
 
         let mut out = Vec::new();
         let mut combined = bytes::BytesMut::new();
-        while partials[0].peek().is_some() {
+        while partials.get_mut(0).and_then(|p| p.peek()).is_some() {
             combined.clear();
             for partial in &mut partials {
                 if let Some(hash) = partial.next() {
@@ -317,7 +324,7 @@ impl PartitionedHashes {
 
     /// Compute the disc sector hashes for the given arc set.
     ///
-    /// This function does a similar job to [PartitionedHashes::disc_top_hash] but, it does not
+    /// This function does a similar job to [HashPartition::disc_top_hash] but, it does not
     /// combine the sector hashes. Instead, any sector that has a non-empty hash is returned in the
     /// hash set.
     ///
@@ -330,7 +337,7 @@ impl PartitionedHashes {
         store: DynOpStore,
     ) -> K2Result<(HashMap<u32, bytes::Bytes>, Timestamp)> {
         let mut out = HashMap::new();
-        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        for (sector_index, sector) in self.sectors.iter().enumerate()
         {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
@@ -342,14 +349,14 @@ impl PartitionedHashes {
             }
         }
 
-        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+        let timestamp = self.sectors[0].full_slice_end_timestamp();
 
         Ok((out, timestamp))
     }
 
     /// Compute the disc sector details for the given arc set.
     ///
-    /// Does a similar job to [PartitionedHashes::disc_sector_hashes] but, it returns the full time
+    /// Does a similar job to [HashPartition::disc_sector_hashes] but, it returns the full time
     /// slice combined hashes for each sector that is both in the arc set and in the
     /// `sector_indices` input.
     ///
@@ -368,7 +375,7 @@ impl PartitionedHashes {
 
         let mut out = HashMap::new();
 
-        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        for (sector_index, sector) in self.sectors.iter().enumerate()
         {
             if !arc_set.includes_sector_index(sector_index as u32)
                 || !sectors_indices.contains(&(sector_index as u32))
@@ -386,14 +393,14 @@ impl PartitionedHashes {
             );
         }
 
-        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+        let timestamp = self.sectors[0].full_slice_end_timestamp();
 
         Ok((out, timestamp))
     }
 
     /// Compute the ring details for the given arc set.
     ///
-    /// Does a similar job to [PartitionedHashes::ring_top_hashes] but, it returns the partial time
+    /// Does a similar job to [HashPartition::ring_top_hashes] but, it returns the partial time
     /// slice combined hashes for each sector that is both in the arc set and in the `ring_indices`.
     ///
     /// Along with the ring details hashes, the end timestamp of the last full time slice is
@@ -406,7 +413,7 @@ impl PartitionedHashes {
     ) -> K2Result<(PartialTimeSliceDetails, Timestamp)> {
         let mut out = HashMap::new();
 
-        for (sector_index, sector) in self.partitioned_hashes.iter().enumerate()
+        for (sector_index, sector) in self.sectors.iter().enumerate()
         {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
@@ -424,16 +431,16 @@ impl PartitionedHashes {
             }
         }
 
-        let timestamp = self.partitioned_hashes[0].full_slice_end_timestamp();
+        let timestamp = self.sectors[0].full_slice_end_timestamp();
 
         Ok((out, timestamp))
     }
 }
 
 #[cfg(test)]
-impl PartitionedHashes {
+impl HashPartition {
     pub fn full_slice_end_timestamp(&self) -> Timestamp {
-        self.partitioned_hashes[0].full_slice_end_timestamp()
+        self.sectors[0].full_slice_end_timestamp()
     }
 }
 
@@ -452,18 +459,18 @@ mod tests {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let ph = PartitionedHashes::try_from_store(14, Timestamp::now(), store)
+        let ph = HashPartition::try_from_store(14, Timestamp::now(), store)
             .await
             .unwrap();
-        assert_eq!(512, ph.partitioned_hashes.len());
+        assert_eq!(512, ph.sectors.len());
         assert_eq!((u32::MAX / 512) + 1, ph.size);
         assert_eq!(
             &DhtArc::Arc(0, ph.size - 1),
-            ph.partitioned_hashes[0].arc_constraint()
+            ph.sectors[0].arc_constraint()
         );
         assert_eq!(
             &DhtArc::Arc(511 * ph.size, u32::MAX),
-            ph.partitioned_hashes[511].arc_constraint()
+            ph.sectors[511].arc_constraint()
         );
     }
 
@@ -472,23 +479,23 @@ mod tests {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let ph = PartitionedHashes::try_from_store(14, UNIX_TIMESTAMP, store)
+        let ph = HashPartition::try_from_store(14, UNIX_TIMESTAMP, store)
             .await
             .unwrap();
 
         let mut start: u32 = 0;
-        for i in 0..(ph.partitioned_hashes.len() - 1) {
+        for i in 0..(ph.sectors.len() - 1) {
             let end = start.overflowing_add(ph.size).0;
             assert_eq!(
                 DhtArc::Arc(start, end - 1),
-                *ph.partitioned_hashes[i].arc_constraint()
+                *ph.sectors[i].arc_constraint()
             );
             start = end;
         }
 
         assert_eq!(
             DhtArc::Arc(start, u32::MAX),
-            *ph.partitioned_hashes.last().unwrap().arc_constraint()
+            *ph.sectors.last().unwrap().arc_constraint()
         );
     }
 
@@ -497,7 +504,7 @@ mod tests {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let mut ph = PartitionedHashes::try_from_store(
+        let mut ph = HashPartition::try_from_store(
             14,
             Timestamp::now(),
             store.clone(),
@@ -517,7 +524,7 @@ mod tests {
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
                     timestamp: UNIX_TIMESTAMP
-                        + ph.partitioned_hashes[0].full_slice_duration(),
+                        + ph.sectors[0].full_slice_duration(),
                 },
             ],
         )
@@ -558,7 +565,7 @@ mod tests {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let mut ph = PartitionedHashes::try_from_store(
+        let mut ph = HashPartition::try_from_store(
             14,
             Timestamp::now(),
             store.clone(),
@@ -574,13 +581,13 @@ mod tests {
                 // Stored in the first time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_1.clone()),
-                    timestamp: ph.partitioned_hashes[0]
+                    timestamp: ph.sectors[0]
                         .full_slice_end_timestamp(),
                 },
                 // Stored in the second time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
-                    timestamp: ph.partitioned_hashes[0]
+                    timestamp: ph.sectors[0]
                         .full_slice_end_timestamp()
                         + Duration::from_secs((1 << 13) * UNIT_TIME.as_secs()),
                 },
@@ -598,13 +605,13 @@ mod tests {
             assert_eq!(0, count);
         }
 
-        let partial_slice = &ph.partitioned_hashes[0].partials()[0];
+        let partial_slice = &ph.sectors[0].partials()[0];
         assert_eq!(
             op_id_bytes_1,
             bytes::Bytes::from(partial_slice.hash().to_vec())
         );
 
-        let partial_slice = &ph.partitioned_hashes[1].partials()[1];
+        let partial_slice = &ph.sectors[1].partials()[1];
         assert_eq!(
             op_id_bytes_2,
             bytes::Bytes::from(partial_slice.hash().to_vec())
@@ -617,14 +624,14 @@ mod tests {
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let now = Timestamp::now();
-        let ph = PartitionedHashes::try_from_store(14, now, store.clone())
+        let ph = HashPartition::try_from_store(14, now, store.clone())
             .await
             .unwrap();
 
         let hashes_next_update_at = ph.next_update_at();
         assert!(hashes_next_update_at >= now);
 
-        for h in ph.partitioned_hashes {
+        for h in ph.sectors {
             assert_eq!(hashes_next_update_at, h.next_update_at());
         }
     }
@@ -634,13 +641,13 @@ mod tests {
         enable_tracing();
         let store = Arc::new(Kitsune2MemoryOpStore::default());
         let now = Timestamp::now();
-        let mut ph = PartitionedHashes::try_from_store(14, now, store.clone())
+        let mut ph = HashPartition::try_from_store(14, now, store.clone())
             .await
             .unwrap();
 
-        assert_eq!(512, ph.partitioned_hashes.len());
+        assert_eq!(512, ph.sectors.len());
 
-        for h in ph.partitioned_hashes.iter() {
+        for h in ph.sectors.iter() {
             let (start, end) = match h.arc_constraint() {
                 DhtArc::Arc(s, e) => (s, e),
                 _ => panic!("Expected an arc"),
@@ -661,7 +668,7 @@ mod tests {
         }
 
         // Check nothing is currently stored in the partials
-        for h in &ph.partitioned_hashes {
+        for h in &ph.sectors {
             for ps in h.partials() {
                 assert!(ps.hash().is_empty())
             }
@@ -671,7 +678,7 @@ mod tests {
         ph.update(store, now + UNIT_TIME).await.unwrap();
 
         // Check that the partials have been updated
-        for h in &ph.partitioned_hashes {
+        for h in &ph.sectors {
             // Exactly one partial should now have a hash
             assert_eq!(
                 1,

@@ -1,21 +1,25 @@
 //! Top-level DHT model.
 //!
-//! This module is largely implemented in terms of the [PartitionedHashes] and [PartitionedTime](crate::time::PartitionedTime)
-//! types. It combines these types into a single model that can be used to track the state of a
-//! distributed hash table.
+//! This module is largely implemented in terms of the [HashPartition] and
+//! [PartitionedTime](crate::time::TimePartition) types. It combines these types into a single
+//! model that can be used to track the state of a distributed hash table (DHT).
 //!
-//! What this adds on top of the inner types is the ability to compare two DHT models and determine
+//! On top of the inner types, this type adds the ability to compare two DHT models and determine
 //! a set of op hashes that may need to be fetched from one model to the other to bring them into
 //! sync. The comparison process is symmetric, meaning that both parties will end up with the same
 //! list of op hashes to fetch regardless of who initiated the comparison. Comparison is initiated
 //! using the [Dht::snapshot_minimal] method which produces a minimal snapshot of the DHT model.
 //!
 //! The set of op hashes to fetch is unlikely to be the exact ops that are missing but rather a
-//! tradeoff between the number of steps required to determine the missing ops and the number of op
-//! hashes that have to be sent.
+//! tradeoff between the number of steps required to determine the set of possible missing ops and
+//! the number of op hashes that have to be sent. In the case of recent ops, this is a two-step
+//! process to compare rings by exchanging [DhtSnapshot::Minimal] and then
+//! [DhtSnapshot::RingSectorDetails]. In the case of historical ops, this is a three-step process
+//! to compare discs by exchanging [DhtSnapshot::Minimal], [DhtSnapshot::DiscSectors] and then
+//! [DhtSnapshot::DiscSectorDetails].
 
 use crate::arc_set::ArcSet;
-use crate::PartitionedHashes;
+use crate::HashPartition;
 use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp};
 use snapshot::{DhtSnapshot, SnapshotDiff};
 
@@ -28,7 +32,7 @@ mod tests;
 /// Represents a distributed hash table (DHT) model that can be compared with other instances of
 /// itself to determine if they are in sync and which regions to sync if they are not.
 pub struct Dht {
-    partition: PartitionedHashes,
+    partition: HashPartition,
     store: DynOpStore,
 }
 
@@ -57,16 +61,18 @@ pub enum DhtSnapshotNextAction {
 }
 
 impl Dht {
-    /// Create a new DHT from an op store.
+    /// Create a new DHT instance from an op store.
     ///
-    /// Creates the inner [PartitionedHashes] using the store.
+    /// Creates the inner [HashPartition] using the store. The sizing for the sectors and time
+    /// slices are currently hard-coded. This will create 512 sectors and each full time slice will
+    /// be approximately 5.3 days.
     pub async fn try_from_store(
         current_time: Timestamp,
         store: DynOpStore,
     ) -> K2Result<Dht> {
         Ok(Dht {
-            partition: PartitionedHashes::try_from_store(
-                14,
+            partition: HashPartition::try_from_store(
+                9,
                 current_time,
                 store.clone(),
             )
@@ -84,10 +90,7 @@ impl Dht {
 
     /// Update the DHT model.
     ///
-    /// This recomputes the full and partial time slices to be accurate for the provided
-    /// `current_time`.
-    ///
-    /// See also [PartitionedHashes::update] and [PartitionedTime::update](crate::time::PartitionedTime::update).
+    /// This delegates to [HashPartition::update] to update the inner hash partition.
     pub async fn update(&mut self, current_time: Timestamp) -> K2Result<()> {
         self.partition
             .update(self.store.clone(), current_time)
@@ -99,7 +102,7 @@ impl Dht {
     /// This will figure out where the incoming ops belong in the DHT model based on their hash
     /// and timestamp.
     ///
-    /// See also [PartitionedHashes::inform_ops_stored] for more details.
+    /// See also [HashPartition::inform_ops_stored] for more details.
     pub async fn inform_ops_stored(
         &mut self,
         stored_ops: Vec<StoredOp>,
