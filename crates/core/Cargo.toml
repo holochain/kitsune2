@@ -30,5 +30,6 @@ axum = { workspace = true, default-features = false, features = [
 ] }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 kitsune2_memory = { workspace = true }
+kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

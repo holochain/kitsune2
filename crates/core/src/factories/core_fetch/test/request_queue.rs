@@ -486,7 +486,6 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     }
     .build();
     let agent_url_1 = agent_info_1.url.clone().unwrap();
-    peer_store.insert(vec![agent_info_1.clone()]).await.unwrap();
 
     // Create a second agent to later check that their ops have not been removed.
     let op_list_2 = create_op_list(2);
@@ -497,7 +496,10 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         ..Default::default()
     }
     .build();
-    peer_store.insert(vec![agent_info_2.clone()]).await.unwrap();
+    peer_store
+        .insert(vec![agent_info_1.clone(), agent_info_2.clone()])
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
