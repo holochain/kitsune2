@@ -34,7 +34,7 @@ async fn take_minimal_snapshot() {
         .await
         .unwrap();
 
-    let arc_set = ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap();
+    let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
 
     let snapshot = dht.snapshot_minimal(&arc_set).await.unwrap();
     match snapshot {
@@ -58,7 +58,7 @@ async fn cannot_take_minimal_snapshot_with_empty_arc_set() {
 
     let err = dht1
         .dht
-        .snapshot_minimal(&ArcSet::new(SECTOR_SIZE, vec![dht1.arc]).unwrap())
+        .snapshot_minimal(&ArcSet::new(vec![dht1.arc]).unwrap())
         .await
         .unwrap_err();
     assert_eq!("No arcs to snapshot (src: None)", err.to_string());
@@ -72,9 +72,7 @@ async fn cannot_handle_snapshot_with_empty_arc_set() {
     // Declare a full arc to get a snapshot
     let snapshot = dht1
         .dht
-        .snapshot_minimal(
-            &ArcSet::new(SECTOR_SIZE, vec![DhtArc::FULL]).unwrap(),
-        )
+        .snapshot_minimal(&ArcSet::new(vec![DhtArc::FULL]).unwrap())
         .await
         .unwrap();
 
@@ -84,7 +82,7 @@ async fn cannot_handle_snapshot_with_empty_arc_set() {
         .handle_snapshot(
             &snapshot,
             None,
-            &ArcSet::new(SECTOR_SIZE, vec![DhtArc::Empty]).unwrap(),
+            &ArcSet::new(vec![DhtArc::Empty]).unwrap(),
         )
         .await
         .unwrap_err();
