@@ -117,6 +117,25 @@ impl OpStore for Kitsune2MemoryOpStore {
         .boxed()
     }
 
+    fn read_ops(
+        &self,
+        op_ids: Vec<OpId>,
+    ) -> BoxFuture<'_, K2Result<Vec<MetaOp>>> {
+        async move {
+            let self_lock = self.read().await;
+            op_ids
+                .iter()
+                .filter_map(|op_id| {
+                    self_lock
+                        .op_list
+                        .get(op_id)
+                        .map(|op| MetaOp::try_from(op.clone()))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        }
+        .boxed()
+    }
+
     /// Store the combined hash of a time slice.
     ///
     /// The `slice_id` is the index of the time slice. This is a 0-based index. So for a given
