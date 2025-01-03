@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package kitsune2.op_store;
+
+// An op.
+message Op {
+    // Op id.
+    bytes op_id = 1;
+    // Op data.
+    bytes op_data = 2;
+}
