@@ -211,6 +211,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[cfg_attr(target_os = "windows", ignore = "flaky: back_off.rs:333:10: called `Result::unwrap()` on an `Err` value: Elapsed(())")]
     async fn requests_are_dropped_when_max_back_off_expired() {
         let builder =
             Arc::new(default_builder().with_default_config().unwrap());
