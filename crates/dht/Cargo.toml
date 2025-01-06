@@ -21,3 +21,6 @@ kitsune2_test_utils = { workspace = true }
 
 tokio = { workspace = true, features = ["macros", "rt"] }
 rand = { workspace = true }
+
+[build-dependencies]
+handlebars = "6.3.0"
