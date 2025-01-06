@@ -283,8 +283,10 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
             core_space: super::CoreSpaceConfig {
                 // check every 5 millis if we need to re-sign
                 re_sign_freq_ms: 5,
-                // set it so we have to re-sign ALL agent infos always
-                re_sign_expire_time_ms: 1000 * 60 * 20,
+                // setting this to a big number like 60 minutes makes
+                // it so we *always* re-sign agent infos, because the
+                // 20min+now expiry times are always within this time range
+                re_sign_expire_time_ms: 1000 * 60 * 60,
             },
         })
         .unwrap();

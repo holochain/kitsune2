@@ -155,6 +155,10 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "flaky: back_off.rs:208:10: called `Result::unwrap()` on an `Err` value: Elapsed(())"
+    )]
     async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
         let builder =
             Arc::new(default_builder().with_default_config().unwrap());
