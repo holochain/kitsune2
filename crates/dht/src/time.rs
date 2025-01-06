@@ -5,8 +5,8 @@
 //! Giving multiple nodes the same time slice boundaries allows them to compute the same combined
 //! hashes, and therefore effectively communicate which of their time slices match and which do not.
 //!
-//! A time slice is defined to be an interval of time that is closed at the start and
-//! open at the end. That is, an interval `[start, end)` where:
+//! A time slice is defined to be an interval of time that is closed at the start and open at the
+//! end. That is, an interval `[start, end)` where:
 //! - `start` is included in the time slice (inclusive bound)
 //! - `end` is not included in the time slice (exclusive bound)
 //!
@@ -14,11 +14,12 @@
 //! always of a fixed size, while partial slices are of varying sizes. Full slices occupy
 //! historical time, while partial slices occupy recent time.
 //!
-//! The granularity of time slices is determined by the `factor` parameter. The chosen factor
-//! determines the size of time slices. Where 2^X means "two raised to the power of X", the size of
-//! a full time slice is 2^factor * [UNIT_TIME]. Partial time slices vary in size from
+//! The granularity of time slices is determined by the `factor` parameter. The factor determines
+//! the size of time slices. Where 2^X means "2 raised to the power of X", the size of a full time
+//! slice is 2^factor * [UNIT_TIME]. Partial time slices vary in size from
 //! 2^(factor - 1) * [UNIT_TIME] down to 2^0 * [UNIT_TIME] (i.e. [UNIT_TIME]). There is some
-//! amount of time left over that cannot be partitioned into smaller slices.
+//! amount of time left over that cannot be partitioned into smaller slices. This time cannot be
+//! included in comparisons but has an upper bound of [UNIT_TIME].
 //!
 //! > Note: The factor is used with durations and the code needs to be able to do arithmetic with
 //! > it, so the factor has a maximum value of 53. The factor also has a minimum value of 1,
@@ -26,7 +27,9 @@
 //! > results in a meaningful split between recent time and historical, full slices.
 //!
 //! Because recent time is expected to change more frequently, combined hashes for partial slices
-//! are stored in memory. Full slices are stored in the Kitsune2 op store.
+//! are stored in memory. Full slices are stored in the Kitsune2 op store. Storage of full slice
+//! combined hashes is required to be sparse because time starts at 0, so there will usually be
+//! many empty slices before the first one with data.
 //!
 //! The algorithm for partitioning time is as follows:
 //!   - Reserve a minimum amount of recent time as a sum of possible partial slice sizes.
@@ -49,9 +52,10 @@
 //! The partial slices reserve at least 2^8 + 2^7 ... 2^0 = 511 times the [UNIT_TIME], so 511 * 15 minutes
 //! = 7685 minutes = 127.75 hours. That gives roughly 5 days of recent time.
 //!
-//! A lower factor allocates less recent time and more slices to be stored but is more granular when
-//! comparing time slices with another peer. A higher factor allocates more recent time and fewer
-//! slices to be stored but is less granular when comparing time slices with another peer.
+//! A lower factor allocates less recent time and requires more full slices to be stored but is
+//! more granular when comparing time slices with another peer. A higher factor allocates more
+//! recent time and requires fewer full slices to be stored but is less granular when comparing
+//! time slices with another peer.
 
 use crate::combine;
 use crate::constant::UNIT_TIME;
@@ -60,7 +64,7 @@ use kitsune2_api::{
 };
 use std::time::Duration;
 
-/// The partitioned time structure.
+/// The time partition structure.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
 pub struct TimePartition {
@@ -93,13 +97,14 @@ pub struct TimePartition {
     /// After this time, there will be an excess amount of time that could be allocated into a
     /// partial slice. The data structure is still usable but will get behind if
     /// [TimePartition::update] is not called.
+    ///
     /// It is idempotent to call [TimePartition::update] more often than required, but it is not
     /// efficient.
     next_update_at: Timestamp,
-    /// The storage arc that this partitioned time is associated with.
+    /// The arc bounds for the sector that this time partition is associated with.
     ///
-    /// Any queries to fetch ops in a time range must be constrained by this arc.
-    arc_constraint: DhtArc,
+    /// Any queries to fetch ops in a time range must be constrained to this sector.
+    sector_constraint: DhtArc,
 }
 
 /// A slice of recent time that has a combined hash of all the ops in that time slice.
@@ -147,21 +152,21 @@ impl TimePartition {
     /// It does this by checking that the construction of this [TimePartition] is consistent
     /// and then calling [TimePartition::update].
     ///
-    /// The resulting [TimePartition] will be consistent with the store and the current time.
+    /// The resulting [TimePartition] will be consistent with the store at the current time.
     /// It should be updated again after [TimePartition::next_update_at].
     pub async fn try_from_store(
         factor: u8,
         current_time: Timestamp,
-        arc_constraint: DhtArc,
+        sector_constraint: DhtArc,
         store: DynOpStore,
     ) -> K2Result<Self> {
-        if arc_constraint == DhtArc::Empty {
+        if sector_constraint == DhtArc::Empty {
             return Err(K2Error::other("Empty arc constraint is not valid"));
         }
 
-        let mut pt = Self::new(factor, arc_constraint)?;
+        let mut pt = Self::new(factor, sector_constraint)?;
 
-        pt.full_slices = store.slice_hash_count(arc_constraint).await?;
+        pt.full_slices = store.slice_hash_count(sector_constraint).await?;
 
         // The end timestamp of the last full slice
         let full_slice_end_timestamp = pt.full_slice_end_timestamp();
@@ -209,7 +214,7 @@ impl TimePartition {
             .await?;
 
         // Check if there is enough time to allocate new partial slices
-        self.update_partials(store.clone(), current_time).await?;
+        self.update_partials(current_time, store.clone()).await?;
 
         // There will be a small amount of time left over, which we can't partition into smaller
         // slices. Some amount less than [UNIT_TIME] will be left over.
@@ -221,18 +226,19 @@ impl TimePartition {
         Ok(())
     }
 
-    /// Inform the [TimePartition] that some ops have been stored.
+    /// Inform the [TimePartition] that ops have been stored.
     ///
-    /// It is expected that the caller ensures that the ops belong to the hash range managed by this
-    /// [TimePartition]. This method will update the hashes of the full and partial slices that
-    /// the incoming ops belong to.
+    /// The caller is required to ensure that the ops belong to the hash range managed by this
+    /// [TimePartition]. This method will update the hashes of the full and partial slices that the
+    /// incoming ops belong in.
     ///
     /// If the op happens to be new enough to not belong in a slice, then it will be ignored. The
-    /// op will be discovered later when a partial slice update adds a slice that includes the op.
+    /// op will be discovered later when a [TimePartition::update] adds a slice that includes the
+    /// op.
     pub(crate) async fn inform_ops_stored(
         &mut self,
-        store: DynOpStore,
         stored_ops: Vec<StoredOp>,
+        store: DynOpStore,
     ) -> K2Result<()> {
         let full_slice_end = self.full_slice_end_timestamp();
 
@@ -248,7 +254,7 @@ impl TimePartition {
                     / (self.full_slice_duration.as_micros() as i64);
                 let current_hash = store
                     .retrieve_slice_hash(
-                        self.arc_constraint,
+                        self.sector_constraint,
                         slice_index as u64,
                     )
                     .await?;
@@ -261,7 +267,7 @@ impl TimePartition {
                         // and store the new value
                         store
                             .store_slice_hash(
-                                self.arc_constraint,
+                                self.sector_constraint,
                                 slice_index as u64,
                                 hash.freeze(),
                             )
@@ -271,7 +277,7 @@ impl TimePartition {
                         // If there was no hash stored, then store the new op hash
                         store
                             .store_slice_hash(
-                                self.arc_constraint,
+                                self.sector_constraint,
                                 slice_index as u64,
                                 op.op_id.0 .0,
                             )
@@ -320,6 +326,7 @@ impl TimePartition {
         Ok(())
     }
 
+    /// Get the time bounds for a given full slice by slice index.
     pub(crate) fn time_bounds_for_full_slice_index(
         &self,
         slice_index: u64,
@@ -339,6 +346,7 @@ impl TimePartition {
         Ok((start, end))
     }
 
+    /// Get the time bounds for a given partial slice by slice index.
     pub(crate) fn time_bounds_for_partial_slice_index(
         &self,
         slice_index: u32,
@@ -359,14 +367,15 @@ impl TimePartition {
 impl TimePartition {
     /// Compute a top hash over the full time slice combined hashes owned by this [TimePartition].
     ///
-    /// This method will fetch the hashes of all the full time slices within the arc constraint
+    /// This method will fetch the hashes of all the full time slices within the sector constraint
     /// for this [TimePartition]. Those are expected to be ordered by slice index, which implies
     /// that they are ordered by time. It will then combine those hashes into a single hash.
     pub async fn full_time_slice_top_hash(
         &self,
         store: DynOpStore,
     ) -> K2Result<bytes::Bytes> {
-        let hashes = store.retrieve_slice_hashes(self.arc_constraint).await?;
+        let hashes =
+            store.retrieve_slice_hashes(self.sector_constraint).await?;
         Ok(
             combine::combine_op_hashes(
                 hashes.into_iter().map(|(_, hash)| hash),
@@ -375,11 +384,11 @@ impl TimePartition {
         )
     }
 
-    /// Get the combined hash of all the partial slices owned by this [TimePartition].
+    /// Get the combined hashes for each of the partial slices owned by this [TimePartition].
     ///
     /// This method takes the current partial slices and returns their pre-computed hashes.
     /// These are combined hashes over all the ops in each partial slice, ordered by time.
-    pub fn partial_slice_combined_hashes(
+    pub fn partial_slice_hashes(
         &self,
     ) -> impl Iterator<Item = bytes::Bytes> + use<'_> {
         self.partial_slices
@@ -389,12 +398,13 @@ impl TimePartition {
 
     /// Gets the combined hashes of all the full time slices owned by this [TimePartition].
     ///
-    /// This is a pass-through to the provided store, using the arc constraint of this [TimePartition].
+    /// This is a pass-through to the provided store, using the sector constraint of this
+    /// [TimePartition].
     pub async fn full_time_slice_hashes(
         &self,
         store: DynOpStore,
     ) -> K2Result<Vec<(u64, bytes::Bytes)>> {
-        store.retrieve_slice_hashes(self.arc_constraint).await
+        store.retrieve_slice_hashes(self.sector_constraint).await
     }
 
     /// Get the combined hash of a partial slice by its slice index.
@@ -429,7 +439,7 @@ impl TimePartition {
     ///
     /// This constructor just creates an instance with initial values, but it doesn't update the
     /// state with full and partial slices for the current time.
-    fn new(factor: u8, arc_constraint: DhtArc) -> K2Result<Self> {
+    fn new(factor: u8, sector_constraint: DhtArc) -> K2Result<Self> {
         Ok(Self {
             factor,
             full_slices: 0,
@@ -444,7 +454,7 @@ impl TimePartition {
             min_recent_time: residual_duration_for_factor(factor - 1)?,
             // Immediately requires an update, any time in the past will do
             next_update_at: Timestamp::from_micros(0),
-            arc_constraint,
+            sector_constraint,
         })
     }
 
@@ -458,8 +468,9 @@ impl TimePartition {
         UNIX_TIMESTAMP + full_slices_duration
     }
 
-    pub(crate) fn arc_constraint(&self) -> &DhtArc {
-        &self.arc_constraint
+    /// The [DhtArc] that describes the sector constraint for this [TimePartition].
+    pub(crate) fn sector_constraint(&self) -> &DhtArc {
+        &self.sector_constraint
     }
 
     /// Figure out how many new full slices need to be allocated.
@@ -506,7 +517,7 @@ impl TimePartition {
             // Store the hash of the full slice
             let op_hashes = store
                 .retrieve_op_hashes_in_time_slice(
-                    self.arc_constraint,
+                    self.sector_constraint,
                     full_slices_end_timestamp,
                     full_slices_end_timestamp + self.full_slice_duration,
                 )
@@ -517,7 +528,7 @@ impl TimePartition {
             if !hash.is_empty() {
                 store
                     .store_slice_hash(
-                        self.arc_constraint,
+                        self.sector_constraint,
                         self.full_slices,
                         hash.freeze(),
                     )
@@ -536,8 +547,8 @@ impl TimePartition {
     /// Tries to allocate as many large slices as possible to fill the space.
     fn layout_partials(
         &self,
-        current_time: Timestamp,
         mut start_at: Timestamp,
+        current_time: Timestamp,
     ) -> K2Result<Vec<(Timestamp, u8)>> {
         let mut recent_time = (current_time - start_at).map_err(|_| {
             K2Error::other("Failed to calculate recent time for partials, either the clock is wrong or this is a bug")
@@ -571,7 +582,7 @@ impl TimePartition {
         Ok(partials)
     }
 
-    /// Update the partial slices for the current time.
+    /// Update the partial slices at the current time.
     ///
     /// This method will use [TimePartition::layout_partials] to determine how to partition
     /// recent time into partial slices. It will then fetch the op hashes for each partial slice
@@ -582,12 +593,12 @@ impl TimePartition {
     /// stable, especially the larger ones that require more ops to be fetched.
     async fn update_partials(
         &mut self,
-        store: DynOpStore,
         current_time: Timestamp,
+        store: DynOpStore,
     ) -> K2Result<()> {
         let full_slices_end_timestamp = self.full_slice_end_timestamp();
         let new_partials =
-            self.layout_partials(current_time, full_slices_end_timestamp)?;
+            self.layout_partials(full_slices_end_timestamp, current_time)?;
         let old_partials = std::mem::take(&mut self.partial_slices);
 
         for (start, size) in new_partials.into_iter() {
@@ -611,7 +622,7 @@ impl TimePartition {
                     combine::combine_op_hashes(
                         store
                             .retrieve_op_hashes_in_time_slice(
-                                self.arc_constraint,
+                                self.sector_constraint,
                                 start,
                                 end,
                             )
@@ -1463,13 +1474,13 @@ mod tests {
 
         // Receive an op into the first time slice
         pt.inform_ops_stored(
-            store.clone(),
             vec![StoredOp {
                 op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
                     11, 0, 0, 0,
                 ])),
                 timestamp: UNIX_TIMESTAMP,
             }],
+            store.clone(),
         )
         .await
         .unwrap();
@@ -1521,13 +1532,13 @@ mod tests {
 
         // Receive a new op into the same time slice
         pt.inform_ops_stored(
-            store.clone(),
             vec![StoredOp {
                 op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
                     23, 0, 0, 0,
                 ])),
                 timestamp: UNIX_TIMESTAMP,
             }],
+            store.clone(),
         )
         .await
         .unwrap();
@@ -1565,7 +1576,6 @@ mod tests {
 
         // Receive an op into the first and last time slices
         pt.inform_ops_stored(
-            store.clone(),
             vec![
                 StoredOp {
                     op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
@@ -1580,6 +1590,7 @@ mod tests {
                     timestamp: (current_time - Duration::from_secs(5)).unwrap(),
                 },
             ],
+            store.clone(),
         )
         .await
         .unwrap();
@@ -1631,7 +1642,6 @@ mod tests {
 
         // Receive an op into the first and last time slices
         pt.inform_ops_stored(
-            store.clone(),
             vec![
                 StoredOp {
                     op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
@@ -1646,6 +1656,7 @@ mod tests {
                     timestamp: (current_time - Duration::from_secs(5)).unwrap(),
                 },
             ],
+            store.clone(),
         )
         .await
         .unwrap();

@@ -87,10 +87,10 @@ pub(crate) type PartialTimeSliceDetails =
     HashMap<u32, HashMap<u32, bytes::Bytes>>;
 
 impl HashPartition {
-    /// Create a new partitioned hash structure.
+    /// Create a new hash partition structure.
     ///
-    /// This creates a new partitioned hash structure which has 512 sectors. This is currently not
-    /// configurable. See the module documentation for more details.
+    /// The created structure has 512 sectors. This is currently not configurable. See the module
+    /// documentation for more details.
     ///
     /// Each sector owns a [TimePartition] structure that is responsible for managing the time
     /// slices for that sector. The parameters to this function are used to create the
@@ -103,8 +103,7 @@ impl HashPartition {
         // We will always be one bucket short because u32::MAX is not a power of two. It is one less
         // than a power of two, so the last bucket is always one short.
         let num_partitions = (u32::MAX / SECTOR_SIZE) + 1;
-        let mut sectors =
-            Vec::with_capacity(num_partitions as usize);
+        let mut sectors = Vec::with_capacity(num_partitions as usize);
         for i in 0..(num_partitions - 1) {
             sectors.push(
                 TimePartition::try_from_store(
@@ -132,10 +131,7 @@ impl HashPartition {
             .await?,
         );
 
-        tracing::info!(
-            "Allocated [{}] sectors",
-            sectors.len()
-        );
+        tracing::info!("Allocated [{}] sectors", sectors.len());
 
         Ok(Self {
             size: SECTOR_SIZE,
@@ -168,7 +164,7 @@ impl HashPartition {
 
     /// Inform the hash partition of ops that have been stored.
     ///
-    /// The ops are placed into the right sector based on the location of the op. Then the updating
+    /// The ops are placed into the right sector based on the location of each op. Then the updating
     /// of combined hashes is delegated to the inner [TimePartition]s.
     pub async fn inform_ops_stored(
         &mut self,
@@ -191,7 +187,7 @@ impl HashPartition {
 
         for (location, ops) in by_location {
             self.sectors[location as usize]
-                .inform_ops_stored(store.clone(), ops)
+                .inform_ops_stored(ops, store.clone())
                 .await?;
         }
 
@@ -204,7 +200,7 @@ impl HashPartition {
     /// For a given sector index, return the DHT arc that the sector covers.
     ///
     /// This is actually stored on the [TimePartition] structure, so this function must find the
-    /// relevant [TimePartition] structure and then return the arc constraint from that.
+    /// relevant [TimePartition] and then return the arc constraint from that.
     pub(crate) fn dht_arc_for_sector_index(
         &self,
         sector_index: u32,
@@ -214,7 +210,7 @@ impl HashPartition {
             return Err(K2Error::other("Sector index out of bounds"));
         }
 
-        Ok(*self.sectors[sector_index].arc_constraint())
+        Ok(*self.sectors[sector_index].sector_constraint())
     }
 
     /// Get the time bounds for a full slice index.
@@ -234,7 +230,7 @@ impl HashPartition {
     /// Get the time bounds for a partial slice index.
     ///
     /// This is actually stored on the [TimePartition] structure, so this function must find the
-    /// relevant [TimePartition] structure and then return the time bounds from that.
+    /// relevant [TimePartition] and then return the time bounds from that.
     ///
     /// Note that it doesn't matter which sector we choose because all sectors are updated in lock
     /// step by [HashPartition::update].
@@ -242,31 +238,29 @@ impl HashPartition {
         &self,
         slice_index: u32,
     ) -> K2Result<(Timestamp, Timestamp)> {
-        self.sectors[0]
-            .time_bounds_for_partial_slice_index(slice_index)
+        self.sectors[0].time_bounds_for_partial_slice_index(slice_index)
     }
 
     /// Compute the disc top hash for the given arc set.
     ///
-    /// Considering the hash space as a circle, with time represented outwards from the center in
+    /// Considering the hash space as a circle, with time represented outwards from the center, in
     /// each sector. This function requests the top hash of each sector, by asking the
     /// [TimePartition] to combine all its combined full time slices into a single hash. It works
-    /// around the circle from 0, skipping any sectors that are not included in the arc set,
+    /// around the circle from 0, skipping any sectors that are not included in the `arc_set`,
     /// combining all the top hashes into a single hash.
     ///
-    /// If there are no sectors included in the arc set, then an empty hash is returned.
+    /// If there are no sectors included in the `arc_set`, then an empty hash is returned.
     ///
     /// Along with the disc top hash, the end timestamp of the last full time slice is returned.
-    /// This should be used when comparing disc top hash of one DHT model with that of another node
-    /// to ensure that both nodes are using a common reference point.
+    /// This should be used when comparing the disc top hash of one DHT model with that of another
+    /// node, to ensure that both nodes are using a common reference point.
     pub(crate) async fn disc_top_hash(
         &self,
         arc_set: &ArcSet,
         store: DynOpStore,
     ) -> K2Result<(bytes::Bytes, Timestamp)> {
         let mut combined = bytes::BytesMut::new();
-        for (sector_index, sector) in self.sectors.iter().enumerate()
-        {
+        for (sector_index, sector) in self.sectors.iter().enumerate() {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
@@ -282,27 +276,29 @@ impl HashPartition {
         Ok((combined.freeze(), timestamp))
     }
 
-    /// Computes a ring top hash for each sector.
+    /// Computes a ring top hash for each ring.
     ///
-    /// Retrieves the partial slice combined hashes for each sector in the arc set. It then combines
-    /// the hashes for each partial time slice, working around the circle from 0.
+    /// A ring is the collection of partial time slices at the same index, combined across each
+    /// sector. This function retrieves the partial slice combined hashes for each sector in the
+    /// arc set. It then combines the hashes for each partial time slice, working around the circle
+    /// from 0 and skipping any sectors that are not included in the `arc_set`.
     ///
     /// Note that this function does not return a disc boundary. This means it MUST be used with
     /// [HashPartition::disc_top_hash] to ensure that the result from this function can be
-    /// compared.
+    /// compared. No indexing or size information is returned with the ring hashes, so two sets of
+    /// rings that are the same size may have different contents.
     pub(crate) fn ring_top_hashes(
         &self,
         arc_set: &ArcSet,
     ) -> Vec<bytes::Bytes> {
         let mut partials = Vec::with_capacity(arc_set.covered_sector_count());
 
-        for (sector_index, sector) in self.sectors.iter().enumerate()
-        {
+        for (sector_index, sector) in self.sectors.iter().enumerate() {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
 
-            partials.push(sector.partial_slice_combined_hashes().peekable());
+            partials.push(sector.partial_slice_hashes().peekable());
         }
 
         let mut out = Vec::new();
@@ -324,7 +320,7 @@ impl HashPartition {
 
     /// Compute the disc sector hashes for the given arc set.
     ///
-    /// This function does a similar job to [HashPartition::disc_top_hash] but, it does not
+    /// This function does a similar job to [HashPartition::disc_top_hash] but it does not
     /// combine the sector hashes. Instead, any sector that has a non-empty hash is returned in the
     /// hash set.
     ///
@@ -337,8 +333,7 @@ impl HashPartition {
         store: DynOpStore,
     ) -> K2Result<(HashMap<u32, bytes::Bytes>, Timestamp)> {
         let mut out = HashMap::new();
-        for (sector_index, sector) in self.sectors.iter().enumerate()
-        {
+        for (sector_index, sector) in self.sectors.iter().enumerate() {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
@@ -356,7 +351,7 @@ impl HashPartition {
 
     /// Compute the disc sector details for the given arc set.
     ///
-    /// Does a similar job to [HashPartition::disc_sector_hashes] but, it returns the full time
+    /// Does a similar job to [HashPartition::disc_sector_hashes] but it returns the full time
     /// slice combined hashes for each sector that is both in the arc set and in the
     /// `sector_indices` input.
     ///
@@ -365,8 +360,8 @@ impl HashPartition {
     /// that of another node to ensure that both nodes are using a common reference point.
     pub(crate) async fn disc_sector_sector_details(
         &self,
-        sector_indices: Vec<u32>,
         arc_set: &ArcSet,
+        sector_indices: Vec<u32>,
         store: DynOpStore,
     ) -> K2Result<(HashMap<u32, HashMap<u64, bytes::Bytes>>, Timestamp)> {
         let sectors_indices = sector_indices
@@ -375,8 +370,7 @@ impl HashPartition {
 
         let mut out = HashMap::new();
 
-        for (sector_index, sector) in self.sectors.iter().enumerate()
-        {
+        for (sector_index, sector) in self.sectors.iter().enumerate() {
             if !arc_set.includes_sector_index(sector_index as u32)
                 || !sectors_indices.contains(&(sector_index as u32))
             {
@@ -400,21 +394,21 @@ impl HashPartition {
 
     /// Compute the ring details for the given arc set.
     ///
-    /// Does a similar job to [HashPartition::ring_top_hashes] but, it returns the partial time
-    /// slice combined hashes for each sector that is both in the arc set and in the `ring_indices`.
+    /// Does a similar job to [HashPartition::ring_top_hashes] but it returns the partial time
+    /// slice combined hashes for each ring sector that is both in the `arc_set` and in the
+    /// `ring_indices`.
     ///
     /// Along with the ring details hashes, the end timestamp of the last full time slice is
     /// returned. This should be used when comparing ring details hashes of one DHT model with
     /// that of another node to ensure that both nodes are using a common reference point.
     pub(crate) fn ring_details(
         &self,
-        ring_indices: Vec<u32>,
         arc_set: &ArcSet,
+        ring_indices: Vec<u32>,
     ) -> K2Result<(PartialTimeSliceDetails, Timestamp)> {
         let mut out = HashMap::new();
 
-        for (sector_index, sector) in self.sectors.iter().enumerate()
-        {
+        for (sector_index, sector) in self.sectors.iter().enumerate() {
             if !arc_set.includes_sector_index(sector_index as u32) {
                 continue;
             }
@@ -466,11 +460,11 @@ mod tests {
         assert_eq!((u32::MAX / 512) + 1, ph.size);
         assert_eq!(
             &DhtArc::Arc(0, ph.size - 1),
-            ph.sectors[0].arc_constraint()
+            ph.sectors[0].sector_constraint()
         );
         assert_eq!(
             &DhtArc::Arc(511 * ph.size, u32::MAX),
-            ph.sectors[511].arc_constraint()
+            ph.sectors[511].sector_constraint()
         );
     }
 
@@ -488,14 +482,14 @@ mod tests {
             let end = start.overflowing_add(ph.size).0;
             assert_eq!(
                 DhtArc::Arc(start, end - 1),
-                *ph.sectors[i].arc_constraint()
+                *ph.sectors[i].sector_constraint()
             );
             start = end;
         }
 
         assert_eq!(
             DhtArc::Arc(start, u32::MAX),
-            *ph.sectors.last().unwrap().arc_constraint()
+            *ph.sectors.last().unwrap().sector_constraint()
         );
     }
 
@@ -504,13 +498,10 @@ mod tests {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let mut ph = HashPartition::try_from_store(
-            14,
-            Timestamp::now(),
-            store.clone(),
-        )
-        .await
-        .unwrap();
+        let mut ph =
+            HashPartition::try_from_store(14, Timestamp::now(), store.clone())
+                .await
+                .unwrap();
 
         let op_id_bytes_1 = bytes::Bytes::from_static(&[7, 0, 0, 0]);
         let op_id_bytes_2 = bytes::Bytes::from(ph.size.to_le_bytes().to_vec());
@@ -565,13 +556,10 @@ mod tests {
         enable_tracing();
 
         let store = Arc::new(Kitsune2MemoryOpStore::default());
-        let mut ph = HashPartition::try_from_store(
-            14,
-            Timestamp::now(),
-            store.clone(),
-        )
-        .await
-        .unwrap();
+        let mut ph =
+            HashPartition::try_from_store(14, Timestamp::now(), store.clone())
+                .await
+                .unwrap();
 
         let op_id_bytes_1 = bytes::Bytes::from_static(&[100, 0, 0, 0]);
         let op_id_bytes_2 = bytes::Bytes::from(ph.size.to_le_bytes().to_vec());
@@ -581,14 +569,12 @@ mod tests {
                 // Stored in the first time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_1.clone()),
-                    timestamp: ph.sectors[0]
-                        .full_slice_end_timestamp(),
+                    timestamp: ph.sectors[0].full_slice_end_timestamp(),
                 },
                 // Stored in the second time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
-                    timestamp: ph.sectors[0]
-                        .full_slice_end_timestamp()
+                    timestamp: ph.sectors[0].full_slice_end_timestamp()
                         + Duration::from_secs((1 << 13) * UNIT_TIME.as_secs()),
                 },
             ],
@@ -648,7 +634,7 @@ mod tests {
         assert_eq!(512, ph.sectors.len());
 
         for h in ph.sectors.iter() {
-            let (start, end) = match h.arc_constraint() {
+            let (start, end) = match h.sector_constraint() {
                 DhtArc::Arc(s, e) => (s, e),
                 _ => panic!("Expected an arc"),
             };

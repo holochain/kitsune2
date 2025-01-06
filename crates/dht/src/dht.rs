@@ -431,8 +431,8 @@ impl Dht {
         let (disc_sector_hashes, disc_boundary) = self
             .partition
             .disc_sector_sector_details(
-                mismatched_sector_indices,
                 arc_set,
+                mismatched_sector_indices,
                 store,
             )
             .await?;
@@ -449,7 +449,7 @@ impl Dht {
         arc_set: &ArcSet,
     ) -> K2Result<DhtSnapshot> {
         let (ring_sector_hashes, disc_boundary) =
-            self.partition.ring_details(mismatched_rings, arc_set)?;
+            self.partition.ring_details(arc_set, mismatched_rings)?;
 
         Ok(DhtSnapshot::RingSectorDetails {
             ring_sector_hashes,
