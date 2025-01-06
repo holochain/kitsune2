@@ -13,11 +13,13 @@ pub mod config {
     pub struct CoreSpaceConfig {
         /// The interval in millis at which we check for about to expire
         /// local agent infos.
+        ///
         /// Default: 60s.
         pub re_sign_freq_ms: u32,
 
-        /// The time in millis before an agent info expires after which we will
+        /// The time in millis before an agent info expires, after which we will
         /// re sign them.
+        ///
         /// Default: 5m.
         pub re_sign_expire_time_ms: u32,
     }
