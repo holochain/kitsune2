@@ -349,7 +349,7 @@ impl Space for CoreSpace {
                 {
                     tracing::warn!(
                         ?err,
-                        "failed to add agent info to peer store"
+                        "failed to tombstone agent info in peer store"
                     );
                 }
 

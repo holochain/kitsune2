@@ -137,9 +137,8 @@ pub trait LocalAgent: Signer + 'static + Send + Sync + std::fmt::Debug {
     fn get_cur_storage_arc(&self) -> DhtArc;
 
     /// Set the current storage arc for this local agent.
-    /// This will be initially set to zero on space join,
-    /// then will be updated by the gossip module as best effort to
-    /// collect data for the range is made.
+    /// This will be initially set to zero on space join.
+    /// The gossip module will update this as data is collected.
     fn set_cur_storage_arc(&self, arc: DhtArc);
 
     /// This is a chance for the implementor to influence how large
