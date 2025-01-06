@@ -263,7 +263,7 @@ impl Space for CoreSpace {
                 if let Err(err) = self.peer_store.insert(vec![info]).await {
                     tracing::warn!(
                         ?err,
-                        "failed to add agent info to peer store"
+                        "failed to tombstone agent info in peer store"
                     );
                 }
 
