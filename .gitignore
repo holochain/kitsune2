@@ -1,3 +1,5 @@
 /target
 /output-*
 .cargo
+
+crates/dht/DOCS.md

@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! A distributed hash table (DHT) implementation for use in Kitsune2.
+#![doc = include_str!("../DOCS.md")]
 
 pub mod arc_set;
 pub mod constant;
