@@ -1,16 +1,16 @@
 #![deny(missing_docs)]
 //! A distributed hash table (DHT) implementation for use in Kitsune2.
-//! 
+//!
 //! The DHT model partitions data by location and time. The location is derived from the hash of the data, and is a 32-bit
 //! number. The time is a 64-bit number, representing a number of microseconds since the Unix epoch.
-//! 
+//!
 //! The model first organises by location, then within a set of locations, it organises by time. The way that the model is
 //! partitioned is designed to permit computing a diff against another DHT model. This is the primary purpose of this crate,
 //! to enable efficient syncing of DHT models between agents.
-//! 
+//!
 //! You can think of the DHT as a graph, where the vertical axis represents location and the horizontal axis represents time.
 //! Every piece of data can be represented as a point on this graph:
-//! 
+//!
 //! <details style="cursor:pointer">
 //!     <summary>DHT model (graph representation)</summary>
 #![doc = include_str!("../art/dht-graph.svg")]
