@@ -1,6 +1,8 @@
 //! Kitsune2 op store types.
 
-use crate::{DhtArc, K2Result, OpId, Timestamp};
+use crate::{
+    builder, config, BoxFut, DhtArc, K2Result, OpId, SpaceId, Timestamp,
+};
 use futures::future::BoxFuture;
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -109,3 +111,20 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait-object version of kitsune2 op store.
 pub type DynOpStore = Arc<dyn OpStore>;
+
+/// A factory for constructing [OpStore] instances.
+pub trait OpStoreFactory: 'static + Send + Sync + std::fmt::Debug {
+    /// Help the builder construct a default config from the chosen
+    /// module factories.
+    fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
+
+    /// Construct an op store instance.
+    fn create(
+        &self,
+        builder: Arc<builder::Builder>,
+        space: SpaceId,
+    ) -> BoxFut<'static, K2Result<DynOpStore>>;
+}
+
+/// Trait-object [crate::bootstrap::BootstrapFactory].
+pub type DynOpStoreFactory = Arc<dyn OpStoreFactory>;

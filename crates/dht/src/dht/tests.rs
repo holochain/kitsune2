@@ -1,24 +1,25 @@
-mod harness;
-
 use super::*;
 use crate::dht::tests::harness::SyncWithOutcome;
+use crate::test::test_store;
 use harness::DhtSyncHarness;
-use kitsune2_api::{DhtArc, OpId, OpStore, UNIX_TIMESTAMP};
-use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
-use std::sync::Arc;
+use kitsune2_api::{DhtArc, OpId, UNIX_TIMESTAMP};
+use kitsune2_core::factories::Kitsune2MemoryOp;
 use std::time::Duration;
+
+mod harness;
 
 const SECTOR_SIZE: u32 = 1u32 << 23;
 
 #[tokio::test]
 async fn from_store_empty() {
-    let store = Arc::new(Kitsune2MemoryOpStore::default());
-    Dht::try_from_store(UNIX_TIMESTAMP, store).await.unwrap();
+    Dht::try_from_store(UNIX_TIMESTAMP, test_store().await)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn take_minimal_snapshot() {
-    let store = Arc::new(Kitsune2MemoryOpStore::default());
+    let store = test_store().await;
     store
         .process_incoming_ops(vec![Kitsune2MemoryOp::new(
             OpId::from(bytes::Bytes::from(vec![7; 32])),

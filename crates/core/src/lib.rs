@@ -156,6 +156,7 @@ pub fn default_builder() -> Builder {
         bootstrap: factories::MemBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
+        op_store: factories::MemOpStoreFactory::create(),
     }
 }
 

@@ -38,6 +38,10 @@ pub struct Builder {
     /// The [transport::TransportFactory] to be used for creating
     /// [transport::Transport] instances.
     pub transport: transport::DynTransportFactory,
+
+    /// The [op_store::OpStoreFactory] to be used for creating
+    /// [op_store::OpStore] instances.
+    pub op_store: op_store::DynOpStoreFactory,
 }
 
 impl Builder {
@@ -55,6 +59,7 @@ impl Builder {
                 bootstrap,
                 fetch,
                 transport,
+                op_store,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -63,6 +68,7 @@ impl Builder {
             bootstrap.default_config(config)?;
             fetch.default_config(config)?;
             transport.default_config(config)?;
+            op_store.default_config(config)?;
 
             config.mark_defaults_set();
         }

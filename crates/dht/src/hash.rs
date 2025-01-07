@@ -441,18 +441,18 @@ impl HashPartition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test::test_store;
     use crate::UNIT_TIME;
-    use kitsune2_api::{OpId, OpStore, UNIX_TIMESTAMP};
-    use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
+    use kitsune2_api::{OpId, UNIX_TIMESTAMP};
+    use kitsune2_core::factories::Kitsune2MemoryOp;
     use kitsune2_test_utils::enable_tracing;
-    use std::sync::Arc;
     use std::time::Duration;
 
     #[tokio::test]
     async fn try_from_store() {
         enable_tracing();
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let ph = HashPartition::try_from_store(14, Timestamp::now(), store)
             .await
             .unwrap();
@@ -472,7 +472,7 @@ mod tests {
     async fn covers_full_arc() {
         enable_tracing();
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let ph = HashPartition::try_from_store(14, UNIX_TIMESTAMP, store)
             .await
             .unwrap();
@@ -497,7 +497,7 @@ mod tests {
     async fn inform_ops_stored_in_full_slices() {
         enable_tracing();
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let mut ph =
             HashPartition::try_from_store(14, Timestamp::now(), store.clone())
                 .await
@@ -555,7 +555,7 @@ mod tests {
     async fn inform_ops_stored_in_partial_slices() {
         enable_tracing();
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let mut ph =
             HashPartition::try_from_store(14, Timestamp::now(), store.clone())
                 .await
@@ -608,7 +608,7 @@ mod tests {
     async fn next_update_at_consistent() {
         enable_tracing();
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let now = Timestamp::now();
         let ph = HashPartition::try_from_store(14, now, store.clone())
             .await
@@ -625,7 +625,7 @@ mod tests {
     #[tokio::test]
     async fn update_all() {
         enable_tracing();
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let now = Timestamp::now();
         let mut ph = HashPartition::try_from_store(14, now, store.clone())
             .await

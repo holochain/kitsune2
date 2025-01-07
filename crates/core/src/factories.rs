@@ -20,3 +20,6 @@ pub use core_fetch::CoreFetchFactory;
 
 mod mem_transport;
 pub use mem_transport::*;
+
+mod mem_op_store;
+pub use mem_op_store::*;

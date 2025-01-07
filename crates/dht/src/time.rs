@@ -673,10 +673,10 @@ fn residual_duration_for_factor(factor: u8) -> K2Result<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kitsune2_api::{OpId, OpStore};
-    use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
+    use crate::test::test_store;
+    use kitsune2_api::OpId;
+    use kitsune2_core::factories::Kitsune2MemoryOp;
     use kitsune2_test_utils::enable_tracing;
-    use std::sync::Arc;
 
     #[test]
     fn residual() {
@@ -722,7 +722,7 @@ mod tests {
     #[tokio::test]
     async fn from_store() {
         let factor = 4;
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let pt = TimePartition::try_from_store(
             factor,
             UNIX_TIMESTAMP,
@@ -741,7 +741,7 @@ mod tests {
         let current_time =
             UNIX_TIMESTAMP + Duration::from_secs(UNIT_TIME.as_secs() + 1);
         let factor = 4;
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let pt = TimePartition::try_from_store(
             factor,
             current_time,
@@ -776,7 +776,7 @@ mod tests {
                 // Enough time for all the partial slices
                 min_recent_time(factor).as_secs() + 1,
             );
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let pt = TimePartition::try_from_store(
             factor,
             current_time,
@@ -802,7 +802,7 @@ mod tests {
             (1u64 << (factor - 1)) * UNIT_TIME.as_secs()
                 + 1,
             );
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let pt = TimePartition::try_from_store(
             factor,
             current_time,
@@ -827,7 +827,7 @@ mod tests {
                 // Enough time for two of each of the partial slices
                 2 * min_recent_time(factor).as_secs() + 1,
             );
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let pt = TimePartition::try_from_store(
             factor,
             current_time,
@@ -851,7 +851,7 @@ mod tests {
                 min_recent_time(factor).as_secs() + 1,
             );
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(
@@ -900,7 +900,7 @@ mod tests {
                 .as_secs()
                 + 1,
             );
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let arc_constraint = DhtArc::Arc(0, 2);
         store
             .store_slice_hash(arc_constraint, 0, vec![1; 64].into())
@@ -940,7 +940,7 @@ mod tests {
             );
 
         // Store with no full slices stored
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(
@@ -1002,7 +1002,7 @@ mod tests {
             );
 
         // Store with no full slices stored
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(
@@ -1081,7 +1081,7 @@ mod tests {
                 + 1,
             );
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(
@@ -1139,7 +1139,7 @@ mod tests {
                 + 1,
             );
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let arc_constraint = DhtArc::Arc(0, 2);
         store
             .store_slice_hash(arc_constraint, 0, vec![1; 64].into())
@@ -1216,7 +1216,7 @@ mod tests {
                 + 1,
             );
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(
@@ -1307,7 +1307,7 @@ mod tests {
         let current_time = UNIX_TIMESTAMP
             + Duration::from_secs(min_recent_time(factor).as_secs() + 1);
 
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
 
         let arc_constraint = DhtArc::Arc(0, 2);
         let mut pt = TimePartition::try_from_store(
@@ -1390,7 +1390,7 @@ mod tests {
 
         let factor = 7;
         let current_time = Timestamp::now();
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
 
         let arc_constraint = DhtArc::FULL;
         let mut pt = TimePartition::try_from_store(
@@ -1456,7 +1456,7 @@ mod tests {
 
         let factor = 14;
         let current_time = Timestamp::now();
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
 
         let arc_constraint = DhtArc::Arc(0, 32);
         let mut pt = TimePartition::try_from_store(
@@ -1500,7 +1500,7 @@ mod tests {
 
         let factor = 14;
         let current_time = Timestamp::now();
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         // Insert a single op in the first time slice
         store
             .process_incoming_ops(vec![Kitsune2MemoryOp::new(
@@ -1559,7 +1559,7 @@ mod tests {
         let factor = 14;
         let current_time =
             UNIX_TIMESTAMP + min_recent_time(factor) + Duration::from_secs(3);
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
 
         let arc_constraint = DhtArc::Arc(0, 32);
         let mut pt = TimePartition::try_from_store(
@@ -1606,7 +1606,7 @@ mod tests {
         let factor = 14;
         let current_time =
             UNIX_TIMESTAMP + min_recent_time(factor) + Duration::from_secs(3);
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         store
             .process_incoming_ops(vec![
                 Kitsune2MemoryOp::new(

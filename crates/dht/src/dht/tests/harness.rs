@@ -1,18 +1,18 @@
 use crate::arc_set::ArcSet;
 use crate::dht::snapshot::DhtSnapshot;
+use crate::test::test_store;
 use crate::{Dht, DhtSnapshotNextAction};
 use kitsune2_api::{
-    AgentId, DhtArc, DynOpStore, K2Result, OpId, OpStore, StoredOp, Timestamp,
+    AgentId, DhtArc, DynOpStore, K2Result, OpId, StoredOp, Timestamp,
 };
-use kitsune2_memory::{Kitsune2MemoryOp, Kitsune2MemoryOpStore};
+use kitsune2_core::factories::Kitsune2MemoryOp;
 use rand::RngCore;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Intended to represent a single agent in a network, which knows how to sync with
 /// some other agent.
 pub(crate) struct DhtSyncHarness {
-    pub(crate) store: Arc<Kitsune2MemoryOpStore>,
+    pub(crate) store: DynOpStore,
     pub(crate) dht: Dht,
     pub(crate) arc: DhtArc,
     pub(crate) agent_id: AgentId,
@@ -29,7 +29,7 @@ pub(crate) enum SyncWithOutcome {
 
 impl DhtSyncHarness {
     pub(crate) async fn new(current_time: Timestamp, arc: DhtArc) -> Self {
-        let store = Arc::new(Kitsune2MemoryOpStore::default());
+        let store = test_store().await;
         let dht = Dht::try_from_store(current_time, store.clone())
             .await
             .unwrap();

@@ -1028,23 +1028,11 @@ version = "0.0.1-alpha"
 dependencies = [
  "bytes",
  "kitsune2_api",
- "kitsune2_memory",
+ "kitsune2_core",
  "kitsune2_test_utils",
  "rand",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "kitsune2_memory"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures",
- "kitsune2_api",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

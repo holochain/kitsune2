@@ -4,7 +4,6 @@ members = [
   "crates/bootstrap_srv",
   "crates/core",
   "crates/dht",
-  "crates/memory",
   "crates/test_utils",
   "crates/tool_proto_build",
 ]
@@ -76,7 +75,7 @@ prost-build = "0.13.3"
 # above this section.
 # --- dev-dependencies ---
 kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
-kitsune2_memory = { path = "crates/memory" }
+kitsune2_core = { path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
 tracing-subscriber = "0.3"

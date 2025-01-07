@@ -66,6 +66,8 @@ pub mod hash;
 pub mod time;
 
 mod combine;
+#[cfg(test)]
+mod test;
 
 pub use arc_set::*;
 pub use constant::*;

@@ -10,13 +10,13 @@ use std::collections::{BTreeMap, HashMap};
 /// response. Otherwise, you will get exactly what was most recently stored for that slice id.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(Clone))]
-pub(super) struct TimeSliceHashStore {
+pub struct TimeSliceHashStore {
     inner: HashMap<DhtArc, BTreeMap<u64, bytes::Bytes>>,
 }
 
 impl TimeSliceHashStore {
     /// Insert a hash at the given slice id.
-    pub(super) fn insert(
+    pub fn insert(
         &mut self,
         arc: DhtArc,
         slice_id: u64,
@@ -36,18 +36,14 @@ impl TimeSliceHashStore {
         Ok(())
     }
 
-    pub(super) fn get(
-        &self,
-        arc: &DhtArc,
-        slice_id: u64,
-    ) -> Option<bytes::Bytes> {
+    pub fn get(&self, arc: &DhtArc, slice_id: u64) -> Option<bytes::Bytes> {
         self.inner
             .get(arc)
             .and_then(|by_arc| by_arc.get(&slice_id))
             .cloned()
     }
 
-    pub(super) fn get_all(&self, arc: &DhtArc) -> Vec<(u64, bytes::Bytes)> {
+    pub fn get_all(&self, arc: &DhtArc) -> Vec<(u64, bytes::Bytes)> {
         self.inner
             .get(arc)
             .map(|by_arc| {
@@ -59,7 +55,7 @@ impl TimeSliceHashStore {
             .unwrap_or_default()
     }
 
-    pub(super) fn highest_stored_id(&self, arc: &DhtArc) -> Option<u64> {
+    pub fn highest_stored_id(&self, arc: &DhtArc) -> Option<u64> {
         self.inner
             .get(arc)
             .and_then(|by_arc| by_arc.iter().last().map(|(id, _)| *id))

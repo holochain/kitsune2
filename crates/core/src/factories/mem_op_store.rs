@@ -1,26 +1,64 @@
-use crate::op_store::time_slice_hash_store::TimeSliceHashStore;
+//! The mem op store implementation provided by Kitsune2.
+
+use crate::factories::mem_op_store::time_slice_hash_store::TimeSliceHashStore;
 use futures::future::BoxFuture;
-use futures::FutureExt;
+use kitsune2_api::builder::Builder;
+use kitsune2_api::config::Config;
 use kitsune2_api::{
-    DhtArc, K2Error, K2Result, MetaOp, OpId, OpStore, StoredOp, Timestamp,
+    BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, K2Error, K2Result, MetaOp,
+    OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub mod time_slice_hash_store;
+mod time_slice_hash_store;
+
+/// The mem op store implementation provided by Kitsune2.
+#[derive(Debug)]
+pub struct MemOpStoreFactory {}
+
+impl MemOpStoreFactory {
+    /// Construct a new MemOpStoreFactory.
+    pub fn create() -> DynOpStoreFactory {
+        let out: DynOpStoreFactory = Arc::new(MemOpStoreFactory {});
+        out
+    }
+}
+
+impl OpStoreFactory for MemOpStoreFactory {
+    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
+        Ok(())
+    }
+
+    fn create(
+        &self,
+        _builder: Arc<Builder>,
+        space: SpaceId,
+    ) -> BoxFut<'static, K2Result<DynOpStore>> {
+        Box::pin(async move {
+            let out: DynOpStore = Arc::new(Kitsune2MemoryOpStore::new(space));
+            Ok(out)
+        })
+    }
+}
 
 /// This is a stub implementation of an op that will be serialized
 /// via serde_json (with inefficient encoding of the payload) to be
 /// used for testing purposes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kitsune2MemoryOp {
+    /// The id (hash) of the op
     pub op_id: OpId,
+    /// The creation timestamp of this op
     pub timestamp: Timestamp,
+    /// The payload of the op
     pub payload: Vec<u8>,
 }
 
 impl Kitsune2MemoryOp {
+    /// Create a new [Kitsune2MemoryOp]
     pub fn new(op_id: OpId, timestamp: Timestamp, payload: Vec<u8>) -> Self {
         Self {
             op_id,
@@ -63,19 +101,31 @@ impl TryFrom<Kitsune2MemoryOp> for MetaOp {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Kitsune2MemoryOpStore(pub RwLock<Kitsune2MemoryOpStoreInner>);
+#[derive(Debug)]
+struct Kitsune2MemoryOpStore {
+    _space: SpaceId,
+    inner: RwLock<Kitsune2MemoryOpStoreInner>,
+}
+
+impl Kitsune2MemoryOpStore {
+    pub fn new(space: SpaceId) -> Self {
+        Self {
+            _space: space,
+            inner: Default::default(),
+        }
+    }
+}
 
 impl std::ops::Deref for Kitsune2MemoryOpStore {
     type Target = RwLock<Kitsune2MemoryOpStoreInner>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
 #[derive(Debug, Default)]
-pub struct Kitsune2MemoryOpStoreInner {
+struct Kitsune2MemoryOpStoreInner {
     op_list: HashMap<OpId, Kitsune2MemoryOp>,
     time_slice_hashes: TimeSliceHashStore,
 }
@@ -85,7 +135,7 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         op_list: Vec<MetaOp>,
     ) -> BoxFuture<'_, K2Result<()>> {
-        async move {
+        Box::pin(async move {
             let ops_to_add = op_list
                 .iter()
                 .map(|op| -> serde_json::Result<(OpId, Kitsune2MemoryOp)> {
@@ -98,8 +148,7 @@ impl OpStore for Kitsune2MemoryOpStore {
 
             self.write().await.op_list.extend(ops_to_add);
             Ok(())
-        }
-        .boxed()
+        })
     }
 
     fn retrieve_op_hashes_in_time_slice(
@@ -108,7 +157,7 @@ impl OpStore for Kitsune2MemoryOpStore {
         start: Timestamp,
         end: Timestamp,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
-        async move {
+        Box::pin(async move {
             let self_lock = self.read().await;
             Ok(self_lock
                 .op_list
@@ -121,15 +170,14 @@ impl OpStore for Kitsune2MemoryOpStore {
                 })
                 .map(|(op_id, _)| op_id.clone())
                 .collect())
-        }
-        .boxed()
+        })
     }
 
     fn retrieve_ops(
         &self,
         op_ids: Vec<OpId>,
     ) -> BoxFuture<'_, K2Result<Vec<MetaOp>>> {
-        async move {
+        Box::pin(async move {
             let self_lock = self.read().await;
             Ok(op_ids
                 .iter()
@@ -141,8 +189,7 @@ impl OpStore for Kitsune2MemoryOpStore {
                     })
                 })
                 .collect())
-        }
-        .boxed()
+        })
     }
 
     /// Store the combined hash of a time slice.
@@ -157,13 +204,12 @@ impl OpStore for Kitsune2MemoryOpStore {
         slice_id: u64,
         slice_hash: bytes::Bytes,
     ) -> BoxFuture<'_, K2Result<()>> {
-        async move {
+        Box::pin(async move {
             self.write()
                 .await
                 .time_slice_hashes
                 .insert(arc, slice_id, slice_hash)
-        }
-        .boxed()
+        })
     }
 
     /// Retrieve the count of time slice hashes stored.
@@ -181,7 +227,7 @@ impl OpStore for Kitsune2MemoryOpStore {
     /// case, the highest stored id is more useful.
     fn slice_hash_count(&self, arc: DhtArc) -> BoxFuture<'_, K2Result<u64>> {
         // +1 to convert from a 0-based index to a count
-        async move {
+        Box::pin(async move {
             Ok(self
                 .read()
                 .await
@@ -189,8 +235,7 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .highest_stored_id(&arc)
                 .map(|id| id + 1)
                 .unwrap_or_default())
-        }
-        .boxed()
+        })
     }
 
     /// Retrieve the hash of a time slice.
@@ -203,14 +248,9 @@ impl OpStore for Kitsune2MemoryOpStore {
         arc: DhtArc,
         slice_id: u64,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
-        async move {
-            Ok(self
-                .read()
-                .await
-                .time_slice_hashes
-                .get(&arc, slice_id))
-        }
-        .boxed()
+        Box::pin(async move {
+            Ok(self.read().await.time_slice_hashes.get(&arc, slice_id))
+        })
     }
 
     /// Retrieve the hashes of all time slices.
@@ -218,10 +258,9 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         arc: DhtArc,
     ) -> BoxFuture<'_, K2Result<Vec<(u64, bytes::Bytes)>>> {
-        async move {
+        Box::pin(async move {
             let self_lock = self.read().await;
             Ok(self_lock.time_slice_hashes.get_all(&arc))
-        }
-        .boxed()
+        })
     }
 }
