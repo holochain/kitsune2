@@ -3,7 +3,11 @@ fn main() {
     prost_build::Config::new()
         .bytes(["."])
         .compile_protos(
-            &["../api/proto/wire.proto", "../api/proto/fetch.proto"],
+            &[
+                "../api/proto/wire.proto",
+                "../api/proto/fetch.proto",
+                "../api/proto/op_store.proto",
+            ],
             &["../api/proto/"],
         )
         .expect("Failed to compile protobuf protocol files");
