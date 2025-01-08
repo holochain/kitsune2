@@ -1,6 +1,8 @@
 //! Kitsune2 transport related types.
 
 use crate::{protocol::*, *};
+#[cfg(feature = "mockall")]
+use mockall::automock;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -142,6 +144,7 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 pub type DynTxImp = Arc<dyn TxImp>;
 
 /// A high-level wrapper around a low-level [DynTxImp] transport implementation.
+#[cfg_attr(any(test, feature = "mockall"), automock)]
 pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     /// Register a space handler for receiving incoming notifications.
     ///

@@ -80,4 +80,6 @@ kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
 kitsune2_core = { path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
+# used to hash op data
+sha2 = "0.10.8"
 tracing-subscriber = "0.3"
