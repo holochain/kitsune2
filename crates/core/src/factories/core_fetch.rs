@@ -19,7 +19,9 @@
 //!
 //! ### Fetch tasks
 //!
-//! A channel acts as the queue structure for the fetch tasks. Requests to send are passed
+//! #### Requests
+//!
+//! A channel acts as the queue structure for the fetch request tasks. Ops to fetch are sent
 //! one by one through the channel to the receiving tasks running in parallel. The flow
 //! of sending fetch requests is as follows:
 //!
@@ -36,23 +38,38 @@
 //!   from the set of requests if it is received in the meantime, and thus prevent a redundant
 //!   fetch request.
 //!
+//! #### Responses
+//!
+//! Similarly to fetch requests, a channel serves as a queue for responses to fetch requests. The queue
+//! has the following properties:
+//! - Simple queue which processes items in the order of the incoming requests.
+//! - Requests consist of a list of requested op ids and the requesting agent id.
+//! - Attempts to look up the op in the data store and send response are executed once.
+//! - Requests for data that the host doesn't hold should be logged.
+//! - If none of the requested ops could be read from the store, no response is sent.
+//! - If sending or receiving fails, it's the caller's responsibility to request again.
+//!
 //! ### Incoming op task
 //!
 //! - Incoming op is written to the data store.
 //! - Once persisted successfully, op is removed from the set of ops to fetch.
 
+use back_off::BackOffList;
+#[cfg(test)]
+use kitsune2_api::transport::DynTxModuleHandler;
+use kitsune2_api::{
+    builder,
+    fetch::{
+        deserialize_op_ids, serialize_op_ids, serialize_ops, DynFetch,
+        DynFetchFactory, Fetch, FetchFactory,
+    },
+    op_store, peer_store,
+    transport::{DynTransport, TxBaseHandler, TxModuleHandler},
+    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
+};
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-};
-
-use back_off::BackOffList;
-use kitsune2_api::{
-    builder,
-    fetch::{serialize_op_ids, DynFetch, DynFetchFactory, Fetch, FetchFactory},
-    peer_store,
-    transport::DynTransport,
-    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
 };
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
@@ -129,6 +146,7 @@ impl FetchFactory for CoreFetchFactory {
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
         peer_store: peer_store::DynPeerStore,
+        op_store: op_store::DynOpStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>> {
         Box::pin(async move {
@@ -138,6 +156,7 @@ impl FetchFactory for CoreFetchFactory {
                 config.core_fetch,
                 space_id,
                 peer_store,
+                op_store,
                 transport,
             ));
             Ok(out)
@@ -146,6 +165,32 @@ impl FetchFactory for CoreFetchFactory {
 }
 
 type FetchRequest = (OpId, AgentId);
+type FetchResponse = (Vec<OpId>, Url);
+
+#[derive(Debug)]
+struct FetchResponseHandler {
+    response_tx: Sender<FetchResponse>,
+}
+
+impl TxModuleHandler for FetchResponseHandler {
+    fn recv_module_msg(
+        &self,
+        peer: Url,
+        _space: SpaceId,
+        _module: String,
+        data: bytes::Bytes,
+    ) -> K2Result<()> {
+        let op_ids = deserialize_op_ids(data)?;
+        if let Err(err) = self.response_tx.try_send((op_ids, peer)) {
+            tracing::warn!(
+                "could not pass fetch request to response task: {err}",
+            );
+        };
+        Ok(())
+    }
+}
+
+impl TxBaseHandler for FetchResponseHandler {}
 
 #[derive(Debug)]
 struct State {
@@ -156,8 +201,10 @@ struct State {
 #[derive(Debug)]
 struct CoreFetch {
     state: Arc<Mutex<State>>,
-    fetch_queue_tx: Sender<FetchRequest>,
-    fetch_tasks: Vec<JoinHandle<()>>,
+    request_tx: Sender<FetchRequest>,
+    tasks: Vec<JoinHandle<()>>,
+    #[cfg(test)]
+    response_handler: DynTxModuleHandler,
 }
 
 impl CoreFetch {
@@ -165,14 +212,15 @@ impl CoreFetch {
         config: CoreFetchConfig,
         space_id: SpaceId,
         peer_store: peer_store::DynPeerStore,
+        op_store: op_store::DynOpStore,
         transport: DynTransport,
     ) -> Self {
-        Self::spawn_fetch_tasks(config, space_id, peer_store, transport)
+        Self::spawn_tasks(config, space_id, peer_store, op_store, transport)
     }
 }
 
 impl Fetch for CoreFetch {
-    fn add_ops(
+    fn request_ops(
         &self,
         op_list: Vec<OpId>,
         source: AgentId,
@@ -192,10 +240,10 @@ impl Fetch for CoreFetch {
             // Pass requests to fetch tasks.
             for op_id in op_list {
                 if let Err(err) =
-                    self.fetch_queue_tx.send((op_id, source.clone())).await
+                    self.request_tx.send((op_id, source.clone())).await
                 {
                     tracing::warn!(
-                        "could not pass fetch request to fetch task: {err}"
+                        "could not pass fetch request to request task: {err}"
                     );
                 }
             }
@@ -206,15 +254,20 @@ impl Fetch for CoreFetch {
 }
 
 impl CoreFetch {
-    pub fn spawn_fetch_tasks(
+    pub fn spawn_tasks(
         config: CoreFetchConfig,
         space_id: SpaceId,
         peer_store: peer_store::DynPeerStore,
+        op_store: op_store::DynOpStore,
         transport: DynTransport,
     ) -> Self {
-        // Create a channel to send new requests to fetch to the tasks. This is in effect the fetch queue.
-        let (fetch_queue_tx, fetch_queue_rx) = channel::<FetchRequest>(16_384);
-        let fetch_queue_rx = Arc::new(tokio::sync::Mutex::new(fetch_queue_rx));
+        // Create a channel to send op requests to request tasks. This is the fetch queue.
+        let (request_tx, request_rx) = channel::<FetchRequest>(16_384);
+        let request_rx = Arc::new(tokio::sync::Mutex::new(request_rx));
+
+        // Create another channel to send incoming requests to the response task. This is the fetch response queue.
+        let (response_tx, response_rx) = channel::<FetchResponse>(16_384);
+        let response_rx = Arc::new(tokio::sync::Mutex::new(response_rx));
 
         let state = Arc::new(Mutex::new(State {
             requests: HashSet::new(),
@@ -225,28 +278,49 @@ impl CoreFetch {
             ),
         }));
 
-        let mut fetch_tasks =
+        let mut tasks =
             Vec::with_capacity(config.parallel_request_count as usize);
+        // Spawn request tasks.
         for _ in 0..config.parallel_request_count {
-            let task = tokio::task::spawn(CoreFetch::fetch_task(
-                state.clone(),
-                fetch_queue_tx.clone(),
-                fetch_queue_rx.clone(),
-                peer_store.clone(),
-                space_id.clone(),
-                transport.clone(),
-            ));
-            fetch_tasks.push(task);
+            let request_task =
+                tokio::task::spawn(CoreFetch::spawn_request_task(
+                    state.clone(),
+                    request_tx.clone(),
+                    request_rx.clone(),
+                    peer_store.clone(),
+                    space_id.clone(),
+                    transport.clone(),
+                ));
+            tasks.push(request_task);
         }
+
+        // Spawn response task.
+        let response_task = tokio::task::spawn(CoreFetch::spawn_response_task(
+            response_rx,
+            op_store,
+            transport.clone(),
+            space_id.clone(),
+        ));
+        tasks.push(response_task);
+
+        // Register incoming op handler for transport module.
+        let response_handler = Arc::new(FetchResponseHandler { response_tx });
+        transport.register_module_handler(
+            space_id,
+            MOD_NAME.to_string(),
+            response_handler.clone(),
+        );
 
         Self {
             state,
-            fetch_queue_tx,
-            fetch_tasks,
+            request_tx,
+            tasks,
+            #[cfg(test)]
+            response_handler,
         }
     }
 
-    async fn fetch_task(
+    async fn spawn_request_task(
         state: Arc<Mutex<State>>,
         fetch_request_tx: Sender<FetchRequest>,
         fetch_request_rx: Arc<tokio::sync::Mutex<Receiver<FetchRequest>>>,
@@ -335,6 +409,49 @@ impl CoreFetch {
         }
     }
 
+    async fn spawn_response_task(
+        response_rx: Arc<tokio::sync::Mutex<Receiver<FetchResponse>>>,
+        op_store: op_store::DynOpStore,
+        transport: DynTransport,
+        space_id: SpaceId,
+    ) {
+        while let Some((op_ids, peer)) = response_rx.lock().await.recv().await {
+            tracing::debug!(?op_ids, ?peer, "incoming request");
+
+            // Fetch ops to send from store.
+            let ops = match op_store.retrieve_ops(op_ids.clone()).await {
+                Err(err) => {
+                    tracing::error!("could not read ops from store: {err}");
+                    continue;
+                }
+                Ok(ops) => ops,
+            };
+
+            if ops.is_empty() {
+                // Do not send a response when no ops could be read.
+                continue;
+            }
+
+            let data = serialize_ops(ops);
+
+            if let Err(err) = transport
+                .send_module(
+                    peer.clone(),
+                    space_id.clone(),
+                    MOD_NAME.to_string(),
+                    data,
+                )
+                .await
+            {
+                tracing::warn!(
+                    ?op_ids,
+                    ?peer,
+                    "could not send ops to requesting agent: {err}"
+                );
+            }
+        }
+    }
+
     async fn get_peer_url_from_store(
         agent_id: &AgentId,
         peer_store: peer_store::DynPeerStore,
@@ -365,7 +482,7 @@ impl CoreFetch {
 
 impl Drop for CoreFetch {
     fn drop(&mut self) {
-        for t in self.fetch_tasks.iter() {
+        for t in self.tasks.iter() {
             t.abort();
         }
     }

@@ -30,6 +30,8 @@ axum = { workspace = true, default-features = false, features = [
   "tokio",
 ] }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
+kitsune2_api = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
