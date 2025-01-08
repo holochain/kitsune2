@@ -2,8 +2,16 @@ syntax = "proto3";
 
 package kitsune2.fetch;
 
+import "op_store.proto";
+
 // A list of op ids.
 message OpIds {
   // Op ids.
   repeated bytes data = 1;
+}
+
+// A list of ops.
+message Ops {
+  // Ops.
+  repeated kitsune2.op_store.Op op_list = 1;
 }

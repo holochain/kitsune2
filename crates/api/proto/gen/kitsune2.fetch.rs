@@ -6,3 +6,10 @@ pub struct OpIds {
     #[prost(bytes = "bytes", repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
 }
+/// A list of ops.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Ops {
+    /// Ops.
+    #[prost(message, repeated, tag = "1")]
+    pub op_list: ::prost::alloc::vec::Vec<super::op_store::Op>,
+}
