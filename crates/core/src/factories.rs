@@ -18,8 +18,12 @@ pub use core_bootstrap::CoreBootstrapFactory;
 pub mod core_fetch;
 pub use core_fetch::CoreFetchFactory;
 
+mod core_gossip;
+pub use core_gossip::*;
+
 mod mem_transport;
 pub use mem_transport::*;
 
 mod mem_op_store;
+
 pub use mem_op_store::*;

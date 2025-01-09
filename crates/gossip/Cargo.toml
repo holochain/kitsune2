@@ -11,4 +11,10 @@ categories = ["network-programming"]
 edition = "2021"
 
 [dependencies]
+kitsune2_api = { workspace = true }
 kitsune2_dht = { workspace = true }
+
+prost = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
