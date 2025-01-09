@@ -3,7 +3,8 @@ members = [
   "crates/api",
   "crates/bootstrap_srv",
   "crates/core",
-  "crates/dht", "crates/gossip",
+  "crates/dht",
+  "crates/gossip",
   "crates/test_utils",
   "crates/tool_proto_build",
 ]
@@ -15,6 +16,7 @@ resolver = "2"
 # For example, most crates will depend on the api crate.
 kitsune2_api = { version = "0.0.1-alpha", path = "crates/api" }
 kitsune2_dht = { version = "0.0.1-alpha", path = "crates/dht" }
+kitsune2_gossip = { version = "0.0.1-alpha", path = "crates/gossip" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"

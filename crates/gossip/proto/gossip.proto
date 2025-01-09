@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package kitsune2.gossip;
+
+// A Kitsune2 gossip protocol message.
+message K2GossipProto {
+  oneof gossip_message {
+    // A gossip initiation protocol message.
+    K2GossipInitiateProto initiate = 1;
+
+    // A gossip acceptance protocol message.
+    K2GossipAcceptProto accept = 2;
+  }
+}
+
+// A Kitsune2 gossip initiation protocol message.
+message K2GossipInitiateProto {
+  // The agents from the initiator who are participating in this gossip round.
+  repeated bytes participating_agents = 1;
+
+  // Request ops that are new since the given timestamp.
+  int64 new_since = 2;
+
+  // TODO Send initial DHT snapshot.
+}
+
+// A Kitsune2 gossip acceptance protocol message.
+message K2GossipAcceptProto {
+  // The agents from the initiator who are participating in this gossip round.
+  repeated bytes participating_agents = 1;
+
+  // Agents that were mentioned in the initiator's participating_agents list
+  // that we do not have in our peer store.
+  repeated bytes missing_agents = 2;
+
+  // Request ops that are new since the given timestamp.
+  int64 new_since = 3;
+
+  // Ops that we have stored since the timestamp provided by the initiator in `new_since`.
+  repeated bytes new_ops = 4;
+
+  // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
+  // and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
+  int64 updated_new_since = 5;
+
+  // TODO Send initial DHT snapshot.
+}
+
+// TODO Further gossip protocol messages.

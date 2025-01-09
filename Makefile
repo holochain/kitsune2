@@ -23,3 +23,6 @@ build:
 
 test:
 	cargo test
+
+proto:
+	cd crates/tool_proto_build && cargo run
