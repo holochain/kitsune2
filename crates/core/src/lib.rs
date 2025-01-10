@@ -136,7 +136,7 @@ impl agent::LocalAgent for Ed25519LocalAgent {
     }
 }
 
-/// Construct a production-ready default builder.
+/// Construct a default builder for use in tests.
 ///
 /// - `verifier` - The default verifier is [Ed25519Verifier].
 /// - `kitsune` - The default top-level kitsune module is
@@ -146,7 +146,7 @@ impl agent::LocalAgent for Ed25519LocalAgent {
 /// - `bootstrap` - The default bootstrap is [factories::MemBootstrapFactory].
 /// - `fetch` - The default fetch module is [factories::CoreFetchFactory].
 /// - `transport` - The default transport is [factories::MemTransportFactory].
-pub fn default_builder() -> Builder {
+pub fn default_test_builder() -> Builder {
     Builder {
         config: Config::default(),
         verifier: std::sync::Arc::new(Ed25519Verifier),
@@ -157,6 +157,7 @@ pub fn default_builder() -> Builder {
         fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
         op_store: factories::MemOpStoreFactory::create(),
+        gossip: factories::CoreGossipFactory::create(),
     }
 }
 

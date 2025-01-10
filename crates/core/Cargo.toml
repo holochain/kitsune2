@@ -11,13 +11,12 @@ categories = ["network-programming"]
 edition = "2021"
 
 [dependencies]
-kitsune2_gossip = { workspace = true }
+kitsune2_api = { workspace = true }
 
 backon = { workspace = true }
 bytes = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 futures = { workspace = true }
-kitsune2_api = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }

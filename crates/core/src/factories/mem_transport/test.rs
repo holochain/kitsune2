@@ -200,7 +200,7 @@ impl TrackHnd {
 }
 
 async fn gen_tx(hnd: DynTxHandler) -> DynTransport {
-    let builder = Arc::new(crate::default_builder());
+    let builder = Arc::new(crate::default_test_builder());
     builder
         .transport
         .create(builder.clone(), hnd)

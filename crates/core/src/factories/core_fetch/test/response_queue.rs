@@ -1,6 +1,6 @@
 use super::utils::random_op_id;
 use crate::{
-    default_builder,
+    default_test_builder,
     factories::{
         core_fetch::{CoreFetch, CoreFetchConfig},
         Kitsune2MemoryOp, MemOpStoreFactory,
@@ -82,7 +82,8 @@ fn make_mock_transport(
 #[tokio::test(flavor = "multi_thread")]
 async fn respond_to_multiple_requests() {
     enable_tracing();
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)
@@ -161,7 +162,8 @@ async fn respond_to_multiple_requests() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_response_sent_when_no_ops_found() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)
@@ -202,7 +204,8 @@ async fn no_response_sent_when_no_ops_found() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fail_to_respond_once_then_succeed() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)

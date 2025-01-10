@@ -42,6 +42,10 @@ pub struct Builder {
     /// The [op_store::OpStoreFactory] to be used for creating
     /// [op_store::OpStore] instances.
     pub op_store: op_store::DynOpStoreFactory,
+
+    /// The [gossip::GossipFactory] to be used for creating
+    /// [gossip::Gossip] instances.
+    pub gossip: gossip::DynGossipFactory,
 }
 
 impl Builder {
@@ -60,6 +64,7 @@ impl Builder {
                 fetch,
                 transport,
                 op_store,
+                gossip,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -69,6 +74,7 @@ impl Builder {
             fetch.default_config(config)?;
             transport.default_config(config)?;
             op_store.default_config(config)?;
+            gossip.default_config(config)?;
 
             config.mark_defaults_set();
         }

@@ -4,6 +4,7 @@ use crate::*;
 use std::sync::Arc;
 
 /// Represents the ability to store and query agents.
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     /// Insert agents into the store.
     fn insert(
