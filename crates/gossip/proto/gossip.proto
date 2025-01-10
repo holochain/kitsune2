@@ -43,7 +43,7 @@ message K2GossipAcceptProto {
   // and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
   int64 updated_new_since = 5;
 
-  // TODO Send initial DHT snapshot.
+  // TODO Send DHT snapshot diff response.
 }
 
 // TODO Further gossip protocol messages.
