@@ -1025,7 +1025,6 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "kitsune2_api",
- "kitsune2_gossip",
  "kitsune2_test_utils",
  "prost",
  "rand",
@@ -1054,10 +1053,14 @@ dependencies = [
 name = "kitsune2_gossip"
 version = "0.0.1-alpha"
 dependencies = [
+ "bytes",
  "kitsune2_api",
+ "kitsune2_core",
  "kitsune2_dht",
+ "kitsune2_test_utils",
  "prost",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

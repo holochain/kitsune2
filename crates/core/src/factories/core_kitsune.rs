@@ -175,7 +175,7 @@ mod test {
 
         let k: DynKitsuneHandler = Arc::new(K);
 
-        let k = crate::default_builder()
+        let k = crate::default_test_builder()
             .with_default_config()
             .unwrap()
             .build(k)

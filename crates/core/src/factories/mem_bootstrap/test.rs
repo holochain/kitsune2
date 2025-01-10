@@ -39,7 +39,7 @@ impl Test {
         let builder = Arc::new(
             builder::Builder {
                 verifier: Arc::new(TestCrypto),
-                ..crate::default_builder()
+                ..crate::default_test_builder()
             }
             .with_default_config()
             .unwrap(),

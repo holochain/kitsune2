@@ -43,7 +43,7 @@ async fn space_local_agent_join_leave() {
     let k: DynKitsuneHandler = Arc::new(K);
     let k1 = builder::Builder {
         verifier: Arc::new(TestVerifier),
-        ..crate::default_builder()
+        ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap()
@@ -145,7 +145,7 @@ async fn space_notify_send_recv() {
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k1 = builder::Builder {
         verifier: Arc::new(TestVerifier),
-        ..crate::default_builder()
+        ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap()
@@ -158,7 +158,7 @@ async fn space_notify_send_recv() {
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k2 = builder::Builder {
         verifier: Arc::new(TestVerifier),
-        ..crate::default_builder()
+        ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap()
@@ -272,7 +272,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
     let builder = builder::Builder {
         verifier: Arc::new(TestVerifier),
         bootstrap: Arc::new(BF(b.clone())),
-        ..crate::default_builder()
+        ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap();

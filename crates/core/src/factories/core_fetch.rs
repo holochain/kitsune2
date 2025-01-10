@@ -63,9 +63,9 @@ use kitsune2_api::{
         deserialize_op_ids, serialize_op_ids, serialize_ops, DynFetch,
         DynFetchFactory, Fetch, FetchFactory,
     },
-    op_store, peer_store,
+    peer_store,
     transport::{DynTransport, TxBaseHandler, TxModuleHandler},
-    AgentId, BoxFut, K2Result, OpId, SpaceId, Url,
+    AgentId, BoxFut, DynOpStore, K2Result, OpId, SpaceId, Url,
 };
 use std::{
     collections::HashSet,
@@ -146,7 +146,7 @@ impl FetchFactory for CoreFetchFactory {
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
         peer_store: peer_store::DynPeerStore,
-        op_store: op_store::DynOpStore,
+        op_store: DynOpStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>> {
         Box::pin(async move {
@@ -212,7 +212,7 @@ impl CoreFetch {
         config: CoreFetchConfig,
         space_id: SpaceId,
         peer_store: peer_store::DynPeerStore,
-        op_store: op_store::DynOpStore,
+        op_store: DynOpStore,
         transport: DynTransport,
     ) -> Self {
         Self::spawn_tasks(config, space_id, peer_store, op_store, transport)
@@ -258,7 +258,7 @@ impl CoreFetch {
         config: CoreFetchConfig,
         space_id: SpaceId,
         peer_store: peer_store::DynPeerStore,
-        op_store: op_store::DynOpStore,
+        op_store: DynOpStore,
         transport: DynTransport,
     ) -> Self {
         // Create a channel to send op requests to request tasks. This is the fetch queue.
@@ -411,7 +411,7 @@ impl CoreFetch {
 
     async fn spawn_response_task(
         response_rx: Arc<tokio::sync::Mutex<Receiver<FetchResponse>>>,
-        op_store: op_store::DynOpStore,
+        op_store: DynOpStore,
         transport: DynTransport,
         space_id: SpaceId,
     ) {

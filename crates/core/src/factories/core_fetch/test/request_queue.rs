@@ -1,5 +1,5 @@
 use crate::{
-    default_builder,
+    default_test_builder,
     factories::{
         core_fetch::{CoreFetch, CoreFetchConfig},
         MemOpStoreFactory,
@@ -57,7 +57,8 @@ fn make_mock_transport(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)
@@ -146,7 +147,8 @@ async fn fetch_queue() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_op_fetch_from_multiple_agents() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(requests_sent.clone(), false);
@@ -261,7 +263,8 @@ async fn happy_op_fetch_from_multiple_agents() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ops_are_cleared_when_agent_not_in_peer_store() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)
@@ -299,7 +302,8 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_back_off_list() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)
@@ -383,7 +387,8 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)
@@ -444,7 +449,8 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn requests_are_dropped_when_max_back_off_expired() {
-    let builder = Arc::new(default_builder().with_default_config().unwrap());
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), SPACE_ID)

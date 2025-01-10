@@ -50,7 +50,7 @@ impl Test {
         let builder = builder::Builder {
             verifier: Arc::new(TestCrypto),
             bootstrap: super::CoreBootstrapFactory::create(),
-            ..crate::default_builder()
+            ..crate::default_test_builder()
         }
         .with_default_config()
         .unwrap();
