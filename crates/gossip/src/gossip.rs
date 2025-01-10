@@ -53,7 +53,7 @@ struct GossipResponse(bytes::Bytes, Url);
 ///
 /// This type acts as both an implementation of the [Gossip] trait and a [TxModuleHandler].
 #[derive(Debug, Clone)]
-pub struct K2Gossip {
+struct K2Gossip {
     space: SpaceId,
     _peer_store: DynPeerStore,
     _op_store: DynOpStore,
@@ -81,6 +81,7 @@ impl K2Gossip {
             tokio::sync::mpsc::channel::<GossipResponse>(1024);
         let response_task = tokio::task::spawn({
             let space = space.clone();
+            let transport = transport.clone();
             async move {
                 while let Some(msg) = rx.recv().await {
                     transport
@@ -97,13 +98,17 @@ impl K2Gossip {
         })
         .abort_handle();
 
-        Arc::new(K2Gossip {
-            space,
+        let gossip = K2Gossip {
+            space: space.clone(),
             _peer_store: peer_store,
             _op_store: op_store,
             response_tx,
             response_task,
-        })
+        };
+        
+        transport.register_module_handler(space, MOD_NAME.to_string(), Arc::new(gossip.clone()));
+        
+        Arc::new(gossip)
     }
 }
 
@@ -148,11 +153,7 @@ impl K2Gossip {
     }
 }
 
-impl Gossip for K2Gossip {
-    fn tx_module_handler(&self) -> DynTxModuleHandler {
-        Arc::new(self.clone())
-    }
-}
+impl Gossip for K2Gossip {}
 
 impl TxBaseHandler for K2Gossip {}
 impl TxModuleHandler for K2Gossip {
@@ -255,12 +256,6 @@ mod test {
                 )
                 .await
                 .unwrap();
-
-            transport.register_module_handler(
-                self.space.clone(),
-                MOD_NAME.to_string(),
-                gossip.tx_module_handler(),
-            );
 
             let url = transport.register_space_handler(
                 self.space.clone(),

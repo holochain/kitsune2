@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 /// Represents the ability to sync DHT data with other agents through background communication.
 pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
-    /// Get the tx module handler for this gossip instance.
-    fn tx_module_handler(&self) -> DynTxModuleHandler;
 }
 
 /// Trait-object [Gossip].

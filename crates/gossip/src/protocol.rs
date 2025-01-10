@@ -16,7 +16,11 @@ pub fn deserialize_gossip_message(
 pub fn serialize_gossip_message(
     value: K2GossipProto,
 ) -> K2Result<bytes::Bytes> {
-    let mut buf = Vec::new();
-    value.encode(&mut buf).map_err(K2Error::other)?;
-    Ok(bytes::Bytes::from(buf))
+    let mut out = bytes::BytesMut::new();
+
+    value.encode(&mut out).map_err(|e| {
+        K2Error::other(format!("Failed to serialize gossip message: {:?}", e))
+    })?;
+
+    Ok(out.freeze())
 }
