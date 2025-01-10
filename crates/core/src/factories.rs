@@ -15,6 +15,9 @@ pub use mem_bootstrap::MemBootstrapFactory;
 pub mod core_bootstrap;
 pub use core_bootstrap::CoreBootstrapFactory;
 
+mod mem_peer_meta_store;
+pub use mem_peer_meta_store::*;
+
 pub mod core_fetch;
 pub use core_fetch::CoreFetchFactory;
 
@@ -22,4 +25,5 @@ mod mem_transport;
 pub use mem_transport::*;
 
 mod mem_op_store;
+
 pub use mem_op_store::*;

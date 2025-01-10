@@ -146,6 +146,8 @@ impl agent::LocalAgent for Ed25519LocalAgent {
 /// - `bootstrap` - The default bootstrap is [factories::MemBootstrapFactory].
 /// - `fetch` - The default fetch module is [factories::CoreFetchFactory].
 /// - `transport` - The default transport is [factories::MemTransportFactory].
+/// - `op_store` - The default op store is [factories::MemOpStoreFactory].
+/// - `meta_store` - The default meta store is [factories::MemPeerMetaStoreFactory].
 pub fn default_builder() -> Builder {
     Builder {
         config: Config::default(),
@@ -157,6 +159,7 @@ pub fn default_builder() -> Builder {
         fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
         op_store: factories::MemOpStoreFactory::create(),
+        meta_store: factories::MemPeerMetaStoreFactory::create(),
     }
 }
 

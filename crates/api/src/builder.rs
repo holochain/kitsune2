@@ -42,6 +42,10 @@ pub struct Builder {
     /// The [op_store::OpStoreFactory] to be used for creating
     /// [op_store::OpStore] instances.
     pub op_store: op_store::DynOpStoreFactory,
+
+    /// The [peer_meta_store::PeerMetaStoreFactory] to be used for creating
+    /// [peer_meta_store::PeerMetaStore] instances.
+    pub meta_store: peer_meta_store::DynPeerMetaStoreFactory,
 }
 
 impl Builder {
@@ -60,6 +64,7 @@ impl Builder {
                 fetch,
                 transport,
                 op_store,
+                meta_store,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -69,6 +74,7 @@ impl Builder {
             fetch.default_config(config)?;
             transport.default_config(config)?;
             op_store.default_config(config)?;
+            meta_store.default_config(config)?;
 
             config.mark_defaults_set();
         }
