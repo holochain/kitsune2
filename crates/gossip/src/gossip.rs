@@ -5,9 +5,7 @@ use crate::protocol::{
 };
 use crate::MOD_NAME;
 use kitsune2_api::peer_store::DynPeerStore;
-use kitsune2_api::transport::{
-    DynTransport, DynTxModuleHandler, TxBaseHandler, TxModuleHandler,
-};
+use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
     AgentId, DynGossip, DynGossipFactory, DynOpStore, Gossip, GossipFactory,
     K2Error, K2Result, SpaceId, Url,
@@ -105,9 +103,13 @@ impl K2Gossip {
             response_tx,
             response_task,
         };
-        
-        transport.register_module_handler(space, MOD_NAME.to_string(), Arc::new(gossip.clone()));
-        
+
+        transport.register_module_handler(
+            space,
+            MOD_NAME.to_string(),
+            Arc::new(gossip.clone()),
+        );
+
         Arc::new(gossip)
     }
 }
