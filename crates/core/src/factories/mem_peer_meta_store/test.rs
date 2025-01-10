@@ -27,7 +27,7 @@ impl TestPeerMetaStore {
             .unwrap()
             .map(|v| {
                 Timestamp::from_micros(i64::from_be_bytes(
-                    v.as_slice().try_into().unwrap(),
+                    v.to_vec().as_slice().try_into().unwrap(),
                 ))
             })
     }
@@ -37,14 +37,17 @@ impl TestPeerMetaStore {
         agent: AgentId,
         timestamp: Timestamp,
     ) -> K2Result<()> {
-        let value = timestamp.as_micros().to_be_bytes().to_vec();
+        let value = bytes::Bytes::from(
+            timestamp.as_micros().to_be_bytes().as_slice().to_vec(),
+        );
 
         self.inner
             .put(
                 self.space.clone(),
                 agent,
                 "gossip:last_timestamp".to_string(),
-                value.clone(),
+                value,
+                None,
             )
             .await?;
 

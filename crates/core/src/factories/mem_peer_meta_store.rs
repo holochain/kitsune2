@@ -1,7 +1,7 @@
 use futures::future::BoxFuture;
 use kitsune2_api::{
     AgentId, DynPeerMetaStore, DynPeerMetaStoreFactory, K2Result,
-    PeerMetaStore, PeerMetaStoreFactory, SpaceId,
+    PeerMetaStore, PeerMetaStoreFactory, SpaceId, Timestamp,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,7 +10,8 @@ use tokio::sync::Mutex;
 #[cfg(test)]
 mod test;
 
-type MemPeerMetaInner = HashMap<(SpaceId, AgentId), HashMap<String, Vec<u8>>>;
+type MemPeerMetaInner =
+    HashMap<(SpaceId, AgentId), HashMap<String, bytes::Bytes>>;
 
 /// An in-memory implementation of the [PeerMetaStore].
 ///
@@ -34,7 +35,8 @@ impl PeerMetaStore for MemPeerMetaStore {
         space: SpaceId,
         agent: AgentId,
         key: String,
-        value: Vec<u8>,
+        value: bytes::Bytes,
+        _expiry: Option<Timestamp>,
     ) -> BoxFuture<'_, K2Result<()>> {
         let inner = self.inner.clone();
         Box::pin(async move {
@@ -51,7 +53,7 @@ impl PeerMetaStore for MemPeerMetaStore {
         space: SpaceId,
         agent: AgentId,
         key: String,
-    ) -> BoxFuture<'_, K2Result<Option<Vec<u8>>>> {
+    ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
         let inner = self.inner.clone();
         Box::pin(async move {
             let inner = inner.lock().await;
