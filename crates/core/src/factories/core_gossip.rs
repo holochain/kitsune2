@@ -1,9 +1,7 @@
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
 use kitsune2_api::peer_store::DynPeerStore;
-use kitsune2_api::transport::{
-    DynTransport, DynTxModuleHandler, TxBaseHandler, TxModuleHandler,
-};
+use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
     BoxFut, DynGossip, DynGossipFactory, DynOpStore, Gossip, GossipFactory,
     K2Result, SpaceId,
@@ -51,11 +49,7 @@ impl GossipFactory for CoreGossipFactory {
 #[derive(Debug, Clone)]
 pub struct CoreGossip;
 
-impl Gossip for CoreGossip {
-    fn tx_module_handler(&self) -> DynTxModuleHandler {
-        Arc::new(self.clone())
-    }
-}
+impl Gossip for CoreGossip {}
 
 impl TxBaseHandler for CoreGossip {}
 impl TxModuleHandler for CoreGossip {}

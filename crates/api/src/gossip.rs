@@ -1,13 +1,12 @@
 //! Gossip related types.
 
 use crate::peer_store::DynPeerStore;
-use crate::transport::{DynTransport, DynTxModuleHandler};
+use crate::transport::DynTransport;
 use crate::{builder, config, BoxFut, DynOpStore, K2Result, SpaceId};
 use std::sync::Arc;
 
 /// Represents the ability to sync DHT data with other agents through background communication.
-pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
-}
+pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {}
 
 /// Trait-object [Gossip].
 pub type DynGossip = Arc<dyn Gossip>;
