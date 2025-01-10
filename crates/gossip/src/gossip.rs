@@ -12,7 +12,7 @@ use kitsune2_api::{
 };
 use std::sync::Arc;
 
-/// A factory for creating [`K2Gossip`] instances.
+/// A factory for creating K2Gossip instances.
 #[derive(Debug)]
 pub struct K2GossipFactory;
 
