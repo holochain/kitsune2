@@ -8,13 +8,13 @@ include!("../proto/gen/kitsune2.gossip.rs");
 /// Deserialize a gossip message
 pub fn deserialize_gossip_message(
     value: bytes::Bytes,
-) -> K2Result<K2GossipProto> {
-    K2GossipProto::decode(value).map_err(K2Error::other)
+) -> K2Result<K2GossipMessage> {
+    K2GossipMessage::decode(value).map_err(K2Error::other)
 }
 
 /// Serialize a gossip message
 pub fn serialize_gossip_message(
-    value: K2GossipProto,
+    value: K2GossipMessage,
 ) -> K2Result<bytes::Bytes> {
     let mut out = bytes::BytesMut::new();
 

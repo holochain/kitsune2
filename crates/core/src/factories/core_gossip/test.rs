@@ -10,7 +10,7 @@ impl TxHandler for NoopTxHandler {}
 
 #[tokio::test]
 async fn create_gossip_instance() {
-    let factory = CoreGossipFactory::create();
+    let factory = CoreGossipStubFactory::create();
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());

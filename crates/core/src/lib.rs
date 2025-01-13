@@ -160,7 +160,7 @@ pub fn default_test_builder() -> Builder {
         transport: factories::MemTransportFactory::create(),
         op_store: factories::MemOpStoreFactory::create(),
         meta_store: factories::MemPeerMetaStoreFactory::create(),
-        gossip: factories::CoreGossipFactory::create(),
+        gossip: factories::CoreGossipStubFactory::create(),
     }
 }
 

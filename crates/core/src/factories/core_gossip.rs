@@ -15,16 +15,16 @@ mod test;
 ///
 /// This factory returns stub gossip instances that do nothing.
 #[derive(Debug)]
-pub struct CoreGossipFactory;
+pub struct CoreGossipStubFactory;
 
-impl CoreGossipFactory {
+impl CoreGossipStubFactory {
     /// Construct a new CoreGossipFactory.
     pub fn create() -> DynGossipFactory {
-        Arc::new(CoreGossipFactory)
+        Arc::new(CoreGossipStubFactory)
     }
 }
 
-impl GossipFactory for CoreGossipFactory {
+impl GossipFactory for CoreGossipStubFactory {
     fn default_config(&self, _config: &mut Config) -> K2Result<()> {
         Ok(())
     }
@@ -37,7 +37,7 @@ impl GossipFactory for CoreGossipFactory {
         _op_store: DynOpStore,
         _transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynGossip>> {
-        let out: DynGossip = Arc::new(CoreGossip);
+        let out: DynGossip = Arc::new(CoreGossipStub);
         Box::pin(async move { Ok(out) })
     }
 }
@@ -47,9 +47,9 @@ impl GossipFactory for CoreGossipFactory {
 /// This is useful for constructing a Kitsune2 instance that does not require gossip, such as for
 /// testing.
 #[derive(Debug, Clone)]
-pub struct CoreGossip;
+pub struct CoreGossipStub;
 
-impl Gossip for CoreGossip {}
+impl Gossip for CoreGossipStub {}
 
-impl TxBaseHandler for CoreGossip {}
-impl TxModuleHandler for CoreGossip {}
+impl TxBaseHandler for CoreGossipStub {}
+impl TxModuleHandler for CoreGossipStub {}

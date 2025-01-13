@@ -3,19 +3,19 @@ syntax = "proto3";
 package kitsune2.gossip;
 
 // A Kitsune2 gossip protocol message.
-message K2GossipProto {
+message K2GossipMessage {
   oneof gossip_message {
     // A gossip initiation protocol message.
-    K2GossipInitiateProto initiate = 1;
+    K2GossipInitiateMessage initiate = 1;
 
     // A gossip acceptance protocol message.
-    K2GossipAcceptProto accept = 2;
+    K2GossipAcceptMessage accept = 2;
   }
 }
 
 // A Kitsune2 gossip initiation protocol message.
-message K2GossipInitiateProto {
-  // The agent ids of the agents from the initiator who are participating in this gossip round.
+message K2GossipInitiateMessage {
+  // The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 1;
 
   // Request ops that are new since the given timestamp.
@@ -25,8 +25,8 @@ message K2GossipInitiateProto {
 }
 
 // A Kitsune2 gossip acceptance protocol message.
-message K2GossipAcceptProto {
-  // The agent ids of the from the acceptor who are participating in this gossip round.
+message K2GossipAcceptMessage {
+  // The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 1;
 
   // Agent ids of agents that were mentioned in the initiator's participating_agents list
