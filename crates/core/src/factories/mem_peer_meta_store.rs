@@ -15,7 +15,7 @@ type MemPeerMetaInner =
 
 /// An in-memory implementation of the [PeerMetaStore].
 ///
-/// This is useful for testing but peer metadata is supposed to be persistent in a real deployment.
+/// This is useful for testing, but peer metadata is supposed to be persistent in a real deployment.
 #[derive(Debug)]
 pub struct MemPeerMetaStore {
     inner: Arc<Mutex<MemPeerMetaInner>>,
@@ -80,7 +80,7 @@ impl PeerMetaStore for MemPeerMetaStore {
     }
 }
 
-/// A factor for creating [MemPeerMetaStore] instances.
+/// A factory for creating [MemPeerMetaStore] instances.
 #[derive(Debug)]
 pub struct MemPeerMetaStoreFactory;
 
