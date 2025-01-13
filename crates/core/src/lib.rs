@@ -157,7 +157,7 @@ pub fn default_test_builder() -> Builder {
         fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
         op_store: factories::MemOpStoreFactory::create(),
-        gossip: factories::CoreGossipFactory::create(),
+        gossip: factories::CoreGossipStubFactory::create(),
     }
 }
 

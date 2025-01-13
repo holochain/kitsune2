@@ -1,8 +1,5 @@
-use crate::protocol::k2_gossip_proto::GossipMessage;
-use crate::protocol::{
-    deserialize_gossip_message, serialize_gossip_message, K2GossipAcceptProto,
-    K2GossipProto,
-};
+use crate::protocol::k2_gossip_message::GossipMessage;
+use crate::protocol::{deserialize_gossip_message, serialize_gossip_message, K2GossipAcceptMessage, K2GossipMessage};
 use crate::MOD_NAME;
 use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
@@ -122,8 +119,8 @@ impl K2Gossip {
     fn handle_gossip_message(
         &self,
         from: AgentId,
-        msg: K2GossipProto,
-    ) -> K2Result<Option<K2GossipProto>> {
+        msg: K2GossipMessage,
+    ) -> K2Result<Option<K2GossipMessage>> {
         println!("handle_gossip_message from: {:?}, msg: {:?}", from, msg);
 
         let Some(msg) = msg.gossip_message else {
@@ -134,9 +131,9 @@ impl K2Gossip {
             GossipMessage::Initiate(initiate) => {
                 println!("Initiate: {:?}", initiate);
 
-                Ok(Some(K2GossipProto {
+                Ok(Some(K2GossipMessage {
                     gossip_message: Some(GossipMessage::Accept(
-                        K2GossipAcceptProto {
+                        K2GossipAcceptMessage {
                             participating_agents: vec![],
                             missing_agents: vec![],
                             new_since: 0,
@@ -202,8 +199,8 @@ impl TxModuleHandler for K2Gossip {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::protocol::k2_gossip_proto::GossipMessage;
-    use crate::protocol::{serialize_gossip_message, K2GossipInitiateProto};
+    use crate::protocol::k2_gossip_message::GossipMessage;
+    use crate::protocol::{serialize_gossip_message, K2GossipInitiateMessage};
     use kitsune2_api::builder::Builder;
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
     use kitsune2_core::default_test_builder;
@@ -292,9 +289,9 @@ mod test {
                 addr_1,
                 space.clone(),
                 MOD_NAME.to_string(),
-                serialize_gossip_message(K2GossipProto {
+                serialize_gossip_message(K2GossipMessage {
                     gossip_message: Some(GossipMessage::Initiate(
-                        K2GossipInitiateProto {
+                        K2GossipInitiateMessage {
                             participating_agents: vec![],
                             new_since: 0,
                         },
