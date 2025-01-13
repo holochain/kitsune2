@@ -1,5 +1,8 @@
 use crate::protocol::k2_gossip_message::GossipMessage;
-use crate::protocol::{deserialize_gossip_message, serialize_gossip_message, K2GossipAcceptMessage, K2GossipMessage};
+use crate::protocol::{
+    deserialize_gossip_message, serialize_gossip_message,
+    K2GossipAcceptMessage, K2GossipMessage,
+};
 use crate::MOD_NAME;
 use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
