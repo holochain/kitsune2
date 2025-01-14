@@ -56,8 +56,8 @@ pub struct K2GossipInitiateMessage {
     #[prost(int64, tag = "20")]
     pub new_since: i64,
     /// The maximum number of bytes of new ops to respond with.
-    #[prost(int32, tag = "21")]
-    pub max_new_bytes: i32,
+    #[prost(uint32, tag = "21")]
+    pub max_new_bytes: u32,
 }
 /// A Kitsune2 gossip acceptance protocol message.
 ///
@@ -79,8 +79,8 @@ pub struct K2GossipAcceptMessage {
     #[prost(int64, tag = "20")]
     pub new_since: i64,
     /// The maximum number of bytes of new ops to respond with.
-    #[prost(int32, tag = "21")]
-    pub max_new_bytes: i32,
+    #[prost(uint32, tag = "21")]
+    pub max_new_bytes: u32,
     /// Ops that we have stored since the timestamp provided by the initiator in `new_since`.
     #[prost(bytes = "bytes", repeated, tag = "22")]
     pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,

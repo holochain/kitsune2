@@ -6,7 +6,7 @@ use crate::protocol::{
     K2GossipAgentsMessage, K2GossipInitiateMessage, K2GossipMessage,
     K2GossipNoDiffMessage,
 };
-use crate::MOD_NAME;
+use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
 use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::space::{DynSpace, Space};
@@ -32,15 +32,14 @@ impl K2GossipFactory {
 impl GossipFactory for K2GossipFactory {
     fn default_config(
         &self,
-        _config: &mut kitsune2_api::config::Config,
+        config: &mut kitsune2_api::config::Config,
     ) -> K2Result<()> {
-        // TODO config
-        Ok(())
+        config.set_module_config(&K2GossipModConfig::default())
     }
 
     fn create(
         &self,
-        _builder: Arc<kitsune2_api::builder::Builder>,
+        builder: Arc<kitsune2_api::builder::Builder>,
         space_id: SpaceId,
         space: DynSpace,
         peer_store: DynPeerStore,
@@ -48,15 +47,21 @@ impl GossipFactory for K2GossipFactory {
         transport: DynTransport,
         agent_verifier: DynVerifier,
     ) -> kitsune2_api::BoxFut<'static, K2Result<DynGossip>> {
-        let gossip: DynGossip = Arc::new(K2Gossip::create(
-            space_id,
-            space,
-            peer_store,
-            op_store,
-            transport,
-            agent_verifier,
-        ));
-        Box::pin(async move { Ok(gossip) })
+        Box::pin(async move {
+            let config: K2GossipConfig = builder.config.get_module_config()?;
+
+            let gossip: DynGossip = Arc::new(K2Gossip::create(
+                config,
+                space_id,
+                space,
+                peer_store,
+                op_store,
+                transport,
+                agent_verifier,
+            ));
+
+            Ok(gossip)
+        })
     }
 }
 
@@ -78,6 +83,7 @@ impl Drop for DropAbortHandle {
 /// This type acts as both an implementation of the [Gossip] trait and a [TxModuleHandler].
 #[derive(Debug, Clone)]
 struct K2Gossip {
+    config: Arc<K2GossipConfig>,
     space_id: SpaceId,
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
@@ -93,6 +99,7 @@ struct K2Gossip {
 impl K2Gossip {
     /// Construct a new [K2Gossip] instance.
     pub fn create(
+        config: K2GossipConfig,
         space_id: SpaceId,
         space: DynSpace,
         peer_store: DynPeerStore,
@@ -124,6 +131,7 @@ impl K2Gossip {
         .abort_handle();
 
         let gossip = K2Gossip {
+            config: Arc::new(config),
             space_id: space_id.clone(),
             space: Arc::downgrade(&space),
             peer_store,
@@ -174,8 +182,8 @@ impl K2Gossip {
             arc_set: Some(ArcSetMessage {
                 arc_sectors: our_arc_set.into_raw().collect(),
             }),
-            new_since: 0,             // TODO get from peer meta
-            max_new_bytes: 32 * 1024, // TODO get from config
+            new_since: 0, // TODO get from peer meta
+            max_new_bytes: self.config.max_gossip_op_bytes,
         };
 
         tracing::trace!("initiate_gossip with {:?}: {:?}", target, initiate);
@@ -260,7 +268,7 @@ impl K2Gossip {
                             }),
                             missing_agents,
                             new_since: 0, // TODO get from peer meta
-                            max_new_bytes: 32 * 1024, // TODO get from config
+                            max_new_bytes: self.config.max_gossip_op_bytes,
                             new_ops: vec![], // TODO get from op store
                             updated_new_since: 0, // TODO use value from just before querying the op store
                         },
@@ -562,6 +570,7 @@ mod test {
                 .unwrap();
 
             let gossip = K2Gossip::create(
+                K2GossipConfig::default(),
                 self.space_id.clone(),
                 space.clone(),
                 space.peer_store().clone(),
