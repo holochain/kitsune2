@@ -26,8 +26,7 @@ async fn take_minimal_snapshot() {
             UNIX_TIMESTAMP,
             vec![],
         )
-        .try_into()
-        .unwrap()])
+        .into()])
         .await
         .unwrap();
 

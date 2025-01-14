@@ -6,6 +6,7 @@ use crate::{
         Kitsune2MemoryOp, MemOpStoreFactory,
     },
 };
+use bytes::Bytes;
 use kitsune2_api::{
     fetch::{serialize_op_ids, Ops},
     id::Id,
@@ -19,9 +20,9 @@ use std::{
     time::Duration,
 };
 
-type ResponsesSent = Vec<(Vec<MetaOp>, Url)>;
+type ResponsesSent = Vec<(Vec<Bytes>, Url)>;
 
-const SPACE_ID: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space_id")));
+const SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"space_id")));
 
 fn hash_op(input: &bytes::Bytes) -> OpId {
     use sha2::{Digest, Sha256};
@@ -32,17 +33,9 @@ fn hash_op(input: &bytes::Bytes) -> OpId {
     hash_bytes.into()
 }
 
-fn make_op(data: Vec<u8>) -> MetaOp {
+fn make_op(data: Vec<u8>) -> Kitsune2MemoryOp {
     let op_id = hash_op(&data.clone().into());
-    MetaOp {
-        op_id: op_id.clone(),
-        op_data: serde_json::to_vec(&Kitsune2MemoryOp::new(
-            op_id,
-            Timestamp::now(),
-            data,
-        ))
-        .unwrap(),
-    }
+    Kitsune2MemoryOp::new(op_id, Timestamp::now(), data)
 }
 
 fn make_mock_transport(
@@ -57,21 +50,12 @@ fn make_mock_transport(
         move |peer, space, module, data| {
             assert_eq!(space, SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
-            let ops = Ops::decode(data).unwrap();
-            let ops = ops
+            let ops = Ops::decode(data)
+                .unwrap()
                 .op_list
                 .into_iter()
-                .map(|op| {
-                    let op_data =
-                        serde_json::from_slice::<Kitsune2MemoryOp>(&op.data)
-                            .unwrap();
-                    let op_id = hash_op(&bytes::Bytes::from(op_data.payload));
-                    MetaOp {
-                        op_id,
-                        op_data: op.data.into(),
-                    }
-                })
-                .collect();
+                .map(|op| op.data)
+                .collect::<Vec<_>>();
             responses_sent.lock().unwrap().push((ops, peer));
             Box::pin(async move { Ok(()) })
         }
@@ -100,11 +84,12 @@ async fn respond_to_multiple_requests() {
     let op_2 = make_op(vec![2; 128]);
     let op_3 = make_op(vec![3; 128]);
     // Insert op 1, 2, 3 into op store. Op 4 will not be returned in the response.
-    let stored_op = vec![op_1.clone(), op_2.clone(), op_3.clone()];
-    op_store
-        .process_incoming_ops(stored_op.clone())
-        .await
-        .unwrap();
+    let stored_ops = vec![
+        op_1.clone().into(),
+        op_2.clone().into(),
+        op_3.clone().into(),
+    ];
+    op_store.process_incoming_ops(stored_ops).await.unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
@@ -151,12 +136,12 @@ async fn respond_to_multiple_requests() {
     assert!(responses_sent
         .lock()
         .unwrap()
-        .contains(&(vec![op_1, op_2], agent_url_1)));
+        .contains(&(vec![op_1.into(), op_2.into()], agent_url_1)));
     // Only op 3 is in op store.
     assert!(responses_sent
         .lock()
         .unwrap()
-        .contains(&(vec![op_3], agent_url_2)));
+        .contains(&(vec![op_3.into()], agent_url_2)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -249,7 +234,7 @@ async fn fail_to_respond_once_then_succeed() {
 
     let op = make_op(vec![1; 128]);
     op_store
-        .process_incoming_ops(vec![op.clone()])
+        .process_incoming_ops(vec![op.clone().into()])
         .await
         .unwrap();
     let agent_url = Url::from_str("wss://127.0.0.1:1").unwrap();

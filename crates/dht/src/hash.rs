@@ -647,8 +647,7 @@ mod tests {
                     now,
                     end.to_be_bytes().to_vec(),
                 )
-                .try_into()
-                .unwrap()])
+                .into()])
                 .await
                 .unwrap();
         }

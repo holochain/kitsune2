@@ -1,6 +1,7 @@
 //! The mem op store implementation provided by Kitsune2.
 
 use crate::factories::mem_op_store::time_slice_hash_store::TimeSliceHashStore;
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
@@ -77,27 +78,18 @@ impl From<Kitsune2MemoryOp> for StoredOp {
     }
 }
 
-impl TryFrom<MetaOp> for Kitsune2MemoryOp {
-    type Error = serde_json::Error;
-
-    fn try_from(value: MetaOp) -> serde_json::Result<Self> {
-        let op = serde_json::from_slice(value.op_data.as_slice())?;
-
-        Ok(op)
+impl From<Bytes> for Kitsune2MemoryOp {
+    fn from(value: Bytes) -> Self {
+        serde_json::from_slice(&value)
+            .expect("failed to deserialize Kitsune2MemoryOp from Op")
     }
 }
 
-impl TryFrom<Kitsune2MemoryOp> for MetaOp {
-    type Error = K2Error;
-
-    fn try_from(value: Kitsune2MemoryOp) -> K2Result<Self> {
-        let op_data = serde_json::to_vec(&value).map_err(|e| {
-            K2Error::other_src("Failed to serialize Kitsune2MemoryOp", e)
-        })?;
-        Ok(MetaOp {
-            op_id: value.op_id,
-            op_data,
-        })
+impl From<Kitsune2MemoryOp> for Bytes {
+    fn from(value: Kitsune2MemoryOp) -> Self {
+        serde_json::to_vec(&value)
+            .expect("failed to serialize Op to Kitsune2MemoryOp")
+            .into()
     }
 }
 
@@ -133,13 +125,13 @@ struct Kitsune2MemoryOpStoreInner {
 impl OpStore for Kitsune2MemoryOpStore {
     fn process_incoming_ops(
         &self,
-        op_list: Vec<MetaOp>,
+        op_list: Vec<Bytes>,
     ) -> BoxFuture<'_, K2Result<()>> {
         Box::pin(async move {
             let ops_to_add = op_list
                 .iter()
                 .map(|op| -> serde_json::Result<(OpId, Kitsune2MemoryOp)> {
-                    let op = Kitsune2MemoryOp::try_from(op.clone())?;
+                    let op = Kitsune2MemoryOp::from(op.clone());
                     Ok((op.op_id.clone(), op))
                 })
                 .collect::<Result<Vec<_>, _>>().map_err(|e| {

@@ -859,15 +859,13 @@ mod tests {
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![23; 32])),
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -948,15 +946,13 @@ mod tests {
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![23; 32])),
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -1010,29 +1006,25 @@ mod tests {
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![23; 32])),
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![11; 32])),
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![29; 32])),
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -1089,15 +1081,13 @@ mod tests {
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![11; 32])),
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -1152,15 +1142,13 @@ mod tests {
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![29; 32])),
                     (current_time - UNIT_TIME).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -1185,8 +1173,7 @@ mod tests {
                 current_time,
                 vec![],
             )
-            .try_into()
-            .unwrap()])
+            .into()])
             .await
             .unwrap();
 
@@ -1224,15 +1211,13 @@ mod tests {
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![23; 32])),
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -1264,8 +1249,7 @@ mod tests {
                 pt.full_slice_end_timestamp(), // Start of the next full slice
                 vec![],
             )
-            .try_into()
-            .unwrap()])
+            .into()])
             .await
             .unwrap();
 
@@ -1329,15 +1313,13 @@ mod tests {
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![23; 32])),
                     UNIX_TIMESTAMP,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 // Store two new ops at the unix timestamp plus one full time slice,
                 // to go into the second complete slice
                 Kitsune2MemoryOp::new(
@@ -1345,15 +1327,13 @@ mod tests {
                     UNIX_TIMESTAMP + pt.full_slice_duration,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::from(vec![37; 32])),
                     UNIX_TIMESTAMP + pt.full_slice_duration,
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
@@ -1431,8 +1411,7 @@ mod tests {
                 pt.full_slice_end_timestamp(),
                 vec![],
             )
-            .try_into()
-            .unwrap()])
+            .into()])
             .await
             .unwrap();
         // and compute the new state in the future
@@ -1508,8 +1487,7 @@ mod tests {
                 UNIX_TIMESTAMP,
                 vec![],
             )
-            .try_into()
-            .unwrap()])
+            .into()])
             .await
             .unwrap();
 
@@ -1614,15 +1592,13 @@ mod tests {
                     UNIX_TIMESTAMP + Duration::from_secs(10),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
                 Kitsune2MemoryOp::new(
                     OpId::from(bytes::Bytes::copy_from_slice(&[31, 0, 0, 0])),
                     (current_time - Duration::from_secs(30)).unwrap(),
                     vec![],
                 )
-                .try_into()
-                .unwrap(),
+                .into(),
             ])
             .await
             .unwrap();
