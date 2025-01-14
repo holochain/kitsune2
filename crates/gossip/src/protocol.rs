@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 use kitsune2_api::agent::AgentInfoSigned;
-use kitsune2_api::{AgentId, K2Error, K2Result};
+use kitsune2_api::{AgentId, K2Error, K2Result, OpId};
 use prost::{bytes, Message};
 use std::sync::Arc;
 
@@ -46,4 +46,11 @@ pub(crate) fn encode_agent_infos(
             signature: a.get_signature().clone(),
         })
         .collect::<Vec<_>>()
+}
+
+/// Encode op ids as bytes
+pub(crate) fn encode_op_ids(
+    op_ids: impl IntoIterator<Item = OpId>,
+) -> Vec<Bytes> {
+    op_ids.into_iter().map(|o| o.0 .0).collect::<Vec<_>>()
 }

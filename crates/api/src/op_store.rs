@@ -97,6 +97,22 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         op_ids: Vec<OpId>,
     ) -> BoxFuture<'_, K2Result<Vec<MetaOp>>>;
 
+    /// Retrieve a size-bounded list of op ids that have been stored since `start`.
+    ///
+    /// The `limit_bytes` applies to the size of the op data, not the size of the op ids.
+    ///
+    /// # Returns
+    ///
+    /// As many op ids as can be returned within the `limit_bytes` limit.
+    ///
+    /// If the limit is applied, then the timestamp of the last op id returned is returned.
+    /// Otherwise, the timestamp for when this operation started is returned.
+    fn retrieve_op_ids_bounded(
+        &self,
+        start: Timestamp,
+        limit_bytes: usize,
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, Timestamp)>>;
+
     /// Store the combined hash of a time slice.
     fn store_slice_hash(
         &self,

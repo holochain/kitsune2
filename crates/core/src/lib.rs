@@ -147,7 +147,7 @@ impl agent::LocalAgent for Ed25519LocalAgent {
 /// - `fetch` - The default fetch module is [factories::CoreFetchFactory].
 /// - `transport` - The default transport is [factories::MemTransportFactory].
 /// - `op_store` - The default op store is [factories::MemOpStoreFactory].
-/// - `meta_store` - The default meta store is [factories::MemPeerMetaStoreFactory].
+/// - `peer_meta_store` - The default peer meta store is [factories::MemPeerMetaStoreFactory].
 /// - `gossip` - The default gossip module is [factories::CoreGossipStubFactory].
 pub fn default_test_builder() -> Builder {
     Builder {
@@ -160,7 +160,7 @@ pub fn default_test_builder() -> Builder {
         fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
         op_store: factories::MemOpStoreFactory::create(),
-        meta_store: factories::MemPeerMetaStoreFactory::create(),
+        peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
         gossip: factories::CoreGossipStubFactory::create(),
     }
 }

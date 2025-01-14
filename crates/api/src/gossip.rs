@@ -4,7 +4,9 @@ use crate::agent::DynVerifier;
 use crate::peer_store::DynPeerStore;
 use crate::space::DynSpace;
 use crate::transport::DynTransport;
-use crate::{builder, config, BoxFut, DynOpStore, K2Result, SpaceId};
+use crate::{
+    builder, config, BoxFut, DynOpStore, DynPeerMetaStore, K2Result, SpaceId,
+};
 use std::sync::Arc;
 
 /// Represents the ability to sync DHT data with other agents through background communication.
@@ -27,6 +29,7 @@ pub trait GossipFactory: 'static + Send + Sync + std::fmt::Debug {
         space_id: SpaceId,
         space: DynSpace,
         peer_store: DynPeerStore,
+        peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
         agent_verifier: DynVerifier,

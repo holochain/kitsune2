@@ -13,4 +13,6 @@ pub use constant::*;
 mod gossip;
 pub use gossip::*;
 
+mod peer_meta_store;
+
 mod protocol;

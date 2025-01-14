@@ -1060,6 +1060,7 @@ dependencies = [
  "kitsune2_test_utils",
  "prost",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]

@@ -8,6 +8,7 @@ use kitsune2_api::config::Config;
 use kitsune2_api::{
     BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, K2Error, K2Result, MetaOp,
     OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
+    UNIX_TIMESTAMP,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -54,6 +55,8 @@ pub struct Kitsune2MemoryOp {
     pub op_id: OpId,
     /// The creation timestamp of this op
     pub timestamp: Timestamp,
+    /// The timestamp at which this op was stored by us
+    pub stored_at: Timestamp,
     /// The payload of the op
     pub payload: Vec<u8>,
 }
@@ -64,6 +67,7 @@ impl Kitsune2MemoryOp {
         Self {
             op_id,
             timestamp,
+            stored_at: UNIX_TIMESTAMP,
             payload,
         }
     }
@@ -131,7 +135,8 @@ impl OpStore for Kitsune2MemoryOpStore {
             let ops_to_add = op_list
                 .iter()
                 .map(|op| -> serde_json::Result<(OpId, Kitsune2MemoryOp)> {
-                    let op = Kitsune2MemoryOp::from(op.clone());
+                    let mut op = Kitsune2MemoryOp::from(op.clone());
+                    op.stored_at = Timestamp::now();
                     Ok((op.op_id.clone(), op))
                 })
                 .collect::<Result<Vec<_>, _>>().map_err(|e| {
@@ -181,6 +186,61 @@ impl OpStore for Kitsune2MemoryOpStore {
                     })
                 })
                 .collect())
+        })
+    }
+
+    fn retrieve_op_ids_bounded(
+        &self,
+        start: Timestamp,
+        limit_bytes: usize,
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, Timestamp)>> {
+        Box::pin(async move {
+            let new_start = Timestamp::now();
+
+            let self_lock = self.read().await;
+
+            // Capture all ops that are after the start time
+            let mut candidate_ops = self_lock
+                .op_list
+                .values()
+                .filter(|op| op.stored_at >= start)
+                .collect::<Vec<_>>();
+
+            tracing::info!(
+                "Have {} candidate ops of {} possible",
+                candidate_ops.len(),
+                self_lock.op_list.len()
+            );
+
+            // Sort the ops by the time they were stored
+            candidate_ops.sort_by(|a, b| a.stored_at.cmp(&b.stored_at));
+
+            // Now take as many ops as we can up to the limit
+            let mut total_bytes = 0;
+            let mut last_op_timestamp = None;
+            let op_ids = candidate_ops
+                .into_iter()
+                .take_while(|op| {
+                    total_bytes += op.payload.len();
+
+                    if total_bytes <= limit_bytes {
+                        true
+                    } else {
+                        last_op_timestamp = Some(op.stored_at);
+                        false
+                    }
+                })
+                .map(|op| op.op_id.clone())
+                .collect();
+
+            Ok((
+                op_ids,
+                if let Some(ts) = last_op_timestamp {
+                    ts
+                } else {
+                    new_start
+                },
+            ))
         })
     }
 
