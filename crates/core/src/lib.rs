@@ -148,6 +148,7 @@ impl agent::LocalAgent for Ed25519LocalAgent {
 /// - `transport` - The default transport is [factories::MemTransportFactory].
 /// - `op_store` - The default op store is [factories::MemOpStoreFactory].
 /// - `meta_store` - The default meta store is [factories::MemPeerMetaStoreFactory].
+/// - `gossip` - The default gossip module is [factories::CoreGossipStubFactory].
 pub fn default_test_builder() -> Builder {
     Builder {
         config: Config::default(),
