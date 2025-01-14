@@ -3,6 +3,7 @@
 use crate::{
     builder, config, BoxFut, DhtArc, K2Result, OpId, SpaceId, Timestamp,
 };
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -26,6 +27,12 @@ impl From<MetaOp> for Op {
         Self {
             data: value.op_data.into(),
         }
+    }
+}
+
+impl From<MetaOp> for Bytes {
+    fn from(value: MetaOp) -> Self {
+        value.op_data.into()
     }
 }
 
@@ -68,7 +75,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// if it is able to process them.
     fn process_incoming_ops(
         &self,
-        op_list: Vec<MetaOp>,
+        op_list: Vec<Bytes>,
     ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Retrieve a batch of ops from the host by time range.

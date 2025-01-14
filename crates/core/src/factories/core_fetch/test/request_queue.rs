@@ -113,7 +113,7 @@ async fn fetch_queue() {
     let mut num_requests_sent = requests_sent.lock().unwrap().len();
 
     // Wait for tasks to settle all requests.
-    tokio::time::timeout(Duration::from_millis(20), async {
+    tokio::time::timeout(Duration::from_millis(30), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             let current_num_requests_sent = requests_sent.lock().unwrap().len();

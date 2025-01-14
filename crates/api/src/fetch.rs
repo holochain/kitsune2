@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use bytes::Bytes;
 use prost::Message;
 
 use crate::{
@@ -22,6 +23,12 @@ impl From<Vec<OpId>> for OpIds {
 impl From<OpIds> for Vec<OpId> {
     fn from(value: OpIds) -> Self {
         value.data.into_iter().map(Into::into).collect()
+    }
+}
+
+impl From<Ops> for Vec<Bytes> {
+    fn from(value: Ops) -> Self {
+        value.op_list.into_iter().map(|op| op.data).collect()
     }
 }
 

@@ -59,6 +59,9 @@ pub use timestamp::*;
 
 pub mod fetch;
 
+mod peer_meta_store;
+pub use peer_meta_store::*;
+
 mod gossip;
 pub use gossip::*;
 

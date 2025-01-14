@@ -53,10 +53,7 @@ impl DhtSyncHarness {
     ) -> K2Result<()> {
         self.store
             .process_incoming_ops(
-                op_list
-                    .iter()
-                    .map(|op| op.clone().try_into().unwrap())
-                    .collect(),
+                op_list.iter().map(|op| op.clone().into()).collect(),
             )
             .await?;
 
@@ -374,12 +371,17 @@ async fn transfer_ops(
     target_dht: &mut Dht,
     requested_ops: Vec<OpId>,
 ) -> K2Result<()> {
-    let selected = source.retrieve_ops(requested_ops).await?;
+    let selected = source
+        .retrieve_ops(requested_ops)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<_>>();
     target.process_incoming_ops(selected.clone()).await?;
 
     let stored_ops = selected
         .into_iter()
-        .map(|op| Kitsune2MemoryOp::try_from(op).unwrap().into())
+        .map(|op| Kitsune2MemoryOp::from(op).into())
         .collect::<Vec<StoredOp>>();
     target_dht.inform_ops_stored(stored_ops).await?;
 
