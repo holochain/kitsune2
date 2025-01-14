@@ -11,18 +11,33 @@ message K2GossipMessage {
     // A gossip acceptance protocol message.
     K2GossipAcceptMessage accept = 2;
 
-    // A gossip diff protocol message.
-    K2GossipDiffMessage diff = 3;
+    // A gossip no diff protocol message.
+    K2GossipNoDiffMessage no_diff = 3;
+
+    // A gossip agents protocol message.
+    K2GossipAgentsMessage agents = 4;
   }
 }
 
 // A message representation of a Kitsune2 DHT arc set.
 message ArcSetMessage {
   // The covered DHT sectors.
-  repeated uint32 arc_sectors = 11;
+  repeated uint32 arc_sectors = 1;
+}
+
+// A message representation of a Kitsune2 agent info.
+message AgentInfoMessage {
+  // The encoded agent info, which is signed by the provided signature
+  bytes encoded = 1;
+
+  // The signature of the encoded agent info.
+  bytes signature = 2;
 }
 
 // A Kitsune2 gossip initiation protocol message.
+//
+// Acceptable responses:
+// - `K2GossipAcceptMessage`
 message K2GossipInitiateMessage {
   // The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 10;
@@ -38,6 +53,9 @@ message K2GossipInitiateMessage {
 }
 
 // A Kitsune2 gossip acceptance protocol message.
+//
+// Acceptable responses:
+// - `K2GossipNoDiffMessage`
 message K2GossipAcceptMessage {
   // The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 10;
@@ -62,20 +80,23 @@ message K2GossipAcceptMessage {
   // and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
   int64 updated_new_since = 23;
 
-  // TODO Send DHT snapshot diff response.
+  // TODO Send DHT snapshot diff.
 }
 
-// A Kitsune2 gossip diff protocol message.
+// A Kitsune2 gossip no diff protocol message.
 //
-// Should be sent as a response to an `K2GossipAcceptMessage` to communicate the diff of the
-// acceptor's local state with the initiator's local state.
-message K2GossipDiffMessage {
+// Should be sent as a response to an `K2GossipAcceptMessage` to communicate that there was no diff
+// or that a diff could not be computed.
+//
+// Acceptable responses:
+// - `K2GossipAgentsMessage`
+message K2GossipNoDiffMessage {
   // Agent ids of agents that were mentioned in the acceptor's participating_agents list
   // that we do not have in our peer store.
   repeated bytes missing_agents = 10;
 
   // The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
-  repeated bytes provided_agents = 11;
+  repeated AgentInfoMessage provided_agents = 11;
 
   // Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
   repeated bytes new_ops = 20;
@@ -84,7 +105,16 @@ message K2GossipDiffMessage {
   // and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
   int64 updated_new_since = 21;
 
-  // TODO Send DHT snapshot diff response.
+  // Set when the initiator could not compare the acceptor's DHT diff with their own.
+  bool cannot_compare = 30;
+}
+
+// A Kitsune2 gossip agents protocol message.
+//
+// This message is a final message when used in a gossip round.
+message K2GossipAgentsMessage {
+  // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
+  repeated AgentInfoMessage provided_agents = 10;
 }
 
 // TODO Further gossip protocol messages.

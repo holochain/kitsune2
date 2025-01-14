@@ -1,7 +1,10 @@
 //! Protocol definitions for the gossip module.
 
-use kitsune2_api::{K2Error, K2Result};
+use bytes::Bytes;
+use kitsune2_api::agent::AgentInfoSigned;
+use kitsune2_api::{AgentId, K2Error, K2Result};
 use prost::{bytes, Message};
+use std::sync::Arc;
 
 include!("../proto/gen/kitsune2.gossip.rs");
 
@@ -23,4 +26,24 @@ pub fn serialize_gossip_message(
     })?;
 
     Ok(out.freeze())
+}
+
+/// Encode agent ids as bytes
+pub(crate) fn encode_agent_ids(
+    agent_ids: impl IntoIterator<Item = AgentId>,
+) -> Vec<Bytes> {
+    agent_ids.into_iter().map(|a| a.0 .0).collect::<Vec<_>>()
+}
+
+/// Encode agent infos as [AgentInfoMessage]s
+pub(crate) fn encode_agent_infos(
+    agent_infos: impl IntoIterator<Item = Arc<AgentInfoSigned>>,
+) -> Vec<AgentInfoMessage> {
+    agent_infos
+        .into_iter()
+        .map(|a| AgentInfoMessage {
+            encoded: bytes::Bytes::from(a.get_encoded().as_bytes().to_vec()),
+            signature: a.get_signature().clone(),
+        })
+        .collect::<Vec<_>>()
 }

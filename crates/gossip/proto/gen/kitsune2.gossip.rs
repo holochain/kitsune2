@@ -2,7 +2,7 @@
 /// A Kitsune2 gossip protocol message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipMessage {
-    #[prost(oneof = "k2_gossip_message::GossipMessage", tags = "1, 2, 3")]
+    #[prost(oneof = "k2_gossip_message::GossipMessage", tags = "1, 2, 3, 4")]
     pub gossip_message: ::core::option::Option<k2_gossip_message::GossipMessage>,
 }
 /// Nested message and enum types in `K2GossipMessage`.
@@ -15,19 +15,35 @@ pub mod k2_gossip_message {
         /// A gossip acceptance protocol message.
         #[prost(message, tag = "2")]
         Accept(super::K2GossipAcceptMessage),
-        /// A gossip diff protocol message.
+        /// A gossip no diff protocol message.
         #[prost(message, tag = "3")]
-        Diff(super::K2GossipDiffMessage),
+        NoDiff(super::K2GossipNoDiffMessage),
+        /// A gossip agents protocol message.
+        #[prost(message, tag = "4")]
+        Agents(super::K2GossipAgentsMessage),
     }
 }
 /// A message representation of a Kitsune2 DHT arc set.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ArcSetMessage {
     /// The covered DHT sectors.
-    #[prost(uint32, repeated, tag = "11")]
+    #[prost(uint32, repeated, tag = "1")]
     pub arc_sectors: ::prost::alloc::vec::Vec<u32>,
 }
+/// A message representation of a Kitsune2 agent info.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AgentInfoMessage {
+    /// The encoded agent info, which is signed by the provided signature
+    #[prost(bytes = "bytes", tag = "1")]
+    pub encoded: ::prost::bytes::Bytes,
+    /// The signature of the encoded agent info.
+    #[prost(bytes = "bytes", tag = "2")]
+    pub signature: ::prost::bytes::Bytes,
+}
 /// A Kitsune2 gossip initiation protocol message.
+///
+/// Acceptable responses:
+/// - `K2GossipAcceptMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipInitiateMessage {
     /// The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
@@ -44,6 +60,9 @@ pub struct K2GossipInitiateMessage {
     pub max_new_bytes: i32,
 }
 /// A Kitsune2 gossip acceptance protocol message.
+///
+/// Acceptable responses:
+/// - `K2GossipNoDiffMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipAcceptMessage {
     /// The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
@@ -70,19 +89,22 @@ pub struct K2GossipAcceptMessage {
     #[prost(int64, tag = "23")]
     pub updated_new_since: i64,
 }
-/// A Kitsune2 gossip diff protocol message.
+/// A Kitsune2 gossip no diff protocol message.
 ///
-/// Should be sent as a response to an `K2GossipAcceptMessage` to communicate the diff of the
-/// acceptor's local state with the initiator's local state.
+/// Should be sent as a response to an `K2GossipAcceptMessage` to communicate that there was no diff
+/// or that a diff could not be computed.
+///
+/// Acceptable responses:
+/// - `K2GossipAgentsMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct K2GossipDiffMessage {
+pub struct K2GossipNoDiffMessage {
     /// Agent ids of agents that were mentioned in the acceptor's participating_agents list
     /// that we do not have in our peer store.
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub missing_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
-    #[prost(bytes = "bytes", repeated, tag = "11")]
-    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    #[prost(message, repeated, tag = "11")]
+    pub provided_agents: ::prost::alloc::vec::Vec<AgentInfoMessage>,
     /// Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
     #[prost(bytes = "bytes", repeated, tag = "20")]
     pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
@@ -90,4 +112,16 @@ pub struct K2GossipDiffMessage {
     /// and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
     #[prost(int64, tag = "21")]
     pub updated_new_since: i64,
+    /// Set when the initiator could not compare the acceptor's DHT diff with their own.
+    #[prost(bool, tag = "30")]
+    pub cannot_compare: bool,
+}
+/// A Kitsune2 gossip agents protocol message.
+///
+/// This message is a final message when used in a gossip round.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipAgentsMessage {
+    /// The agent infos for the agents that were sent back in the missing_agents list of the previous message.
+    #[prost(message, repeated, tag = "10")]
+    pub provided_agents: ::prost::alloc::vec::Vec<AgentInfoMessage>,
 }

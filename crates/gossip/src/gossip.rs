@@ -1,8 +1,10 @@
 use crate::common::{local_agent_state, send_gossip_message, GossipResponse};
 use crate::protocol::k2_gossip_message::GossipMessage;
 use crate::protocol::{
-    deserialize_gossip_message, ArcSetMessage, K2GossipAcceptMessage,
-    K2GossipDiffMessage, K2GossipInitiateMessage, K2GossipMessage,
+    deserialize_gossip_message, encode_agent_ids, encode_agent_infos,
+    AgentInfoMessage, ArcSetMessage, K2GossipAcceptMessage,
+    K2GossipAgentsMessage, K2GossipInitiateMessage, K2GossipMessage,
+    K2GossipNoDiffMessage,
 };
 use crate::MOD_NAME;
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
@@ -233,7 +235,6 @@ impl K2Gossip {
                         ));
                     }
                 };
-                tracing::info!("Other arc set: {:?}", other_arc_set);
 
                 let space = self
                     .space
@@ -246,29 +247,22 @@ impl K2Gossip {
                     tracing::info!("no common arc set, continue to sync agents but not ops");
                 }
 
-                let missing_agents = initiate
-                    .participating_agents
-                    .into_iter()
-                    .filter(|a| {
-                        !send_agents.contains(&AgentId::from((*a).clone()))
-                    })
-                    .collect();
+                let missing_agents = self
+                    .filter_known_agents(&initiate.participating_agents)
+                    .await?;
 
                 Ok(Some(K2GossipMessage {
                     gossip_message: Some(GossipMessage::Accept(
                         K2GossipAcceptMessage {
-                            participating_agents: send_agents
-                                .into_iter()
-                                .map(|a| a.0 .0)
-                                .collect::<Vec<_>>(),
+                            participating_agents: encode_agent_ids(send_agents),
                             arc_set: Some(ArcSetMessage {
                                 arc_sectors: our_arc_set.into_raw().collect(),
                             }),
                             missing_agents,
-                            new_since: 0,
-                            max_new_bytes: 32 * 1024,
-                            new_ops: vec![],
-                            updated_new_since: 0,
+                            new_since: 0, // TODO get from peer meta
+                            max_new_bytes: 32 * 1024, // TODO get from config
+                            new_ops: vec![], // TODO get from op store
+                            updated_new_since: 0, // TODO use value from just before querying the op store
                         },
                     )),
                 }))
@@ -277,47 +271,53 @@ impl K2Gossip {
                 // TODO check that we have a session active for this peer because we must have
                 //      sent an initiate message, otherwise this is unsolicited.
 
-                println!("Accept: {:?}", accept);
+                let missing_agents = self
+                    .filter_known_agents(&accept.participating_agents)
+                    .await?;
 
-                let mut send_agent_infos = vec![];
-                for missing_agent in accept.missing_agents {
-                    if let Ok(Some(agent_info)) =
-                        self.peer_store.get(AgentId::from(missing_agent)).await
-                    {
-                        send_agent_infos.push(agent_info);
-                    }
-                }
+                let send_agent_infos =
+                    self.load_agent_infos(accept.missing_agents).await;
 
                 Ok(Some(K2GossipMessage {
-                    gossip_message: Some(GossipMessage::Diff(
-                        K2GossipDiffMessage {
-                            missing_agents: vec![],
-                            provided_agents: send_agent_infos
-                                .into_iter()
-                                .map(|a| a.encode().map(|b| b.into()))
-                                .collect::<K2Result<Vec<_>>>()?,
+                    gossip_message: Some(GossipMessage::NoDiff(
+                        K2GossipNoDiffMessage {
+                            missing_agents,
+                            provided_agents: encode_agent_infos(
+                                send_agent_infos,
+                            ),
                             new_ops: vec![],
                             updated_new_since: 0,
+                            cannot_compare: false,
                         },
                     )),
                 }))
             }
-            GossipMessage::Diff(diff) => {
+            GossipMessage::NoDiff(no_diff) => {
                 // TODO session check
 
-                tracing::info!("Diff: {:?}", diff);
+                self.receive_agent_infos(no_diff.provided_agents).await?;
 
-                // TODO check that the incoming agents are the one we requested
-                let mut agents = Vec::with_capacity(diff.provided_agents.len());
-                for agent in diff.provided_agents {
-                    let agent_info = AgentInfoSigned::decode(
-                        &self.agent_verifier,
-                        agent.as_ref(),
-                    )?;
-                    agents.push(agent_info);
+                if no_diff.missing_agents.is_empty() {
+                    Ok(None)
+                } else {
+                    let send_agent_infos =
+                        self.load_agent_infos(no_diff.missing_agents).await;
+
+                    Ok(Some(K2GossipMessage {
+                        gossip_message: Some(GossipMessage::Agents(
+                            K2GossipAgentsMessage {
+                                provided_agents: encode_agent_infos(
+                                    send_agent_infos,
+                                ),
+                            },
+                        )),
+                    }))
                 }
-                tracing::info!("Storing agents: {:?}", agents);
-                self.peer_store.insert(agents).await?;
+            }
+            GossipMessage::Agents(agents) => {
+                // TODO session check
+
+                self.receive_agent_infos(agents.provided_agents).await?;
 
                 Ok(None)
             }
@@ -326,6 +326,77 @@ impl K2Gossip {
         if let Some(msg) = res {
             send_gossip_message(&self.response_tx, from_url, msg)?;
         }
+
+        Ok(())
+    }
+
+    /// Filter out agents that are already known and return a list of unknown agents.
+    ///
+    /// This is useful when receiving a list of agents from a peer, and we want to filter out
+    /// the ones we already know about. The resulting list should be sent back as a request
+    /// to get infos for the unknown agents.
+    async fn filter_known_agents<T: Into<AgentId> + Clone>(
+        &self,
+        agents: &[T],
+    ) -> K2Result<Vec<T>> {
+        let mut out = Vec::new();
+        for agent in agents {
+            let agent_id = agent.clone().into();
+            if self.peer_store.get(agent_id).await?.is_none() {
+                out.push(agent.clone());
+            }
+        }
+
+        Ok(out)
+    }
+
+    /// Load agent infos from the peer store.
+    ///
+    /// Loads any of the requested agents that are available in the peer store.
+    async fn load_agent_infos<T: Into<AgentId> + Clone>(
+        &self,
+        requested: Vec<T>,
+    ) -> Vec<Arc<AgentInfoSigned>> {
+        if requested.is_empty() {
+            return vec![];
+        }
+
+        let mut agent_infos = vec![];
+        for missing_agent in requested {
+            if let Ok(Some(agent_info)) =
+                self.peer_store.get(missing_agent.clone().into()).await
+            {
+                agent_infos.push(agent_info);
+            }
+        }
+
+        agent_infos
+    }
+
+    /// Receive agent info messages from the network.
+    ///
+    /// Each info is checked against the verifier and then stored in the peer store.
+    async fn receive_agent_infos(
+        &self,
+        provided_agents: Vec<AgentInfoMessage>,
+    ) -> K2Result<()> {
+        if provided_agents.is_empty() {
+            return Ok(());
+        }
+
+        // TODO check that the incoming agents are the one we requested
+        let mut agents = Vec::with_capacity(provided_agents.len());
+        for agent in provided_agents {
+            let agent_info = AgentInfoSigned::from_parts(
+                &self.agent_verifier,
+                String::from_utf8(agent.encoded.to_vec())
+                    .map_err(|e| K2Error::other_src("Invalid agent info", e))?,
+                agent.signature,
+            )?;
+            agents.push(agent_info);
+        }
+        tracing::info!("Storing agents: {:?}", agents);
+        self.peer_store.insert(agents).await?;
 
         Ok(())
     }
@@ -380,7 +451,6 @@ mod test {
     use kitsune2_api::builder::Builder;
     use kitsune2_api::space::SpaceHandler;
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
-    use kitsune2_api::DhtArc;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_test_utils::enable_tracing;
 
@@ -418,6 +488,31 @@ mod test {
             .unwrap();
 
             agent_1
+        }
+
+        async fn wait_for_agent_in_peer_store(&self, agent: AgentId) {
+            tokio::time::timeout(std::time::Duration::from_millis(100), {
+                let this = self.clone();
+                async move {
+                    loop {
+                        let has_agent = this
+                            .peer_store
+                            .get(agent.clone())
+                            .await
+                            .unwrap()
+                            .is_some();
+
+                        if has_agent {
+                            break;
+                        }
+
+                        tokio::time::sleep(std::time::Duration::from_millis(5))
+                            .await;
+                    }
+                }
+            })
+            .await
+            .unwrap();
         }
     }
 
@@ -498,17 +593,13 @@ mod test {
     }
 
     #[tokio::test]
-    async fn push_agents_after_initiate() {
+    async fn two_way_agent_sync() {
         enable_tracing();
 
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
         let agent_1 = harness_1.join_local_agent().await;
-        harness_1
-            .space
-            .update_tgt_storage_arc_hint(agent_1.agent().clone(), DhtArc::FULL)
-            .await;
         let agent_info_1 = harness_1
             .peer_store
             .get(agent_1.agent().clone())
@@ -517,24 +608,27 @@ mod test {
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        let agent_2 = harness_2.join_local_agent().await;
-        harness_2
-            .space
-            .update_tgt_storage_arc_hint(agent_2.agent().clone(), DhtArc::FULL)
-            .await;
+        harness_2.join_local_agent().await;
         harness_2
             .peer_store
             .insert(vec![agent_info_1])
             .await
             .unwrap();
 
-        // Join another agent to the space
-        // This one will participate in gossip but the other harness won't know about it.
-        let secret_agent = harness_2.join_local_agent().await;
+        // Join extra agents for each peer. These will take a few seconds to be
+        // found by bootstrap. Try to sync them with gossip.
+        let secret_agent_1 = harness_1.join_local_agent().await;
+        let secret_agent_2 = harness_2.join_local_agent().await;
 
         assert!(harness_1
             .peer_store
-            .get(secret_agent.agent().clone())
+            .get(secret_agent_2.agent().clone())
+            .await
+            .unwrap()
+            .is_none());
+        assert!(harness_2
+            .peer_store
+            .get(secret_agent_1.agent().clone())
             .await
             .unwrap()
             .is_none());
@@ -549,27 +643,11 @@ mod test {
             .await
             .unwrap();
 
-        tokio::time::timeout(std::time::Duration::from_millis(100), {
-            let harness_1 = harness_1.clone();
-            async move {
-                loop {
-                    let has_agent = harness_1
-                        .peer_store
-                        .get(secret_agent.agent().clone())
-                        .await
-                        .unwrap()
-                        .is_some();
-
-                    if has_agent {
-                        break;
-                    }
-
-                    tokio::time::sleep(std::time::Duration::from_millis(5))
-                        .await;
-                }
-            }
-        })
-        .await
-        .unwrap();
+        harness_1
+            .wait_for_agent_in_peer_store(secret_agent_2.agent().clone())
+            .await;
+        harness_2
+            .wait_for_agent_in_peer_store(secret_agent_1.agent().clone())
+            .await;
     }
 }

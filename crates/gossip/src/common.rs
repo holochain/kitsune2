@@ -20,8 +20,6 @@ pub(crate) async fn local_agent_state(
         .map(|a| (a.agent().clone(), a.get_tgt_storage_arc()))
         .collect::<(Vec<_>, Vec<_>)>();
 
-    println!("Our arcs: {:?}", our_arcs);
-
     let our_arc_set = ArcSet::new(our_arcs)?;
 
     Ok((send_agents, our_arc_set))
