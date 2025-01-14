@@ -982,6 +982,7 @@ dependencies = [
  "base64",
  "bytes",
  "futures",
+ "kitsune2_api",
  "kitsune2_test_utils",
  "mockall",
  "prost",

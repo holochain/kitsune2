@@ -7,7 +7,7 @@ use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
 use kitsune2_api::{
     BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, K2Error, K2Result, MetaOp,
-    OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
+    Op, OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,6 +90,14 @@ impl From<Kitsune2MemoryOp> for Bytes {
         serde_json::to_vec(&value)
             .expect("failed to serialize Op to Kitsune2MemoryOp")
             .into()
+    }
+}
+
+impl TryFrom<Op> for Kitsune2MemoryOp {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Op) -> Result<Self, Self::Error> {
+        serde_json::from_slice(&value.data)
     }
 }
 
