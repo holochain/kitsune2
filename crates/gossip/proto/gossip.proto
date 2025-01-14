@@ -10,38 +10,79 @@ message K2GossipMessage {
 
     // A gossip acceptance protocol message.
     K2GossipAcceptMessage accept = 2;
+
+    // A gossip diff protocol message.
+    K2GossipDiffMessage diff = 3;
   }
+}
+
+// A message representation of a Kitsune2 DHT arc set.
+message ArcSetMessage {
+  // The covered DHT sectors.
+  repeated uint32 arc_sectors = 11;
 }
 
 // A Kitsune2 gossip initiation protocol message.
 message K2GossipInitiateMessage {
   // The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
-  repeated bytes participating_agents = 1;
+  repeated bytes participating_agents = 10;
+
+  // The DHT sectors covered by the union of the agents in the participating_agents list.
+  ArcSetMessage arc_set = 11;
 
   // Request ops that are new since the given timestamp.
-  int64 new_since = 2;
+  int64 new_since = 20;
 
-  // TODO Send initial DHT snapshot.
+  // The maximum number of bytes of new ops to respond with.
+  int32 max_new_bytes = 21;
 }
 
 // A Kitsune2 gossip acceptance protocol message.
 message K2GossipAcceptMessage {
   // The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
-  repeated bytes participating_agents = 1;
+  repeated bytes participating_agents = 10;
+
+  // The DHT sectors covered by the union of the agents in the participating_agents list.
+  ArcSetMessage arc_set = 11;
 
   // Agent ids of agents that were mentioned in the initiator's participating_agents list
   // that we do not have in our peer store.
-  repeated bytes missing_agents = 2;
+  repeated bytes missing_agents = 12;
 
   // Request ops that are new since the given timestamp.
-  int64 new_since = 3;
+  int64 new_since = 20;
+
+  // The maximum number of bytes of new ops to respond with.
+  int32 max_new_bytes = 21;
 
   // Ops that we have stored since the timestamp provided by the initiator in `new_since`.
-  repeated bytes new_ops = 4;
+  repeated bytes new_ops = 22;
 
   // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
   // and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
-  int64 updated_new_since = 5;
+  int64 updated_new_since = 23;
+
+  // TODO Send DHT snapshot diff response.
+}
+
+// A Kitsune2 gossip diff protocol message.
+//
+// Should be sent as a response to an `K2GossipAcceptMessage` to communicate the diff of the
+// acceptor's local state with the initiator's local state.
+message K2GossipDiffMessage {
+  // Agent ids of agents that were mentioned in the acceptor's participating_agents list
+  // that we do not have in our peer store.
+  repeated bytes missing_agents = 10;
+
+  // The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
+  repeated bytes provided_agents = 11;
+
+  // Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
+  repeated bytes new_ops = 20;
+
+  // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
+  // and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
+  int64 updated_new_since = 21;
 
   // TODO Send DHT snapshot diff response.
 }

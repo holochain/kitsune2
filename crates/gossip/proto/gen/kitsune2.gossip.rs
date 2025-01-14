@@ -2,7 +2,7 @@
 /// A Kitsune2 gossip protocol message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipMessage {
-    #[prost(oneof = "k2_gossip_message::GossipMessage", tags = "1, 2")]
+    #[prost(oneof = "k2_gossip_message::GossipMessage", tags = "1, 2, 3")]
     pub gossip_message: ::core::option::Option<k2_gossip_message::GossipMessage>,
 }
 /// Nested message and enum types in `K2GossipMessage`.
@@ -15,36 +15,79 @@ pub mod k2_gossip_message {
         /// A gossip acceptance protocol message.
         #[prost(message, tag = "2")]
         Accept(super::K2GossipAcceptMessage),
+        /// A gossip diff protocol message.
+        #[prost(message, tag = "3")]
+        Diff(super::K2GossipDiffMessage),
     }
+}
+/// A message representation of a Kitsune2 DHT arc set.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ArcSetMessage {
+    /// The covered DHT sectors.
+    #[prost(uint32, repeated, tag = "11")]
+    pub arc_sectors: ::prost::alloc::vec::Vec<u32>,
 }
 /// A Kitsune2 gossip initiation protocol message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipInitiateMessage {
-    /// The agent ids of the agents from the initiator who are participating in this gossip round.
-    #[prost(bytes = "bytes", repeated, tag = "1")]
+    /// The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
+    #[prost(bytes = "bytes", repeated, tag = "10")]
     pub participating_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// The DHT sectors covered by the union of the agents in the participating_agents list.
+    #[prost(message, optional, tag = "11")]
+    pub arc_set: ::core::option::Option<ArcSetMessage>,
     /// Request ops that are new since the given timestamp.
-    #[prost(int64, tag = "2")]
+    #[prost(int64, tag = "20")]
     pub new_since: i64,
+    /// The maximum number of bytes of new ops to respond with.
+    #[prost(int32, tag = "21")]
+    pub max_new_bytes: i32,
 }
 /// A Kitsune2 gossip acceptance protocol message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipAcceptMessage {
-    /// The agent ids of the from the acceptor who are participating in this gossip round.
-    #[prost(bytes = "bytes", repeated, tag = "1")]
+    /// The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
+    #[prost(bytes = "bytes", repeated, tag = "10")]
     pub participating_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// The DHT sectors covered by the union of the agents in the participating_agents list.
+    #[prost(message, optional, tag = "11")]
+    pub arc_set: ::core::option::Option<ArcSetMessage>,
     /// Agent ids of agents that were mentioned in the initiator's participating_agents list
     /// that we do not have in our peer store.
-    #[prost(bytes = "bytes", repeated, tag = "2")]
+    #[prost(bytes = "bytes", repeated, tag = "12")]
     pub missing_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// Request ops that are new since the given timestamp.
-    #[prost(int64, tag = "3")]
+    #[prost(int64, tag = "20")]
     pub new_since: i64,
+    /// The maximum number of bytes of new ops to respond with.
+    #[prost(int32, tag = "21")]
+    pub max_new_bytes: i32,
     /// Ops that we have stored since the timestamp provided by the initiator in `new_since`.
-    #[prost(bytes = "bytes", repeated, tag = "4")]
+    #[prost(bytes = "bytes", repeated, tag = "22")]
     pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
     /// and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
-    #[prost(int64, tag = "5")]
+    #[prost(int64, tag = "23")]
+    pub updated_new_since: i64,
+}
+/// A Kitsune2 gossip diff protocol message.
+///
+/// Should be sent as a response to an `K2GossipAcceptMessage` to communicate the diff of the
+/// acceptor's local state with the initiator's local state.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipDiffMessage {
+    /// Agent ids of agents that were mentioned in the acceptor's participating_agents list
+    /// that we do not have in our peer store.
+    #[prost(bytes = "bytes", repeated, tag = "10")]
+    pub missing_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
+    #[prost(bytes = "bytes", repeated, tag = "11")]
+    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
+    #[prost(bytes = "bytes", repeated, tag = "20")]
+    pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
+    /// and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
+    #[prost(int64, tag = "21")]
     pub updated_new_since: i64,
 }

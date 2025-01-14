@@ -1,5 +1,6 @@
 use super::*;
-use crate::default_test_builder;
+use crate::{default_test_builder, Ed25519Verifier};
+use kitsune2_api::space::SpaceHandler;
 use kitsune2_api::transport::{TxBaseHandler, TxHandler};
 use std::sync::Arc;
 
@@ -12,24 +13,40 @@ impl TxHandler for NoopTxHandler {}
 async fn create_gossip_instance() {
     let factory = CoreGossipStubFactory::create();
 
+    #[derive(Debug)]
+    struct NoopHandler;
+    impl SpaceHandler for NoopHandler {}
+
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let space = SpaceId::from(bytes::Bytes::from_static(b"test"));
+    let space_id = SpaceId::from(bytes::Bytes::from_static(b"test"));
+    let tx = builder
+        .transport
+        .create(builder.clone(), Arc::new(NoopTxHandler))
+        .await
+        .unwrap();
     factory
         .create(
             builder.clone(),
-            space.clone(),
+            space_id.clone(),
+            builder
+                .space
+                .create(
+                    builder.clone(),
+                    Arc::new(NoopHandler),
+                    space_id.clone(),
+                    tx.clone(),
+                )
+                .await
+                .unwrap(),
             builder.peer_store.create(builder.clone()).await.unwrap(),
             builder
                 .op_store
-                .create(builder.clone(), space)
+                .create(builder.clone(), space_id)
                 .await
                 .unwrap(),
-            builder
-                .transport
-                .create(builder.clone(), Arc::new(NoopTxHandler))
-                .await
-                .unwrap(),
+            tx,
+            Arc::new(Ed25519Verifier),
         )
         .await
         .unwrap();

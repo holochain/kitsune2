@@ -114,6 +114,22 @@ impl ArcSet {
         self.inner.len()
     }
 
+    /// Create an [ArcSet] from a list of sectors indices.
+    ///
+    /// This is intended to be used for constructing an [ArcSet] from a network message.
+    pub fn from_raw(inner: impl Iterator<Item = u32>) -> Self {
+        ArcSet {
+            inner: inner.collect(),
+        }
+    }
+
+    /// Convert this [ArcSet] into a sequence of sector indices.
+    ///
+    /// This is intended to be used for serializing an [ArcSet] into a network message.
+    pub fn into_raw(self) -> impl Iterator<Item = u32> {
+        self.inner.into_iter()
+    }
+
     /// Check whether a given sector index is included in this arc set.
     pub(crate) fn includes_sector_index(&self, value: u32) -> bool {
         self.inner.contains(&value)

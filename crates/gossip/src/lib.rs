@@ -8,4 +8,5 @@ pub use constant::*;
 mod gossip;
 pub use gossip::*;
 
+mod common;
 mod protocol;

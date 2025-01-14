@@ -1,6 +1,8 @@
 //! Gossip related types.
 
+use crate::agent::DynVerifier;
 use crate::peer_store::DynPeerStore;
+use crate::space::DynSpace;
 use crate::transport::DynTransport;
 use crate::{builder, config, BoxFut, DynOpStore, K2Result, SpaceId};
 use std::sync::Arc;
@@ -18,13 +20,16 @@ pub trait GossipFactory: 'static + Send + Sync + std::fmt::Debug {
     fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
     /// Construct a gossip instance.
+    #[allow(clippy::too_many_arguments)]
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-        space: SpaceId,
+        space_id: SpaceId,
+        space: DynSpace,
         peer_store: DynPeerStore,
         op_store: DynOpStore,
         transport: DynTransport,
+        agent_verifier: DynVerifier,
     ) -> BoxFut<'static, K2Result<DynGossip>>;
 }
 

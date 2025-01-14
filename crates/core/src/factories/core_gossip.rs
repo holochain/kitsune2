@@ -1,6 +1,8 @@
+use kitsune2_api::agent::DynVerifier;
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
 use kitsune2_api::peer_store::DynPeerStore;
+use kitsune2_api::space::DynSpace;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
     BoxFut, DynGossip, DynGossipFactory, DynOpStore, Gossip, GossipFactory,
@@ -32,10 +34,12 @@ impl GossipFactory for CoreGossipStubFactory {
     fn create(
         &self,
         _builder: Arc<Builder>,
-        _space: SpaceId,
+        _space_id: SpaceId,
+        _space: DynSpace,
         _peer_store: DynPeerStore,
         _op_store: DynOpStore,
         _transport: DynTransport,
+        _agent_verifier: DynVerifier,
     ) -> BoxFut<'static, K2Result<DynGossip>> {
         let out: DynGossip = Arc::new(CoreGossipStub);
         Box::pin(async move { Ok(out) })

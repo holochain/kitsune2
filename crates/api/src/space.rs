@@ -1,5 +1,6 @@
 //! Kitsune2 space related types.
 
+use crate::agent::DynLocalAgent;
 use crate::*;
 use std::sync::Arc;
 
@@ -56,6 +57,16 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// be generated and sent to the bootstrap server. A best effort will
     /// be made to publish this tombstone to peers in the space as well.
     fn local_agent_leave(&self, local_agent: id::AgentId) -> BoxFut<'_, ()>;
+
+    /// Get a list of all local agents currently joined to this space.
+    fn get_local_agents(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>>;
+
+    /// Update the target arc hint for the given local agent.
+    fn update_tgt_storage_arc_hint(
+        &self,
+        agent: AgentId,
+        arc: arc::DhtArc,
+    ) -> BoxFut<'_, ()>;
 
     /// Send a message to a remote peer. The future returned from this
     /// function will track the message all the way down to the low-level
