@@ -3,7 +3,7 @@ use crate::{
     default_test_builder,
     factories::{
         core_fetch::{CoreFetch, CoreFetchConfig},
-        Kitsune2MemoryOp, MemOpStoreFactory,
+        MemOpStoreFactory, MemoryOp,
     },
 };
 use bytes::Bytes;
@@ -11,7 +11,7 @@ use kitsune2_api::{
     fetch::{serialize_op_ids, Ops},
     id::Id,
     transport::MockTransport,
-    K2Error, MetaOp, OpId, SpaceId, Timestamp, Url,
+    K2Error, MetaOp, SpaceId, Timestamp, Url,
 };
 use kitsune2_test_utils::enable_tracing;
 use prost::Message;
@@ -24,18 +24,8 @@ type ResponsesSent = Vec<(Vec<Bytes>, Url)>;
 
 const SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"space_id")));
 
-fn hash_op(input: &bytes::Bytes) -> OpId {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(input);
-    let result = hasher.finalize();
-    let hash_bytes = bytes::Bytes::from(result.to_vec());
-    hash_bytes.into()
-}
-
-fn make_op(data: Vec<u8>) -> Kitsune2MemoryOp {
-    let op_id = hash_op(&data.clone().into());
-    Kitsune2MemoryOp::new(op_id, Timestamp::now(), data)
+fn make_op(data: Vec<u8>) -> MemoryOp {
+    MemoryOp::new(Timestamp::now(), data)
 }
 
 fn make_mock_transport(
@@ -101,9 +91,9 @@ async fn respond_to_multiple_requests() {
     );
 
     let requested_op_ids_1 =
-        serialize_op_ids(vec![op_1.op_id.clone(), op_2.op_id.clone()]);
+        serialize_op_ids(vec![op_1.compute_op_id(), op_2.compute_op_id()]);
     let requested_op_ids_2 =
-        serialize_op_ids(vec![op_3.op_id.clone(), random_op_id()]);
+        serialize_op_ids(vec![op_3.compute_op_id(), random_op_id()]);
     fetch
         .response_handler
         .recv_module_msg(
@@ -218,12 +208,10 @@ async fn fail_to_respond_once_then_succeed() {
                 .op_list
                 .into_iter()
                 .map(|op| {
-                    let op_data =
-                        serde_json::from_slice::<Kitsune2MemoryOp>(&op.data)
-                            .unwrap();
-                    let op_id = hash_op(&bytes::Bytes::from(op_data.payload));
+                    let memory_op =
+                        serde_json::from_slice::<MemoryOp>(&op.data).unwrap();
                     MetaOp {
-                        op_id,
+                        op_id: memory_op.compute_op_id(),
                         op_data: op.data.into(),
                     }
                 })
@@ -251,7 +239,7 @@ async fn fail_to_respond_once_then_succeed() {
     );
 
     // Handle op request.
-    let data = serialize_op_ids(vec![op.op_id]);
+    let data = serialize_op_ids(vec![op.compute_op_id()]);
     fetch
         .response_handler
         .recv_module_msg(

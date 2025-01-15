@@ -588,8 +588,7 @@ mod test {
     use kitsune2_api::builder::Builder;
     use kitsune2_api::space::SpaceHandler;
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
-    use kitsune2_api::OpId;
-    use kitsune2_core::factories::Kitsune2MemoryOp;
+    use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_test_utils::enable_tracing;
 
@@ -807,15 +806,11 @@ mod test {
         let agent_1 = harness_1.join_local_agent().await;
         harness_1
             .op_store
-            .process_incoming_ops(vec![bytes::Bytes::from(
-                serde_json::to_vec(&Kitsune2MemoryOp {
-                    op_id: OpId::from(bytes::Bytes::from_static(b"op-1")),
-                    timestamp: Timestamp::now(),
-                    stored_at: UNIX_TIMESTAMP,
-                    payload: vec![1; 128],
-                })
-                .unwrap(),
-            )])
+            .process_incoming_ops(vec![MemoryOp::new(
+                Timestamp::now(),
+                vec![2; 128],
+            )
+            .into()])
             .await
             .unwrap();
 
@@ -825,15 +820,11 @@ mod test {
         harness_2.join_local_agent().await;
         harness_2
             .op_store
-            .process_incoming_ops(vec![bytes::Bytes::from(
-                serde_json::to_vec(&Kitsune2MemoryOp {
-                    op_id: OpId::from(bytes::Bytes::from_static(b"op-2")),
-                    timestamp: Timestamp::now(),
-                    stored_at: UNIX_TIMESTAMP,
-                    payload: vec![2; 128],
-                })
-                .unwrap(),
-            )])
+            .process_incoming_ops(vec![MemoryOp::new(
+                Timestamp::now(),
+                vec![2; 128],
+            )
+            .into()])
             .await
             .unwrap();
 

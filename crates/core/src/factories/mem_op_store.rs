@@ -1,14 +1,12 @@
 //! The mem op store implementation provided by Kitsune2.
 
 use crate::factories::mem_op_store::time_slice_hash_store::TimeSliceHashStore;
-use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
 use kitsune2_api::{
     BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, K2Error, K2Result, MetaOp,
     OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
-    UNIX_TIMESTAMP,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,6 +14,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 mod time_slice_hash_store;
+
+#[cfg(test)]
+mod test;
 
 /// The mem op store implementation provided by Kitsune2.
 #[derive(Debug)]
@@ -49,51 +50,83 @@ impl OpStoreFactory for MemOpStoreFactory {
 /// This is a stub implementation of an op that will be serialized
 /// via serde_json (with inefficient encoding of the payload) to be
 /// used for testing purposes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MemoryOp {
+    /// The creation timestamp of this op
+    pub created_at: Timestamp,
+    /// The data for the op
+    pub op_data: Vec<u8>,
+}
+
+impl MemoryOp {
+    /// Create a new [MemoryOp].
+    pub fn new(timestamp: Timestamp, payload: Vec<u8>) -> Self {
+        Self {
+            created_at: timestamp,
+            op_data: payload,
+        }
+    }
+
+    /// Compute the op id for this op.
+    ///
+    /// Note that this produces predictable op ids for testing purposes.
+    /// It is simply the first 32 bytes of the op data.
+    pub fn compute_op_id(&self) -> OpId {
+        let mut value =
+            self.op_data.as_slice()[..32.min(self.op_data.len())].to_vec();
+        value.resize(32, 0);
+        OpId::from(bytes::Bytes::from(value))
+    }
+}
+
+impl From<bytes::Bytes> for MemoryOp {
+    fn from(value: bytes::Bytes) -> Self {
+        serde_json::from_slice(&value)
+            .expect("failed to deserialize MemoryOp from bytes")
+    }
+}
+
+impl From<MemoryOp> for bytes::Bytes {
+    fn from(value: MemoryOp) -> Self {
+        serde_json::to_vec(&value)
+            .expect("failed to serialize MemoryOp to bytes")
+            .into()
+    }
+}
+
+/// This is the storage record for an op with computed fields.
+///
+/// Test data should create [MemoryOp]s and not be aware of this type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Kitsune2MemoryOp {
+struct MemoryOpRecord {
     /// The id (hash) of the op
     pub op_id: OpId,
     /// The creation timestamp of this op
-    pub timestamp: Timestamp,
+    pub created_at: Timestamp,
     /// The timestamp at which this op was stored by us
     pub stored_at: Timestamp,
-    /// The payload of the op
-    pub payload: Vec<u8>,
+    /// The data for the op
+    pub op_data: Vec<u8>,
 }
 
-impl Kitsune2MemoryOp {
-    /// Create a new [Kitsune2MemoryOp]
-    pub fn new(op_id: OpId, timestamp: Timestamp, payload: Vec<u8>) -> Self {
+impl From<bytes::Bytes> for MemoryOpRecord {
+    fn from(value: bytes::Bytes) -> Self {
+        let inner: MemoryOp = value.into();
         Self {
-            op_id,
-            timestamp,
-            stored_at: UNIX_TIMESTAMP,
-            payload,
+            op_id: inner.compute_op_id(),
+            created_at: inner.created_at,
+            stored_at: Timestamp::now(),
+            op_data: inner.op_data,
         }
     }
 }
 
-impl From<Kitsune2MemoryOp> for StoredOp {
-    fn from(value: Kitsune2MemoryOp) -> Self {
+impl From<MemoryOp> for StoredOp {
+    fn from(value: MemoryOp) -> Self {
         StoredOp {
-            op_id: value.op_id,
-            timestamp: value.timestamp,
+            op_id: value.compute_op_id(),
+            created_at: value.created_at,
         }
-    }
-}
-
-impl From<Bytes> for Kitsune2MemoryOp {
-    fn from(value: Bytes) -> Self {
-        serde_json::from_slice(&value)
-            .expect("failed to deserialize Kitsune2MemoryOp from Op")
-    }
-}
-
-impl From<Kitsune2MemoryOp> for Bytes {
-    fn from(value: Kitsune2MemoryOp) -> Self {
-        serde_json::to_vec(&value)
-            .expect("failed to serialize Op to Kitsune2MemoryOp")
-            .into()
     }
 }
 
@@ -122,21 +155,20 @@ impl std::ops::Deref for Kitsune2MemoryOpStore {
 
 #[derive(Debug, Default)]
 struct Kitsune2MemoryOpStoreInner {
-    op_list: HashMap<OpId, Kitsune2MemoryOp>,
+    op_list: HashMap<OpId, MemoryOpRecord>,
     time_slice_hashes: TimeSliceHashStore,
 }
 
 impl OpStore for Kitsune2MemoryOpStore {
     fn process_incoming_ops(
         &self,
-        op_list: Vec<Bytes>,
+        op_list: Vec<bytes::Bytes>,
     ) -> BoxFuture<'_, K2Result<()>> {
         Box::pin(async move {
             let ops_to_add = op_list
                 .iter()
-                .map(|op| -> serde_json::Result<(OpId, Kitsune2MemoryOp)> {
-                    let mut op = Kitsune2MemoryOp::from(op.clone());
-                    op.stored_at = Timestamp::now();
+                .map(|op| -> serde_json::Result<(OpId, MemoryOpRecord)> {
+                    let op = MemoryOpRecord::from(op.clone());
                     Ok((op.op_id.clone(), op))
                 })
                 .collect::<Result<Vec<_>, _>>().map_err(|e| {
@@ -161,8 +193,8 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .iter()
                 .filter(|(_, op)| {
                     let loc = op.op_id.loc();
-                    op.timestamp >= start
-                        && op.timestamp < end
+                    op.created_at >= start
+                        && op.created_at < end
                         && arc.contains(loc)
                 })
                 .map(|(op_id, _)| op_id.clone())
@@ -181,8 +213,11 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .filter_map(|op_id| {
                     self_lock.op_list.get(op_id).map(|op| MetaOp {
                         op_id: op.op_id.clone(),
-                        op_data: serde_json::to_vec(op)
-                            .expect("Failed to serialize op"),
+                        op_data: serde_json::to_vec(&MemoryOp {
+                            created_at: op.created_at,
+                            op_data: op.op_data.clone(),
+                        })
+                        .expect("Failed to serialize op"),
                     })
                 })
                 .collect())
@@ -221,7 +256,7 @@ impl OpStore for Kitsune2MemoryOpStore {
             let op_ids = candidate_ops
                 .into_iter()
                 .take_while(|op| {
-                    total_bytes += op.payload.len();
+                    total_bytes += op.op_data.len();
 
                     if total_bytes <= limit_bytes {
                         true

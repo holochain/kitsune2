@@ -444,7 +444,7 @@ mod tests {
     use crate::test::test_store;
     use crate::UNIT_TIME;
     use kitsune2_api::{OpId, UNIX_TIMESTAMP};
-    use kitsune2_core::factories::Kitsune2MemoryOp;
+    use kitsune2_core::factories::MemoryOp;
     use kitsune2_test_utils::enable_tracing;
     use std::time::Duration;
 
@@ -510,11 +510,11 @@ mod tests {
             vec![
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_1.clone()),
-                    timestamp: UNIX_TIMESTAMP,
+                    created_at: UNIX_TIMESTAMP,
                 },
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
-                    timestamp: UNIX_TIMESTAMP
+                    created_at: UNIX_TIMESTAMP
                         + ph.sectors[0].full_slice_duration(),
                 },
             ],
@@ -569,12 +569,12 @@ mod tests {
                 // Stored in the first time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_1.clone()),
-                    timestamp: ph.sectors[0].full_slice_end_timestamp(),
+                    created_at: ph.sectors[0].full_slice_end_timestamp(),
                 },
                 // Stored in the second time slice of the first space partition.
                 StoredOp {
                     op_id: OpId::from(op_id_bytes_2.clone()),
-                    timestamp: ph.sectors[0].full_slice_end_timestamp()
+                    created_at: ph.sectors[0].full_slice_end_timestamp()
                         + Duration::from_secs((1 << 13) * UNIT_TIME.as_secs()),
                 },
             ],
@@ -634,18 +634,15 @@ mod tests {
         assert_eq!(512, ph.sectors.len());
 
         for h in ph.sectors.iter() {
-            let (start, end) = match h.sector_constraint() {
+            let (start, _) = match h.sector_constraint() {
                 DhtArc::Arc(s, e) => (s, e),
                 _ => panic!("Expected an arc"),
             };
             store
-                .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                    // Place the op within the current space partition
-                    OpId::from(bytes::Bytes::copy_from_slice(
-                        (start + 1).to_le_bytes().as_slice(),
-                    )),
+                .process_incoming_ops(vec![MemoryOp::new(
                     now,
-                    end.to_be_bytes().to_vec(),
+                    // Place the op within the current space partition
+                    (start + 1).to_le_bytes().as_slice().to_vec(),
                 )
                 .into()])
                 .await

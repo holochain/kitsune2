@@ -52,12 +52,12 @@ pub struct StoredOp {
     ///
     /// Note that this means any op implementation must include a consistent timestamp in the op
     /// data so that it can be provided back to Kitsune.
-    pub timestamp: Timestamp,
+    pub created_at: Timestamp,
 }
 
 impl Ord for StoredOp {
     fn cmp(&self, other: &Self) -> Ordering {
-        (&self.timestamp, &self.op_id).cmp(&(&other.timestamp, &other.op_id))
+        (&self.created_at, &self.op_id).cmp(&(&other.created_at, &other.op_id))
     }
 }
 

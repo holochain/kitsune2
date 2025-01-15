@@ -243,14 +243,14 @@ impl TimePartition {
         let full_slice_end = self.full_slice_end_timestamp();
 
         for op in stored_ops {
-            if op.timestamp < full_slice_end {
+            if op.created_at < full_slice_end {
                 // This is a historical update. We don't really expect this to happen too often.
                 // If we're syncing because we've been offline then it's okay and we should
                 // try to detect that when it's happening but otherwise it'd be good to log a warning
                 // here.
                 tracing::info!("Historical update detected. Seeing many of these places load on our system, but it is expected if we've been offline or a network partition has been resolved.");
 
-                let slice_index = op.timestamp.as_micros()
+                let slice_index = op.created_at.as_micros()
                     / (self.full_slice_duration.as_micros() as i64);
                 let current_hash = store
                     .retrieve_slice_hash(
@@ -299,7 +299,7 @@ impl TimePartition {
                     }
                 };
 
-                if op.timestamp >= end_of_partials {
+                if op.created_at >= end_of_partials {
                     // This new op is not yet included in the partial slices. That's okay, there
                     // is expected to be a small amount of recent time that isn't covered by
                     // partial slices. This op will get included in a future update of the partials.
@@ -310,7 +310,7 @@ impl TimePartition {
                 // the partial slices. We can easily iterate backwards and check just the start
                 // bound of the partials to find out which partial slice this op belongs to.
                 for partial in self.partial_slices.iter_mut().rev() {
-                    if op.timestamp >= partial.start {
+                    if op.created_at >= partial.start {
                         combine::combine_hashes(
                             &mut partial.hash,
                             op.op_id.0 .0,
@@ -675,7 +675,7 @@ mod tests {
     use super::*;
     use crate::test::test_store;
     use kitsune2_api::OpId;
-    use kitsune2_core::factories::Kitsune2MemoryOp;
+    use kitsune2_core::factories::MemoryOp;
     use kitsune2_test_utils::enable_tracing;
 
     #[test]
@@ -854,16 +854,11 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                MemoryOp::new((current_time - UNIT_TIME).unwrap(), vec![7; 32])
+                    .into(),
+                MemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    (current_time - UNIT_TIME).unwrap(),
-                    vec![],
+                    vec![23; 32],
                 )
                 .into(),
             ])
@@ -941,18 +936,8 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
             ])
             .await
             .unwrap();
@@ -1001,28 +986,16 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![11; 32])),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
+                MemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
-                    vec![],
+                    vec![11; 32],
                 )
                 .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![29; 32])),
+                MemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
-                    vec![],
+                    vec![29; 32],
                 )
                 .into(),
             ])
@@ -1076,16 +1049,10 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![11; 32])),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                MemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
-                    vec![],
+                    vec![11; 32],
                 )
                 .into(),
             ])
@@ -1137,16 +1104,11 @@ mod tests {
             .unwrap();
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
+                MemoryOp::new((current_time - UNIT_TIME).unwrap(), vec![7; 32])
+                    .into(),
+                MemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![29; 32])),
-                    (current_time - UNIT_TIME).unwrap(),
-                    vec![],
+                    vec![29; 32],
                 )
                 .into(),
             ])
@@ -1168,10 +1130,9 @@ mod tests {
 
         // Store a new op which will currently be outside the last partial slice
         store
-            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                OpId::from(bytes::Bytes::from(vec![13; 32])),
+            .process_incoming_ops(vec![MemoryOp::new(
                 current_time,
-                vec![],
+                vec![13; 32],
             )
             .into()])
             .await
@@ -1206,18 +1167,8 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
             ])
             .await
             .unwrap();
@@ -1244,10 +1195,9 @@ mod tests {
 
         // Store a new op, currently in the first partial slice, but will be in the next full slice.
         store
-            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                OpId::from(bytes::Bytes::from(vec![13; 32])),
+            .process_incoming_ops(vec![MemoryOp::new(
                 pt.full_slice_end_timestamp(), // Start of the next full slice
-                vec![],
+                vec![13; 32],
             )
             .into()])
             .await
@@ -1308,30 +1258,18 @@ mod tests {
         store
             .process_incoming_ops(vec![
                 // Store two new ops at the unix timestamp, to go into the first complete slice
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![7; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![23; 32])),
-                    UNIX_TIMESTAMP,
-                    vec![],
-                )
-                .into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
                 // Store two new ops at the unix timestamp plus one full time slice,
                 // to go into the second complete slice
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![11; 32])),
+                MemoryOp::new(
                     UNIX_TIMESTAMP + pt.full_slice_duration,
-                    vec![],
+                    vec![11; 32],
                 )
                 .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::from(vec![37; 32])),
+                MemoryOp::new(
                     UNIX_TIMESTAMP + pt.full_slice_duration,
-                    vec![],
+                    vec![37; 32],
                 )
                 .into(),
             ])
@@ -1406,10 +1344,9 @@ mod tests {
 
         // Now insert an op at the current time
         store
-            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                OpId::from(bytes::Bytes::from(vec![7; 32])),
+            .process_incoming_ops(vec![MemoryOp::new(
                 pt.full_slice_end_timestamp(),
-                vec![],
+                vec![7; 32],
             )
             .into()])
             .await
@@ -1457,7 +1394,7 @@ mod tests {
                 op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
                     11, 0, 0, 0,
                 ])),
-                timestamp: UNIX_TIMESTAMP,
+                created_at: UNIX_TIMESTAMP,
             }],
             store.clone(),
         )
@@ -1482,10 +1419,9 @@ mod tests {
         let store = test_store().await;
         // Insert a single op in the first time slice
         store
-            .process_incoming_ops(vec![Kitsune2MemoryOp::new(
-                OpId::from(bytes::Bytes::copy_from_slice(&[7, 0, 0, 0])),
+            .process_incoming_ops(vec![MemoryOp::new(
                 UNIX_TIMESTAMP,
-                vec![],
+                vec![7, 0, 0, 0],
             )
             .into()])
             .await
@@ -1506,15 +1442,17 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(vec![7, 0, 0, 0], initial_hash);
+        let mut expected = vec![7];
+        expected.resize(32, 0);
+        assert_eq!(expected, initial_hash);
 
         // Receive a new op into the same time slice
+        let mut inner_op_id = vec![23];
+        inner_op_id.resize(32, 0);
         pt.inform_ops_stored(
             vec![StoredOp {
-                op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
-                    23, 0, 0, 0,
-                ])),
-                timestamp: UNIX_TIMESTAMP,
+                op_id: OpId::from(bytes::Bytes::from(inner_op_id)),
+                created_at: UNIX_TIMESTAMP,
             }],
             store.clone(),
         )
@@ -1527,7 +1465,9 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(vec![7 ^ 23, 0, 0, 0], updated_hash);
+        let mut expected = vec![7 ^ 23];
+        expected.resize(32, 0);
+        assert_eq!(expected, updated_hash);
     }
 
     #[tokio::test]
@@ -1559,13 +1499,14 @@ mod tests {
                     op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
                         11, 0, 0, 0,
                     ])),
-                    timestamp: UNIX_TIMESTAMP,
+                    created_at: UNIX_TIMESTAMP,
                 },
                 StoredOp {
                     op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
                         29, 0, 0, 0,
                     ])),
-                    timestamp: (current_time - Duration::from_secs(5)).unwrap(),
+                    created_at: (current_time - Duration::from_secs(5))
+                        .unwrap(),
                 },
             ],
             store.clone(),
@@ -1587,16 +1528,14 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::copy_from_slice(&[7, 0, 0, 0])),
+                MemoryOp::new(
                     UNIX_TIMESTAMP + Duration::from_secs(10),
-                    vec![],
+                    vec![7, 0, 0, 0],
                 )
                 .into(),
-                Kitsune2MemoryOp::new(
-                    OpId::from(bytes::Bytes::copy_from_slice(&[31, 0, 0, 0])),
+                MemoryOp::new(
                     (current_time - Duration::from_secs(30)).unwrap(),
-                    vec![],
+                    vec![31, 0, 0, 0],
                 )
                 .into(),
             ])
@@ -1613,23 +1552,28 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(vec![7, 0, 0, 0], pt.partial_slices.first().unwrap().hash);
-        assert_eq!(vec![31, 0, 0, 0], pt.partial_slices.last().unwrap().hash);
+        let mut expected = vec![7];
+        expected.resize(32, 0);
+        assert_eq!(expected, pt.partial_slices.first().unwrap().hash);
+        let mut expected = vec![31];
+        expected.resize(32, 0);
+        assert_eq!(expected, pt.partial_slices.last().unwrap().hash);
 
         // Receive an op into the first and last time slices
+        let mut inner_op_id_1 = vec![11];
+        inner_op_id_1.resize(32, 0);
+        let mut inner_op_id_2 = vec![29];
+        inner_op_id_2.resize(32, 0);
         pt.inform_ops_stored(
             vec![
                 StoredOp {
-                    op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
-                        11, 0, 0, 0,
-                    ])),
-                    timestamp: UNIX_TIMESTAMP,
+                    op_id: OpId::from(bytes::Bytes::from(inner_op_id_1)),
+                    created_at: UNIX_TIMESTAMP,
                 },
                 StoredOp {
-                    op_id: OpId::from(bytes::Bytes::copy_from_slice(&[
-                        29, 0, 0, 0,
-                    ])),
-                    timestamp: (current_time - Duration::from_secs(5)).unwrap(),
+                    op_id: OpId::from(bytes::Bytes::from(inner_op_id_2)),
+                    created_at: (current_time - Duration::from_secs(5))
+                        .unwrap(),
                 },
             ],
             store.clone(),
@@ -1637,14 +1581,12 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(
-            vec![7 ^ 11, 0, 0, 0],
-            pt.partial_slices.first().unwrap().hash
-        );
-        assert_eq!(
-            vec![31 ^ 29, 0, 0, 0],
-            pt.partial_slices.last().unwrap().hash
-        );
+        let mut expected = vec![7 ^ 11];
+        expected.resize(32, 0);
+        assert_eq!(expected, pt.partial_slices.first().unwrap().hash);
+        let mut expected = vec![31 ^ 29];
+        expected.resize(32, 0);
+        assert_eq!(expected, pt.partial_slices.last().unwrap().hash);
     }
 
     fn validate_partial_slices(pt: &TimePartition) {
