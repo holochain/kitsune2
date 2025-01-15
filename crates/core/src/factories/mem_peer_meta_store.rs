@@ -1,7 +1,7 @@
 use futures::future::BoxFuture;
 use kitsune2_api::{
-    AgentId, DynPeerMetaStore, DynPeerMetaStoreFactory, K2Result,
-    PeerMetaStore, PeerMetaStoreFactory, SpaceId, Timestamp,
+    DynPeerMetaStore, DynPeerMetaStoreFactory, K2Result, PeerMetaStore,
+    PeerMetaStoreFactory, SpaceId, Timestamp, Url,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,8 +10,7 @@ use tokio::sync::Mutex;
 #[cfg(test)]
 mod test;
 
-type MemPeerMetaInner =
-    HashMap<(SpaceId, AgentId), HashMap<String, bytes::Bytes>>;
+type MemPeerMetaInner = HashMap<(SpaceId, Url), HashMap<String, bytes::Bytes>>;
 
 /// An in-memory implementation of the [PeerMetaStore].
 ///
@@ -33,7 +32,7 @@ impl PeerMetaStore for MemPeerMetaStore {
     fn put(
         &self,
         space: SpaceId,
-        agent: AgentId,
+        peer: Url,
         key: String,
         value: bytes::Bytes,
         _expiry: Option<Timestamp>,
@@ -41,8 +40,7 @@ impl PeerMetaStore for MemPeerMetaStore {
         let inner = self.inner.clone();
         Box::pin(async move {
             let mut inner = inner.lock().await;
-            let entry =
-                inner.entry((space, agent)).or_insert_with(HashMap::new);
+            let entry = inner.entry((space, peer)).or_insert_with(HashMap::new);
             entry.insert(key, value);
             Ok(())
         })
@@ -51,14 +49,14 @@ impl PeerMetaStore for MemPeerMetaStore {
     fn get(
         &self,
         space: SpaceId,
-        agent: AgentId,
+        peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
         let inner = self.inner.clone();
         Box::pin(async move {
             let inner = inner.lock().await;
             Ok(inner
-                .get(&(space, agent))
+                .get(&(space, peer))
                 .and_then(|entry| entry.get(&key).cloned()))
         })
     }
@@ -66,13 +64,13 @@ impl PeerMetaStore for MemPeerMetaStore {
     fn delete(
         &self,
         space: SpaceId,
-        agent: AgentId,
+        peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<()>> {
         let inner = self.inner.clone();
         Box::pin(async move {
             let mut inner = inner.lock().await;
-            if let Some(entry) = inner.get_mut(&(space, agent)) {
+            if let Some(entry) = inner.get_mut(&(space, peer)) {
                 entry.remove(&key);
             }
             Ok(())

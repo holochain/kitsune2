@@ -6,6 +6,7 @@ use crate::protocol::{
     K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipInitiateMessage,
     K2GossipNoDiffMessage,
 };
+use crate::state::GossipRoundState;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
 use kitsune2_api::peer_store::DynPeerStore;
@@ -16,7 +17,9 @@ use kitsune2_api::{
     GossipFactory, K2Error, K2Result, SpaceId, Timestamp, Url, UNIX_TIMESTAMP,
 };
 use kitsune2_dht::ArcSet;
+use std::collections::HashMap;
 use std::sync::{Arc, Weak};
+use tokio::sync::Mutex;
 
 /// A factory for creating K2Gossip instances.
 #[derive(Debug)]
@@ -86,6 +89,15 @@ impl Drop for DropAbortHandle {
 #[derive(Debug, Clone)]
 struct K2Gossip {
     config: Arc<K2GossipConfig>,
+    /// The state of the current initiated gossip round.
+    ///
+    /// We only initiate one round at a time, so this is a single value.
+    initiated_round_state: Arc<Mutex<Option<GossipRoundState>>>,
+    /// The state of currently accepted gossip rounds.
+    ///
+    /// This is a map of agent ids to their round state. We can accept gossip from multiple agents
+    /// at once, mostly to avoid coordinating initiation.
+    accepted_round_states: Arc<Mutex<HashMap<Url, GossipRoundState>>>,
     space_id: SpaceId,
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
@@ -137,6 +149,8 @@ impl K2Gossip {
 
         let gossip = K2Gossip {
             config: Arc::new(config),
+            initiated_round_state: Arc::new(Mutex::new(None)),
+            accepted_round_states: Arc::new(Mutex::new(HashMap::new())),
             space_id: space_id.clone(),
             space: Arc::downgrade(&space),
             peer_store,
@@ -169,7 +183,14 @@ impl K2Gossip {
     pub(crate) async fn initiate_gossip(
         &self,
         target: AgentId,
-    ) -> K2Result<()> {
+    ) -> K2Result<bool> {
+        let state = self.initiated_round_state.clone();
+        let mut initiated_lock = state.lock().await;
+        if initiated_lock.is_some() {
+            tracing::info!("initiate_gossip: already initiated");
+            return Ok(false);
+        }
+
         let Some(target_url) = self
             .peer_store
             .get(target.clone())
@@ -177,7 +198,7 @@ impl K2Gossip {
             .and_then(|t| t.url.clone())
         else {
             tracing::info!("initiate_gossip: target not found: {:?}", target);
-            return Ok(());
+            return Ok(false);
         };
 
         let space = self
@@ -188,15 +209,15 @@ impl K2Gossip {
 
         let new_since = self
             .peer_meta_store
-            .new_ops_bookmark(target.clone())
+            .new_ops_bookmark(target_url.clone())
             .await?
             .unwrap_or(UNIX_TIMESTAMP);
 
+        let round_state =
+            GossipRoundState::new(target_url.clone(), our_agents.clone());
         let initiate = K2GossipInitiateMessage {
-            participating_agents: our_agents
-                .into_iter()
-                .map(|a| a.0 .0)
-                .collect(),
+            session_id: round_state.session_id.clone(),
+            participating_agents: encode_agent_ids(our_agents),
             arc_set: Some(ArcSetMessage {
                 arc_sectors: our_arc_set.into_raw().collect(),
             }),
@@ -204,15 +225,28 @@ impl K2Gossip {
             max_new_bytes: self.config.max_gossip_op_bytes,
         };
 
-        tracing::trace!("initiate_gossip with {:?}: {:?}", target, initiate);
+        // Right before we send the initiate message, check whether the target has already
+        // initiated with us. If they have, we can just skip initiating.
+        if self
+            .accepted_round_states
+            .lock()
+            .await
+            .contains_key(&target_url)
+        {
+            tracing::info!("initiate_gossip: already accepted");
+            return Ok(false);
+        }
+
+        tracing::trace!("Initiate gossip with {:?}: {:?}", target, initiate);
 
         send_gossip_message(
             &self.response_tx,
             target_url,
             GossipMessage::Initiate(initiate),
         )?;
+        *initiated_lock = Some(round_state);
 
-        Ok(())
+        Ok(true)
     }
 
     /// Handle a gossip message.
@@ -221,19 +255,18 @@ impl K2Gossip {
     /// Otherwise, returns None.
     fn handle_gossip_message(
         &self,
-        from: AgentId,
-        from_url: Url,
+        from_peer: Url,
         msg: GossipMessage,
     ) -> K2Result<()> {
         tracing::debug!(
             "handle_gossip_message from: {:?}, msg: {:?}",
-            from,
+            from_peer,
             msg
         );
 
         let this = self.clone();
         tokio::task::spawn(async move {
-            if let Err(e) = this.respond_to_msg(from, from_url, msg).await {
+            if let Err(e) = this.respond_to_msg(from_peer, msg).await {
                 tracing::error!("could not respond to gossip message: {:?}", e);
             }
         });
@@ -243,8 +276,7 @@ impl K2Gossip {
 
     async fn respond_to_msg(
         &self,
-        from: AgentId,
-        from_url: Url,
+        from_peer: Url,
         msg: GossipMessage,
     ) -> K2Result<()> {
         let res = match msg {
@@ -252,7 +284,7 @@ impl K2Gossip {
                 // Rate limit incoming gossip messages by peer
                 if let Some(timestamp) = self
                     .peer_meta_store
-                    .last_gossip_timestamp(from.clone())
+                    .last_gossip_timestamp(from_peer.clone())
                     .await?
                 {
                     let elapsed =
@@ -261,23 +293,24 @@ impl K2Gossip {
                         })?;
 
                     if elapsed < self.config.interval() {
-                        tracing::info!("peer {:?} attempted to initiate too soon {:?} < {:?}", from, elapsed, self.config.interval());
+                        tracing::info!("peer {:?} attempted to initiate too soon {:?} < {:?}", from_peer, elapsed, self.config.interval());
                         return Err(K2Error::other("initiate too soon"));
                     }
                 }
-
-                println!("Accepting with op store {:?}", self.op_store);
 
                 // Note the gap between the read and write here. It's possible that both peers
                 // could initiate at the same time. This is slightly wasteful but shouldn't be a
                 // problem.
                 self.peer_meta_store
-                    .set_last_gossip_timestamp(from.clone(), Timestamp::now())
+                    .set_last_gossip_timestamp(
+                        from_peer.clone(),
+                        Timestamp::now(),
+                    )
                     .await?;
 
-                let other_arc_set = match initiate.arc_set {
+                let other_arc_set = match &initiate.arc_set {
                     Some(arc_set) => {
-                        ArcSet::from_raw(arc_set.arc_sectors.into_iter())
+                        ArcSet::from_raw(arc_set.arc_sectors.iter().cloned())
                     }
                     None => {
                         return Err(K2Error::other(
@@ -290,12 +323,22 @@ impl K2Gossip {
                     .space
                     .upgrade()
                     .ok_or_else(|| K2Error::other("space was dropped"))?;
-                let (send_agents, our_arc_set) =
+                let (our_agents, our_arc_set) =
                     local_agent_state(space).await?;
                 let common_arc_set = our_arc_set.intersection(&other_arc_set);
                 if common_arc_set.covered_sector_count() == 0 {
                     tracing::info!("no common arc set, continue to sync agents but not ops");
                 }
+
+                // There's no validation to be done with an accept beyond what's been done above
+                // to check how recently this peer initiated with us. We'll just record that they
+                // have initiated and that we plan to accept.
+                self.check_and_update_accepted_state(
+                    &from_peer,
+                    &initiate,
+                    our_agents.clone(),
+                )
+                .await?;
 
                 let missing_agents = self
                     .filter_known_agents(&initiate.participating_agents)
@@ -303,7 +346,7 @@ impl K2Gossip {
 
                 let new_since = self
                     .peer_meta_store
-                    .new_ops_bookmark(from.clone())
+                    .new_ops_bookmark(from_peer.clone())
                     .await?
                     .unwrap_or(UNIX_TIMESTAMP);
 
@@ -316,7 +359,8 @@ impl K2Gossip {
                     .await?;
 
                 Ok(Some(GossipMessage::Accept(K2GossipAcceptMessage {
-                    participating_agents: encode_agent_ids(send_agents),
+                    session_id: initiate.session_id,
+                    participating_agents: encode_agent_ids(our_agents),
                     arc_set: Some(ArcSetMessage {
                         arc_sectors: our_arc_set.into_raw().collect(),
                     }),
@@ -328,14 +372,22 @@ impl K2Gossip {
                 })))
             }
             GossipMessage::Accept(accept) => {
-                // TODO check that we have a session active for this peer because we must have
-                //      sent an initiate message, otherwise this is unsolicited.
+                // Validate the incoming accept against our own state.
+                let initiated_lock = self.initiated_round_state.lock().await;
+                GossipRoundState::validate_accept(
+                    &initiated_lock,
+                    from_peer.clone(),
+                    &accept,
+                )?;
 
                 // Only once the other peer has accepted should we record that we've tried to
                 // gossip with them. Otherwise, we risk blocking each other if we both record
                 // a last gossip timestamp and try to initiate at the same time.
                 self.peer_meta_store
-                    .set_last_gossip_timestamp(from.clone(), Timestamp::now())
+                    .set_last_gossip_timestamp(
+                        from_peer.clone(),
+                        Timestamp::now(),
+                    )
                     .await?;
 
                 let missing_agents = self
@@ -346,7 +398,7 @@ impl K2Gossip {
                     self.load_agent_infos(accept.missing_agents).await;
 
                 self.update_new_ops_bookmark(
-                    from.clone(),
+                    from_peer.clone(),
                     Timestamp::from_micros(accept.updated_new_since),
                 )
                 .await?;
@@ -355,7 +407,7 @@ impl K2Gossip {
                 println!("Discovered op ids: {:?}", accept.new_ops);
                 self.peer_meta_store
                     .set_new_ops_bookmark(
-                        from.clone(),
+                        from_peer.clone(),
                         Timestamp::from_micros(accept.updated_new_since),
                     )
                     .await?;
@@ -369,6 +421,7 @@ impl K2Gossip {
                     .await?;
 
                 Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
+                    session_id: accept.session_id,
                     missing_agents,
                     provided_agents: encode_agent_infos(send_agent_infos),
                     new_ops: encode_op_ids(new_ops),
@@ -382,7 +435,7 @@ impl K2Gossip {
                 self.receive_agent_infos(no_diff.provided_agents).await?;
 
                 self.update_new_ops_bookmark(
-                    from.clone(),
+                    from_peer.clone(),
                     Timestamp::from_micros(no_diff.updated_new_since),
                 )
                 .await?;
@@ -391,7 +444,7 @@ impl K2Gossip {
                 println!("Discovered op ids: {:?}", no_diff.new_ops);
                 self.peer_meta_store
                     .set_new_ops_bookmark(
-                        from.clone(),
+                        from_peer.clone(),
                         Timestamp::from_micros(no_diff.updated_new_since),
                     )
                     .await?;
@@ -403,6 +456,7 @@ impl K2Gossip {
                         self.load_agent_infos(no_diff.missing_agents).await;
 
                     Ok(Some(GossipMessage::Agents(K2GossipAgentsMessage {
+                        session_id: no_diff.session_id,
                         provided_agents: encode_agent_infos(send_agent_infos),
                     })))
                 }
@@ -417,7 +471,34 @@ impl K2Gossip {
         }?;
 
         if let Some(msg) = res {
-            send_gossip_message(&self.response_tx, from_url, msg)?;
+            send_gossip_message(&self.response_tx, from_peer, msg)?;
+        }
+
+        Ok(())
+    }
+
+    async fn check_and_update_accepted_state(
+        &self,
+        from_peer: &Url,
+        initiate: &K2GossipInitiateMessage,
+        our_agents: Vec<AgentId>,
+    ) -> K2Result<()> {
+        let mut accepted_states = self.accepted_round_states.lock().await;
+        let accepted_entry = accepted_states.entry(from_peer.clone());
+        match accepted_entry {
+            std::collections::hash_map::Entry::Occupied(_) => {
+                return Err(K2Error::other(format!(
+                    "peer {:?} already accepted",
+                    from_peer
+                )));
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(GossipRoundState::new_accepted(
+                    from_peer.clone(),
+                    initiate.session_id.clone(),
+                    our_agents,
+                ));
+            }
         }
 
         Ok(())
@@ -496,25 +577,27 @@ impl K2Gossip {
 
     async fn update_new_ops_bookmark(
         &self,
-        from: AgentId,
+        from_peer: Url,
         updated_bookmark: Timestamp,
     ) -> K2Result<()> {
-        let previous_bookmark =
-            self.peer_meta_store.new_ops_bookmark(from.clone()).await?;
+        let previous_bookmark = self
+            .peer_meta_store
+            .new_ops_bookmark(from_peer.clone())
+            .await?;
 
         if previous_bookmark
             .map(|previous_bookmark| previous_bookmark <= updated_bookmark)
             .unwrap_or(true)
         {
             self.peer_meta_store
-                .set_new_ops_bookmark(from.clone(), updated_bookmark)
+                .set_new_ops_bookmark(from_peer.clone(), updated_bookmark)
                 .await?;
         } else {
             // This could happen due to a clock issue. If it happens frequently, or by a
             // large margin, it could be a sign of malicious activity.
             tracing::warn!(
                 "new bookmark is older than previous bookmark from peer: {:?}",
-                from
+                from_peer
             );
         }
 
@@ -546,15 +629,8 @@ impl TxModuleHandler for K2Gossip {
             )));
         }
 
-        let peer_id = peer
-            .peer_id()
-            .ok_or_else(|| K2Error::other("no peer id"))?
-            .as_bytes()
-            .to_vec();
-        let agent_id = AgentId::from(bytes::Bytes::from(peer_id));
-
         let msg = deserialize_gossip_message(data)?;
-        match self.handle_gossip_message(agent_id, peer, msg) {
+        match self.handle_gossip_message(peer, msg) {
             Ok(()) => Ok(()),
             Err(e) => {
                 tracing::error!("could not handle gossip message: {:?}", e);
@@ -791,13 +867,11 @@ mod test {
             .op_store
             .process_incoming_ops(vec![MemoryOp::new(
                 Timestamp::now(),
-                vec![2; 128],
+                vec![1; 128],
             )
             .into()])
             .await
             .unwrap();
-
-        println!("Op store after insert 1: {:?}", harness_1.op_store);
 
         let harness_2 = factory.new_instance().await;
         harness_2.join_local_agent().await;

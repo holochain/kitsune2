@@ -1,6 +1,6 @@
 use super::*;
 use crate::default_test_builder;
-use kitsune2_api::Timestamp;
+use kitsune2_api::{Timestamp, Url};
 use std::time::Duration;
 
 struct TestPeerMetaStore {
@@ -16,11 +16,11 @@ impl TestPeerMetaStore {
         Ok(Self { inner, space })
     }
 
-    async fn last_gossip_timestamp(&self, agent: AgentId) -> Option<Timestamp> {
+    async fn last_gossip_timestamp(&self, peer: Url) -> Option<Timestamp> {
         self.inner
             .get(
                 self.space.clone(),
-                agent,
+                peer,
                 "gossip:last_timestamp".to_string(),
             )
             .await
@@ -34,7 +34,7 @@ impl TestPeerMetaStore {
 
     async fn set_last_gossip_timestamp(
         &mut self,
-        agent: AgentId,
+        peer: Url,
         timestamp: Timestamp,
     ) -> K2Result<()> {
         let value = bytes::Bytes::from(
@@ -44,7 +44,7 @@ impl TestPeerMetaStore {
         self.inner
             .put(
                 self.space.clone(),
-                agent,
+                peer,
                 "gossip:last_timestamp".to_string(),
                 value,
                 None,
@@ -65,21 +65,21 @@ async fn mem_meta_store() {
         .await
         .unwrap();
 
-    let agent = AgentId::from(bytes::Bytes::from_static(b"agent-1"));
+    let peer = Url::from_str("ws://test-host:80/1").unwrap();
     let mut agent_store = TestPeerMetaStore::new(store.clone(), "space")
         .await
         .unwrap();
 
-    assert_eq!(agent_store.last_gossip_timestamp(agent.clone()).await, None);
+    assert_eq!(agent_store.last_gossip_timestamp(peer.clone()).await, None);
 
     let timestamp = Timestamp::now();
     agent_store
-        .set_last_gossip_timestamp(agent.clone(), timestamp)
+        .set_last_gossip_timestamp(peer.clone(), timestamp)
         .await
         .unwrap();
 
     assert_eq!(
-        agent_store.last_gossip_timestamp(agent).await,
+        agent_store.last_gossip_timestamp(peer).await,
         Some(timestamp)
     );
 }
@@ -94,8 +94,8 @@ async fn store_with_multiple_agents() {
         .await
         .unwrap();
 
-    let agent_1 = AgentId::from(bytes::Bytes::from_static(b"agent-1"));
-    let agent_2 = AgentId::from(bytes::Bytes::from_static(b"agent-2"));
+    let peer_1 = Url::from_str("ws://test-host:80/1").unwrap();
+    let peer_2 = Url::from_str("ws://test-host:80/2").unwrap();
     let mut agent_store = TestPeerMetaStore::new(store.clone(), "space")
         .await
         .unwrap();
@@ -104,20 +104,20 @@ async fn store_with_multiple_agents() {
     let timestamp_2 = timestamp_1 + Duration::from_secs(1);
 
     agent_store
-        .set_last_gossip_timestamp(agent_1.clone(), timestamp_1)
+        .set_last_gossip_timestamp(peer_1.clone(), timestamp_1)
         .await
         .unwrap();
     agent_store
-        .set_last_gossip_timestamp(agent_2.clone(), timestamp_2)
+        .set_last_gossip_timestamp(peer_2.clone(), timestamp_2)
         .await
         .unwrap();
 
     assert_eq!(
-        agent_store.last_gossip_timestamp(agent_1).await,
+        agent_store.last_gossip_timestamp(peer_1).await,
         Some(timestamp_1)
     );
     assert_eq!(
-        agent_store.last_gossip_timestamp(agent_2).await,
+        agent_store.last_gossip_timestamp(peer_2).await,
         Some(timestamp_2)
     );
 }

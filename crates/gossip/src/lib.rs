@@ -16,3 +16,4 @@ pub use gossip::*;
 mod peer_meta_store;
 
 mod protocol;
+mod state;

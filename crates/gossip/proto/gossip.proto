@@ -47,6 +47,8 @@ message AgentInfoMessage {
 // Acceptable responses:
 // - `K2GossipAcceptMessage`
 message K2GossipInitiateMessage {
+  bytes session_id = 1;
+
   // The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 10;
 
@@ -65,6 +67,8 @@ message K2GossipInitiateMessage {
 // Acceptable responses:
 // - `K2GossipNoDiffMessage`
 message K2GossipAcceptMessage {
+  bytes session_id = 1;
+
   // The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 10;
 
@@ -99,6 +103,8 @@ message K2GossipAcceptMessage {
 // Acceptable responses:
 // - `K2GossipAgentsMessage`
 message K2GossipNoDiffMessage {
+  bytes session_id = 1;
+
   // Agent ids of agents that were mentioned in the acceptor's participating_agents list
   // that we do not have in our peer store.
   repeated bytes missing_agents = 10;
@@ -121,6 +127,8 @@ message K2GossipNoDiffMessage {
 //
 // This message is a final message when used in a gossip round.
 message K2GossipAgentsMessage {
+  bytes session_id = 1;
+
   // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
   repeated AgentInfoMessage provided_agents = 10;
 }

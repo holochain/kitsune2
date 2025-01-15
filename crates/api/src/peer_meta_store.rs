@@ -1,34 +1,34 @@
-use crate::{builder, config, AgentId, BoxFut, K2Result, SpaceId, Timestamp};
+use crate::{builder, config, BoxFut, K2Result, SpaceId, Timestamp, Url};
 use futures::future::BoxFuture;
 use std::sync::Arc;
 
 /// A store for peer metadata.
 ///
-/// This is expected to be backed by a key-value store that keys by space, agent_id and key.
+/// This is expected to be backed by a key-value store that keys by space, peer URL and key.
 pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
-    /// Store a key-value pair for a given space and agent.
+    /// Store a key-value pair for a given space and peer.
     fn put(
         &self,
         space: SpaceId,
-        agent: AgentId,
+        peer: Url,
         key: String,
         value: bytes::Bytes,
         expiry: Option<Timestamp>,
     ) -> BoxFuture<'_, K2Result<()>>;
 
-    /// Get a value by key for a given space and agent.
+    /// Get a value by key for a given space and peer.
     fn get(
         &self,
         space: SpaceId,
-        agent: AgentId,
+        peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
 
-    /// Delete a key-value pair for a given space and agent.
+    /// Delete a key-value pair for a given space and peer.
     fn delete(
         &self,
         space: SpaceId,
-        agent: AgentId,
+        peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<()>>;
 }

@@ -1,5 +1,5 @@
 use kitsune2_api::{
-    AgentId, DynPeerMetaStore, K2Error, K2Result, SpaceId, Timestamp,
+    DynPeerMetaStore, K2Error, K2Result, SpaceId, Timestamp, Url,
 };
 use std::time::Duration;
 
@@ -15,22 +15,22 @@ impl K2PeerMetaStore {
         Self { inner, space }
     }
 
-    /// When did we last gossip with the given agent?
+    /// When did we last gossip with the given peer?
     pub(crate) async fn last_gossip_timestamp(
         &self,
-        agent: AgentId,
+        peer: Url,
     ) -> K2Result<Option<Timestamp>> {
-        self.get(agent, "gossip:last_timestamp").await
+        self.get(peer, "gossip:last_timestamp").await
     }
 
     /// Set the last gossip timestamp for the given agent.
     pub(crate) async fn set_last_gossip_timestamp(
         &self,
-        agent: AgentId,
+        peer: Url,
         timestamp: Timestamp,
     ) -> K2Result<()> {
         self.put(
-            agent,
+            peer,
             "gossip:last_timestamp",
             timestamp,
             // Ideally, this value would be higher than the gossip interval, so that we don't
@@ -47,19 +47,19 @@ impl K2PeerMetaStore {
     /// sent us. We can use this to request an incremental update from them.
     pub(crate) async fn new_ops_bookmark(
         &self,
-        agent: AgentId,
+        peer: Url,
     ) -> K2Result<Option<Timestamp>> {
-        self.get(agent, "gossip:new_ops_bookmark").await
+        self.get(peer, "gossip:new_ops_bookmark").await
     }
 
     /// Set the "new ops" bookmark for the given agent.
     pub(crate) async fn set_new_ops_bookmark(
         &self,
-        agent: AgentId,
+        peer: Url,
         timestamp: Timestamp,
     ) -> K2Result<()> {
         self.put(
-            agent,
+            peer,
             "gossip:new_ops_bookmark",
             timestamp,
             // Try to keep this value around for 24 hours. If we check in once a day, it seems
@@ -72,11 +72,11 @@ impl K2PeerMetaStore {
 
     async fn get<T: serde::de::DeserializeOwned>(
         &self,
-        agent: AgentId,
+        peer: Url,
         name: &str,
     ) -> Result<Option<T>, K2Error> {
         self.inner
-            .get(self.space.clone(), agent, name.to_string())
+            .get(self.space.clone(), peer, name.to_string())
             .await?
             .map(|v| {
                 serde_json::from_slice::<T>(&v).map_err(|e| {
@@ -94,7 +94,7 @@ impl K2PeerMetaStore {
 
     async fn put<T: serde::Serialize>(
         &self,
-        agent: AgentId,
+        peer: Url,
         name: &str,
         value: T,
         expiry: Option<Timestamp>,
@@ -106,7 +106,7 @@ impl K2PeerMetaStore {
         self.inner
             .put(
                 self.space.clone(),
-                agent,
+                peer,
                 name.to_string(),
                 value.into(),
                 expiry,
@@ -143,32 +143,32 @@ mod tests {
     #[tokio::test]
     async fn round_trip_last_gossip_timestamp() {
         let store = test_store().await;
-        let agent = AgentId::from(bytes::Bytes::from_static(b"agent-1"));
+        let peer = Url::from_str("ws://test-host:80/1").unwrap();
         let timestamp = Timestamp::now();
         store
-            .set_last_gossip_timestamp(agent.clone(), timestamp)
+            .set_last_gossip_timestamp(peer.clone(), timestamp)
             .await
             .unwrap();
 
         assert_eq!(
             Some(timestamp),
-            store.last_gossip_timestamp(agent.clone()).await.unwrap()
+            store.last_gossip_timestamp(peer.clone()).await.unwrap()
         );
     }
 
     #[tokio::test]
     async fn round_trip_new_ops_bookmark() {
         let store = test_store().await;
-        let agent = AgentId::from(bytes::Bytes::from_static(b"agent-1"));
+        let peer = Url::from_str("ws://test-host:80/1").unwrap();
         let timestamp = Timestamp::now();
         store
-            .set_new_ops_bookmark(agent.clone(), timestamp)
+            .set_new_ops_bookmark(peer.clone(), timestamp)
             .await
             .unwrap();
 
         assert_eq!(
             Some(timestamp),
-            store.new_ops_bookmark(agent.clone()).await.unwrap()
+            store.new_ops_bookmark(peer.clone()).await.unwrap()
         );
     }
 }

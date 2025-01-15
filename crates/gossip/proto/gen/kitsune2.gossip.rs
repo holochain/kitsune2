@@ -84,6 +84,8 @@ pub struct AgentInfoMessage {
 /// - `K2GossipAcceptMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipInitiateMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
     /// The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub participating_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
@@ -103,6 +105,8 @@ pub struct K2GossipInitiateMessage {
 /// - `K2GossipNoDiffMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipAcceptMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
     /// The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub participating_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
@@ -136,6 +140,8 @@ pub struct K2GossipAcceptMessage {
 /// - `K2GossipAgentsMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipNoDiffMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
     /// Agent ids of agents that were mentioned in the acceptor's participating_agents list
     /// that we do not have in our peer store.
     #[prost(bytes = "bytes", repeated, tag = "10")]
@@ -159,6 +165,8 @@ pub struct K2GossipNoDiffMessage {
 /// This message is a final message when used in a gossip round.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipAgentsMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
     /// The agent infos for the agents that were sent back in the missing_agents list of the previous message.
     #[prost(message, repeated, tag = "10")]
     pub provided_agents: ::prost::alloc::vec::Vec<AgentInfoMessage>,
