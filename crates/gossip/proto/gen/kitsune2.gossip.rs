@@ -2,25 +2,63 @@
 /// A Kitsune2 gossip protocol message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipMessage {
-    #[prost(oneof = "k2_gossip_message::GossipMessage", tags = "1, 2, 3, 4")]
-    pub gossip_message: ::core::option::Option<k2_gossip_message::GossipMessage>,
+    /// The type of this message.
+    #[prost(enumeration = "k2_gossip_message::GossipMessageType", tag = "1")]
+    pub msg_type: i32,
+    /// The payload or content of this message.
+    #[prost(bytes = "bytes", tag = "2")]
+    pub data: ::prost::bytes::Bytes,
 }
 /// Nested message and enum types in `K2GossipMessage`.
 pub mod k2_gossip_message {
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum GossipMessage {
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum GossipMessageType {
+        Unspecified = 0,
         /// A gossip initiation protocol message.
-        #[prost(message, tag = "1")]
-        Initiate(super::K2GossipInitiateMessage),
+        Initiate = 1,
         /// A gossip acceptance protocol message.
-        #[prost(message, tag = "2")]
-        Accept(super::K2GossipAcceptMessage),
+        Accept = 2,
         /// A gossip no diff protocol message.
-        #[prost(message, tag = "3")]
-        NoDiff(super::K2GossipNoDiffMessage),
+        NoDiff = 3,
         /// A gossip agents protocol message.
-        #[prost(message, tag = "4")]
-        Agents(super::K2GossipAgentsMessage),
+        Agents = 4,
+    }
+    impl GossipMessageType {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "UNSPECIFIED",
+                Self::Initiate => "INITIATE",
+                Self::Accept => "ACCEPT",
+                Self::NoDiff => "NO_DIFF",
+                Self::Agents => "AGENTS",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "UNSPECIFIED" => Some(Self::Unspecified),
+                "INITIATE" => Some(Self::Initiate),
+                "ACCEPT" => Some(Self::Accept),
+                "NO_DIFF" => Some(Self::NoDiff),
+                "AGENTS" => Some(Self::Agents),
+                _ => None,
+            }
+        }
     }
 }
 /// A message representation of a Kitsune2 DHT arc set.

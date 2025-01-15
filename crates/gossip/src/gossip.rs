@@ -1,10 +1,9 @@
 use crate::common::{local_agent_state, send_gossip_message, GossipResponse};
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::protocol::k2_gossip_message::GossipMessage;
 use crate::protocol::{
     deserialize_gossip_message, encode_agent_ids, encode_agent_infos,
-    encode_op_ids, AgentInfoMessage, ArcSetMessage, K2GossipAcceptMessage,
-    K2GossipAgentsMessage, K2GossipInitiateMessage, K2GossipMessage,
+    encode_op_ids, AgentInfoMessage, ArcSetMessage, GossipMessage,
+    K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipInitiateMessage,
     K2GossipNoDiffMessage,
 };
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -207,7 +206,11 @@ impl K2Gossip {
 
         tracing::trace!("initiate_gossip with {:?}: {:?}", target, initiate);
 
-        send_gossip_message(&self.response_tx, target_url, initiate)?;
+        send_gossip_message(
+            &self.response_tx,
+            target_url,
+            GossipMessage::Initiate(initiate),
+        )?;
 
         Ok(())
     }
@@ -220,17 +223,13 @@ impl K2Gossip {
         &self,
         from: AgentId,
         from_url: Url,
-        msg: K2GossipMessage,
+        msg: GossipMessage,
     ) -> K2Result<()> {
         tracing::debug!(
             "handle_gossip_message from: {:?}, msg: {:?}",
             from,
             msg
         );
-
-        let Some(msg) = msg.gossip_message else {
-            return Err(K2Error::other("no gossip message"));
-        };
 
         let this = self.clone();
         tokio::task::spawn(async move {
@@ -316,21 +315,17 @@ impl K2Gossip {
                     )
                     .await?;
 
-                Ok(Some(K2GossipMessage {
-                    gossip_message: Some(GossipMessage::Accept(
-                        K2GossipAcceptMessage {
-                            participating_agents: encode_agent_ids(send_agents),
-                            arc_set: Some(ArcSetMessage {
-                                arc_sectors: our_arc_set.into_raw().collect(),
-                            }),
-                            missing_agents,
-                            new_since: new_since.as_micros(),
-                            max_new_bytes: self.config.max_gossip_op_bytes,
-                            new_ops: encode_op_ids(new_ops),
-                            updated_new_since: new_bookmark.as_micros(),
-                        },
-                    )),
-                }))
+                Ok(Some(GossipMessage::Accept(K2GossipAcceptMessage {
+                    participating_agents: encode_agent_ids(send_agents),
+                    arc_set: Some(ArcSetMessage {
+                        arc_sectors: our_arc_set.into_raw().collect(),
+                    }),
+                    missing_agents,
+                    new_since: new_since.as_micros(),
+                    max_new_bytes: self.config.max_gossip_op_bytes,
+                    new_ops: encode_op_ids(new_ops),
+                    updated_new_since: new_bookmark.as_micros(),
+                })))
             }
             GossipMessage::Accept(accept) => {
                 // TODO check that we have a session active for this peer because we must have
@@ -373,19 +368,13 @@ impl K2Gossip {
                     )
                     .await?;
 
-                Ok(Some(K2GossipMessage {
-                    gossip_message: Some(GossipMessage::NoDiff(
-                        K2GossipNoDiffMessage {
-                            missing_agents,
-                            provided_agents: encode_agent_infos(
-                                send_agent_infos,
-                            ),
-                            new_ops: encode_op_ids(new_ops),
-                            updated_new_since: new_bookmark.as_micros(),
-                            cannot_compare: false,
-                        },
-                    )),
-                }))
+                Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
+                    missing_agents,
+                    provided_agents: encode_agent_infos(send_agent_infos),
+                    new_ops: encode_op_ids(new_ops),
+                    updated_new_since: new_bookmark.as_micros(),
+                    cannot_compare: false,
+                })))
             }
             GossipMessage::NoDiff(no_diff) => {
                 // TODO session check
@@ -413,15 +402,9 @@ impl K2Gossip {
                     let send_agent_infos =
                         self.load_agent_infos(no_diff.missing_agents).await;
 
-                    Ok(Some(K2GossipMessage {
-                        gossip_message: Some(GossipMessage::Agents(
-                            K2GossipAgentsMessage {
-                                provided_agents: encode_agent_infos(
-                                    send_agent_infos,
-                                ),
-                            },
-                        )),
-                    }))
+                    Ok(Some(GossipMessage::Agents(K2GossipAgentsMessage {
+                        provided_agents: encode_agent_infos(send_agent_infos),
+                    })))
                 }
             }
             GossipMessage::Agents(agents) => {

@@ -4,19 +4,27 @@ package kitsune2.gossip;
 
 // A Kitsune2 gossip protocol message.
 message K2GossipMessage {
-  oneof gossip_message {
+  enum GossipMessageType {
+    UNSPECIFIED = 0;
+
     // A gossip initiation protocol message.
-    K2GossipInitiateMessage initiate = 1;
+    INITIATE = 1;
 
     // A gossip acceptance protocol message.
-    K2GossipAcceptMessage accept = 2;
+    ACCEPT = 2;
 
     // A gossip no diff protocol message.
-    K2GossipNoDiffMessage no_diff = 3;
+    NO_DIFF = 3;
 
     // A gossip agents protocol message.
-    K2GossipAgentsMessage agents = 4;
+    AGENTS = 4;
   }
+
+  // The type of this message.
+  GossipMessageType msg_type = 1;
+
+  // The payload or content of this message.
+  bytes data = 2;
 }
 
 // A message representation of a Kitsune2 DHT arc set.
