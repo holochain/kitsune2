@@ -70,7 +70,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn process_incoming_ops(
         &self,
         op_list: Vec<bytes::Bytes>,
-    ) -> BoxFuture<'_, K2Result<()>>;
+    ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
     /// Retrieve a batch of ops from the host by time range.
     ///

@@ -171,7 +171,7 @@ impl OpStore for Kitsune2MemoryOpStore {
     fn process_incoming_ops(
         &self,
         op_list: Vec<bytes::Bytes>,
-    ) -> BoxFuture<'_, K2Result<()>> {
+    ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
         Box::pin(async move {
             let ops_to_add = op_list
                 .iter()
@@ -183,8 +183,12 @@ impl OpStore for Kitsune2MemoryOpStore {
                 K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
             })?;
 
+            let op_ids = ops_to_add
+                .iter()
+                .map(|(op_id, _)| op_id.clone())
+                .collect::<Vec<_>>();
             self.write().await.op_list.extend(ops_to_add);
-            Ok(())
+            Ok(op_ids)
         })
     }
 
