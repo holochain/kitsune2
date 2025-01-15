@@ -3,9 +3,9 @@ mod outgoing_request_queue;
 
 #[cfg(test)]
 pub(crate) mod utils {
-    use crate::factories::Kitsune2MemoryOp;
+    use crate::factories::MemoryOp;
     use bytes::Bytes;
-    use kitsune2_api::{id::Id, AgentId, MetaOp, OpId, Timestamp};
+    use kitsune2_api::{id::Id, AgentId, OpId, Timestamp};
     use rand::Rng;
 
     pub fn random_id() -> Id {
@@ -33,25 +33,7 @@ pub(crate) mod utils {
         ops
     }
 
-    pub fn hash_op(input: &bytes::Bytes) -> OpId {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(input);
-        let result = hasher.finalize();
-        let hash_bytes = bytes::Bytes::from(result.to_vec());
-        hash_bytes.into()
-    }
-
-    pub fn make_op(data: Vec<u8>) -> MetaOp {
-        let op_id = hash_op(&data.clone().into());
-        MetaOp {
-            op_id: op_id.clone(),
-            op_data: serde_json::to_vec(&Kitsune2MemoryOp::new(
-                op_id,
-                Timestamp::now(),
-                data,
-            ))
-            .unwrap(),
-        }
+    pub fn make_op(data: Vec<u8>) -> MemoryOp {
+        MemoryOp::new(Timestamp::now(), data)
     }
 }

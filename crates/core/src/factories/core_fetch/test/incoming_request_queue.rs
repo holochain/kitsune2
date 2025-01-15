@@ -2,11 +2,8 @@ use super::utils::random_op_id;
 use crate::{
     default_test_builder,
     factories::{
-        core_fetch::{
-            test::utils::{hash_op, make_op},
-            CoreFetch, CoreFetchConfig,
-        },
-        Kitsune2MemoryOp, MemOpStoreFactory,
+        core_fetch::{test::utils::make_op, CoreFetch, CoreFetchConfig},
+        MemOpStoreFactory, MemoryOp,
     },
 };
 use bytes::Bytes;
@@ -98,10 +95,12 @@ async fn respond_to_multiple_requests() {
         mock_transport.clone(),
     );
 
-    let requested_op_ids_1 =
-        serialize_request_message(vec![op_1.op_id.clone(), op_2.op_id.clone()]);
+    let requested_op_ids_1 = serialize_request_message(vec![
+        op_1.compute_op_id(),
+        op_2.compute_op_id(),
+    ]);
     let requested_op_ids_2 =
-        serialize_request_message(vec![op_3.op_id.clone(), random_op_id()]);
+        serialize_request_message(vec![op_3.compute_op_id(), random_op_id()]);
     fetch
         .message_handler
         .recv_module_msg(
@@ -218,13 +217,11 @@ async fn fail_to_respond_once_then_succeed() {
                 .ops
                 .into_iter()
                 .map(|op| {
-                    let op_data =
-                        serde_json::from_slice::<Kitsune2MemoryOp>(&op.data)
-                            .unwrap();
-                    let op_id = hash_op(&bytes::Bytes::from(op_data.payload));
+                    let memory_op =
+                        serde_json::from_slice::<MemoryOp>(&op.data).unwrap();
                     MetaOp {
-                        op_id,
-                        op_data: op.data.into(),
+                        op_id: memory_op.compute_op_id(),
+                        op_data: op.data,
                     }
                 })
                 .collect::<Vec<_>>();
@@ -251,7 +248,7 @@ async fn fail_to_respond_once_then_succeed() {
     );
 
     // Handle op request.
-    let data = serialize_request_message(vec![op.op_id]);
+    let data = serialize_request_message(vec![op.compute_op_id()]);
     fetch
         .message_handler
         .recv_module_msg(

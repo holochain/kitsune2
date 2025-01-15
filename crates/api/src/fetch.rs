@@ -2,7 +2,7 @@
 
 use crate::{
     builder, config, peer_store::DynPeerStore, transport::DynTransport,
-    AgentId, BoxFut, DynOpStore, K2Result, MetaOp, OpId, SpaceId,
+    AgentId, BoxFut, DynOpStore, K2Result, OpId, SpaceId,
 };
 use bytes::{Bytes, BytesMut};
 use k2_fetch_message::FetchMessageType;
@@ -25,8 +25,8 @@ impl From<Request> for Vec<OpId> {
     }
 }
 
-impl From<Vec<MetaOp>> for Response {
-    fn from(value: Vec<MetaOp>) -> Self {
+impl From<Vec<Bytes>> for Response {
+    fn from(value: Vec<Bytes>) -> Self {
         Self {
             ops: value.into_iter().map(Into::into).collect(),
         }
@@ -57,7 +57,7 @@ pub fn serialize_request_message(value: Vec<OpId>) -> Bytes {
 }
 
 /// Serialize list of ops to response.
-pub fn serialize_response(value: Vec<MetaOp>) -> Bytes {
+pub fn serialize_response(value: Vec<Bytes>) -> Bytes {
     let mut out = BytesMut::new();
     Response::from(value)
         .encode(&mut out)
@@ -65,9 +65,9 @@ pub fn serialize_response(value: Vec<MetaOp>) -> Bytes {
     out.freeze()
 }
 
-/// Serialize list of ops to fetch resopnse message.
-pub fn serialize_response_message(value: Vec<MetaOp>) -> Bytes {
-    let mut out = bytes::BytesMut::new();
+/// Serialize list of ops to fetch response message.
+pub fn serialize_response_message(value: Vec<Bytes>) -> Bytes {
+    let mut out = BytesMut::new();
     let data = serialize_response(value);
     let fetch_message = K2FetchMessage {
         fetch_message_type: FetchMessageType::Response.into(),
@@ -115,7 +115,7 @@ pub type DynFetchFactory = Arc<dyn FetchFactory>;
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{id::Id, MetaOp};
+    use crate::id::Id;
     use prost::Message;
 
     #[test]
@@ -135,24 +135,18 @@ mod test {
 
     #[test]
     fn happy_response_encode_decode() {
-        let op_1 = MetaOp {
-            op_id: OpId::from(bytes::Bytes::from_static(b"some_op_id")),
-            op_data: vec![0],
-        };
-        let op_2 = MetaOp {
-            op_id: OpId::from(bytes::Bytes::from_static(b"another_op_id")),
-            op_data: vec![1],
-        };
-        let op_vec = vec![op_1, op_2];
-        let ops_enc = serialize_response(op_vec.clone());
-        let expected_ops_data =
-            op_vec.into_iter().map(|op| op.op_data).collect::<Vec<_>>();
+        // Not real op payloads, any bytes will do to check the round trip encoding/decoding
+        // of the response type
+        let op_1 = bytes::Bytes::from(vec![0]);
+        let op_2 = bytes::Bytes::from(vec![1]);
+        let expected_ops_data = vec![op_1, op_2];
+        let ops_enc = serialize_response(expected_ops_data.clone());
 
         let response = Response::decode(ops_enc).unwrap();
         let actual_ops_data = response
             .ops
             .into_iter()
-            .map(|op| op.data.to_vec())
+            .map(|op| op.data)
             .collect::<Vec<_>>();
         assert_eq!(expected_ops_data, actual_ops_data);
     }
@@ -179,16 +173,10 @@ mod test {
 
     #[test]
     fn happy_fetch_response_encode_decode() {
-        let op = MetaOp {
-            op_id: OpId::from(bytes::Bytes::from_static(b"some_op_id")),
-            op_data: vec![0],
-        };
-        let ops = vec![op];
-        let fetch_response = serialize_response_message(ops.clone());
-        let expected_ops_data = ops
-            .into_iter()
-            .map(|op| Bytes::from(op.op_data))
-            .collect::<Vec<_>>();
+        let op = bytes::Bytes::from(vec![0]);
+        let expected_ops_data = vec![op];
+        let fetch_response =
+            serialize_response_message(expected_ops_data.clone());
 
         let fetch_message_dec = K2FetchMessage::decode(fetch_response).unwrap();
         assert_eq!(

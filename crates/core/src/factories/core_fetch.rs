@@ -424,7 +424,9 @@ impl CoreFetch {
                     tracing::error!("could not read ops from store: {err}");
                     continue;
                 }
-                Ok(ops) => ops,
+                Ok(ops) => {
+                    ops.into_iter().map(|op| op.op_data).collect::<Vec<_>>()
+                }
             };
 
             if ops.is_empty() {
