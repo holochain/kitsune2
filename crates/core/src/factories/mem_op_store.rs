@@ -245,12 +245,6 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .filter(|op| op.stored_at >= start)
                 .collect::<Vec<_>>();
 
-            tracing::info!(
-                "Have {} candidate ops of {} possible",
-                candidate_ops.len(),
-                self_lock.op_list.len()
-            );
-
             // Sort the ops by the time they were stored
             candidate_ops.sort_by(|a, b| a.stored_at.cmp(&b.stored_at));
 

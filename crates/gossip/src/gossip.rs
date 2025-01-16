@@ -6,7 +6,7 @@ use crate::protocol::{
     K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipInitiateMessage,
     K2GossipNoDiffMessage,
 };
-use crate::state::GossipRoundState;
+use crate::state::{GossipRoundState, RoundStage};
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
 use kitsune2_api::peer_store::DynPeerStore;
@@ -327,13 +327,16 @@ impl K2Gossip {
                     local_agent_state(space).await?;
                 let common_arc_set = our_arc_set.intersection(&other_arc_set);
                 if common_arc_set.covered_sector_count() == 0 {
+                    // TODO Need to decide what to do here. It's useful for now and it's reasonable
+                    //      to need to initiate to discover this but we do want to minimize work
+                    //      in this case.
                     tracing::info!("no common arc set, continue to sync agents but not ops");
                 }
 
                 // There's no validation to be done with an accept beyond what's been done above
                 // to check how recently this peer initiated with us. We'll just record that they
                 // have initiated and that we plan to accept.
-                self.check_and_update_accepted_state(
+                self.create_incoming_initiate_state(
                     &from_peer,
                     &initiate,
                     our_agents.clone(),
@@ -373,12 +376,18 @@ impl K2Gossip {
             }
             GossipMessage::Accept(accept) => {
                 // Validate the incoming accept against our own state.
-                let initiated_lock = self.initiated_round_state.lock().await;
-                GossipRoundState::validate_accept(
-                    &initiated_lock,
-                    from_peer.clone(),
-                    &accept,
-                )?;
+                let mut initiated_lock =
+                    self.initiated_round_state.lock().await;
+                match initiated_lock.as_ref() {
+                    Some(state) => {
+                        state.validate_accept(from_peer.clone(), &accept)?;
+                    }
+                    None => {
+                        return Err(K2Error::other(
+                            "Unsolicited Accept message",
+                        ));
+                    }
+                }
 
                 // Only once the other peer has accepted should we record that we've tried to
                 // gossip with them. Otherwise, we risk blocking each other if we both record
@@ -420,6 +429,12 @@ impl K2Gossip {
                     )
                     .await?;
 
+                // TODO Set this based on the DHT diff. Currently just sending new ops and not
+                //      checking the DHT.
+                if let Some(state) = initiated_lock.as_mut() {
+                    state.stage = RoundStage::NoDiff;
+                }
+
                 Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
                     session_id: accept.session_id,
                     missing_agents,
@@ -430,7 +445,8 @@ impl K2Gossip {
                 })))
             }
             GossipMessage::NoDiff(no_diff) => {
-                // TODO session check
+                self.update_incoming_no_diff_state(from_peer.clone(), &no_diff)
+                    .await?;
 
                 self.receive_agent_infos(no_diff.provided_agents).await?;
 
@@ -462,7 +478,21 @@ impl K2Gossip {
                 }
             }
             GossipMessage::Agents(agents) => {
-                // TODO session check
+                // Validate the incoming agents message against our own state.
+                let mut initiated_lock =
+                    self.initiated_round_state.lock().await;
+                match initiated_lock.as_ref() {
+                    Some(state) => {
+                        state.validate_agents(from_peer.clone(), &agents)?;
+                        // The session is finished, remove the state.
+                        initiated_lock.take();
+                    }
+                    None => {
+                        return Err(K2Error::other(
+                            "Unsolicited Agents message",
+                        ));
+                    }
+                }
 
                 self.receive_agent_infos(agents.provided_agents).await?;
 
@@ -477,7 +507,7 @@ impl K2Gossip {
         Ok(())
     }
 
-    async fn check_and_update_accepted_state(
+    async fn create_incoming_initiate_state(
         &self,
         from_peer: &Url,
         initiate: &K2GossipInitiateMessage,
@@ -500,6 +530,29 @@ impl K2Gossip {
                 ));
             }
         }
+
+        Ok(())
+    }
+
+    async fn update_incoming_no_diff_state(
+        &self,
+        from_peer: Url,
+        no_diff: &K2GossipNoDiffMessage,
+    ) -> K2Result<()> {
+        let mut accepted_states = self.accepted_round_states.lock().await;
+        if !accepted_states.contains_key(&from_peer) {
+            return Err(K2Error::other(format!(
+                "Unsolicited NoDiff message from peer: {:?}",
+                from_peer
+            )));
+        }
+
+        accepted_states[&from_peer]
+            .validate_no_diff(from_peer.clone(), no_diff)?;
+
+        // We're at the end of the round. We might send back an Agents message, but we shouldn't
+        // get any further messages from the other peer.
+        accepted_states.remove(&from_peer);
 
         Ok(())
     }

@@ -1,4 +1,6 @@
-use crate::protocol::K2GossipAcceptMessage;
+use crate::protocol::{
+    K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipNoDiffMessage,
+};
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
 use rand::RngCore;
 
@@ -56,43 +58,121 @@ impl GossipRoundState {
     }
 
     pub(crate) fn validate_accept(
-        this: &Option<Self>,
-        from: Url,
+        &self,
+        from_peer: Url,
         accept: &K2GossipAcceptMessage,
     ) -> K2Result<()> {
-        match this {
-            Some(state) => {
-                if state.session_with_peer != from {
-                    return Err(K2Error::other(format!(
-                        "Accept message from wrong peer: {} != {}",
-                        state.session_with_peer, from
-                    )));
-                }
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "Accept message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
 
-                match &state.stage {
-                    RoundStage::Initiated { our_agents } => {
-                        tracing::trace!("Initiated round state found");
+        if self.session_id != accept.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, accept.session_id
+            )));
+        }
 
-                        if accept.missing_agents.iter().any(|a| {
-                            !our_agents.contains(&AgentId::from(a.clone()))
-                        }) {
-                            return Err(K2Error::other("Accept message contains agents that we didn't declare"));
-                        }
-                    }
-                    stage => {
-                        return Err(K2Error::other(format!("Unexpected round state for accept: Initiated != {:?}", stage)));
-                    }
-                }
+        match &self.stage {
+            RoundStage::Initiated { our_agents } => {
+                tracing::trace!("Initiated round state found");
 
-                if state.session_id != accept.session_id {
-                    return Err(K2Error::other(format!(
-                        "Session id mismatch: {:?} != {:?}",
-                        state.session_id, accept.session_id
-                    )));
+                if accept
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "Accept message contains agents that we didn't declare",
+                    ));
                 }
             }
-            None => {
-                return Err(K2Error::other("No initiated round state"));
+            stage => {
+                return Err(K2Error::other(format!(
+                    "Unexpected round state for accept: Initiated != {:?}",
+                    stage
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_no_diff(
+        &self,
+        from_peer: Url,
+        no_diff: &K2GossipNoDiffMessage,
+    ) -> K2Result<()> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "NoDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != no_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, no_diff.session_id
+            )));
+        }
+
+        match &self.stage {
+            RoundStage::Accepted { our_agents } => {
+                tracing::trace!("Accepted round state found");
+
+                if no_diff
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "NoDiff message contains agents that we didn't declare",
+                    ));
+                }
+            }
+            stage => {
+                return Err(K2Error::other(format!(
+                    "Unexpected round state for accept: Accepted != {:?}",
+                    stage
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_agents(
+        &self,
+        from_peer: Url,
+        agents: &K2GossipAgentsMessage,
+    ) -> K2Result<()> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "Agents message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != agents.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, agents.session_id
+            )));
+        }
+
+        match &self.stage {
+            RoundStage::NoDiff { .. } => {
+                tracing::trace!("NoDiff round state found");
+            }
+            stage => {
+                return Err(K2Error::other(format!(
+                    "Unexpected round state for agents: NoDiff != {:?}",
+                    stage
+                )));
             }
         }
 
@@ -110,4 +190,5 @@ pub(crate) enum RoundStage {
         #[allow(dead_code)]
         our_agents: Vec<AgentId>,
     },
+    NoDiff,
 }
