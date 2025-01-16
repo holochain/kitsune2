@@ -371,25 +371,6 @@ impl Space for CoreSpace {
         })
     }
 
-    fn update_tgt_storage_arc_hint(
-        &self,
-        agent: AgentId,
-        arc: DhtArc,
-    ) -> BoxFut<'_, ()> {
-        Box::pin(async move {
-            let local_agent =
-                match self.inner.lock().unwrap().local_agent_map.get(&agent) {
-                    Some(local_agent) => local_agent.clone(),
-                    None => {
-                        tracing::warn!("update_tgt_arc_hint - agent not found");
-                        return;
-                    }
-                };
-
-            local_agent.set_tgt_storage_arc_hint(arc);
-        })
-    }
-
     fn send_notify(
         &self,
         to_agent: AgentId,

@@ -1,10 +1,9 @@
-use crate::common::{local_agent_state, send_gossip_message, GossipResponse};
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
     deserialize_gossip_message, encode_agent_ids, encode_agent_infos,
-    encode_op_ids, AgentInfoMessage, ArcSetMessage, GossipMessage,
-    K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipInitiateMessage,
-    K2GossipNoDiffMessage,
+    encode_op_ids, serialize_gossip_message, AgentInfoMessage, ArcSetMessage,
+    GossipMessage, K2GossipAcceptMessage, K2GossipAgentsMessage,
+    K2GossipInitiateMessage, K2GossipNoDiffMessage,
 };
 use crate::state::{GossipRoundState, RoundStage};
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -19,6 +18,7 @@ use kitsune2_api::{
 use kitsune2_dht::ArcSet;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 /// A factory for creating K2Gossip instances.
@@ -201,11 +201,7 @@ impl K2Gossip {
             return Ok(false);
         };
 
-        let space = self
-            .space
-            .upgrade()
-            .ok_or_else(|| K2Error::other("space was dropped"))?;
-        let (our_agents, our_arc_set) = local_agent_state(space).await?;
+        let (our_agents, our_arc_set) = self.local_agent_state().await?;
 
         let new_since = self
             .peer_meta_store
@@ -319,12 +315,8 @@ impl K2Gossip {
                     }
                 };
 
-                let space = self
-                    .space
-                    .upgrade()
-                    .ok_or_else(|| K2Error::other("space was dropped"))?;
                 let (our_agents, our_arc_set) =
-                    local_agent_state(space).await?;
+                    self.local_agent_state().await?;
                 let common_arc_set = our_arc_set.intersection(&other_arc_set);
                 if common_arc_set.covered_sector_count() == 0 {
                     // TODO Need to decide what to do here. It's useful for now and it's reasonable
@@ -628,6 +620,22 @@ impl K2Gossip {
         Ok(())
     }
 
+    async fn local_agent_state(&self) -> K2Result<(Vec<AgentId>, ArcSet)> {
+        let space = self
+            .space
+            .upgrade()
+            .ok_or_else(|| K2Error::other("space was dropped"))?;
+        let local_agents = space.get_local_agents().await?;
+        let (send_agents, our_arcs) = local_agents
+            .iter()
+            .map(|a| (a.agent().clone(), a.get_tgt_storage_arc()))
+            .collect::<(Vec<_>, Vec<_>)>();
+
+        let our_arc_set = ArcSet::new(our_arcs)?;
+
+        Ok((send_agents, our_arc_set))
+    }
+
     async fn update_new_ops_bookmark(
         &self,
         from_peer: Url,
@@ -691,6 +699,18 @@ impl TxModuleHandler for K2Gossip {
             }
         }
     }
+}
+
+pub(crate) struct GossipResponse(pub(crate) bytes::Bytes, pub(crate) Url);
+
+pub(crate) fn send_gossip_message(
+    tx: &Sender<GossipResponse>,
+    target_url: Url,
+    msg: GossipMessage,
+) -> K2Result<()> {
+    tracing::debug!("Sending gossip response to {:?}: {:?}", target_url, msg);
+    tx.try_send(GossipResponse(serialize_gossip_message(msg)?, target_url))
+        .map_err(|e| K2Error::other_src("could not send response", e))
 }
 
 #[cfg(test)]

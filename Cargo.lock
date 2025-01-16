@@ -1031,7 +1031,6 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "sha2",
  "tokio",
  "tracing",
  "ureq",

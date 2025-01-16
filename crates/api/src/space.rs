@@ -61,13 +61,6 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// Get a list of all local agents currently joined to this space.
     fn get_local_agents(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>>;
 
-    /// Update the target arc hint for the given local agent.
-    fn update_tgt_storage_arc_hint(
-        &self,
-        agent: AgentId,
-        arc: arc::DhtArc,
-    ) -> BoxFut<'_, ()>;
-
     /// Send a message to a remote peer. The future returned from this
     /// function will track the message all the way down to the low-level
     /// network transport implementation. But once the data is handed off

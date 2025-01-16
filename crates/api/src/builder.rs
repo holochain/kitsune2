@@ -68,7 +68,7 @@ impl Builder {
                 fetch,
                 transport,
                 op_store,
-                peer_meta_store: meta_store,
+                peer_meta_store,
                 gossip,
             } = &mut self;
 
@@ -79,7 +79,7 @@ impl Builder {
             fetch.default_config(config)?;
             transport.default_config(config)?;
             op_store.default_config(config)?;
-            meta_store.default_config(config)?;
+            peer_meta_store.default_config(config)?;
             gossip.default_config(config)?;
 
             config.mark_defaults_set();

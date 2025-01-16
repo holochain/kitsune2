@@ -5,8 +5,6 @@
 mod config;
 pub use config::*;
 
-mod common;
-
 mod constant;
 pub use constant::*;
 
