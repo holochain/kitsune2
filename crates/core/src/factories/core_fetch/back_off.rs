@@ -9,22 +9,22 @@ use kitsune2_api::AgentId;
 #[derive(Debug)]
 pub struct BackOffList {
     pub(crate) state: HashMap<AgentId, BackOff>,
-    pub(crate) first_back_off_interval: Duration,
-    pub(crate) last_back_off_interval: Duration,
-    num_back_off_intervals: usize,
+    pub(crate) first_back_off_interval_ms: u32,
+    pub(crate) last_back_off_interval_ms: u32,
+    num_back_off_intervals_ms: usize,
 }
 
 impl BackOffList {
     pub fn new(
-        first_back_off_interval: Duration,
-        last_back_off_interval: Duration,
-        num_back_off_intervals: usize,
+        first_back_off_interval_ms: u32,
+        last_back_off_interval_ms: u32,
+        num_back_off_intervals_ms: usize,
     ) -> Self {
         Self {
             state: HashMap::new(),
-            first_back_off_interval,
-            last_back_off_interval,
-            num_back_off_intervals,
+            first_back_off_interval_ms,
+            last_back_off_interval_ms,
+            num_back_off_intervals_ms,
         }
     }
 
@@ -35,9 +35,9 @@ impl BackOffList {
             }
             Entry::Vacant(v) => {
                 v.insert(BackOff::new(
-                    self.first_back_off_interval,
-                    self.last_back_off_interval,
-                    self.num_back_off_intervals,
+                    self.first_back_off_interval_ms,
+                    self.last_back_off_interval_ms,
+                    self.num_back_off_intervals_ms,
                 ));
             }
         }
@@ -72,14 +72,18 @@ pub(crate) struct BackOff {
 
 impl BackOff {
     pub fn new(
-        first_back_off_interval: Duration,
-        last_back_off_interval: Duration,
+        first_back_off_interval: u32,
+        last_back_off_interval: u32,
         num_back_off_intervals: usize,
     ) -> Self {
         let mut back_off = backon::ExponentialBuilder::default()
             .with_factor(2.0)
-            .with_min_delay(first_back_off_interval)
-            .with_max_delay(last_back_off_interval)
+            .with_min_delay(Duration::from_millis(
+                first_back_off_interval as u64,
+            ))
+            .with_max_delay(Duration::from_millis(
+                last_back_off_interval as u64,
+            ))
             .with_max_times(num_back_off_intervals)
             .build();
         let current_interval = back_off
@@ -118,15 +122,10 @@ mod test {
     use crate::factories::core_fetch::{
         back_off::BackOffList, test::utils::random_agent_id,
     };
-    use std::time::Duration;
 
     #[test]
     fn back_off() {
-        let mut back_off_list = BackOffList::new(
-            Duration::from_millis(10),
-            Duration::from_millis(10),
-            2,
-        );
+        let mut back_off_list = BackOffList::new(10, 10, 2);
         let agent_id = random_agent_id();
         back_off_list.back_off_agent(&agent_id);
         assert!(back_off_list.is_agent_on_back_off(&agent_id));
