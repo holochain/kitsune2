@@ -95,6 +95,7 @@ async fn respond_to_multiple_requests() {
         mock_transport.clone(),
     );
 
+    // Receive incoming requests.
     let requested_op_ids_1 = serialize_request_message(vec![
         op_1.compute_op_id(),
         op_2.compute_op_id(),
@@ -120,6 +121,7 @@ async fn respond_to_multiple_requests() {
         )
         .unwrap();
 
+    // Wait for responses to happen.
     tokio::time::timeout(Duration::from_millis(20), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -167,7 +169,7 @@ async fn no_response_sent_when_no_ops_found() {
         mock_transport,
     );
 
-    // Handle op request.
+    // Receive incoming request.
     let data = serialize_request_message(vec![op_id_1, op_id_2]);
     fetch
         .message_handler
@@ -237,7 +239,7 @@ async fn fail_to_respond_once_then_succeed() {
         mock_transport,
     );
 
-    // Handle op request.
+    // Receive incoming request.
     let data = serialize_request_message(vec![op.compute_op_id()]);
     fetch
         .message_handler

@@ -73,6 +73,7 @@ use message_handler::FetchMessageHandler;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
@@ -89,18 +90,19 @@ const MOD_NAME: &str = "Fetch";
 
 /// CoreFetch configuration types.
 pub mod config {
-    use std::time::Duration;
-
     /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct CoreFetchConfig {
         /// How many parallel op fetch requests can be made at once. Default: 2.  
         pub parallel_request_count: u8,
+        /// Delay before re-inserting ops to request back into the outgoing request queue.
+        /// Default: 100 ms.
+        pub re_insert_outgoing_request_delay_ms: u32,
         /// Duration of first interval to back off an unresponsive agent. Default: 20 s.
-        pub first_back_off_interval: Duration,
+        pub first_back_off_interval_ms: u32,
         /// Duration of last interval to back off an unresponsive agent. Default: 10 min.
-        pub last_back_off_interval: Duration,
+        pub last_back_off_interval_ms: u32,
         /// Number of back off intervals. Default: 4.
         pub num_back_off_intervals: usize,
     }
@@ -110,8 +112,9 @@ pub mod config {
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                first_back_off_interval: Duration::from_secs(20),
-                last_back_off_interval: Duration::from_secs(60 * 10),
+                re_insert_outgoing_request_delay_ms: 100,
+                first_back_off_interval_ms: 1000 * 20,
+                last_back_off_interval_ms: 1000 * 60 * 10,
                 num_back_off_intervals: 4,
             }
         }
@@ -267,8 +270,8 @@ impl CoreFetch {
         let state = Arc::new(Mutex::new(State {
             requests: HashSet::new(),
             back_off_list: BackOffList::new(
-                config.first_back_off_interval,
-                config.last_back_off_interval,
+                config.first_back_off_interval_ms,
+                config.last_back_off_interval_ms,
                 config.num_back_off_intervals,
             ),
         }));
@@ -285,6 +288,7 @@ impl CoreFetch {
                     peer_store.clone(),
                     space_id.clone(),
                     transport.clone(),
+                    config.re_insert_outgoing_request_delay_ms,
                 ));
             tasks.push(request_task);
         }
@@ -326,6 +330,7 @@ impl CoreFetch {
         peer_store: peer_store::DynPeerStore,
         space_id: SpaceId,
         transport: DynTransport,
+        re_insert_outgoing_request_delay: u32,
     ) {
         while let Some((op_id, agent_id)) =
             outgoing_request_rx.lock().await.recv().await
@@ -398,14 +403,22 @@ impl CoreFetch {
                 }
             }
 
-            // Re-insert the fetch request into the queue.
-            if let Err(err) =
-                outgoing_request_tx.try_send((op_id.clone(), agent_id.clone()))
-            {
-                tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
-                // Remove op id/agent id from set to prevent build-up of state.
-                state.lock().unwrap().requests.remove(&(op_id, agent_id));
-            }
+            // Re-insert the fetch request into the queue after a delay.
+            let outgoing_request_tx = outgoing_request_tx.clone();
+            let state = state.clone();
+            tokio::task::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(
+                    re_insert_outgoing_request_delay as u64,
+                ))
+                .await;
+                if let Err(err) = outgoing_request_tx
+                    .try_send((op_id.clone(), agent_id.clone()))
+                {
+                    tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
+                    // Remove op id/agent id from set to prevent build-up of state.
+                    state.lock().unwrap().requests.remove(&(op_id, agent_id));
+                }
+            });
         }
     }
 

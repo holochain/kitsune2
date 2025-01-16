@@ -69,7 +69,7 @@ fn make_mock_transport(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn fetch_queue() {
+async fn outgoing_request_queue() {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
@@ -79,7 +79,10 @@ async fn fetch_queue() {
         .unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(requests_sent.clone(), false);
-    let config = CoreFetchConfig::default();
+    let config = CoreFetchConfig {
+        re_insert_outgoing_request_delay_ms: 10,
+        ..Default::default()
+    };
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
@@ -112,7 +115,7 @@ async fn fetch_queue() {
     tokio::time::timeout(Duration::from_millis(20), async {
         loop {
             tokio::task::yield_now().await;
-            if requests_sent.lock().unwrap().len() >= 3 {
+            if requests_sent.lock().unwrap().len() >= 2 {
                 break;
             }
         }
@@ -123,22 +126,7 @@ async fn fetch_queue() {
     // Clear set of ops to fetch to stop sending requests.
     fetch.state.lock().unwrap().requests.clear();
 
-    let mut num_requests_sent = requests_sent.lock().unwrap().len();
-
-    // Wait for tasks to settle all requests.
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            let current_num_requests_sent = requests_sent.lock().unwrap().len();
-            if current_num_requests_sent == num_requests_sent {
-                break;
-            } else {
-                num_requests_sent = current_num_requests_sent;
-            }
-        }
-    })
-    .await
-    .unwrap();
+    let num_requests_sent = requests_sent.lock().unwrap().len();
 
     // Check that all requests have been made for the 1 op to the agent.
     assert!(requests_sent
@@ -410,7 +398,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(requests_sent.clone(), false);
     let config = CoreFetchConfig {
-        first_back_off_interval: Duration::from_millis(10),
+        first_back_off_interval_ms: 10,
         ..Default::default()
     };
 
@@ -439,10 +427,11 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 
         assert!(lock.back_off_list.is_agent_on_back_off(&agent_id));
 
-        lock.back_off_list.first_back_off_interval
+        lock.back_off_list.first_back_off_interval_ms
     };
 
-    tokio::time::sleep(first_back_off_interval).await;
+    tokio::time::sleep(Duration::from_millis(first_back_off_interval as u64))
+        .await;
 
     fetch.request_ops(op_list, agent_id.clone()).await.unwrap();
 
@@ -472,8 +461,9 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(requests_sent.clone(), true);
     let config = CoreFetchConfig {
-        first_back_off_interval: Duration::from_millis(10),
-        last_back_off_interval: Duration::from_millis(10),
+        first_back_off_interval_ms: 10,
+        last_back_off_interval_ms: 10,
+        re_insert_outgoing_request_delay_ms: 1,
         ..Default::default()
     };
 
@@ -543,12 +533,13 @@ async fn requests_are_dropped_when_max_back_off_expired() {
             lock.back_off_list.back_off_agent(&agent_id_1);
         }
 
-        lock.back_off_list.last_back_off_interval
+        lock.back_off_list.last_back_off_interval_ms
     };
 
     // Wait for back off interval to expire. Afterwards the request should fail again and all
     // of the agent's requests should be removed from the set.
-    tokio::time::sleep(last_back_off_interval).await;
+    tokio::time::sleep(Duration::from_millis(last_back_off_interval as u64))
+        .await;
 
     assert!(fetch
         .state
@@ -567,6 +558,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     // from the set.
     tokio::time::timeout(Duration::from_millis(20), async {
         loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
             if requests_sent
                 .lock()
                 .unwrap()
@@ -577,7 +569,6 @@ async fn requests_are_dropped_when_max_back_off_expired() {
             {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(1)).await;
         }
     })
     .await
