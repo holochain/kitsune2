@@ -14,7 +14,7 @@ use kitsune2_api::{
     },
     id::Id,
     transport::MockTransport,
-    K2Error, MetaOp, SpaceId, Url,
+    K2Error, SpaceId, Url,
 };
 use kitsune2_test_utils::enable_tracing;
 use prost::Message;
@@ -213,18 +213,8 @@ async fn fail_to_respond_once_then_succeed() {
             let response =
                 Response::decode(K2FetchMessage::decode(data).unwrap().data)
                     .unwrap();
-            let ops = response
-                .ops
-                .into_iter()
-                .map(|op| {
-                    let memory_op =
-                        serde_json::from_slice::<MemoryOp>(&op.data).unwrap();
-                    MetaOp {
-                        op_id: memory_op.compute_op_id(),
-                        op_data: op.data,
-                    }
-                })
-                .collect::<Vec<_>>();
+            let ops: Vec<MemoryOp> =
+                response.ops.into_iter().map(Into::into).collect::<Vec<_>>();
             responses_sent.lock().unwrap().push((ops, peer));
             Box::pin(async move { Ok(()) })
         }

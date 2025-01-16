@@ -130,11 +130,9 @@ impl From<MemoryOp> for StoredOp {
     }
 }
 
-impl TryFrom<Op> for MemoryOp {
-    type Error = serde_json::Error;
-
-    fn try_from(value: Op) -> Result<Self, Self::Error> {
-        Ok(value.data.into())
+impl From<Op> for MemoryOp {
+    fn from(value: Op) -> Self {
+        value.data.into()
     }
 }
 
