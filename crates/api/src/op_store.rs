@@ -3,8 +3,9 @@
 use crate::{
     builder, config, BoxFut, DhtArc, K2Result, OpId, SpaceId, Timestamp,
 };
-use bytes::Bytes;
 use futures::future::BoxFuture;
+#[cfg(feature = "mockall")]
+use mockall::automock;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
@@ -17,22 +18,14 @@ pub struct MetaOp {
     pub op_id: OpId,
 
     /// The actual op data.
-    pub op_data: Vec<u8>,
+    pub op_data: bytes::Bytes,
 }
 
 include!("../proto/gen/kitsune2.op_store.rs");
 
-impl From<MetaOp> for Op {
-    fn from(value: MetaOp) -> Self {
-        Self {
-            data: value.op_data.into(),
-        }
-    }
-}
-
-impl From<MetaOp> for Bytes {
-    fn from(value: MetaOp) -> Self {
-        value.op_data.into()
+impl From<bytes::Bytes> for Op {
+    fn from(value: bytes::Bytes) -> Self {
+        Self { data: value }
     }
 }
 
@@ -68,6 +61,7 @@ impl PartialOrd for StoredOp {
 }
 
 /// The API that a kitsune2 host must implement to provide data persistence for kitsune2.
+#[cfg_attr(any(test, feature = "mockall"), automock)]
 pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// Process incoming ops.
     ///
@@ -75,7 +69,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// if it is able to process them.
     fn process_incoming_ops(
         &self,
-        op_list: Vec<Bytes>,
+        op_list: Vec<bytes::Bytes>,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
     /// Retrieve a batch of ops from the host by time range.
@@ -164,18 +158,12 @@ pub type DynOpStoreFactory = Arc<dyn OpStoreFactory>;
 
 #[cfg(test)]
 mod test {
-    use crate::MetaOp;
-
     use super::*;
     use prost::Message;
 
     #[test]
     fn happy_meta_op_encode_decode() {
-        let meta_op = MetaOp {
-            op_id: OpId::from(bytes::Bytes::from_static(b"some_op_id")),
-            op_data: vec![1; 128],
-        };
-        let op = Op::from(meta_op);
+        let op = Op::from(bytes::Bytes::from(vec![1; 128]));
         let op_enc = op.encode_to_vec();
         let op_dec = Op::decode(op_enc.as_slice()).unwrap();
 

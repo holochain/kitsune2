@@ -49,10 +49,12 @@
 //! - If none of the requested ops could be read from the store, no response is sent.
 //! - If sending or receiving fails, it's the caller's responsibility to request again.
 //!
-//! ### Incoming op task
+//! ### Process incoming responses
 //!
+//! When a response to a requested op is received, it must be processed as follows:
 //! - Incoming op is written to the data store.
-//! - Once persisted successfully, op is removed from the set of ops to fetch.
+//! - Once persisted successfully, the op is removed from the set of ops to fetch.
+//! - If persisting fails, the op is not removed from ops to fetch.
 
 use back_off::BackOffList;
 #[cfg(test)]
@@ -60,13 +62,14 @@ use kitsune2_api::transport::DynTxModuleHandler;
 use kitsune2_api::{
     builder,
     fetch::{
-        deserialize_op_ids, serialize_op_ids, serialize_ops, DynFetch,
+        serialize_request_message, serialize_response_message, DynFetch,
         DynFetchFactory, Fetch, FetchFactory,
     },
     peer_store,
-    transport::{DynTransport, TxBaseHandler, TxModuleHandler},
-    AgentId, BoxFut, DynOpStore, K2Result, OpId, SpaceId, Url,
+    transport::DynTransport,
+    AgentId, BoxFut, DynOpStore, K2Result, Op, OpId, SpaceId, Url,
 };
+use message_handler::FetchMessageHandler;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -77,6 +80,10 @@ use tokio::{
 };
 
 mod back_off;
+mod message_handler;
+
+#[cfg(test)]
+mod test;
 
 const MOD_NAME: &str = "Fetch";
 
@@ -164,47 +171,23 @@ impl FetchFactory for CoreFetchFactory {
     }
 }
 
-type FetchRequest = (OpId, AgentId);
-type FetchResponse = (Vec<OpId>, Url);
-
-#[derive(Debug)]
-struct FetchResponseHandler {
-    response_tx: Sender<FetchResponse>,
-}
-
-impl TxModuleHandler for FetchResponseHandler {
-    fn recv_module_msg(
-        &self,
-        peer: Url,
-        _space: SpaceId,
-        _module: String,
-        data: bytes::Bytes,
-    ) -> K2Result<()> {
-        let op_ids = deserialize_op_ids(data)?;
-        if let Err(err) = self.response_tx.try_send((op_ids, peer)) {
-            tracing::warn!(
-                "could not pass fetch request to response task: {err}",
-            );
-        };
-        Ok(())
-    }
-}
-
-impl TxBaseHandler for FetchResponseHandler {}
+type OutgoingRequest = (OpId, AgentId);
+type IncomingRequest = (Vec<OpId>, Url);
+type IncomingResponse = Vec<Op>;
 
 #[derive(Debug)]
 struct State {
-    requests: HashSet<FetchRequest>,
+    requests: HashSet<OutgoingRequest>,
     back_off_list: BackOffList,
 }
 
 #[derive(Debug)]
 struct CoreFetch {
     state: Arc<Mutex<State>>,
-    request_tx: Sender<FetchRequest>,
+    outgoing_request_tx: Sender<OutgoingRequest>,
     tasks: Vec<JoinHandle<()>>,
     #[cfg(test)]
-    response_handler: DynTxModuleHandler,
+    message_handler: DynTxModuleHandler,
 }
 
 impl CoreFetch {
@@ -237,13 +220,13 @@ impl Fetch for CoreFetch {
                 );
             }
 
-            // Pass requests to fetch tasks.
+            // Insert requests into fetch queue.
             for op_id in op_list {
                 if let Err(err) =
-                    self.request_tx.send((op_id, source.clone())).await
+                    self.outgoing_request_tx.send((op_id, source.clone())).await
                 {
                     tracing::warn!(
-                        "could not pass fetch request to request task: {err}"
+                        "could not insert fetch request into fetch queue: {err}"
                     );
                 }
             }
@@ -261,13 +244,25 @@ impl CoreFetch {
         op_store: DynOpStore,
         transport: DynTransport,
     ) -> Self {
-        // Create a channel to send op requests to request tasks. This is the fetch queue.
-        let (request_tx, request_rx) = channel::<FetchRequest>(16_384);
-        let request_rx = Arc::new(tokio::sync::Mutex::new(request_rx));
+        // Create a queue to process outgoing op requests. Requests are sent to peers.
+        let (outgoing_request_tx, outgoing_request_rx) =
+            channel::<OutgoingRequest>(16_384);
+        let outgoing_request_rx =
+            Arc::new(tokio::sync::Mutex::new(outgoing_request_rx));
 
-        // Create another channel to send incoming requests to the response task. This is the fetch response queue.
-        let (response_tx, response_rx) = channel::<FetchResponse>(16_384);
-        let response_rx = Arc::new(tokio::sync::Mutex::new(response_rx));
+        // Create a queue to process incoming op requests. Requested ops are retrieved from the
+        // store and returned to the requester.
+        let (incoming_request_tx, incoming_request_rx) =
+            channel::<IncomingRequest>(16_384);
+        let incoming_request_rx =
+            Arc::new(tokio::sync::Mutex::new(incoming_request_rx));
+
+        // Create a queue to process incoming op responses. Ops are passed to the op store and op
+        // ids removed from the set of ops to fetch.
+        let (incoming_response_tx, incoming_response_rx) =
+            channel::<IncomingResponse>(16_384);
+        let _incoming_response_rx =
+            Arc::new(tokio::sync::Mutex::new(incoming_response_rx));
 
         let state = Arc::new(Mutex::new(State {
             requests: HashSet::new(),
@@ -283,10 +278,10 @@ impl CoreFetch {
         // Spawn request tasks.
         for _ in 0..config.parallel_request_count {
             let request_task =
-                tokio::task::spawn(CoreFetch::spawn_request_task(
+                tokio::task::spawn(CoreFetch::spawn_outgoing_request_task(
                     state.clone(),
-                    request_tx.clone(),
-                    request_rx.clone(),
+                    outgoing_request_tx.clone(),
+                    outgoing_request_rx.clone(),
                     peer_store.clone(),
                     space_id.clone(),
                     transport.clone(),
@@ -294,42 +289,46 @@ impl CoreFetch {
             tasks.push(request_task);
         }
 
-        // Spawn response task.
-        let response_task = tokio::task::spawn(CoreFetch::spawn_response_task(
-            response_rx,
-            op_store,
-            transport.clone(),
-            space_id.clone(),
-        ));
-        tasks.push(response_task);
+        // Spawn incoming request task.
+        let incoming_request_task =
+            tokio::task::spawn(CoreFetch::spawn_incoming_request_task(
+                incoming_request_rx,
+                op_store.clone(),
+                transport.clone(),
+                space_id.clone(),
+            ));
+        tasks.push(incoming_request_task);
 
-        // Register incoming op handler for transport module.
-        let response_handler = Arc::new(FetchResponseHandler { response_tx });
+        // Register transport module handler for incoming op requests and responses.
+        let message_handler = Arc::new(FetchMessageHandler {
+            incoming_request_tx,
+            incoming_response_tx,
+        });
         transport.register_module_handler(
-            space_id,
+            space_id.clone(),
             MOD_NAME.to_string(),
-            response_handler.clone(),
+            message_handler.clone(),
         );
 
         Self {
             state,
-            request_tx,
+            outgoing_request_tx,
             tasks,
             #[cfg(test)]
-            response_handler,
+            message_handler,
         }
     }
 
-    async fn spawn_request_task(
+    async fn spawn_outgoing_request_task(
         state: Arc<Mutex<State>>,
-        fetch_request_tx: Sender<FetchRequest>,
-        fetch_request_rx: Arc<tokio::sync::Mutex<Receiver<FetchRequest>>>,
+        outgoing_request_tx: Sender<OutgoingRequest>,
+        outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
         peer_store: peer_store::DynPeerStore,
         space_id: SpaceId,
         transport: DynTransport,
     ) {
         while let Some((op_id, agent_id)) =
-            fetch_request_rx.lock().await.recv().await
+            outgoing_request_rx.lock().await.recv().await
         {
             let is_agent_on_back_off = {
                 let mut lock = state.lock().unwrap();
@@ -352,6 +351,7 @@ impl CoreFetch {
                 {
                     Some(url) => url,
                     None => {
+                        // If agent is not in peer store, remove all requests to them.
                         state
                             .lock()
                             .unwrap()
@@ -361,7 +361,7 @@ impl CoreFetch {
                     }
                 };
 
-                let data = serialize_op_ids(vec![op_id.clone()]);
+                let data = serialize_request_message(vec![op_id.clone()]);
 
                 // Send fetch request to agent.
                 match transport
@@ -400,7 +400,7 @@ impl CoreFetch {
 
             // Re-insert the fetch request into the queue.
             if let Err(err) =
-                fetch_request_tx.try_send((op_id.clone(), agent_id.clone()))
+                outgoing_request_tx.try_send((op_id.clone(), agent_id.clone()))
             {
                 tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
                 // Remove op id/agent id from set to prevent build-up of state.
@@ -409,8 +409,8 @@ impl CoreFetch {
         }
     }
 
-    async fn spawn_response_task(
-        response_rx: Arc<tokio::sync::Mutex<Receiver<FetchResponse>>>,
+    async fn spawn_incoming_request_task(
+        response_rx: Arc<tokio::sync::Mutex<Receiver<IncomingRequest>>>,
         op_store: DynOpStore,
         transport: DynTransport,
         space_id: SpaceId,
@@ -418,22 +418,23 @@ impl CoreFetch {
         while let Some((op_ids, peer)) = response_rx.lock().await.recv().await {
             tracing::debug!(?op_ids, ?peer, "incoming request");
 
-            // Fetch ops to send from store.
+            // Retrieve ops to send from store.
             let ops = match op_store.retrieve_ops(op_ids.clone()).await {
                 Err(err) => {
                     tracing::error!("could not read ops from store: {err}");
                     continue;
                 }
-                Ok(ops) => ops,
+                Ok(ops) => {
+                    ops.into_iter().map(|op| op.op_data).collect::<Vec<_>>()
+                }
             };
 
             if ops.is_empty() {
-                // Do not send a response when no ops could be read.
+                // Do not send a response when no ops could be retrieved.
                 continue;
             }
 
-            let data = serialize_ops(ops);
-
+            let data = serialize_response_message(ops);
             if let Err(err) = transport
                 .send_module(
                     peer.clone(),
@@ -487,6 +488,3 @@ impl Drop for CoreFetch {
         }
     }
 }
-
-#[cfg(test)]
-mod test;

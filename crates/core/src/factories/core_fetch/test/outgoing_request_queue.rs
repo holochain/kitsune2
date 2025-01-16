@@ -6,12 +6,15 @@ use crate::{
     },
 };
 use kitsune2_api::{
-    fetch::{deserialize_op_ids, Fetch},
+    fetch::{
+        k2_fetch_message::FetchMessageType, Fetch, K2FetchMessage, Request,
+    },
     id::Id,
     transport::MockTransport,
     K2Error, OpId, SpaceId, Url,
 };
 use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
+use prost::Message;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -32,10 +35,20 @@ fn make_mock_transport(
             assert_eq!(space, SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             Box::pin({
-                let value = requests_sent.clone();
+                let requests_sent = requests_sent.clone();
                 async move {
-                    let op_ids = deserialize_op_ids(data).unwrap();
-                    let mut lock = value.lock().unwrap();
+                    let fetch_message = K2FetchMessage::decode(data).unwrap();
+                    let op_ids: Vec<OpId> = match FetchMessageType::try_from(
+                        fetch_message.fetch_message_type,
+                    ) {
+                        Ok(FetchMessageType::Request) => {
+                            let request =
+                                Request::decode(fetch_message.data).unwrap();
+                            request.into()
+                        }
+                        _ => panic!("unexpected fetch message type"),
+                    };
+                    let mut lock = requests_sent.lock().unwrap();
                     op_ids.into_iter().for_each(|op_id| {
                         lock.push((op_id, peer.clone()));
                     });
@@ -473,7 +486,6 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     }
     .build(TestLocalAgent::default());
     let agent_url_1 = agent_info_1.url.clone().unwrap();
-    peer_store.insert(vec![agent_info_1.clone()]).await.unwrap();
 
     // Create a second agent to later check that their ops have not been removed.
     let op_list_2 = create_op_list(2);
@@ -484,7 +496,10 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         ..Default::default()
     }
     .build(TestLocalAgent::default());
-    peer_store.insert(vec![agent_info_2.clone()]).await.unwrap();
+    peer_store
+        .insert(vec![agent_info_1.clone(), agent_info_2.clone()])
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),

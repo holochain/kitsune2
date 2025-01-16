@@ -2,16 +2,19 @@ use super::utils::random_op_id;
 use crate::{
     default_test_builder,
     factories::{
-        core_fetch::{CoreFetch, CoreFetchConfig},
+        core_fetch::{test::utils::make_op, CoreFetch, CoreFetchConfig},
         MemOpStoreFactory, MemoryOp,
     },
 };
 use bytes::Bytes;
 use kitsune2_api::{
-    fetch::{serialize_op_ids, Ops},
+    fetch::{
+        k2_fetch_message::FetchMessageType, serialize_request_message,
+        K2FetchMessage, Response,
+    },
     id::Id,
     transport::MockTransport,
-    K2Error, MetaOp, SpaceId, Timestamp, Url,
+    K2Error, SpaceId, Url,
 };
 use kitsune2_test_utils::enable_tracing;
 use prost::Message;
@@ -23,10 +26,6 @@ use std::{
 type ResponsesSent = Vec<(Vec<Bytes>, Url)>;
 
 const SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"space_id")));
-
-fn make_op(data: Vec<u8>) -> MemoryOp {
-    MemoryOp::new(Timestamp::now(), data)
-}
 
 fn make_mock_transport(
     responses_sent: Arc<Mutex<ResponsesSent>>,
@@ -40,12 +39,18 @@ fn make_mock_transport(
         move |peer, space, module, data| {
             assert_eq!(space, SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
-            let ops = Ops::decode(data)
-                .unwrap()
-                .op_list
-                .into_iter()
-                .map(|op| op.data)
-                .collect::<Vec<_>>();
+            let fetch_message = K2FetchMessage::decode(data).unwrap();
+            let response = match FetchMessageType::try_from(
+                fetch_message.fetch_message_type,
+            )
+            .unwrap()
+            {
+                FetchMessageType::Response => {
+                    Response::decode(fetch_message.data).unwrap()
+                }
+                _ => panic!("unexpected fetch message"),
+            };
+            let ops = response.ops.into_iter().map(|op| op.data).collect();
             responses_sent.lock().unwrap().push((ops, peer));
             Box::pin(async move { Ok(()) })
         }
@@ -90,12 +95,14 @@ async fn respond_to_multiple_requests() {
         mock_transport.clone(),
     );
 
-    let requested_op_ids_1 =
-        serialize_op_ids(vec![op_1.compute_op_id(), op_2.compute_op_id()]);
+    let requested_op_ids_1 = serialize_request_message(vec![
+        op_1.compute_op_id(),
+        op_2.compute_op_id(),
+    ]);
     let requested_op_ids_2 =
-        serialize_op_ids(vec![op_3.compute_op_id(), random_op_id()]);
+        serialize_request_message(vec![op_3.compute_op_id(), random_op_id()]);
     fetch
-        .response_handler
+        .message_handler
         .recv_module_msg(
             agent_url_1.clone(),
             SPACE_ID,
@@ -104,7 +111,7 @@ async fn respond_to_multiple_requests() {
         )
         .unwrap();
     fetch
-        .response_handler
+        .message_handler
         .recv_module_msg(
             agent_url_2.clone(),
             SPACE_ID,
@@ -113,7 +120,7 @@ async fn respond_to_multiple_requests() {
         )
         .unwrap();
 
-    tokio::time::timeout(Duration::from_millis(10), async {
+    tokio::time::timeout(Duration::from_millis(20), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             if responses_sent.lock().unwrap().len() == 2 {
@@ -161,9 +168,9 @@ async fn no_response_sent_when_no_ops_found() {
     );
 
     // Handle op request.
-    let data = serialize_op_ids(vec![op_id_1, op_id_2]);
+    let data = serialize_request_message(vec![op_id_1, op_id_2]);
     fetch
-        .response_handler
+        .message_handler
         .recv_module_msg(
             agent_url,
             SPACE_ID,
@@ -203,19 +210,11 @@ async fn fail_to_respond_once_then_succeed() {
         move |peer, space, module, data| {
             assert_eq!(space, SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
-            let ops = Ops::decode(data).unwrap();
-            let ops = ops
-                .op_list
-                .into_iter()
-                .map(|op| {
-                    let memory_op =
-                        serde_json::from_slice::<MemoryOp>(&op.data).unwrap();
-                    MetaOp {
-                        op_id: memory_op.compute_op_id(),
-                        op_data: op.data.into(),
-                    }
-                })
-                .collect::<Vec<_>>();
+            let response =
+                Response::decode(K2FetchMessage::decode(data).unwrap().data)
+                    .unwrap();
+            let ops: Vec<MemoryOp> =
+                response.ops.into_iter().map(Into::into).collect::<Vec<_>>();
             responses_sent.lock().unwrap().push((ops, peer));
             Box::pin(async move { Ok(()) })
         }
@@ -239,9 +238,9 @@ async fn fail_to_respond_once_then_succeed() {
     );
 
     // Handle op request.
-    let data = serialize_op_ids(vec![op.compute_op_id()]);
+    let data = serialize_request_message(vec![op.compute_op_id()]);
     fetch
-        .response_handler
+        .message_handler
         .recv_module_msg(
             agent_url.clone(),
             SPACE_ID,
@@ -257,7 +256,7 @@ async fn fail_to_respond_once_then_succeed() {
 
     // Request same op again.
     fetch
-        .response_handler
+        .message_handler
         .recv_module_msg(
             agent_url.clone(),
             SPACE_ID,

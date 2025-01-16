@@ -1,66 +1,81 @@
 //! Kitsune2 fetch types.
 
-use std::sync::Arc;
-
-use bytes::Bytes;
-use prost::Message;
-
 use crate::{
     builder, config, peer_store::DynPeerStore, transport::DynTransport,
-    AgentId, BoxFut, DynOpStore, K2Error, K2Result, MetaOp, OpId, SpaceId,
+    AgentId, BoxFut, DynOpStore, K2Result, OpId, SpaceId,
 };
+use bytes::{Bytes, BytesMut};
+use k2_fetch_message::FetchMessageType;
+use prost::Message;
+use std::sync::Arc;
 
 include!("../proto/gen/kitsune2.fetch.rs");
 
-impl From<Vec<OpId>> for OpIds {
+impl From<Vec<OpId>> for Request {
     fn from(value: Vec<OpId>) -> Self {
         Self {
-            data: value.into_iter().map(Into::into).collect(),
+            op_ids: value.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<OpIds> for Vec<OpId> {
-    fn from(value: OpIds) -> Self {
-        value.data.into_iter().map(Into::into).collect()
+impl From<Request> for Vec<OpId> {
+    fn from(value: Request) -> Self {
+        value.op_ids.into_iter().map(Into::into).collect()
     }
 }
 
-impl From<Ops> for Vec<Bytes> {
-    fn from(value: Ops) -> Self {
-        value.op_list.into_iter().map(|op| op.data).collect()
-    }
-}
-
-impl From<Vec<MetaOp>> for Ops {
-    fn from(value: Vec<MetaOp>) -> Self {
+impl From<Vec<Bytes>> for Response {
+    fn from(value: Vec<Bytes>) -> Self {
         Self {
-            op_list: value.into_iter().map(Into::into).collect(),
+            ops: value.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-/// Serialize list of op ids for sending over the wire.
-pub fn serialize_op_ids(value: Vec<OpId>) -> bytes::Bytes {
-    let mut out = bytes::BytesMut::new();
-    OpIds::from(value)
+/// Serialize list of op ids to request.
+pub fn serialize_request(value: Vec<OpId>) -> Bytes {
+    let mut out = BytesMut::new();
+    Request::from(value)
         .encode(&mut out)
-        .expect("failed to serialize op ids");
+        .expect("failed to encode request");
     out.freeze()
 }
 
-/// Deserialize list of op ids.
-pub fn deserialize_op_ids(value: bytes::Bytes) -> K2Result<Vec<OpId>> {
-    let op_ids = OpIds::decode(value).map_err(K2Error::other)?;
-    Ok(op_ids.into())
+/// Serialize list of op ids to fetch request message.
+pub fn serialize_request_message(value: Vec<OpId>) -> Bytes {
+    let mut out = BytesMut::new();
+    let data = serialize_request(value);
+    let fetch_message = K2FetchMessage {
+        fetch_message_type: FetchMessageType::Request.into(),
+        data,
+    };
+    fetch_message
+        .encode(&mut out)
+        .expect("failed to encode fetch request message");
+    out.freeze()
 }
 
-/// Serialize list of ops for sending over the wire.
-pub fn serialize_ops(value: Vec<MetaOp>) -> bytes::Bytes {
-    let mut out = bytes::BytesMut::new();
-    Ops::from(value)
+/// Serialize list of ops to response.
+pub fn serialize_response(value: Vec<Bytes>) -> Bytes {
+    let mut out = BytesMut::new();
+    Response::from(value)
         .encode(&mut out)
-        .expect("failed to serialize ops");
+        .expect("failed to encode response");
+    out.freeze()
+}
+
+/// Serialize list of ops to fetch response message.
+pub fn serialize_response_message(value: Vec<Bytes>) -> Bytes {
+    let mut out = BytesMut::new();
+    let data = serialize_response(value);
+    let fetch_message = K2FetchMessage {
+        fetch_message_type: FetchMessageType::Response.into(),
+        data,
+    };
+    fetch_message
+        .encode(&mut out)
+        .expect("failed to encode fetch response message");
     out.freeze()
 }
 
@@ -99,20 +114,19 @@ pub type DynFetchFactory = Arc<dyn FetchFactory>;
 
 #[cfg(test)]
 mod test {
-    use crate::MetaOp;
-
     use super::*;
+    use crate::id::Id;
     use prost::Message;
 
     #[test]
-    fn happy_op_ids_encode_decode() {
+    fn happy_request_encode_decode() {
         let op_id_1 = OpId::from(bytes::Bytes::from_static(b"some_op_id"));
         let op_id_2 = OpId::from(bytes::Bytes::from_static(b"another_op_id"));
         let op_id_vec = vec![op_id_1, op_id_2];
-        let op_ids = OpIds::from(op_id_vec.clone());
+        let op_ids = Request::from(op_id_vec.clone());
 
         let op_ids_enc = op_ids.encode_to_vec();
-        let op_ids_dec = OpIds::decode(op_ids_enc.as_slice()).unwrap();
+        let op_ids_dec = Request::decode(op_ids_enc.as_slice()).unwrap();
         let op_ids_dec_vec = Vec::from(op_ids_dec.clone());
 
         assert_eq!(op_ids, op_ids_dec);
@@ -120,33 +134,61 @@ mod test {
     }
 
     #[test]
-    fn bytes_from_op_ids() {
-        let op_id_1 = OpId::from(bytes::Bytes::from_static(b"some_op_id"));
-        let op_id_2 = OpId::from(bytes::Bytes::from_static(b"another_op_id"));
-        let op_ids = vec![op_id_1, op_id_2];
+    fn happy_response_encode_decode() {
+        // Not real op payloads, any bytes will do to check the round trip encoding/decoding
+        // of the response type
+        let op_1 = bytes::Bytes::from(vec![0]);
+        let op_2 = bytes::Bytes::from(vec![1]);
+        let expected_ops_data = vec![op_1, op_2];
+        let ops_enc = serialize_response(expected_ops_data.clone());
 
-        let bytes = serialize_op_ids(op_ids.clone());
-        let op_ids_deserialized = deserialize_op_ids(bytes.clone()).unwrap();
-
-        assert_eq!(op_ids_deserialized, op_ids);
+        let response = Response::decode(ops_enc).unwrap();
+        let actual_ops_data = response
+            .ops
+            .into_iter()
+            .map(|op| op.data)
+            .collect::<Vec<_>>();
+        assert_eq!(expected_ops_data, actual_ops_data);
     }
 
     #[test]
-    fn happy_ops_encode_decode() {
-        let op_1 = MetaOp {
-            op_id: OpId::from(bytes::Bytes::from_static(b"some_op_id")),
-            op_data: vec![0],
-        };
-        let op_2 = MetaOp {
-            op_id: OpId::from(bytes::Bytes::from_static(b"another_op_id")),
-            op_data: vec![1],
-        };
-        let op_vec = vec![op_1, op_2];
-        let ops = Ops::from(op_vec);
+    fn happy_fetch_request_encode_decode() {
+        let op_id = OpId(Id(bytes::Bytes::from_static(b"id_1")));
+        let op_ids = vec![op_id];
+        let fetch_request = serialize_request_message(op_ids.clone());
 
-        let ops_enc = ops.encode_to_vec();
+        let fetch_message_dec = K2FetchMessage::decode(fetch_request).unwrap();
+        assert_eq!(
+            fetch_message_dec.fetch_message_type,
+            i32::from(FetchMessageType::Request)
+        );
+        let request_dec = Request::decode(fetch_message_dec.data).unwrap();
+        let op_ids_dec = request_dec
+            .op_ids
+            .into_iter()
+            .map(Into::<OpId>::into)
+            .collect::<Vec<_>>();
+        assert_eq!(op_ids, op_ids_dec);
+    }
 
-        let ops_dec = Ops::decode(&*ops_enc).unwrap();
-        assert_eq!(ops, ops_dec);
+    #[test]
+    fn happy_fetch_response_encode_decode() {
+        let op = bytes::Bytes::from(vec![0]);
+        let expected_ops_data = vec![op];
+        let fetch_response =
+            serialize_response_message(expected_ops_data.clone());
+
+        let fetch_message_dec = K2FetchMessage::decode(fetch_response).unwrap();
+        assert_eq!(
+            fetch_message_dec.fetch_message_type,
+            i32::from(FetchMessageType::Response)
+        );
+        let response_dec = Response::decode(fetch_message_dec.data).unwrap();
+        let actual_ops_data = response_dec
+            .ops
+            .into_iter()
+            .map(|op| op.data)
+            .collect::<Vec<_>>();
+        assert_eq!(expected_ops_data, actual_ops_data);
     }
 }

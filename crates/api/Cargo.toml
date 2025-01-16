@@ -23,6 +23,7 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+kitsune2_api = { path = ".", features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 

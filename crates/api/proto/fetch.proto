@@ -4,14 +4,33 @@ package kitsune2.fetch;
 
 import "op_store.proto";
 
-// A list of op ids.
-message OpIds {
+// A fetch request.
+message Request {
   // Op ids.
-  repeated bytes data = 1;
+  repeated bytes op_ids = 1;
 }
 
-// A list of ops.
-message Ops {
+// A fetch response.
+message Response {
   // Ops.
-  repeated kitsune2.op_store.Op op_list = 1;
+  repeated kitsune2.op_store.Op ops = 1;
+}
+
+// Fetch message.
+message K2FetchMessage {
+  // Fetch message type.
+  enum FetchMessageType {
+    // Default value.
+    UNSPECIFIED = 0;
+    // A fetch request.
+    REQUEST = 1;
+    // A fetch response.
+    RESPONSE = 2;
+  }
+
+  // Message type.
+  FetchMessageType fetch_message_type = 1;
+
+  // Message.
+  bytes data = 2;
 }

@@ -1,10 +1,11 @@
-mod request_queue;
-mod response_queue;
+mod incoming_request_queue;
+mod outgoing_request_queue;
 
 #[cfg(test)]
 pub(crate) mod utils {
+    use crate::factories::MemoryOp;
     use bytes::Bytes;
-    use kitsune2_api::{id::Id, AgentId, OpId};
+    use kitsune2_api::{id::Id, AgentId, OpId, Timestamp};
     use rand::Rng;
 
     pub fn random_id() -> Id {
@@ -30,5 +31,9 @@ pub(crate) mod utils {
             ops.push(op.clone());
         }
         ops
+    }
+
+    pub fn make_op(data: Vec<u8>) -> MemoryOp {
+        MemoryOp::new(Timestamp::now(), data)
     }
 }

@@ -375,7 +375,7 @@ async fn transfer_ops(
         .retrieve_ops(requested_ops)
         .await?
         .into_iter()
-        .map(Into::into)
+        .map(|op| op.op_data)
         .collect::<Vec<_>>();
     target.process_incoming_ops(selected.clone()).await?;
 
