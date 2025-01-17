@@ -1,60 +1,61 @@
 //! Fetch is a Kitsune2 module for fetching ops from peers.
 //!
 //! In particular it tracks which ops need to be fetched from which agents,
-//! sends fetch requests and processes incoming responses to these requests.
+//! sends fetch requests and processes incoming requests and responses.
 //!
 //! It consists of multiple parts:
 //! - State object that tracks op and agent ids in memory
 //! - Fetch tasks that request tracked ops from agents
-//! - Incoming op task that processes incoming responses to op requests by
-//!     - persisting ops to the data store
-//!     - removing op ids from in-memory data object
+//! - An incoming request task that retrieves ops from the op store and responds with the
+//!   ops to the requester
+//! - An incoming response task that writes ops to the op store and removes their ids
+//!   from the state object
 //!
 //! ### State object CoreFetch
 //!
 //! - Exposes public method CoreFetch::add_ops that takes a list of op ids and an agent id.
-//! - Stores pairs of ([OpId][AgentId]) in a set.
-//! - A hash set is used to look up elements by key efficiently. Ops may be added redundantly
-//!   to the set with different sources to fetch from, so the set is keyed by op and agent id together.
+//! - Stores pairs of ([OpId][AgentId]) in a hash set. Hash set is used to look up elements
+//!   by key efficiently. Ops may be added redundantly to the set with different sources
+//!   to fetch from, so the set is keyed by op and agent id combined.
 //!
 //! ### Fetch tasks
 //!
-//! #### Requests
+//! #### Outgoing requests
 //!
-//! A channel acts as the queue structure for the fetch request tasks. Ops to fetch are sent
-//! one by one through the channel to the receiving tasks running in parallel. The flow
-//! of sending fetch requests is as follows:
+//! A channel acts as the queue for outgoing fetch requests. Ops to fetch are sent
+//! one by one through the channel to the receiving tasks, running in parallel and processing
+//! requests in incoming order. The flow of sending a fetch request is as follows:
 //!
-//! - Await fetch requests for ([OpId], [AgentId]) from the queue.
-//! - Check if request is still on the list of requests to send.
+//! - Check if request for ([OpId][AgentId]) is still in the set of requests to send.
 //!     - In case the op to request has been received in the meantime and no longer needs to be fetched,
-//!       do nothing and await next request.
+//!       it will have been removed from the set. Do nothing.
 //!     - Otherwise proceed.
-//! - Check if agent is on a back off list of unresponsive agents. If so, do not send request.
+//! - Check if agent is on a back off list of unresponsive agents. If so, do not send a request.
 //! - Dispatch request for op id from agent to transport module.
 //! - If agent is unresponsive, put them on back off list. If maximum back off has been reached, remove
-//!   request from the set.
+//!   this and all other requests to the agent from the set.
 //! - Re-insert requested ([OpId], [AgentId]) into the queue. It will be removed
-//!   from the set of requests if it is received in the meantime, and thus prevent a redundant
-//!   fetch request.
+//!   from the set of requests if it is received in the meantime, and thus prevent redundant
+//!   fetch requests.
 //!
-//! #### Responses
+//! #### Incoming requests
 //!
-//! Similarly to fetch requests, a channel serves as a queue for responses to fetch requests. The queue
+//! Similarly to outgoing requests, a channel serves as a queue for incoming requests. The queue
 //! has the following properties:
 //! - Simple queue which processes items in the order of the incoming requests.
-//! - Requests consist of a list of requested op ids and the requesting agent id.
-//! - Attempts to look up the op in the data store and send response are executed once.
+//! - Requests consist of a list of requested op ids and the URL of the requesting agent.
+//! - The task attempts to look up the requested op in the data store and send it in a response.
 //! - Requests for data that the host doesn't hold should be logged.
 //! - If none of the requested ops could be read from the store, no response is sent.
-//! - If sending or receiving fails, it's the caller's responsibility to request again.
+//! - If sending or receiving the response fails, it's the requester's responsibility to request again.
 //!
-//! ### Process incoming responses
+//! ### Incoming responses
 //!
-//! When a response to a requested op is received, it must be processed as follows:
-//! - Incoming op is written to the data store.
+//! A channel acts as a queue for incoming responses. When a response to a requested op is received,
+//! it must be processed as follows:
+//! - Incoming op is written to the op store.
 //! - Once persisted successfully, the op is removed from the set of ops to fetch.
-//! - If persisting fails, the op is not removed from ops to fetch.
+//! - If persisting fails, the op is not removed from the set.
 
 use back_off::BackOffList;
 #[cfg(test)]
@@ -208,7 +209,7 @@ impl CoreFetch {
 impl Fetch for CoreFetch {
     fn request_ops(
         &self,
-        op_list: Vec<OpId>,
+        op_ids: Vec<OpId>,
         source: AgentId,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
@@ -216,7 +217,7 @@ impl Fetch for CoreFetch {
             {
                 let requests = &mut self.state.lock().unwrap().requests;
                 requests.extend(
-                    op_list
+                    op_ids
                         .clone()
                         .into_iter()
                         .map(|op_id| (op_id.clone(), source.clone())),
@@ -224,7 +225,7 @@ impl Fetch for CoreFetch {
             }
 
             // Insert requests into fetch queue.
-            for op_id in op_list {
+            for op_id in op_ids {
                 if let Err(err) =
                     self.outgoing_request_tx.send((op_id, source.clone())).await
                 {
@@ -257,15 +258,11 @@ impl CoreFetch {
         // store and returned to the requester.
         let (incoming_request_tx, incoming_request_rx) =
             channel::<IncomingRequest>(16_384);
-        let incoming_request_rx =
-            Arc::new(tokio::sync::Mutex::new(incoming_request_rx));
 
         // Create a queue to process incoming op responses. Ops are passed to the op store and op
         // ids removed from the set of ops to fetch.
         let (incoming_response_tx, incoming_response_rx) =
             channel::<IncomingResponse>(16_384);
-        let _incoming_response_rx =
-            Arc::new(tokio::sync::Mutex::new(incoming_response_rx));
 
         let state = Arc::new(Mutex::new(State {
             requests: HashSet::new(),
@@ -281,7 +278,7 @@ impl CoreFetch {
         // Spawn request tasks.
         for _ in 0..config.parallel_request_count {
             let request_task =
-                tokio::task::spawn(CoreFetch::spawn_outgoing_request_task(
+                tokio::task::spawn(CoreFetch::outgoing_request_task(
                     state.clone(),
                     outgoing_request_tx.clone(),
                     outgoing_request_rx.clone(),
@@ -295,13 +292,22 @@ impl CoreFetch {
 
         // Spawn incoming request task.
         let incoming_request_task =
-            tokio::task::spawn(CoreFetch::spawn_incoming_request_task(
+            tokio::task::spawn(CoreFetch::incoming_request_task(
                 incoming_request_rx,
                 op_store.clone(),
                 transport.clone(),
                 space_id.clone(),
             ));
         tasks.push(incoming_request_task);
+
+        // Spawn incoming response task.
+        let incoming_response_task =
+            tokio::task::spawn(CoreFetch::incoming_response_task(
+                incoming_response_rx,
+                op_store,
+                state.clone(),
+            ));
+        tasks.push(incoming_response_task);
 
         // Register transport module handler for incoming op requests and responses.
         let message_handler = Arc::new(FetchMessageHandler {
@@ -323,7 +329,7 @@ impl CoreFetch {
         }
     }
 
-    async fn spawn_outgoing_request_task(
+    async fn outgoing_request_task(
         state: Arc<Mutex<State>>,
         outgoing_request_tx: Sender<OutgoingRequest>,
         outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
@@ -422,13 +428,13 @@ impl CoreFetch {
         }
     }
 
-    async fn spawn_incoming_request_task(
-        response_rx: Arc<tokio::sync::Mutex<Receiver<IncomingRequest>>>,
+    async fn incoming_request_task(
+        mut response_rx: Receiver<IncomingRequest>,
         op_store: DynOpStore,
         transport: DynTransport,
         space_id: SpaceId,
     ) {
-        while let Some((op_ids, peer)) = response_rx.lock().await.recv().await {
+        while let Some((op_ids, peer)) = response_rx.recv().await {
             tracing::debug!(?op_ids, ?peer, "incoming request");
 
             // Retrieve ops to send from store.
@@ -462,6 +468,31 @@ impl CoreFetch {
                     ?peer,
                     "could not send ops to requesting agent: {err}"
                 );
+            }
+        }
+    }
+
+    async fn incoming_response_task(
+        mut incoming_response_rx: Receiver<IncomingResponse>,
+        op_store: DynOpStore,
+        state: Arc<Mutex<State>>,
+    ) {
+        while let Some(ops) = incoming_response_rx.recv().await {
+            let ops_data = ops.clone().into_iter().map(|op| op.data).collect();
+            match op_store.process_incoming_ops(ops_data).await {
+                Err(err) => {
+                    tracing::error!("could not process incoming ops: {err}");
+                    // Ops could not be written to the op store. Their ids remain in the set of ops
+                    // to fetch.
+                    continue;
+                }
+                Ok(processed_op_ids) => {
+                    // Ops were processed successfully by op store. Op ids are returned.
+                    // The op ids are removed from the set of ops to fetch.
+                    let mut lock = state.lock().unwrap();
+                    lock.requests
+                        .retain(|(op_id, _)| !processed_op_ids.contains(op_id));
+                }
             }
         }
     }

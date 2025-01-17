@@ -10,11 +10,11 @@ use bytes::Bytes;
 use kitsune2_api::{
     fetch::{
         k2_fetch_message::FetchMessageType, serialize_request_message,
-        K2FetchMessage, Response,
+        FetchResponse, K2FetchMessage,
     },
     id::Id,
     transport::MockTransport,
-    K2Error, SpaceId, Url,
+    DynOpStore, K2Error, SpaceId, Url,
 };
 use kitsune2_test_utils::enable_tracing;
 use prost::Message;
@@ -23,9 +23,42 @@ use std::{
     time::Duration,
 };
 
+const SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"space_id")));
+
 type ResponsesSent = Vec<(Vec<Bytes>, Url)>;
 
-const SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"space_id")));
+struct TestCase {
+    fetch: CoreFetch,
+    op_store: DynOpStore,
+    responses_sent: Arc<Mutex<ResponsesSent>>,
+}
+
+async fn setup_test() -> TestCase {
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let op_store = MemOpStoreFactory::create()
+        .create(builder.clone(), SPACE_ID)
+        .await
+        .unwrap();
+    let responses_sent = Arc::new(Mutex::new(Vec::new()));
+    let mock_transport = make_mock_transport(responses_sent.clone());
+    let config = CoreFetchConfig::default();
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        SPACE_ID,
+        peer_store.clone(),
+        op_store.clone(),
+        mock_transport.clone(),
+    );
+
+    TestCase {
+        fetch,
+        op_store,
+        responses_sent,
+    }
+}
 
 fn make_mock_transport(
     responses_sent: Arc<Mutex<ResponsesSent>>,
@@ -46,7 +79,7 @@ fn make_mock_transport(
             .unwrap()
             {
                 FetchMessageType::Response => {
-                    Response::decode(fetch_message.data).unwrap()
+                    FetchResponse::decode(fetch_message.data).unwrap()
                 }
                 _ => panic!("unexpected fetch message"),
             };
@@ -61,16 +94,12 @@ fn make_mock_transport(
 #[tokio::test(flavor = "multi_thread")]
 async fn respond_to_multiple_requests() {
     enable_tracing();
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let responses_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(responses_sent.clone());
-    let config = CoreFetchConfig::default();
+    let TestCase {
+        fetch,
+        op_store,
+        responses_sent,
+        ..
+    } = setup_test().await;
 
     let agent_url_1 = Url::from_str("wss://127.0.0.1:1").unwrap();
     let agent_url_2 = Url::from_str("wss://127.0.0.1:2").unwrap();
@@ -86,14 +115,6 @@ async fn respond_to_multiple_requests() {
         op_3.clone().into(),
     ];
     op_store.process_incoming_ops(stored_ops).await.unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store.clone(),
-        op_store.clone(),
-        mock_transport.clone(),
-    );
 
     // Receive incoming requests.
     let requested_op_ids_1 = serialize_request_message(vec![
@@ -146,28 +167,15 @@ async fn respond_to_multiple_requests() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_response_sent_when_no_ops_found() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let responses_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(responses_sent.clone());
-    let config = CoreFetchConfig::default();
+    let TestCase {
+        fetch,
+        responses_sent,
+        ..
+    } = setup_test().await;
 
     let op_id_1 = random_op_id();
     let op_id_2 = random_op_id();
     let agent_url = Url::from_str("wss://127.0.0.1:1").unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store.clone(),
-        op_store,
-        mock_transport,
-    );
 
     // Receive incoming request.
     let data = serialize_request_message(vec![op_id_1, op_id_2]);
@@ -212,9 +220,10 @@ async fn fail_to_respond_once_then_succeed() {
         move |peer, space, module, data| {
             assert_eq!(space, SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
-            let response =
-                Response::decode(K2FetchMessage::decode(data).unwrap().data)
-                    .unwrap();
+            let response = FetchResponse::decode(
+                K2FetchMessage::decode(data).unwrap().data,
+            )
+            .unwrap();
             let ops: Vec<MemoryOp> =
                 response.ops.into_iter().map(Into::into).collect::<Vec<_>>();
             responses_sent.lock().unwrap().push((ops, peer));
