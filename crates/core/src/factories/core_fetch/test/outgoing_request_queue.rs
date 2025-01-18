@@ -1,3 +1,4 @@
+use super::utils::{create_op_list, random_agent_id, random_op_id};
 use crate::{
     default_test_builder,
     factories::{
@@ -9,21 +10,19 @@ use kitsune2_api::{
     fetch::{
         k2_fetch_message::FetchMessageType, Fetch, FetchRequest, K2FetchMessage,
     },
-    id::Id,
     peer_store::DynPeerStore,
     transport::MockTransport,
-    K2Error, OpId, SpaceId, Url,
+    K2Error, OpId, Url,
 };
-use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
+use kitsune2_test_utils::{
+    agent::{AgentBuilder, TestLocalAgent},
+    space::TEST_SPACE_ID,
+};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-
-use super::utils::{create_op_list, random_agent_id, random_op_id};
-
-const SPACE_ID: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space_1")));
 
 type RequestsSent = Vec<(OpId, Url)>;
 
@@ -41,7 +40,7 @@ async fn setup_test(
         Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
+        .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
@@ -50,7 +49,7 @@ async fn setup_test(
 
     let fetch = CoreFetch::new(
         config.clone(),
-        SPACE_ID,
+        TEST_SPACE_ID,
         peer_store.clone(),
         op_store,
         mock_transport.clone(),
@@ -71,7 +70,7 @@ fn make_mock_transport(
     mock_transport.expect_send_module().returning({
         let requests_sent = requests_sent.clone();
         move |peer, space, module, data| {
-            assert_eq!(space, SPACE_ID);
+            assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             Box::pin({
                 let requests_sent = requests_sent.clone();
@@ -126,7 +125,7 @@ async fn outgoing_request_queue() {
     let agent_id = random_agent_id();
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
@@ -199,21 +198,21 @@ async fn happy_op_fetch_from_multiple_agents() {
     let agent_info_1 = AgentBuilder {
         agent: Some(agent_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_info_3 = AgentBuilder {
         agent: Some(agent_3.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
@@ -315,14 +314,14 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
     let agent_info_1 = AgentBuilder {
         agent: Some(agent_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
@@ -387,7 +386,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     let agent_id = random_agent_id();
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }

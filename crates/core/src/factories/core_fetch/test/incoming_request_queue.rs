@@ -12,18 +12,15 @@ use kitsune2_api::{
         k2_fetch_message::FetchMessageType, serialize_request_message,
         FetchResponse, K2FetchMessage,
     },
-    id::Id,
     transport::MockTransport,
-    DynOpStore, K2Error, SpaceId, Url,
+    DynOpStore, K2Error, Url,
 };
-use kitsune2_test_utils::enable_tracing;
+use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-
-const SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"space_id")));
 
 type ResponsesSent = Vec<(Vec<Bytes>, Url)>;
 
@@ -38,7 +35,7 @@ async fn setup_test() -> TestCase {
         Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
+        .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
     let responses_sent = Arc::new(Mutex::new(Vec::new()));
@@ -47,7 +44,7 @@ async fn setup_test() -> TestCase {
 
     let fetch = CoreFetch::new(
         config.clone(),
-        SPACE_ID,
+        TEST_SPACE_ID,
         peer_store.clone(),
         op_store.clone(),
         mock_transport.clone(),
@@ -70,7 +67,7 @@ fn make_mock_transport(
     mock_transport.expect_send_module().returning({
         let responses_sent = responses_sent.clone();
         move |peer, space, module, data| {
-            assert_eq!(space, SPACE_ID);
+            assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             let fetch_message = K2FetchMessage::decode(data).unwrap();
             let response = match FetchMessageType::try_from(
@@ -127,7 +124,7 @@ async fn respond_to_multiple_requests() {
         .message_handler
         .recv_module_msg(
             agent_url_1.clone(),
-            SPACE_ID,
+            TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             requested_op_ids_1.clone(),
         )
@@ -136,7 +133,7 @@ async fn respond_to_multiple_requests() {
         .message_handler
         .recv_module_msg(
             agent_url_2.clone(),
-            SPACE_ID,
+            TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             requested_op_ids_2.clone(),
         )
@@ -183,7 +180,7 @@ async fn no_response_sent_when_no_ops_found() {
         .message_handler
         .recv_module_msg(
             agent_url,
-            SPACE_ID,
+            TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             data,
         )
@@ -200,7 +197,7 @@ async fn fail_to_respond_once_then_succeed() {
         Arc::new(default_test_builder().with_default_config().unwrap());
     let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
+        .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
     let responses_sent = Arc::new(Mutex::new(Vec::new()));
@@ -210,7 +207,7 @@ async fn fail_to_respond_once_then_succeed() {
         .returning(|_, _, _| ());
     mock_transport.expect_send_module().once().returning({
         move |_peer, space, module, _data| {
-            assert_eq!(space, SPACE_ID);
+            assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             Box::pin(async move { Err(K2Error::other("could not send ops")) })
         }
@@ -218,7 +215,7 @@ async fn fail_to_respond_once_then_succeed() {
     mock_transport.expect_send_module().once().returning({
         let responses_sent = responses_sent.clone();
         move |peer, space, module, data| {
-            assert_eq!(space, SPACE_ID);
+            assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             let response = FetchResponse::decode(
                 K2FetchMessage::decode(data).unwrap().data,
@@ -242,7 +239,7 @@ async fn fail_to_respond_once_then_succeed() {
 
     let fetch = CoreFetch::new(
         config.clone(),
-        SPACE_ID,
+        TEST_SPACE_ID,
         peer_store.clone(),
         op_store,
         mock_transport,
@@ -254,7 +251,7 @@ async fn fail_to_respond_once_then_succeed() {
         .message_handler
         .recv_module_msg(
             agent_url.clone(),
-            SPACE_ID,
+            TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             data.clone(),
         )
@@ -270,7 +267,7 @@ async fn fail_to_respond_once_then_succeed() {
         .message_handler
         .recv_module_msg(
             agent_url.clone(),
-            SPACE_ID,
+            TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             data.clone(),
         )
