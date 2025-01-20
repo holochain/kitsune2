@@ -34,7 +34,7 @@ impl GossipRoundState {
         session_with_peer: Url,
         our_agents: Vec<AgentId>,
     ) -> Self {
-        let mut session_id = bytes::BytesMut::with_capacity(96);
+        let mut session_id = bytes::BytesMut::zeroed(12);
         rand::thread_rng().fill_bytes(&mut session_id);
 
         Self {
@@ -192,4 +192,28 @@ pub(crate) enum RoundStage {
         our_agents: Vec<AgentId>,
     },
     NoDiff,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::state::GossipRoundState;
+    use bytes::Bytes;
+    use kitsune2_api::{AgentId, Url};
+
+    #[test]
+    fn create_round_state() {
+        let state = GossipRoundState::new(
+            Url::from_str("ws://test:80").unwrap(),
+            vec![AgentId::from(Bytes::from_static(b"test-agent"))],
+        );
+
+        assert_eq!(12, state.session_id.len());
+        assert_ne!(
+            0,
+            state.session_id[0]
+                ^ state.session_id[1]
+                ^ state.session_id[2]
+                ^ state.session_id[3]
+        );
+    }
 }

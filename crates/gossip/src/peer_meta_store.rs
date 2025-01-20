@@ -137,11 +137,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create() {
-        test_store().await;
-    }
-
-    #[tokio::test]
     async fn round_trip_last_gossip_timestamp() {
         let store = test_store().await;
         let peer = Url::from_str("ws://test-host:80/1").unwrap();

@@ -363,10 +363,8 @@ impl Space for CoreSpace {
     }
 
     fn get_local_agents(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>> {
-        let inner = self.inner.clone();
-
         Box::pin(async move {
-            let inner = inner.lock().unwrap();
+            let inner = self.inner.lock().unwrap();
             Ok(inner.local_agent_map.values().cloned().collect())
         })
     }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{default_test_builder, Ed25519Verifier};
+use crate::default_test_builder;
 use kitsune2_api::space::SpaceHandler;
 use kitsune2_api::transport::{TxBaseHandler, TxHandler};
 use std::sync::Arc;
@@ -51,7 +51,6 @@ async fn create_gossip_instance() {
                 .await
                 .unwrap(),
             tx,
-            Arc::new(Ed25519Verifier),
         )
         .await
         .unwrap();

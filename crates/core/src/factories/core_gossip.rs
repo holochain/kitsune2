@@ -1,4 +1,3 @@
-use kitsune2_api::agent::DynVerifier;
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
 use kitsune2_api::peer_store::DynPeerStore;
@@ -40,7 +39,6 @@ impl GossipFactory for CoreGossipStubFactory {
         _peer_meta_store: DynPeerMetaStore,
         _op_store: DynOpStore,
         _transport: DynTransport,
-        _agent_verifier: DynVerifier,
     ) -> BoxFut<'static, K2Result<DynGossip>> {
         let out: DynGossip = Arc::new(CoreGossipStub);
         Box::pin(async move { Ok(out) })

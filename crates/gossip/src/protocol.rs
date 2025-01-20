@@ -49,11 +49,11 @@ pub fn deserialize_gossip_message(value: Bytes) -> K2Result<GossipMessage> {
 pub fn serialize_gossip_message(value: GossipMessage) -> K2Result<Bytes> {
     let mut out = BytesMut::new();
 
-    let (msg_type, inner) = serialize_inner_gossip_message(value)?;
+    let (msg_type, data) = serialize_inner_gossip_message(value)?;
 
     K2GossipMessage {
         msg_type: msg_type as i32,
-        data: inner,
+        data,
     }
     .encode(&mut out)
     .map_err(|e| {

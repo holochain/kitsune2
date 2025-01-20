@@ -12,7 +12,7 @@ pub struct K2GossipConfig {
     /// to a DHT mismatch in existing data. The new ops are synced first, so the remaining capacity
     /// is used for the mismatch sync.
     ///
-    /// The maximum size of an op is host dependant, but assuming a 1MB limit, this would allow
+    /// The maximum size of an op is host dependant, but assuming a 1 MB limit, this would allow
     /// for at least 100 ops to be requested in a single round.
     ///
     /// Default: 100MB
@@ -21,7 +21,7 @@ pub struct K2GossipConfig {
     /// The interval in seconds between gossip rounds.
     ///
     /// Default: 300 (5m)
-    pub interval_s: u64,
+    pub interval_s: u32,
 }
 
 impl Default for K2GossipConfig {
@@ -36,7 +36,7 @@ impl Default for K2GossipConfig {
 impl K2GossipConfig {
     /// The interval between gossip rounds.
     pub(crate) fn interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.interval_s)
+        std::time::Duration::from_secs(self.interval_s as u64)
     }
 }
 

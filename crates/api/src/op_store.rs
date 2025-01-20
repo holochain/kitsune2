@@ -100,7 +100,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// As many op ids as can be returned within the `limit_bytes` limit.
     ///
-    /// If the limit is applied, then the timestamp of the last op id returned is returned.
+    /// If the limit is applied, then the timestamp of the last op id is returned.
     /// Otherwise, the timestamp for when this operation started is returned.
     fn retrieve_op_ids_bounded(
         &self,

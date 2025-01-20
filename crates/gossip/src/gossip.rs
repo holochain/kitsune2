@@ -50,7 +50,6 @@ impl GossipFactory for K2GossipFactory {
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
-        agent_verifier: DynVerifier,
     ) -> kitsune2_api::BoxFut<'static, K2Result<DynGossip>> {
         Box::pin(async move {
             let config: K2GossipConfig = builder.config.get_module_config()?;
@@ -63,7 +62,7 @@ impl GossipFactory for K2GossipFactory {
                 peer_meta_store,
                 op_store,
                 transport,
-                agent_verifier,
+                builder.verifier.clone(),
             ));
 
             Ok(gossip)
@@ -188,7 +187,7 @@ impl K2Gossip {
         let state = self.initiated_round_state.clone();
         let mut initiated_lock = state.lock().await;
         if initiated_lock.is_some() {
-            tracing::info!("initiate_gossip: already initiated");
+            tracing::debug!("initiate_gossip: already initiated");
             return Ok(false);
         }
 
