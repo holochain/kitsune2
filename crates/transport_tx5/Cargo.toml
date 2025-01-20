@@ -1,0 +1,18 @@
+[package]
+name = "kitsune2_transport_tx5"
+version = "0.0.1-alpha"
+description = "The Tx5-based transport implementation for kitsune2"
+license = "Apache-2.0"
+homepage = "https://github.com/holochain/kitsune2"
+documentation = "https://docs.rs/kitsune2_transport_tx5"
+authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
+keywords = ["holochain", "holo", "p2p", "dht", "networking"]
+categories = ["network-programming"]
+edition = "2021"
+
+[dependencies]
+bytes = { workspace = true }
+kitsune2_api = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tracing = { workspace = true }
+tx5 = { version = "0.2.0-beta", default-features = false, features = ["backend-libdatachannel"] }

@@ -7,6 +7,7 @@ members = [
   "crates/gossip",
   "crates/test_utils",
   "crates/tool_proto_build",
+  "crates/transport_tx5",
 ]
 
 resolver = "2"
@@ -67,6 +68,8 @@ url = "2.5.4"
 # kitsune2 uses tracing to log events. A consumer can choose any subscriber
 # to receive these logs.
 tracing = "0.1"
+# for the transport_tx5 crate
+tx5 = { version = "0.2.0-beta", default-features = false }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.
