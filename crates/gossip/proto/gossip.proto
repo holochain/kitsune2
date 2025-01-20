@@ -29,8 +29,8 @@ message K2GossipMessage {
 
 // A message representation of a Kitsune2 DHT arc set.
 message ArcSetMessage {
-  // The covered DHT sectors.
-  repeated uint32 arc_sectors = 1;
+  // The encoded representation of covered DHT sectors.
+  repeated uint32 value = 1;
 }
 
 // A Kitsune2 gossip initiation protocol message.

@@ -64,9 +64,9 @@ pub mod k2_gossip_message {
 /// A message representation of a Kitsune2 DHT arc set.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ArcSetMessage {
-    /// The covered DHT sectors.
+    /// The encoded representation of covered DHT sectors.
     #[prost(uint32, repeated, tag = "1")]
-    pub arc_sectors: ::prost::alloc::vec::Vec<u32>,
+    pub value: ::prost::alloc::vec::Vec<u32>,
 }
 /// A Kitsune2 gossip initiation protocol message.
 ///
