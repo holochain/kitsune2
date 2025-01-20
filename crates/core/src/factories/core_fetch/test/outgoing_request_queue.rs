@@ -1,3 +1,4 @@
+use super::utils::{create_op_list, random_agent_id, random_op_id};
 use crate::{
     default_test_builder,
     factories::{
@@ -7,32 +8,69 @@ use crate::{
 };
 use kitsune2_api::{
     fetch::{
-        k2_fetch_message::FetchMessageType, Fetch, K2FetchMessage, Request,
+        k2_fetch_message::FetchMessageType, Fetch, FetchRequest, K2FetchMessage,
     },
-    id::Id,
+    peer_store::DynPeerStore,
     transport::MockTransport,
-    K2Error, OpId, SpaceId, Url,
+    K2Error, OpId, Url,
 };
-use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
+use kitsune2_test_utils::{
+    agent::{AgentBuilder, TestLocalAgent},
+    space::TEST_SPACE_ID,
+};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
 
-use super::utils::{create_op_list, random_agent_id, random_op_id};
+type RequestsSent = Vec<(OpId, Url)>;
 
-const SPACE_ID: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space_1")));
+struct TestCase {
+    fetch: CoreFetch,
+    peer_store: DynPeerStore,
+    requests_sent: Arc<Mutex<RequestsSent>>,
+}
+
+async fn setup_test(
+    config: &CoreFetchConfig,
+    faulty_connection: bool,
+) -> TestCase {
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let op_store = MemOpStoreFactory::create()
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let requests_sent = Arc::new(Mutex::new(Vec::new()));
+    let mock_transport =
+        make_mock_transport(requests_sent.clone(), faulty_connection);
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        TEST_SPACE_ID,
+        peer_store.clone(),
+        op_store,
+        mock_transport.clone(),
+    );
+
+    TestCase {
+        fetch,
+        peer_store,
+        requests_sent,
+    }
+}
 
 fn make_mock_transport(
-    requests_sent: Arc<Mutex<Vec<(OpId, Url)>>>,
+    requests_sent: Arc<Mutex<RequestsSent>>,
     faulty_connection: bool,
 ) -> Arc<MockTransport> {
     let mut mock_transport = MockTransport::new();
     mock_transport.expect_send_module().returning({
         let requests_sent = requests_sent.clone();
         move |peer, space, module, data| {
-            assert_eq!(space, SPACE_ID);
+            assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             Box::pin({
                 let requests_sent = requests_sent.clone();
@@ -43,7 +81,8 @@ fn make_mock_transport(
                     ) {
                         Ok(FetchMessageType::Request) => {
                             let request =
-                                Request::decode(fetch_message.data).unwrap();
+                                FetchRequest::decode(fetch_message.data)
+                                    .unwrap();
                             request.into()
                         }
                         _ => panic!("unexpected fetch message type"),
@@ -70,40 +109,29 @@ fn make_mock_transport(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn outgoing_request_queue() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(requests_sent.clone(), false);
     let config = CoreFetchConfig {
         re_insert_outgoing_request_delay_ms: 10,
         ..Default::default()
     };
+    let TestCase {
+        fetch,
+        peer_store,
+        requests_sent,
+        ..
+    } = setup_test(&config, false).await;
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
     let agent_id = random_agent_id();
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store.clone(),
-        op_store,
-        mock_transport.clone(),
-    );
 
     assert!(requests_sent.lock().unwrap().is_empty());
 
@@ -148,19 +176,16 @@ async fn outgoing_request_queue() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn happy_op_fetch_from_multiple_agents() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(requests_sent.clone(), false);
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
     let config = CoreFetchConfig {
         parallel_request_count: 5,
         ..Default::default()
     };
+    let TestCase {
+        fetch,
+        peer_store,
+        requests_sent,
+        ..
+    } = setup_test(&config, false).await;
 
     let op_list_1 = create_op_list(10);
     let agent_1 = random_agent_id();
@@ -173,21 +198,21 @@ async fn happy_op_fetch_from_multiple_agents() {
     let agent_info_1 = AgentBuilder {
         agent: Some(agent_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_info_3 = AgentBuilder {
         agent: Some(agent_3.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
@@ -198,13 +223,6 @@ async fn happy_op_fetch_from_multiple_agents() {
         .insert(vec![agent_info_1, agent_info_2, agent_info_3])
         .await
         .unwrap();
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store.clone(),
-        op_store,
-        mock_transport.clone(),
-    );
 
     let mut expected_requests = Vec::new();
     op_list_1
@@ -264,33 +282,11 @@ async fn happy_op_fetch_from_multiple_agents() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ops_are_cleared_when_agent_not_in_peer_store() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(requests_sent.clone(), false);
-    let config = CoreFetchConfig::default();
+    let TestCase { fetch, .. } =
+        setup_test(&CoreFetchConfig::default(), false).await;
 
     let op_list = create_op_list(2);
     let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        agent_info.space.clone(),
-        peer_store.clone(),
-        op_store,
-        mock_transport.clone(),
-    );
 
     fetch.request_ops(op_list, agent_id).await.unwrap();
 
@@ -303,16 +299,12 @@ async fn ops_are_cleared_when_agent_not_in_peer_store() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_back_off_list() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(requests_sent.clone(), true);
-    let config = CoreFetchConfig::default();
+    let TestCase {
+        fetch,
+        peer_store,
+        requests_sent,
+        ..
+    } = setup_test(&CoreFetchConfig::default(), true).await;
 
     let op_list_1 = create_op_list(5);
     let agent_1 = random_agent_id();
@@ -322,14 +314,14 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
     let agent_info_1 = AgentBuilder {
         agent: Some(agent_1.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     let agent_info_2 = AgentBuilder {
         agent: Some(agent_2.clone()),
         url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
@@ -339,14 +331,6 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
         .insert(vec![agent_info_1, agent_info_2])
         .await
         .unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store,
-        op_store,
-        mock_transport.clone(),
-    );
 
     // Add all ops to the queue.
     futures::future::join_all([
@@ -388,38 +372,26 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(requests_sent.clone(), false);
     let config = CoreFetchConfig {
         first_back_off_interval_ms: 10,
         ..Default::default()
     };
+    let TestCase {
+        fetch,
+        peer_store,
+        requests_sent,
+    } = setup_test(&config, false).await;
 
     let op_list = create_op_list(1);
     let agent_id = random_agent_id();
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
-        space: Some(SPACE_ID),
+        space: Some(TEST_SPACE_ID),
         url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store,
-        op_store,
-        mock_transport.clone(),
-    );
 
     let first_back_off_interval = {
         let mut lock = fetch.state.lock().unwrap();
@@ -451,21 +423,17 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn requests_are_dropped_when_max_back_off_expired() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
-    let op_store = MemOpStoreFactory::create()
-        .create(builder.clone(), SPACE_ID)
-        .await
-        .unwrap();
-    let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport = make_mock_transport(requests_sent.clone(), true);
     let config = CoreFetchConfig {
         first_back_off_interval_ms: 10,
         last_back_off_interval_ms: 10,
         re_insert_outgoing_request_delay_ms: 1,
         ..Default::default()
     };
+    let TestCase {
+        fetch,
+        peer_store,
+        requests_sent,
+    } = setup_test(&config, true).await;
 
     let op_list_1 = create_op_list(2);
     let agent_id_1 = random_agent_id();
@@ -490,14 +458,6 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .insert(vec![agent_info_1.clone(), agent_info_2.clone()])
         .await
         .unwrap();
-
-    let fetch = CoreFetch::new(
-        config.clone(),
-        SPACE_ID,
-        peer_store,
-        op_store,
-        mock_transport.clone(),
-    );
 
     fetch
         .request_ops(op_list_1.clone(), agent_id_1.clone())

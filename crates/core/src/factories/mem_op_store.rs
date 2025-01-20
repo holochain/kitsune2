@@ -1,6 +1,7 @@
 //! The mem op store implementation provided by Kitsune2.
 
 use crate::factories::mem_op_store::time_slice_hash_store::TimeSliceHashStore;
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
@@ -168,7 +169,7 @@ struct Kitsune2MemoryOpStoreInner {
 impl OpStore for Kitsune2MemoryOpStore {
     fn process_incoming_ops(
         &self,
-        op_list: Vec<bytes::Bytes>,
+        op_list: Vec<Bytes>,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
         Box::pin(async move {
             let ops_to_add = op_list
@@ -181,10 +182,8 @@ impl OpStore for Kitsune2MemoryOpStore {
                 K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
             })?;
 
-            let op_ids = ops_to_add
-                .iter()
-                .map(|(op_id, _)| op_id.clone())
-                .collect::<Vec<_>>();
+            let op_ids =
+                ops_to_add.iter().map(|(op_id, _)| op_id.clone()).collect();
             self.write().await.op_list.extend(ops_to_add);
             Ok(op_ids)
         })

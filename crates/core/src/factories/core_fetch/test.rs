@@ -1,4 +1,5 @@
 mod incoming_request_queue;
+mod incoming_response_queue;
 mod outgoing_request_queue;
 
 #[cfg(test)]

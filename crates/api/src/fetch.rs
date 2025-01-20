@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 include!("../proto/gen/kitsune2.fetch.rs");
 
-impl From<Vec<OpId>> for Request {
+impl From<Vec<OpId>> for FetchRequest {
     fn from(value: Vec<OpId>) -> Self {
         Self {
             op_ids: value.into_iter().map(Into::into).collect(),
@@ -19,13 +19,13 @@ impl From<Vec<OpId>> for Request {
     }
 }
 
-impl From<Request> for Vec<OpId> {
-    fn from(value: Request) -> Self {
+impl From<FetchRequest> for Vec<OpId> {
+    fn from(value: FetchRequest) -> Self {
         value.op_ids.into_iter().map(Into::into).collect()
     }
 }
 
-impl From<Vec<Bytes>> for Response {
+impl From<Vec<Bytes>> for FetchResponse {
     fn from(value: Vec<Bytes>) -> Self {
         Self {
             ops: value.into_iter().map(Into::into).collect(),
@@ -36,7 +36,7 @@ impl From<Vec<Bytes>> for Response {
 /// Serialize list of op ids to request.
 pub fn serialize_request(value: Vec<OpId>) -> Bytes {
     let mut out = BytesMut::new();
-    Request::from(value)
+    FetchRequest::from(value)
         .encode(&mut out)
         .expect("failed to encode request");
     out.freeze()
@@ -59,7 +59,7 @@ pub fn serialize_request_message(value: Vec<OpId>) -> Bytes {
 /// Serialize list of ops to response.
 pub fn serialize_response(value: Vec<Bytes>) -> Bytes {
     let mut out = BytesMut::new();
-    Response::from(value)
+    FetchResponse::from(value)
         .encode(&mut out)
         .expect("failed to encode response");
     out.freeze()
@@ -84,7 +84,7 @@ pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be fetched from a peer.
     fn request_ops(
         &self,
-        ops: Vec<OpId>,
+        op_ids: Vec<OpId>,
         from: AgentId,
     ) -> BoxFut<'_, K2Result<()>>;
 }
@@ -123,10 +123,10 @@ mod test {
         let op_id_1 = OpId::from(bytes::Bytes::from_static(b"some_op_id"));
         let op_id_2 = OpId::from(bytes::Bytes::from_static(b"another_op_id"));
         let op_id_vec = vec![op_id_1, op_id_2];
-        let op_ids = Request::from(op_id_vec.clone());
+        let op_ids = FetchRequest::from(op_id_vec.clone());
 
         let op_ids_enc = op_ids.encode_to_vec();
-        let op_ids_dec = Request::decode(op_ids_enc.as_slice()).unwrap();
+        let op_ids_dec = FetchRequest::decode(op_ids_enc.as_slice()).unwrap();
         let op_ids_dec_vec = Vec::from(op_ids_dec.clone());
 
         assert_eq!(op_ids, op_ids_dec);
@@ -142,7 +142,7 @@ mod test {
         let expected_ops_data = vec![op_1, op_2];
         let ops_enc = serialize_response(expected_ops_data.clone());
 
-        let response = Response::decode(ops_enc).unwrap();
+        let response = FetchResponse::decode(ops_enc).unwrap();
         let actual_ops_data = response
             .ops
             .into_iter()
@@ -162,7 +162,7 @@ mod test {
             fetch_message_dec.fetch_message_type,
             i32::from(FetchMessageType::Request)
         );
-        let request_dec = Request::decode(fetch_message_dec.data).unwrap();
+        let request_dec = FetchRequest::decode(fetch_message_dec.data).unwrap();
         let op_ids_dec = request_dec
             .op_ids
             .into_iter()
@@ -183,7 +183,8 @@ mod test {
             fetch_message_dec.fetch_message_type,
             i32::from(FetchMessageType::Response)
         );
-        let response_dec = Response::decode(fetch_message_dec.data).unwrap();
+        let response_dec =
+            FetchResponse::decode(fetch_message_dec.data).unwrap();
         let actual_ops_data = response_dec
             .ops
             .into_iter()

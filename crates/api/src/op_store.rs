@@ -3,6 +3,7 @@
 use crate::{
     builder, config, BoxFut, DhtArc, K2Result, OpId, SpaceId, Timestamp,
 };
+use bytes::Bytes;
 use futures::future::BoxFuture;
 #[cfg(feature = "mockall")]
 use mockall::automock;
@@ -18,13 +19,13 @@ pub struct MetaOp {
     pub op_id: OpId,
 
     /// The actual op data.
-    pub op_data: bytes::Bytes,
+    pub op_data: Bytes,
 }
 
 include!("../proto/gen/kitsune2.op_store.rs");
 
 impl From<bytes::Bytes> for Op {
-    fn from(value: bytes::Bytes) -> Self {
+    fn from(value: Bytes) -> Self {
         Self { data: value }
     }
 }
@@ -69,7 +70,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// if it is able to process them.
     fn process_incoming_ops(
         &self,
-        op_list: Vec<bytes::Bytes>,
+        op_list: Vec<Bytes>,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
     /// Retrieve a batch of ops from the host by time range.
@@ -112,7 +113,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         &self,
         arc: DhtArc,
         slice_id: u64,
-        slice_hash: bytes::Bytes,
+        slice_hash: Bytes,
     ) -> BoxFuture<'_, K2Result<()>>;
 
     /// Count the number of stored time slices.
@@ -127,13 +128,13 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         &self,
         arc: DhtArc,
         slice_id: u64,
-    ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
+    ) -> BoxFuture<'_, K2Result<Option<Bytes>>>;
 
     /// Retrieve all slice hashes for a given arc.
     fn retrieve_slice_hashes(
         &self,
         arc: DhtArc,
-    ) -> BoxFuture<'_, K2Result<Vec<(u64, bytes::Bytes)>>>;
+    ) -> BoxFuture<'_, K2Result<Vec<(u64, Bytes)>>>;
 }
 
 /// Trait-object version of kitsune2 op store.
@@ -163,7 +164,7 @@ mod test {
 
     #[test]
     fn happy_meta_op_encode_decode() {
-        let op = Op::from(bytes::Bytes::from(vec![1; 128]));
+        let op = Op::from(Bytes::from(vec![1; 128]));
         let op_enc = op.encode_to_vec();
         let op_dec = Op::decode(op_enc.as_slice()).unwrap();
 

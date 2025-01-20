@@ -5,13 +5,13 @@ package kitsune2.fetch;
 import "op_store.proto";
 
 // A fetch request.
-message Request {
+message FetchRequest {
   // Op ids.
   repeated bytes op_ids = 1;
 }
 
 // A fetch response.
-message Response {
+message FetchResponse {
   // Ops.
   repeated kitsune2.op_store.Op ops = 1;
 }

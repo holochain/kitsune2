@@ -1,7 +1,8 @@
 use super::{IncomingRequest, IncomingResponse};
 use kitsune2_api::{
     fetch::{
-        k2_fetch_message::FetchMessageType, K2FetchMessage, Request, Response,
+        k2_fetch_message::FetchMessageType, FetchRequest, FetchResponse,
+        K2FetchMessage,
     },
     transport::{TxBaseHandler, TxModuleHandler},
     K2Error, K2Result, SpaceId, Url,
@@ -31,12 +32,13 @@ impl TxModuleHandler for FetchMessageHandler {
         })?;
         match FetchMessageType::try_from(fetch.fetch_message_type) {
             Ok(FetchMessageType::Request) => {
-                let request = Request::decode(fetch.data).map_err(|err| {
-                    K2Error::other_src(
-                        format!("could not decode request from {peer}"),
-                        err,
-                    )
-                })?;
+                let request =
+                    FetchRequest::decode(fetch.data).map_err(|err| {
+                        K2Error::other_src(
+                            format!("could not decode request from {peer}"),
+                            err,
+                        )
+                    })?;
                 self.incoming_request_tx
                     .try_send((request.into(), peer))
                     .map_err(|err| {
@@ -47,12 +49,13 @@ impl TxModuleHandler for FetchMessageHandler {
                     })
             }
             Ok(FetchMessageType::Response) => {
-                let response = Response::decode(fetch.data).map_err(|err| {
-                    K2Error::other_src(
-                        format!("could not decode response from {peer}"),
-                        err,
-                    )
-                })?;
+                let response =
+                    FetchResponse::decode(fetch.data).map_err(|err| {
+                        K2Error::other_src(
+                            format!("could not decode response from {peer}"),
+                            err,
+                        )
+                    })?;
                 self.incoming_response_tx.try_send(response.ops).map_err(
                     |err| {
                         K2Error::other_src(

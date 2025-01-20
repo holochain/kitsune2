@@ -16,3 +16,4 @@ pub fn enable_tracing() {
 }
 
 pub mod agent;
+pub mod space;
