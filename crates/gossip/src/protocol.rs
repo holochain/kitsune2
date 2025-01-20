@@ -2,6 +2,7 @@
 
 use bytes::{Bytes, BytesMut};
 use kitsune2_api::agent::AgentInfoSigned;
+use kitsune2_api::id::encode_ids;
 use kitsune2_api::{AgentId, K2Error, K2Result, OpId};
 use prost::{bytes, Message};
 use std::sync::Arc;
@@ -116,7 +117,7 @@ fn serialize_inner_gossip_message(
 pub(crate) fn encode_agent_ids(
     agent_ids: impl IntoIterator<Item = AgentId>,
 ) -> Vec<Bytes> {
-    agent_ids.into_iter().map(|a| a.0 .0).collect::<Vec<_>>()
+    encode_ids(agent_ids)
 }
 
 /// Encode agent infos as [AgentInfoMessage]s
@@ -133,5 +134,5 @@ pub(crate) fn encode_agent_infos(
 pub(crate) fn encode_op_ids(
     op_ids: impl IntoIterator<Item = OpId>,
 ) -> Vec<Bytes> {
-    op_ids.into_iter().map(|o| o.0 .0).collect::<Vec<_>>()
+    encode_ids(op_ids)
 }

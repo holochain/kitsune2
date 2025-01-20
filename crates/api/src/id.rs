@@ -1,5 +1,7 @@
 //! Types dealing with data identity or hashing.
 
+use std::ops::Deref;
+
 macro_rules! imp_deref {
     ($i:ty, $t:ty) => {
         impl std::ops::Deref for $i {
@@ -238,6 +240,30 @@ impl OpId {
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
         OP_DISP.set(cb).is_ok()
     }
+}
+
+/// Encode a list of typed IDs into a list of bytes.
+///
+/// # Example
+///
+/// For example, a list of [AgentId]s can be encoded into a list of bytes.
+///
+/// ```
+/// use bytes::Bytes;
+/// use kitsune2_api::AgentId;
+/// use kitsune2_api::id::encode_ids;
+///
+/// let agents = vec![
+///     AgentId::from(Bytes::from_static(b"agent1")),
+///     AgentId::from(Bytes::from_static(b"agent2")),
+/// ];
+///
+/// let encoded_agents = encode_ids(agents);
+/// ```
+pub fn encode_ids(
+    ids: impl IntoIterator<Item = impl Deref<Target = Id>>,
+) -> Vec<bytes::Bytes> {
+    ids.into_iter().map(|id| id.deref().0.clone()).collect()
 }
 
 #[cfg(test)]
