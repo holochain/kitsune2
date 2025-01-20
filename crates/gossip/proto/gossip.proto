@@ -33,15 +33,6 @@ message ArcSetMessage {
   repeated uint32 arc_sectors = 1;
 }
 
-// A message representation of a Kitsune2 agent info.
-message AgentInfoMessage {
-  // The encoded agent info, which is signed by the provided signature
-  bytes encoded = 1;
-
-  // The signature of the encoded agent info.
-  bytes signature = 2;
-}
-
 // A Kitsune2 gossip initiation protocol message.
 //
 // Acceptable responses:
@@ -110,7 +101,7 @@ message K2GossipNoDiffMessage {
   repeated bytes missing_agents = 10;
 
   // The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
-  repeated AgentInfoMessage provided_agents = 11;
+  repeated bytes provided_agents = 11;
 
   // Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
   repeated bytes new_ops = 20;
@@ -130,7 +121,7 @@ message K2GossipAgentsMessage {
   bytes session_id = 1;
 
   // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
-  repeated AgentInfoMessage provided_agents = 10;
+  repeated bytes provided_agents = 10;
 }
 
 // TODO Further gossip protocol messages.

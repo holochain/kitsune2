@@ -1,12 +1,13 @@
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
     deserialize_gossip_message, encode_agent_ids, encode_agent_infos,
-    encode_op_ids, serialize_gossip_message, AgentInfoMessage, ArcSetMessage,
-    GossipMessage, K2GossipAcceptMessage, K2GossipAgentsMessage,
-    K2GossipInitiateMessage, K2GossipNoDiffMessage,
+    encode_op_ids, serialize_gossip_message, ArcSetMessage, GossipMessage,
+    K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipInitiateMessage,
+    K2GossipNoDiffMessage,
 };
 use crate::state::{GossipRoundState, RoundStage};
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
+use bytes::Bytes;
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
 use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::space::{DynSpace, Space};
@@ -107,7 +108,7 @@ struct K2Gossip {
     peer_meta_store: Arc<K2PeerMetaStore>,
     op_store: DynOpStore,
     agent_verifier: DynVerifier,
-    response_tx: tokio::sync::mpsc::Sender<GossipResponse>,
+    response_tx: Sender<GossipResponse>,
     _response_task: Arc<DropAbortHandle>,
 }
 
@@ -430,7 +431,7 @@ impl K2Gossip {
                 Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
                     session_id: accept.session_id,
                     missing_agents,
-                    provided_agents: encode_agent_infos(send_agent_infos),
+                    provided_agents: encode_agent_infos(send_agent_infos)?,
                     new_ops: encode_op_ids(new_ops),
                     updated_new_since: new_bookmark.as_micros(),
                     cannot_compare: false,
@@ -465,7 +466,7 @@ impl K2Gossip {
 
                     Ok(Some(GossipMessage::Agents(K2GossipAgentsMessage {
                         session_id: no_diff.session_id,
-                        provided_agents: encode_agent_infos(send_agent_infos),
+                        provided_agents: encode_agent_infos(send_agent_infos)?,
                     })))
                 }
             }
@@ -597,7 +598,7 @@ impl K2Gossip {
     /// Each info is checked against the verifier and then stored in the peer store.
     async fn receive_agent_infos(
         &self,
-        provided_agents: Vec<AgentInfoMessage>,
+        provided_agents: Vec<Bytes>,
     ) -> K2Result<()> {
         if provided_agents.is_empty() {
             return Ok(());
@@ -606,12 +607,8 @@ impl K2Gossip {
         // TODO check that the incoming agents are the one we requested
         let mut agents = Vec::with_capacity(provided_agents.len());
         for agent in provided_agents {
-            let agent_info = AgentInfoSigned::from_parts(
-                &self.agent_verifier,
-                String::from_utf8(agent.encoded.to_vec())
-                    .map_err(|e| K2Error::other_src("Invalid agent info", e))?,
-                agent.signature,
-            )?;
+            let agent_info =
+                AgentInfoSigned::decode(&self.agent_verifier, &agent)?;
             agents.push(agent_info);
         }
         tracing::info!("Storing agents: {:?}", agents);
@@ -675,7 +672,7 @@ impl TxModuleHandler for K2Gossip {
         peer: Url,
         space: SpaceId,
         module: String,
-        data: bytes::Bytes,
+        data: Bytes,
     ) -> K2Result<()> {
         tracing::trace!("Incoming module message: {:?}", data);
 
@@ -701,7 +698,7 @@ impl TxModuleHandler for K2Gossip {
     }
 }
 
-pub(crate) struct GossipResponse(pub(crate) bytes::Bytes, pub(crate) Url);
+pub(crate) struct GossipResponse(pub(crate) Bytes, pub(crate) Url);
 
 pub(crate) fn send_gossip_message(
     tx: &Sender<GossipResponse>,
@@ -864,7 +861,7 @@ mod test {
     }
 
     fn test_space() -> SpaceId {
-        SpaceId::from(bytes::Bytes::from_static(b"test-space"))
+        SpaceId::from(Bytes::from_static(b"test-space"))
     }
 
     #[tokio::test]

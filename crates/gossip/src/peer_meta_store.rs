@@ -120,12 +120,13 @@ impl K2PeerMetaStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
     use kitsune2_core::default_test_builder;
     use kitsune2_core::factories::MemPeerMetaStoreFactory;
     use std::sync::Arc;
 
     async fn test_store() -> K2PeerMetaStore {
-        let space = SpaceId::from(bytes::Bytes::from_static(b"test"));
+        let space = SpaceId::from(Bytes::from_static(b"test"));
         let builder =
             Arc::new(default_test_builder().with_default_config().unwrap());
         let inner = MemPeerMetaStoreFactory::create()

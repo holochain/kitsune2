@@ -1,6 +1,7 @@
 use crate::protocol::{
     K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipNoDiffMessage,
 };
+use bytes::Bytes;
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
 use rand::RngCore;
 
@@ -19,7 +20,7 @@ pub(crate) struct GossipRoundState {
     /// The session id of this round.
     ///
     /// Must be randomly chosen and unique for each initiated round.
-    pub session_id: bytes::Bytes,
+    pub session_id: Bytes,
 
     /// The current stage of the round.
     ///
@@ -46,7 +47,7 @@ impl GossipRoundState {
 
     pub(crate) fn new_accepted(
         session_with_peer: Url,
-        session_id: bytes::Bytes,
+        session_id: Bytes,
         our_agents: Vec<AgentId>,
     ) -> Self {
         Self {

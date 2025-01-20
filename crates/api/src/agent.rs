@@ -308,7 +308,7 @@ impl AgentInfoSigned {
         }
         let v: Ref = serde_json::from_slice(encoded)
             .map_err(|e| K2Error::other_src("decoding agent_info", e))?;
-        Self::from_parts(verifier, v.agent_info, v.signature)
+        Self::inner_decode_one(verifier, v.agent_info, v.signature)
     }
 
     /// Decode a canonical json encoding of a list of signed agent infos.
@@ -326,14 +326,13 @@ impl AgentInfoSigned {
         let v: Vec<Ref> = serde_json::from_slice(encoded)
             .map_err(|e| K2Error::other_src("decoding agent_info", e))?;
         Ok(v.into_iter()
-            .map(|v| Self::from_parts(verifier, v.agent_info, v.signature))
+            .map(|v| {
+                Self::inner_decode_one(verifier, v.agent_info, v.signature)
+            })
             .collect())
     }
 
-    /// Create an instance from its parts.
-    ///
-    /// Useful when receiving an agent info over the wire.
-    pub fn from_parts<V: Verifier>(
+    fn inner_decode_one<V: Verifier>(
         verifier: &V,
         agent_info: String,
         signature: bytes::Bytes,

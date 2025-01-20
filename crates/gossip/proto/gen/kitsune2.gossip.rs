@@ -68,16 +68,6 @@ pub struct ArcSetMessage {
     #[prost(uint32, repeated, tag = "1")]
     pub arc_sectors: ::prost::alloc::vec::Vec<u32>,
 }
-/// A message representation of a Kitsune2 agent info.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AgentInfoMessage {
-    /// The encoded agent info, which is signed by the provided signature
-    #[prost(bytes = "bytes", tag = "1")]
-    pub encoded: ::prost::bytes::Bytes,
-    /// The signature of the encoded agent info.
-    #[prost(bytes = "bytes", tag = "2")]
-    pub signature: ::prost::bytes::Bytes,
-}
 /// A Kitsune2 gossip initiation protocol message.
 ///
 /// Acceptable responses:
@@ -147,8 +137,8 @@ pub struct K2GossipNoDiffMessage {
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub missing_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
-    #[prost(message, repeated, tag = "11")]
-    pub provided_agents: ::prost::alloc::vec::Vec<AgentInfoMessage>,
+    #[prost(bytes = "bytes", repeated, tag = "11")]
+    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
     #[prost(bytes = "bytes", repeated, tag = "20")]
     pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
@@ -168,6 +158,6 @@ pub struct K2GossipAgentsMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
     /// The agent infos for the agents that were sent back in the missing_agents list of the previous message.
-    #[prost(message, repeated, tag = "10")]
-    pub provided_agents: ::prost::alloc::vec::Vec<AgentInfoMessage>,
+    #[prost(bytes = "bytes", repeated, tag = "10")]
+    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
 }
