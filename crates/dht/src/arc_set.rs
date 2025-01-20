@@ -343,7 +343,8 @@ mod test {
         let set = ArcSet::new(vec![
             DhtArc::Arc(0, SECTOR_SIZE - 1),
             DhtArc::Arc(20 * SECTOR_SIZE, 21 * SECTOR_SIZE - 1),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         let encoded = set.encode();
         let decoded = ArcSet::decode(encoded).unwrap();

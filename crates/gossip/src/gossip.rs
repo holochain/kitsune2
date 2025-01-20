@@ -216,7 +216,7 @@ impl K2Gossip {
             session_id: round_state.session_id.clone(),
             participating_agents: encode_agent_ids(our_agents),
             arc_set: Some(ArcSetMessage {
-                value: our_arc_set.encode()
+                value: our_arc_set.encode(),
             }),
             new_since: new_since.as_micros(),
             max_new_bytes: self.config.max_gossip_op_bytes,
@@ -306,9 +306,7 @@ impl K2Gossip {
                     .await?;
 
                 let other_arc_set = match &initiate.arc_set {
-                    Some(message) => {
-                        ArcSet::decode(&message.value)?
-                    }
+                    Some(message) => ArcSet::decode(&message.value)?,
                     None => {
                         return Err(K2Error::other(
                             "no arc set in initiate message",
