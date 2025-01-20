@@ -324,7 +324,7 @@ mod test {
     fn encode_decode_empty() {
         let set = ArcSet::new(vec![DhtArc::Empty]).unwrap();
         let encoded = set.encode();
-        let decoded = ArcSet::decode(encoded).unwrap();
+        let decoded = ArcSet::decode(&encoded).unwrap();
 
         assert_eq!(set, decoded);
     }
@@ -333,7 +333,7 @@ mod test {
     fn encode_decode_full() {
         let set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
         let encoded = set.encode();
-        let decoded = ArcSet::decode(encoded).unwrap();
+        let decoded = ArcSet::decode(&encoded).unwrap();
 
         assert_eq!(set, decoded);
     }
@@ -347,7 +347,7 @@ mod test {
         .unwrap();
 
         let encoded = set.encode();
-        let decoded = ArcSet::decode(encoded).unwrap();
+        let decoded = ArcSet::decode(&encoded).unwrap();
 
         assert_eq!(set, decoded);
     }
