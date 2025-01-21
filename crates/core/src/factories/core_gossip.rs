@@ -1,5 +1,6 @@
 use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
+use kitsune2_api::fetch::DynFetch;
 use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::space::DynSpace;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
@@ -39,6 +40,7 @@ impl GossipFactory for CoreGossipStubFactory {
         _peer_meta_store: DynPeerMetaStore,
         _op_store: DynOpStore,
         _transport: DynTransport,
+        _fetch: DynFetch,
     ) -> BoxFut<'static, K2Result<DynGossip>> {
         let out: DynGossip = Arc::new(CoreGossipStub);
         Box::pin(async move { Ok(out) })

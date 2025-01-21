@@ -266,6 +266,30 @@ pub fn encode_ids(
     ids.into_iter().map(|id| id.deref().0.clone()).collect()
 }
 
+/// Decode a list of bytes into a list of typed IDs.
+///
+/// # Example
+///
+/// For example, a list of [AgentId]s can be decoded from a list of bytes.
+///
+/// ```
+/// use bytes::Bytes;
+/// use kitsune2_api::AgentId;
+/// use kitsune2_api::id::decode_ids;
+///
+/// let agents = vec![
+///     Bytes::from_static(b"agent1"),
+///     Bytes::from_static(b"agent2"),
+/// ];
+///
+/// let decoded_agents = decode_ids::<AgentId>(agents);
+/// ```
+pub fn decode_ids<T: From<Id>>(
+    ids: impl IntoIterator<Item = bytes::Bytes>,
+) -> Vec<T> {
+    ids.into_iter().map(Id).map(Into::into).collect()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

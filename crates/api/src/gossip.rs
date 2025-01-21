@@ -1,5 +1,6 @@
 //! Gossip related types.
 
+use crate::fetch::DynFetch;
 use crate::peer_store::DynPeerStore;
 use crate::space::DynSpace;
 use crate::transport::DynTransport;
@@ -31,6 +32,7 @@ pub trait GossipFactory: 'static + Send + Sync + std::fmt::Debug {
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
+        fetch: DynFetch,
     ) -> BoxFut<'static, K2Result<DynGossip>>;
 }
 

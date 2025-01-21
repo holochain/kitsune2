@@ -6,8 +6,8 @@ mod outgoing_request_queue;
 pub(crate) mod utils {
     use crate::factories::MemoryOp;
     use bytes::Bytes;
-    use kitsune2_api::{id::Id, AgentId, OpId, Timestamp};
-    use rand::Rng;
+    use kitsune2_api::{id::Id, AgentId, OpId, Timestamp, Url};
+    use rand::{Rng, RngCore};
 
     pub fn random_id() -> Id {
         let mut rng = rand::thread_rng();
@@ -23,6 +23,11 @@ pub(crate) mod utils {
 
     pub fn random_agent_id() -> AgentId {
         AgentId(random_id())
+    }
+
+    pub fn random_peer_url() -> Url {
+        let id = rand::thread_rng().next_u32();
+        Url::from_str(format!("ws://test:80/{id}")).unwrap()
     }
 
     pub fn create_op_list(num_ops: u16) -> Vec<OpId> {
