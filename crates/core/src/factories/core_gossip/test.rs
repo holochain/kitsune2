@@ -1,6 +1,5 @@
 use super::*;
 use crate::default_test_builder;
-use kitsune2_api::space::SpaceHandler;
 use kitsune2_api::transport::{TxBaseHandler, TxHandler};
 use std::sync::Arc;
 
@@ -12,10 +11,6 @@ impl TxHandler for NoopTxHandler {}
 #[tokio::test]
 async fn create_gossip_instance() {
     let factory = CoreGossipStubFactory::create();
-
-    #[derive(Debug)]
-    struct NoopHandler;
-    impl SpaceHandler for NoopHandler {}
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
@@ -35,17 +30,12 @@ async fn create_gossip_instance() {
         .create(
             builder.clone(),
             space_id.clone(),
+            peer_store.clone(),
             builder
-                .space
-                .create(
-                    builder.clone(),
-                    Arc::new(NoopHandler),
-                    space_id.clone(),
-                    tx.clone(),
-                )
+                .local_agent_store
+                .create(builder.clone())
                 .await
                 .unwrap(),
-            peer_store.clone(),
             builder
                 .peer_meta_store
                 .create(builder.clone())

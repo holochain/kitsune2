@@ -31,8 +31,11 @@ impl TxImpHnd {
 
     /// Call this when you receive or bind a new address at which
     /// this local node can be reached by peers
-    pub fn new_listening_address(&self, this_url: Url) {
-        self.handler.new_listening_address(this_url);
+    pub fn new_listening_address(
+        &self,
+        this_url: Url,
+    ) -> BoxFut<'static, K2Result<()>> {
+        self.handler.new_listening_address(this_url)
     }
 
     /// Call this when you establish an outgoing connection and
@@ -322,8 +325,12 @@ impl Transport for DefaultTransport {
 pub trait TxBaseHandler: 'static + Send + Sync + std::fmt::Debug {
     /// A notification that a new listening address has been bound.
     /// Peers should now go to this new address to reach this node.
-    fn new_listening_address(&self, this_url: Url) {
+    fn new_listening_address(
+        &self,
+        this_url: Url,
+    ) -> BoxFut<'static, K2Result<()>> {
         drop(this_url);
+        Box::pin(async { Ok(()) })
     }
 
     /// A peer has connected to us. In addition to the preflight

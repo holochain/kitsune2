@@ -50,6 +50,9 @@ pub struct Builder {
     /// The [gossip::GossipFactory] to be used for creating
     /// [gossip::Gossip] instances.
     pub gossip: gossip::DynGossipFactory,
+    /// The [local_agent_store::LocalAgentStoreFactory] to be used for creating
+    /// [local_agent_store::LocalAgentStore] instances.
+    pub local_agent_store: Arc<dyn LocalAgentStoreFactory>,
 }
 
 impl Builder {
@@ -70,6 +73,7 @@ impl Builder {
                 op_store,
                 peer_meta_store,
                 gossip,
+                local_agent_store,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -81,6 +85,7 @@ impl Builder {
             op_store.default_config(config)?;
             peer_meta_store.default_config(config)?;
             gossip.default_config(config)?;
+            local_agent_store.default_config(config)?;
 
             config.mark_defaults_set();
         }

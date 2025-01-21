@@ -7,8 +7,12 @@ use std::sync::Arc;
 pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
     /// A notification that a new listening address has been bound.
     /// Peers should now go to this new address to reach this node.
-    fn new_listening_address(&self, this_url: Url) {
+    fn new_listening_address(
+        &self,
+        this_url: Url,
+    ) -> BoxFut<'static, K2Result<()>> {
         drop(this_url);
+        Box::pin(async { Ok(()) })
     }
 
     /// A peer has disconnected from us. If they did so gracefully

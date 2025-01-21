@@ -127,8 +127,12 @@ async fn space_notify_send_recv() {
     struct K(Recv, tokio::sync::mpsc::UnboundedSender<Url>);
 
     impl KitsuneHandler for K {
-        fn new_listening_address(&self, this_url: Url) {
+        fn new_listening_address(
+            &self,
+            this_url: Url,
+        ) -> BoxFut<'static, K2Result<()>> {
             let _ = self.1.send(this_url);
+            Box::pin(async move { Ok(()) })
         }
 
         fn create_space(

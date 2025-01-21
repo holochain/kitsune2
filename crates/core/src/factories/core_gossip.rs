@@ -2,11 +2,10 @@ use kitsune2_api::builder::Builder;
 use kitsune2_api::config::Config;
 use kitsune2_api::fetch::DynFetch;
 use kitsune2_api::peer_store::DynPeerStore;
-use kitsune2_api::space::DynSpace;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
-    BoxFut, DynGossip, DynGossipFactory, DynOpStore, DynPeerMetaStore, Gossip,
-    GossipFactory, K2Result, SpaceId,
+    BoxFut, DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
+    DynPeerMetaStore, Gossip, GossipFactory, K2Result, SpaceId,
 };
 use std::sync::Arc;
 
@@ -35,8 +34,8 @@ impl GossipFactory for CoreGossipStubFactory {
         &self,
         _builder: Arc<Builder>,
         _space_id: SpaceId,
-        _space: DynSpace,
         _peer_store: DynPeerStore,
+        _local_agent_store: DynLocalAgentStore,
         _peer_meta_store: DynPeerMetaStore,
         _op_store: DynOpStore,
         _transport: DynTransport,

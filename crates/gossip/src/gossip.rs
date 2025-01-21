@@ -12,15 +12,15 @@ use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
 use kitsune2_api::fetch::DynFetch;
 use kitsune2_api::id::decode_ids;
 use kitsune2_api::peer_store::DynPeerStore;
-use kitsune2_api::space::{DynSpace, Space};
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
-    AgentId, DynGossip, DynGossipFactory, DynOpStore, DynPeerMetaStore, Gossip,
-    GossipFactory, K2Error, K2Result, SpaceId, Timestamp, Url, UNIX_TIMESTAMP,
+    AgentId, DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
+    DynPeerMetaStore, Gossip, GossipFactory, K2Error, K2Result, SpaceId,
+    Timestamp, Url, UNIX_TIMESTAMP,
 };
 use kitsune2_dht::ArcSet;
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
@@ -47,8 +47,8 @@ impl GossipFactory for K2GossipFactory {
         &self,
         builder: Arc<kitsune2_api::builder::Builder>,
         space_id: SpaceId,
-        space: DynSpace,
         peer_store: DynPeerStore,
+        local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
@@ -60,8 +60,8 @@ impl GossipFactory for K2GossipFactory {
             let gossip: DynGossip = Arc::new(K2Gossip::create(
                 config,
                 space_id,
-                space,
                 peer_store,
+                local_agent_store,
                 peer_meta_store,
                 op_store,
                 transport,
@@ -106,8 +106,8 @@ struct K2Gossip {
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
     // create a cycle.
-    space: Weak<dyn Space>,
     peer_store: DynPeerStore,
+    local_agent_store: DynLocalAgentStore,
     peer_meta_store: Arc<K2PeerMetaStore>,
     op_store: DynOpStore,
     fetch: DynFetch,
@@ -122,8 +122,8 @@ impl K2Gossip {
     pub fn create(
         config: K2GossipConfig,
         space_id: SpaceId,
-        space: DynSpace,
         peer_store: DynPeerStore,
+        local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
@@ -158,8 +158,8 @@ impl K2Gossip {
             initiated_round_state: Arc::new(Mutex::new(None)),
             accepted_round_states: Arc::new(Mutex::new(HashMap::new())),
             space_id: space_id.clone(),
-            space: Arc::downgrade(&space),
             peer_store,
+            local_agent_store,
             peer_meta_store: Arc::new(K2PeerMetaStore::new(
                 peer_meta_store,
                 space_id.clone(),
@@ -626,11 +626,7 @@ impl K2Gossip {
     }
 
     async fn local_agent_state(&self) -> K2Result<(Vec<AgentId>, ArcSet)> {
-        let space = self
-            .space
-            .upgrade()
-            .ok_or_else(|| K2Error::other("space was dropped"))?;
-        let local_agents = space.get_local_agents().await?;
+        let local_agents = self.local_agent_store.get_all().await?;
         let (send_agents, our_arcs) = local_agents
             .iter()
             .map(|a| (a.agent().clone(), a.get_tgt_storage_arc()))
@@ -723,7 +719,7 @@ mod test {
     use super::*;
     use kitsune2_api::agent::{DynLocalAgent, LocalAgent};
     use kitsune2_api::builder::Builder;
-    use kitsune2_api::space::SpaceHandler;
+    use kitsune2_api::space::{DynSpace, SpaceHandler};
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
     use kitsune2_api::OpId;
     use kitsune2_core::factories::MemoryOp;
@@ -886,8 +882,8 @@ mod test {
             let gossip = K2Gossip::create(
                 K2GossipConfig::default(),
                 self.space_id.clone(),
-                space.clone(),
                 space.peer_store().clone(),
+                space.local_agent_store().clone(),
                 self.builder
                     .peer_meta_store
                     .create(self.builder.clone())
