@@ -1,4 +1,4 @@
-use super::utils::{random_agent_id, random_op_id, random_peer_url};
+use super::test_utils::random_peer_url;
 use crate::{
     default_test_builder,
     factories::{
@@ -11,13 +11,11 @@ use kitsune2_api::{
         k2_fetch_message::FetchMessageType, serialize_response_message, Fetch,
         FetchRequest, K2FetchMessage,
     },
-    peer_store::DynPeerStore,
     transport::{DynTransport, MockTransport},
     DynOpStore, K2Error, MetaOp, MockOpStore, OpId, Timestamp, Url,
 };
 use kitsune2_test_utils::{
-    agent::{AgentBuilder, TestLocalAgent},
-    space::TEST_SPACE_ID,
+    enable_tracing, id::random_op_id, space::TEST_SPACE_ID,
 };
 use prost::Message;
 use std::{
@@ -29,7 +27,6 @@ type RequestsSent = Vec<(OpId, Url)>;
 
 struct TestCase {
     fetch: CoreFetch,
-    peer_store: DynPeerStore,
     op_store: DynOpStore,
     requests_sent: Arc<Mutex<RequestsSent>>,
 }
@@ -37,7 +34,6 @@ struct TestCase {
 async fn setup_test() -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = create_mock_transport(requests_sent.clone());
     let op_store = MemOpStoreFactory::create()
@@ -54,7 +50,6 @@ async fn setup_test() -> TestCase {
 
     TestCase {
         fetch,
-        peer_store,
         op_store,
         requests_sent,
     }
@@ -72,8 +67,8 @@ fn create_mock_transport(
             assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             let fetch_message = K2FetchMessage::decode(data).unwrap();
-            match FetchMessageType::try_from(fetch_message.fetch_message_type) {
-                Ok(FetchMessageType::Request) => {
+            match fetch_message.fetch_message_type() {
+                FetchMessageType::Request => {
                     let request =
                         FetchRequest::decode(fetch_message.data).unwrap();
                     let mut lock = requests_sent.lock().unwrap();
@@ -151,33 +146,15 @@ async fn incoming_ops_are_written_to_op_store() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn requests_for_received_ops_are_removed_from_state() {
+    enable_tracing();
     let TestCase {
         fetch,
-        peer_store,
         requests_sent,
         ..
     } = setup_test().await;
 
-    let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
-        url: Some(Some(random_peer_url())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let peer_url = agent_info.url.clone().unwrap();
-    let another_agent_id = random_agent_id();
-    let another_agent_info = AgentBuilder {
-        agent: Some(another_agent_id.clone()),
-        url: Some(Some(random_peer_url())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let another_peer_url = another_agent_info.url.clone().unwrap();
-    peer_store
-        .insert(vec![agent_info, another_agent_info])
-        .await
-        .unwrap();
+    let peer_url = random_peer_url();
+    let another_peer_url = random_peer_url();
 
     // Add 1 op that'll be removed and another op that won't be.
     let incoming_op = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -267,9 +244,6 @@ async fn requests_for_received_ops_are_removed_from_state() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn op_ids_are_not_removed_when_storing_op_failed() {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = create_mock_transport(requests_sent.clone());
     let mut op_store = MockOpStore::new();
@@ -285,22 +259,13 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
         mock_transport,
     );
 
-    let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
-        url: Some(Some(random_peer_url())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let peer_url = agent_info.url.clone().unwrap();
-    let agent_url = agent_info.url.clone().unwrap();
-    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+    let peer_url = random_peer_url();
 
     let incoming_op = MemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id = incoming_op.compute_op_id();
 
     fetch
-        .request_ops(vec![incoming_op_id.clone()], peer_url)
+        .request_ops(vec![incoming_op_id.clone()], peer_url.clone())
         .await
         .unwrap();
 
@@ -311,7 +276,7 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url,
+            peer_url,
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             fetch_message,
