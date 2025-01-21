@@ -1,5 +1,7 @@
 #![deny(missing_docs)]
-//! Test Utilities to help with testing Kitsune2.
+//! Test utilities to help with testing Kitsune2.
+
+use rand::RngCore;
 
 /// Enable tracing with the RUST_LOG environment variable.
 ///
@@ -15,5 +17,14 @@ pub fn enable_tracing() {
         .try_init();
 }
 
+/// Create random bytes of a specified length.
+pub fn random_bytes(length: u16) -> Vec<u8> {
+    let mut rng = rand::thread_rng();
+    let mut bytes = vec![0; length as usize];
+    rng.fill_bytes(&mut bytes);
+    bytes
+}
+
 pub mod agent;
+pub mod id;
 pub mod space;
