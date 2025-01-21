@@ -1,4 +1,6 @@
-use super::utils::{create_op_list, random_agent_id, random_op_id};
+use super::utils::{
+    create_op_list, random_agent_id, random_op_id, random_peer_url,
+};
 use crate::{
     default_test_builder,
     factories::{
@@ -50,7 +52,6 @@ async fn setup_test(
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
-        peer_store.clone(),
         op_store,
         mock_transport.clone(),
     );
@@ -126,17 +127,18 @@ async fn outgoing_request_queue() {
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
         space: Some(TEST_SPACE_ID),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
+        url: Some(Some(random_peer_url())),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
+    let peer_url = agent_info.url.clone().unwrap();
     let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
     assert!(requests_sent.lock().unwrap().is_empty());
 
     // Add 1 op.
-    fetch.request_ops(op_list, agent_id.clone()).await.unwrap();
+    fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
 
     // Let the fetch request be sent multiple times. As only 1 op was added to the queue,
     // this proves that it is being re-added to the queue after sending a request for it.
@@ -241,20 +243,20 @@ async fn happy_op_fetch_from_multiple_agents() {
     op_list_1
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_1.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_url_1.clone())));
     op_list_2
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_2.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_url_2.clone())));
     op_list_3
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_3.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, agent_url_3.clone())));
 
     futures::future::join_all([
-        fetch.request_ops(op_list_1.clone(), agent_1.clone()),
-        fetch.request_ops(op_list_2.clone(), agent_2.clone()),
-        fetch.request_ops(op_list_3.clone(), agent_3.clone()),
+        fetch.request_ops(op_list_1.clone(), agent_url_1.clone()),
+        fetch.request_ops(op_list_2.clone(), agent_url_2.clone()),
+        fetch.request_ops(op_list_3.clone(), agent_url_3.clone()),
     ])
     .await;
 
@@ -278,23 +280,6 @@ async fn happy_op_fetch_from_multiple_agents() {
     // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
     assert!(expected_ops.iter().all(|v| lock.requests.contains(v)));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn ops_are_cleared_when_agent_not_in_peer_store() {
-    let TestCase { fetch, .. } =
-        setup_test(&CoreFetchConfig::default(), false).await;
-
-    let op_list = create_op_list(2);
-    let agent_id = random_agent_id();
-
-    fetch.request_ops(op_list, agent_id).await.unwrap();
-
-    // Wait for agent to be looked up in peer store.
-    tokio::time::sleep(Duration::from_millis(20)).await;
-
-    // Check that all op ids for agent have been removed from ops set.
-    assert!(fetch.state.lock().unwrap().requests.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -334,14 +319,13 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
 
     // Add all ops to the queue.
     futures::future::join_all([
-        fetch.request_ops(op_list_1.clone(), agent_1.clone()),
-        fetch.request_ops(op_list_2.clone(), agent_2.clone()),
+        fetch.request_ops(op_list_1.clone(), agent_url_1.clone()),
+        fetch.request_ops(op_list_2.clone(), agent_url_2.clone()),
     ])
     .await;
 
     // Wait for one request for each agent.
     let expected_agent_url = [agent_url_1, agent_url_2];
-    let expected_agents = [agent_1, agent_2];
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -352,14 +336,14 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
                 .collect::<Vec<_>>();
             if expected_agent_url
                 .iter()
-                .all(|agent| request_destinations.contains(&agent))
+                .all(|peer_url| request_destinations.contains(&peer_url))
             {
                 // Check all agents are on back off list.
                 let back_off_list =
                     &mut fetch.state.lock().unwrap().back_off_list;
-                if expected_agents
+                if expected_agent_url
                     .iter()
-                    .all(|agent| back_off_list.is_agent_on_back_off(agent))
+                    .all(|peer_url| back_off_list.is_peer_on_back_off(peer_url))
                 {
                     break;
                 }
@@ -391,13 +375,14 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
         ..Default::default()
     }
     .build(TestLocalAgent::default());
+    let peer_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
     let first_back_off_interval = {
         let mut lock = fetch.state.lock().unwrap();
-        lock.back_off_list.back_off_agent(&agent_id);
+        lock.back_off_list.back_off_peer(&peer_url);
 
-        assert!(lock.back_off_list.is_agent_on_back_off(&agent_id));
+        assert!(lock.back_off_list.is_peer_on_back_off(&peer_url));
 
         lock.back_off_list.first_back_off_interval_ms
     };
@@ -405,7 +390,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     tokio::time::sleep(Duration::from_millis(first_back_off_interval as u64))
         .await;
 
-    fetch.request_ops(op_list, agent_id.clone()).await.unwrap();
+    fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
 
     tokio::time::timeout(Duration::from_millis(20), async {
         loop {
@@ -454,13 +439,14 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         ..Default::default()
     }
     .build(TestLocalAgent::default());
+    let agent_url_2 = agent_info_2.url.clone().unwrap();
     peer_store
         .insert(vec![agent_info_1.clone(), agent_info_2.clone()])
         .await
         .unwrap();
 
     fetch
-        .request_ops(op_list_1.clone(), agent_id_1.clone())
+        .request_ops(op_list_1.clone(), agent_url_1.clone())
         .await
         .unwrap();
 
@@ -488,9 +474,9 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         let mut lock = fetch.state.lock().unwrap();
         assert!(op_list_1.iter().all(|op_id| lock
             .requests
-            .contains(&(op_id.clone(), agent_id_1.clone()))));
+            .contains(&(op_id.clone(), agent_url_1.clone()))));
         for _ in 0..config.num_back_off_intervals {
-            lock.back_off_list.back_off_agent(&agent_id_1);
+            lock.back_off_list.back_off_peer(&agent_url_1);
         }
 
         lock.back_off_list.last_back_off_interval_ms
@@ -506,11 +492,11 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .lock()
         .unwrap()
         .back_off_list
-        .has_last_back_off_expired(&agent_id_1));
+        .has_last_back_off_expired(&agent_url_1));
 
     // Add control agent's ops to set.
     fetch
-        .request_ops(op_list_2, agent_id_2.clone())
+        .request_ops(op_list_2, agent_url_2.clone())
         .await
         .unwrap();
 
@@ -540,5 +526,5 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .unwrap()
         .requests
         .iter()
-        .all(|(_, agent_id)| *agent_id != agent_id_1),);
+        .all(|(_, peer_url)| *peer_url != agent_url_1),);
 }

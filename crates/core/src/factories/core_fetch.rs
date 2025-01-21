@@ -1,11 +1,11 @@
 //! Fetch is a Kitsune2 module for fetching ops from peers.
 //!
-//! In particular it tracks which ops need to be fetched from which agents,
+//! In particular it tracks which ops need to be fetched from which peers,
 //! sends fetch requests and processes incoming requests and responses.
 //!
 //! It consists of multiple parts:
-//! - State object that tracks op and agent ids in memory
-//! - Fetch tasks that request tracked ops from agents
+//! - State object that tracks op and peer urls in memory
+//! - Fetch tasks that request tracked ops from peers
 //! - An incoming request task that retrieves ops from the op store and responds with the
 //!   ops to the requester
 //! - An incoming response task that writes ops to the op store and removes their ids
@@ -13,10 +13,10 @@
 //!
 //! ### State object CoreFetch
 //!
-//! - Exposes public method CoreFetch::add_ops that takes a list of op ids and an agent id.
-//! - Stores pairs of ([OpId][AgentId]) in a hash set. Hash set is used to look up elements
+//! - Exposes public method CoreFetch::add_ops that takes a list of op ids and a peer url.
+//! - Stores pairs of ([OpId], [Url]) in a hash set. Hash set is used to look up elements
 //!   by key efficiently. Ops may be added redundantly to the set with different sources
-//!   to fetch from, so the set is keyed by op and agent id combined.
+//!   to fetch from, so the set is keyed by op and peer url combined.
 //!
 //! ### Fetch tasks
 //!
@@ -26,15 +26,15 @@
 //! one by one through the channel to the receiving tasks, running in parallel and processing
 //! requests in incoming order. The flow of sending a fetch request is as follows:
 //!
-//! - Check if request for ([OpId][AgentId]) is still in the set of requests to send.
-//!     - In case the op to request has been received in the meantime and no longer needs to be fetched,
-//!       it will have been removed from the set. Do nothing.
+//! - Check if request for ([OpId], [Url]) is still in the set of requests to send.
+//!     - In case the op to request has been received in the meantime and no longer needs to be
+//!       fetched, it will have been removed from the set. Do nothing.
 //!     - Otherwise proceed.
-//! - Check if agent is on a back off list of unresponsive agents. If so, do not send a request.
-//! - Dispatch request for op id from agent to transport module.
-//! - If agent is unresponsive, put them on back off list. If maximum back off has been reached, remove
-//!   this and all other requests to the agent from the set.
-//! - Re-insert requested ([OpId], [AgentId]) into the queue. It will be removed
+//! - Check if the peer is on a back off list of unresponsive peers. If so, do not send a request.
+//! - Dispatch request for op id from peer to transport module.
+//! - If the peer is unresponsive, put them on back off list. If maximum back off has been reached,
+//!   remove this and all other requests to the peer from the set.
+//! - Re-insert requested ([OpId], [Url]) into the queue. It will be removed
 //!   from the set of requests if it is received in the meantime, and thus prevent redundant
 //!   fetch requests.
 //!
@@ -43,7 +43,7 @@
 //! Similarly to outgoing requests, a channel serves as a queue for incoming requests. The queue
 //! has the following properties:
 //! - Simple queue which processes items in the order of the incoming requests.
-//! - Requests consist of a list of requested op ids and the URL of the requesting agent.
+//! - Requests consist of a list of requested op ids and the URL of the requesting peer.
 //! - The task attempts to look up the requested op in the data store and send it in a response.
 //! - Requests for data that the host doesn't hold should be logged.
 //! - If none of the requested ops could be read from the store, no response is sent.
@@ -66,9 +66,8 @@ use kitsune2_api::{
         serialize_request_message, serialize_response_message, DynFetch,
         DynFetchFactory, Fetch, FetchFactory,
     },
-    peer_store,
     transport::DynTransport,
-    AgentId, BoxFut, DynOpStore, K2Result, Op, OpId, SpaceId, Url,
+    BoxFut, DynOpStore, K2Result, Op, OpId, SpaceId, Url,
 };
 use message_handler::FetchMessageHandler;
 use std::{
@@ -100,9 +99,9 @@ pub mod config {
         /// Delay before re-inserting ops to request back into the outgoing request queue.
         /// Default: 100 ms.
         pub re_insert_outgoing_request_delay_ms: u32,
-        /// Duration of first interval to back off an unresponsive agent. Default: 20 s.
+        /// Duration of first interval to back off an unresponsive peer. Default: 20 s.
         pub first_back_off_interval_ms: u32,
-        /// Duration of last interval to back off an unresponsive agent. Default: 10 min.
+        /// Duration of last interval to back off an unresponsive peer. Default: 10 min.
         pub last_back_off_interval_ms: u32,
         /// Number of back off intervals. Default: 4.
         pub num_back_off_intervals: usize,
@@ -156,7 +155,6 @@ impl FetchFactory for CoreFetchFactory {
         &self,
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
-        peer_store: peer_store::DynPeerStore,
         op_store: DynOpStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>> {
@@ -166,7 +164,6 @@ impl FetchFactory for CoreFetchFactory {
             let out: DynFetch = Arc::new(CoreFetch::new(
                 config.core_fetch,
                 space_id,
-                peer_store,
                 op_store,
                 transport,
             ));
@@ -175,7 +172,7 @@ impl FetchFactory for CoreFetchFactory {
     }
 }
 
-type OutgoingRequest = (OpId, AgentId);
+type OutgoingRequest = (OpId, Url);
 type IncomingRequest = (Vec<OpId>, Url);
 type IncomingResponse = Vec<Op>;
 
@@ -198,11 +195,10 @@ impl CoreFetch {
     fn new(
         config: CoreFetchConfig,
         space_id: SpaceId,
-        peer_store: peer_store::DynPeerStore,
         op_store: DynOpStore,
         transport: DynTransport,
     ) -> Self {
-        Self::spawn_tasks(config, space_id, peer_store, op_store, transport)
+        Self::spawn_tasks(config, space_id, op_store, transport)
     }
 }
 
@@ -210,7 +206,7 @@ impl Fetch for CoreFetch {
     fn request_ops(
         &self,
         op_ids: Vec<OpId>,
-        source: AgentId,
+        source: Url,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // Add requests to set.
@@ -244,7 +240,6 @@ impl CoreFetch {
     pub fn spawn_tasks(
         config: CoreFetchConfig,
         space_id: SpaceId,
-        peer_store: peer_store::DynPeerStore,
         op_store: DynOpStore,
         transport: DynTransport,
     ) -> Self {
@@ -282,7 +277,6 @@ impl CoreFetch {
                     state.clone(),
                     outgoing_request_tx.clone(),
                     outgoing_request_rx.clone(),
-                    peer_store.clone(),
                     space_id.clone(),
                     transport.clone(),
                     config.re_insert_outgoing_request_delay_ms,
@@ -333,51 +327,32 @@ impl CoreFetch {
         state: Arc<Mutex<State>>,
         outgoing_request_tx: Sender<OutgoingRequest>,
         outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
-        peer_store: peer_store::DynPeerStore,
         space_id: SpaceId,
         transport: DynTransport,
         re_insert_outgoing_request_delay: u32,
     ) {
-        while let Some((op_id, agent_id)) =
+        while let Some((op_id, peer_url)) =
             outgoing_request_rx.lock().await.recv().await
         {
-            let is_agent_on_back_off = {
+            let is_peer_on_back_off = {
                 let mut lock = state.lock().unwrap();
 
                 // Do nothing if op id is no longer in the set of requests to send.
-                if !lock.requests.contains(&(op_id.clone(), agent_id.clone())) {
+                if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
                     continue;
                 }
 
-                lock.back_off_list.is_agent_on_back_off(&agent_id)
+                lock.back_off_list.is_peer_on_back_off(&peer_url)
             };
 
-            // Send request if agent is not on back off list.
-            if !is_agent_on_back_off {
-                let peer = match CoreFetch::get_peer_url_from_store(
-                    &agent_id,
-                    peer_store.clone(),
-                )
-                .await
-                {
-                    Some(url) => url,
-                    None => {
-                        // If agent is not in peer store, remove all requests to them.
-                        state
-                            .lock()
-                            .unwrap()
-                            .requests
-                            .retain(|(_, a)| *a != agent_id);
-                        continue;
-                    }
-                };
-
+            // Send request if peer is not on back off list.
+            if !is_peer_on_back_off {
                 let data = serialize_request_message(vec![op_id.clone()]);
 
-                // Send fetch request to agent.
+                // Send fetch request to peer.
                 match transport
                     .send_module(
-                        peer,
+                        peer_url.clone(),
                         space_id.clone(),
                         MOD_NAME.to_string(),
                         data,
@@ -385,25 +360,25 @@ impl CoreFetch {
                     .await
                 {
                     Ok(()) => {
-                        // If agent was on back off list, remove them.
+                        // If peer was on back off list, remove them.
                         state
                             .lock()
                             .unwrap()
                             .back_off_list
-                            .remove_agent(&agent_id);
+                            .remove_peer(&peer_url);
                     }
                     Err(err) => {
-                        tracing::warn!("could not send fetch request for op {op_id} to agent {agent_id}: {err}");
+                        tracing::warn!("could not send fetch request for op {op_id} to peer {peer_url}: {err}");
                         let mut lock = state.lock().unwrap();
-                        lock.back_off_list.back_off_agent(&agent_id);
+                        lock.back_off_list.back_off_peer(&peer_url);
 
-                        // If max back off interval has expired for the agent,
+                        // If max back off interval has expired for the peer,
                         // give up on requesting ops from them.
                         if lock
                             .back_off_list
-                            .has_last_back_off_expired(&agent_id)
+                            .has_last_back_off_expired(&peer_url)
                         {
-                            lock.requests.retain(|(_, a)| *a != agent_id);
+                            lock.requests.retain(|(_, a)| *a != peer_url);
                         }
                     }
                 }
@@ -418,11 +393,11 @@ impl CoreFetch {
                 ))
                 .await;
                 if let Err(err) = outgoing_request_tx
-                    .try_send((op_id.clone(), agent_id.clone()))
+                    .try_send((op_id.clone(), peer_url.clone()))
                 {
-                    tracing::warn!("could not re-insert fetch request for op {op_id} to agent {agent_id} into queue: {err}");
-                    // Remove op id/agent id from set to prevent build-up of state.
-                    state.lock().unwrap().requests.remove(&(op_id, agent_id));
+                    tracing::warn!("could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}");
+                    // Remove op id/peer url from set to prevent build-up of state.
+                    state.lock().unwrap().requests.remove(&(op_id, peer_url));
                 }
             });
         }
@@ -466,7 +441,7 @@ impl CoreFetch {
                 tracing::warn!(
                     ?op_ids,
                     ?peer,
-                    "could not send ops to requesting agent: {err}"
+                    "could not send ops to requesting peer: {err}"
                 );
             }
         }
@@ -493,33 +468,6 @@ impl CoreFetch {
                     lock.requests
                         .retain(|(op_id, _)| !processed_op_ids.contains(op_id));
                 }
-            }
-        }
-    }
-
-    async fn get_peer_url_from_store(
-        agent_id: &AgentId,
-        peer_store: peer_store::DynPeerStore,
-    ) -> Option<Url> {
-        match peer_store.get(agent_id.clone()).await {
-            Ok(Some(peer)) => match &peer.url {
-                Some(url) => Some(url.clone()),
-                None => {
-                    tracing::warn!("agent {agent_id} no longer on the network");
-                    None
-                }
-            },
-            Ok(None) => {
-                tracing::warn!(
-                    "could not find agent id {agent_id} in peer store"
-                );
-                None
-            }
-            Err(err) => {
-                tracing::warn!(
-                    "could not get agent id {agent_id} from peer store: {err}"
-                );
-                None
             }
         }
     }

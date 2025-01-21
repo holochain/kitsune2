@@ -1,4 +1,4 @@
-use super::utils::{random_agent_id, random_op_id};
+use super::utils::{random_agent_id, random_op_id, random_peer_url};
 use crate::{
     default_test_builder,
     factories::{
@@ -48,7 +48,6 @@ async fn setup_test() -> TestCase {
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),
         TEST_SPACE_ID.clone(),
-        peer_store.clone(),
         op_store.clone(),
         mock_transport,
     );
@@ -162,18 +161,19 @@ async fn requests_for_received_ops_are_removed_from_state() {
     let agent_id = random_agent_id();
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
+        url: Some(Some(random_peer_url())),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
-    let agent_url = agent_info.url.clone().unwrap();
+    let peer_url = agent_info.url.clone().unwrap();
     let another_agent_id = random_agent_id();
     let another_agent_info = AgentBuilder {
         agent: Some(another_agent_id.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
+        url: Some(Some(random_peer_url())),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
+    let another_peer_url = another_agent_info.url.clone().unwrap();
     peer_store
         .insert(vec![agent_info, another_agent_info])
         .await
@@ -187,10 +187,10 @@ async fn requests_for_received_ops_are_removed_from_state() {
     futures::future::join_all([
         fetch.request_ops(
             vec![incoming_op_id.clone(), another_op_id.clone()],
-            agent_id.clone(),
+            peer_url.clone(),
         ),
         // Add the same op twice with different agent ids.
-        fetch.request_ops(vec![incoming_op_id.clone()], another_agent_id),
+        fetch.request_ops(vec![incoming_op_id.clone()], another_peer_url),
     ])
     .await;
 
@@ -214,7 +214,7 @@ async fn requests_for_received_ops_are_removed_from_state() {
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url,
+            peer_url.clone(),
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             fetch_message,
@@ -228,13 +228,13 @@ async fn requests_for_received_ops_are_removed_from_state() {
             let fetch_state = fetch.state.lock().unwrap();
             if !fetch_state
                 .requests
-                .contains(&(incoming_op_id.clone(), agent_id.clone()))
+                .contains(&(incoming_op_id.clone(), peer_url.clone()))
             {
                 // Only 1 request of another op should remain.
                 assert_eq!(fetch_state.requests.len(), 1);
                 assert!(fetch_state
                     .requests
-                    .contains(&(another_op_id, agent_id)));
+                    .contains(&(another_op_id, peer_url)));
                 break;
             }
         }
@@ -281,7 +281,6 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),
         TEST_SPACE_ID.clone(),
-        peer_store.clone(),
         op_store,
         mock_transport,
     );
@@ -289,10 +288,11 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     let agent_id = random_agent_id();
     let agent_info = AgentBuilder {
         agent: Some(agent_id.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
+        url: Some(Some(random_peer_url())),
         ..Default::default()
     }
     .build(TestLocalAgent::default());
+    let peer_url = agent_info.url.clone().unwrap();
     let agent_url = agent_info.url.clone().unwrap();
     peer_store.insert(vec![agent_info.clone()]).await.unwrap();
 
@@ -300,7 +300,7 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     let incoming_op_id = incoming_op.compute_op_id();
 
     fetch
-        .request_ops(vec![incoming_op_id.clone()], agent_id.clone())
+        .request_ops(vec![incoming_op_id.clone()], peer_url)
         .await
         .unwrap();
 

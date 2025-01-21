@@ -4,11 +4,11 @@ use std::{
 };
 
 use backon::BackoffBuilder;
-use kitsune2_api::AgentId;
+use kitsune2_api::Url;
 
 #[derive(Debug)]
 pub struct BackOffList {
-    pub(crate) state: HashMap<AgentId, BackOff>,
+    pub(crate) state: HashMap<Url, BackOff>,
     pub(crate) first_back_off_interval_ms: u32,
     pub(crate) last_back_off_interval_ms: u32,
     num_back_off_intervals_ms: usize,
@@ -28,8 +28,8 @@ impl BackOffList {
         }
     }
 
-    pub fn back_off_agent(&mut self, agent_id: &AgentId) {
-        match self.state.entry(agent_id.clone()) {
+    pub fn back_off_peer(&mut self, peer_url: &Url) {
+        match self.state.entry(peer_url.clone()) {
             Entry::Occupied(mut o) => {
                 o.get_mut().back_off();
             }
@@ -43,22 +43,22 @@ impl BackOffList {
         }
     }
 
-    pub fn is_agent_on_back_off(&mut self, agent_id: &AgentId) -> bool {
-        match self.state.get(agent_id) {
+    pub fn is_peer_on_back_off(&mut self, peer_url: &Url) -> bool {
+        match self.state.get(peer_url) {
             Some(back_off) => back_off.is_on_back_off(),
             None => false,
         }
     }
 
-    pub fn has_last_back_off_expired(&self, agent_id: &AgentId) -> bool {
-        match self.state.get(agent_id) {
+    pub fn has_last_back_off_expired(&self, peer_url: &Url) -> bool {
+        match self.state.get(peer_url) {
             Some(back_off) => back_off.has_last_interval_expired(),
             None => false,
         }
     }
 
-    pub fn remove_agent(&mut self, agent_id: &AgentId) {
-        self.state.remove(agent_id);
+    pub fn remove_peer(&mut self, peer_url: &Url) {
+        self.state.remove(peer_url);
     }
 }
 
@@ -119,30 +119,29 @@ impl BackOff {
 
 #[cfg(test)]
 mod test {
-    use crate::factories::core_fetch::{
-        back_off::BackOffList, test::utils::random_agent_id,
-    };
+    use crate::factories::core_fetch::back_off::BackOffList;
+    use crate::factories::core_fetch::test::utils::random_peer_url;
 
     #[test]
     fn back_off() {
         let mut back_off_list = BackOffList::new(10, 10, 2);
-        let agent_id = random_agent_id();
-        back_off_list.back_off_agent(&agent_id);
-        assert!(back_off_list.is_agent_on_back_off(&agent_id));
+        let agent_id = random_peer_url();
+        back_off_list.back_off_peer(&agent_id);
+        assert!(back_off_list.is_peer_on_back_off(&agent_id));
 
         std::thread::sleep(
             back_off_list.state.get(&agent_id).unwrap().current_interval,
         );
 
-        assert!(!back_off_list.is_agent_on_back_off(&agent_id));
+        assert!(!back_off_list.is_peer_on_back_off(&agent_id));
 
-        back_off_list.back_off_agent(&agent_id);
-        assert!(back_off_list.is_agent_on_back_off(&agent_id));
+        back_off_list.back_off_peer(&agent_id);
+        assert!(back_off_list.is_peer_on_back_off(&agent_id));
 
         std::thread::sleep(
             back_off_list.state.get(&agent_id).unwrap().current_interval,
         );
 
-        assert!(!back_off_list.is_agent_on_back_off(&agent_id));
+        assert!(!back_off_list.is_peer_on_back_off(&agent_id));
     }
 }

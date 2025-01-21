@@ -1,8 +1,8 @@
 //! Kitsune2 fetch types.
 
 use crate::{
-    builder, config, peer_store::DynPeerStore, transport::DynTransport,
-    AgentId, BoxFut, DynOpStore, K2Result, OpId, SpaceId,
+    builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
+    OpId, SpaceId, Url,
 };
 use bytes::{Bytes, BytesMut};
 use k2_fetch_message::FetchMessageType;
@@ -85,7 +85,7 @@ pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     fn request_ops(
         &self,
         op_ids: Vec<OpId>,
-        from: AgentId,
+        source: Url,
     ) -> BoxFut<'_, K2Result<()>>;
 }
 
@@ -103,7 +103,6 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
-        peer_store: DynPeerStore,
         op_store: DynOpStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>>;

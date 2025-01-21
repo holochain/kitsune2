@@ -25,6 +25,12 @@ async fn create_gossip_instance() {
         .create(builder.clone(), Arc::new(NoopTxHandler))
         .await
         .unwrap();
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), space_id.clone())
+        .await
+        .unwrap();
     factory
         .create(
             builder.clone(),
@@ -39,18 +45,24 @@ async fn create_gossip_instance() {
                 )
                 .await
                 .unwrap(),
-            builder.peer_store.create(builder.clone()).await.unwrap(),
+            peer_store.clone(),
             builder
                 .peer_meta_store
                 .create(builder.clone())
                 .await
                 .unwrap(),
+            op_store.clone(),
+            tx.clone(),
             builder
-                .op_store
-                .create(builder.clone(), space_id)
+                .fetch
+                .create(
+                    builder.clone(),
+                    space_id.clone(),
+                    op_store.clone(),
+                    tx.clone(),
+                )
                 .await
                 .unwrap(),
-            tx,
         )
         .await
         .unwrap();

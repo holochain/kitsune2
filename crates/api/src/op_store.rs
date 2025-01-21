@@ -24,7 +24,7 @@ pub struct MetaOp {
 
 include!("../proto/gen/kitsune2.op_store.rs");
 
-impl From<bytes::Bytes> for Op {
+impl From<Bytes> for Op {
     fn from(value: Bytes) -> Self {
         Self { data: value }
     }
