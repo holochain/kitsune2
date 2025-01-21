@@ -84,9 +84,8 @@ impl TxImp for Tx5Transport {
     fn url(&self) -> Option<Url> {
         self.ep
             .get_listening_addresses()
-            .get(0)
-            .map(|u| Url::from_str(u.as_ref()).ok())
-            .flatten()
+            .first()
+            .and_then(|u| Url::from_str(u.as_ref()).ok())
     }
 
     fn disconnect(
