@@ -88,4 +88,7 @@ kitsune2_test_utils = { path = "crates/test_utils" }
 
 # used to hash op data
 sha2 = "0.10.8"
+# used to test the tx5 integration
+sbd-server = "0.0.9-alpha2"
+# used in testing to output tracing
 tracing-subscriber = "0.3"

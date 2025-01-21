@@ -280,3 +280,6 @@ async fn evt_task(handler: Arc<TxImpHnd>, mut ep_recv: tx5::EndpointRecv) {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
