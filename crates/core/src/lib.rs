@@ -149,6 +149,7 @@ impl agent::LocalAgent for Ed25519LocalAgent {
 /// - `op_store` - The default op store is [factories::MemOpStoreFactory].
 /// - `peer_meta_store` - The default peer meta store is [factories::MemPeerMetaStoreFactory].
 /// - `gossip` - The default gossip module is [factories::CoreGossipStubFactory].
+/// - `local_agent_store` - The default local agent store is [factories::CoreLocalAgentStoreFactory].
 pub fn default_test_builder() -> Builder {
     Builder {
         config: Config::default(),
@@ -162,6 +163,7 @@ pub fn default_test_builder() -> Builder {
         op_store: factories::MemOpStoreFactory::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
         gossip: factories::CoreGossipStubFactory::create(),
+        local_agent_store: factories::CoreLocalAgentStoreFactory::create(),
     }
 }
 

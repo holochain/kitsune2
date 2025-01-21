@@ -91,10 +91,9 @@ impl SpaceFactory for CoreSpaceFactory {
                 .bootstrap
                 .create(builder.clone(), peer_store.clone(), space.clone())
                 .await?;
-            let inner = Arc::new(Mutex::new(InnerData {
-                local_agent_map: std::collections::HashMap::new(),
-                current_url: None,
-            }));
+            let local_agent_store =
+                builder.local_agent_store.create(builder.clone()).await?;
+            let inner = Arc::new(Mutex::new(InnerData { current_url: None }));
             let out: DynSpace = Arc::new_cyclic(move |this| {
                 let current_url = tx.register_space_handler(
                     space.clone(),
@@ -107,6 +106,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     tx,
                     peer_store,
                     bootstrap,
+                    local_agent_store,
                     inner,
                 )
             });
@@ -124,10 +124,18 @@ impl std::fmt::Debug for TxHandlerTranslator {
 }
 
 impl transport::TxBaseHandler for TxHandlerTranslator {
-    fn new_listening_address(&self, this_url: Url) {
-        if let Some(this) = self.1.upgrade() {
-            this.new_url(this_url);
-        }
+    fn new_listening_address(
+        &self,
+        this_url: Url,
+    ) -> BoxFut<'static, K2Result<()>> {
+        let space = self.1.upgrade();
+        Box::pin(async move {
+            if let Some(this) = space {
+                this.new_url(this_url).await?;
+            }
+
+            Ok(())
+        })
     }
 }
 
@@ -149,7 +157,6 @@ impl transport::TxSpaceHandler for TxHandlerTranslator {
 }
 
 struct InnerData {
-    local_agent_map: std::collections::HashMap<AgentId, agent::DynLocalAgent>,
     current_url: Option<Url>,
 }
 
@@ -158,6 +165,7 @@ struct CoreSpace {
     tx: transport::DynTransport,
     peer_store: peer_store::DynPeerStore,
     bootstrap: bootstrap::DynBootstrap,
+    local_agent_store: DynLocalAgentStore,
     inner: Arc<Mutex<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
 }
@@ -183,35 +191,45 @@ impl CoreSpace {
         tx: transport::DynTransport,
         peer_store: peer_store::DynPeerStore,
         bootstrap: bootstrap::DynBootstrap,
+        local_agent_store: DynLocalAgentStore,
         inner: Arc<Mutex<InnerData>>,
     ) -> Self {
         let task_check_agent_infos = tokio::task::spawn(check_agent_infos(
             config,
             peer_store.clone(),
-            inner.clone(),
+            local_agent_store.clone(),
         ));
         Self {
             space,
             tx,
             peer_store,
             bootstrap,
+            local_agent_store,
             inner,
             task_check_agent_infos,
         }
     }
 
-    pub fn new_url(&self, this_url: Url) {
-        let mut lock = self.inner.lock().unwrap();
-        lock.current_url = Some(this_url);
-        for local_agent in lock.local_agent_map.values() {
+    pub async fn new_url(&self, this_url: Url) -> K2Result<()> {
+        {
+            let mut lock = self.inner.lock().unwrap();
+            lock.current_url = Some(this_url);
+        }
+        for local_agent in self.local_agent_store.get_all().await? {
             local_agent.invoke_cb();
         }
+
+        Ok(())
     }
 }
 
 impl Space for CoreSpace {
     fn peer_store(&self) -> &peer_store::DynPeerStore {
         &self.peer_store
+    }
+
+    fn local_agent_store(&self) -> &DynLocalAgentStore {
+        &self.local_agent_store
     }
 
     fn local_agent_join(
@@ -224,11 +242,7 @@ impl Space for CoreSpace {
             local_agent.set_cur_storage_arc(DhtArc::Empty);
 
             // update our local map
-            self.inner
-                .lock()
-                .unwrap()
-                .local_agent_map
-                .insert(local_agent.agent().clone(), local_agent.clone());
+            self.local_agent_store.add(local_agent.clone()).await?;
 
             // TODO - inform gossip module of new join
             // TODO - inform sharding module of new join
@@ -309,12 +323,7 @@ impl Space for CoreSpace {
             // TODO - inform gossip module of leave
             // TODO - inform sharding module of leave
 
-            let local_agent = self
-                .inner
-                .lock()
-                .unwrap()
-                .local_agent_map
-                .remove(&local_agent);
+            let local_agent = self.local_agent_store.remove(local_agent).await;
 
             if let Some(local_agent) = local_agent {
                 // register a dummy update cb
@@ -363,10 +372,7 @@ impl Space for CoreSpace {
     }
 
     fn get_local_agents(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>> {
-        Box::pin(async move {
-            let inner = self.inner.lock().unwrap();
-            Ok(inner.local_agent_map.values().cloned().collect())
-        })
+        self.local_agent_store.get_all()
     }
 
     fn send_notify(
@@ -412,7 +418,7 @@ impl Space for CoreSpace {
 async fn check_agent_infos(
     config: CoreSpaceConfig,
     peer_store: peer_store::DynPeerStore,
-    inner: Arc<Mutex<InnerData>>,
+    local_agent_store: DynLocalAgentStore,
 ) {
     loop {
         // only check at this rate
@@ -422,13 +428,12 @@ async fn check_agent_infos(
         let cutoff = Timestamp::now() + config.re_sign_expire_time_ms();
 
         // get all the local agents
-        let agents = inner
-            .lock()
-            .unwrap()
-            .local_agent_map
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+        let Ok(agents) = local_agent_store.get_all().await else {
+            tracing::error!(
+                "error fetching local agents in re-signing before expiry logic"
+            );
+            continue;
+        };
 
         for agent in agents {
             // is this agent going to expire?

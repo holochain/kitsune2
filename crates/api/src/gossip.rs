@@ -2,10 +2,10 @@
 
 use crate::fetch::DynFetch;
 use crate::peer_store::DynPeerStore;
-use crate::space::DynSpace;
 use crate::transport::DynTransport;
 use crate::{
-    builder, config, BoxFut, DynOpStore, DynPeerMetaStore, K2Result, SpaceId,
+    builder, config, BoxFut, DynLocalAgentStore, DynOpStore, DynPeerMetaStore,
+    K2Result, SpaceId,
 };
 use std::sync::Arc;
 
@@ -27,8 +27,8 @@ pub trait GossipFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
-        space: DynSpace,
         peer_store: DynPeerStore,
+        local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,

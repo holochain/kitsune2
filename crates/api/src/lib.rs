@@ -65,6 +65,9 @@ pub use peer_meta_store::*;
 mod gossip;
 pub use gossip::*;
 
+mod local_agent_store;
+pub use local_agent_store::*;
+
 mod op_store;
 pub use op_store::*;
 

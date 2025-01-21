@@ -12,6 +12,9 @@ pub use mem_peer_store::MemPeerStoreFactory;
 pub mod mem_bootstrap;
 pub use mem_bootstrap::MemBootstrapFactory;
 
+mod core_local_agent_store;
+pub use core_local_agent_store::*;
+
 pub mod core_bootstrap;
 pub use core_bootstrap::CoreBootstrapFactory;
 

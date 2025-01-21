@@ -53,7 +53,10 @@ impl MemTransport {
     pub async fn create(handler: Arc<TxImpHnd>) -> DynTxImp {
         let mut listener = get_stat().listen();
         let this_url = listener.url();
-        handler.new_listening_address(this_url.clone());
+        handler
+            .new_listening_address(this_url.clone())
+            .await
+            .unwrap();
 
         let task_list = Arc::new(Mutex::new(tokio::task::JoinSet::new()));
 
