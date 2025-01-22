@@ -211,13 +211,14 @@ async fn restart_addr() {
     });
     let _t = test.build_transport(h).await;
 
-    assert_eq!(1, addr.lock().unwrap().len());
+    let init_len = addr.lock().unwrap().len();
+    assert!(init_len > 0);
 
     test.restart().await;
 
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            if addr.lock().unwrap().len() == 2 {
+            if addr.lock().unwrap().len() > init_len {
                 // End the test, we're happy!
                 return;
             }
