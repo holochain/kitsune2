@@ -8,7 +8,7 @@ use std::sync::Mutex;
 //
 // - That new_listening_address is called if the sbd server is restarted
 // - That peer connect / disconnect are invoked appropriately.
-// - That messages can be send / received.
+// - That messages can be sent / received.
 // - That preflight generation and checking work, which are a little weird
 //   because in kitsune2 the check logic is handled in the same recv_data
 //   callback, where tx5 handles it as a special callback.
