@@ -5,11 +5,11 @@ use kitsune2_api::{config::*, transport::*, *};
 use std::sync::Arc;
 
 trait PeerUrlExt {
-    fn to_k(&self) -> K2Result<Url>;
+    fn to_kitsune(&self) -> K2Result<Url>;
 }
 
 impl PeerUrlExt for tx5::PeerUrl {
-    fn to_k(&self) -> K2Result<Url> {
+    fn to_kitsune(&self) -> K2Result<Url> {
         Url::from_str(self.as_ref())
     }
 }
@@ -121,7 +121,7 @@ impl Tx5Transport {
                 Arc::new(move |peer_url| {
                     // gather any preflight data, and send to remote
                     let handler = preflight_send_handler.clone();
-                    let peer_url = peer_url.to_k();
+                    let peer_url = peer_url.to_kitsune();
                     Box::pin(async move {
                         let peer_url =
                             peer_url.map_err(std::io::Error::other)?;
@@ -227,7 +227,7 @@ fn handle_msg(
     peer_url: tx5::PeerUrl,
     message: Vec<u8>,
 ) -> K2Result<()> {
-    let peer_url = match peer_url.to_k() {
+    let peer_url = match peer_url.to_kitsune() {
         Ok(peer_url) => peer_url,
         Err(err) => {
             return Err(K2Error::other_src("malformed peer url", err));
@@ -269,7 +269,7 @@ async fn evt_task(
     while let Some(evt) = ep_recv.recv().await {
         match evt {
             ListeningAddressOpen { local_url } => {
-                let local_url = match local_url.to_k() {
+                let local_url = match local_url.to_kitsune() {
                     Ok(local_url) => local_url,
                     Err(err) => {
                         tracing::debug!(?err, "ignoring malformed local url");
@@ -286,7 +286,7 @@ async fn evt_task(
                 // we can safely ignore this event.
             }
             Disconnected { peer_url } => {
-                let peer_url = match peer_url.to_k() {
+                let peer_url = match peer_url.to_kitsune() {
                     Ok(peer_url) => peer_url,
                     Err(err) => {
                         tracing::debug!(?err, "ignoring malformed peer url");
