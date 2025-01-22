@@ -15,14 +15,14 @@ pub(crate) fn spawn_timeout_task(
 ) -> AbortHandle {
     tracing::info!("Starting timeout task");
 
-    let gossip_timeout = config.gossip_timeout();
+    let round_timeout = config.round_timeout();
     tokio::spawn(async move {
         loop {
             // Check for timed out rounds every 5s
             tokio::time::sleep(Duration::from_secs(5)).await;
 
             remove_timed_out_rounds(
-                gossip_timeout,
+                round_timeout,
                 gossip.initiated_round_state.clone(),
                 gossip.accepted_round_states.clone(),
             )
@@ -33,14 +33,14 @@ pub(crate) fn spawn_timeout_task(
 }
 
 async fn remove_timed_out_rounds(
-    gossip_timeout: Duration,
+    round_timeout: Duration,
     initiated_round_state: Arc<Mutex<Option<GossipRoundState>>>,
     accepted_round_states: Arc<Mutex<HashMap<Url, GossipRoundState>>>,
 ) {
     {
         let mut initiated_state = initiated_round_state.lock().await;
         match initiated_state.as_ref() {
-            Some(state) if state.started_at.elapsed() > gossip_timeout => {
+            Some(state) if state.started_at.elapsed() > round_timeout => {
                 tracing::warn!("Initiated round timed out: {:?}", state);
                 *initiated_state = None;
             }
@@ -49,7 +49,7 @@ async fn remove_timed_out_rounds(
     }
 
     accepted_round_states.lock().await.retain(|_, state| {
-        match state.started_at.elapsed() > gossip_timeout {
+        match state.started_at.elapsed() > round_timeout {
             true => {
                 tracing::warn!("Accepted round timed out: {:?}", state);
                 false

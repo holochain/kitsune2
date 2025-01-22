@@ -48,7 +48,7 @@ pub struct K2GossipConfig {
     /// timed out rounds.
     ///
     /// Default: 60,000 (1m)
-    pub gossip_timeout_ms: u32,
+    pub round_timeout_ms: u32,
 }
 
 impl Default for K2GossipConfig {
@@ -57,7 +57,7 @@ impl Default for K2GossipConfig {
             max_gossip_op_bytes: 100 * 1024 * 1024,
             initiate_interval_ms: 120_000,
             min_initiate_interval_ms: 300_000,
-            gossip_timeout_ms: 60_000,
+            round_timeout_ms: 60_000,
         }
     }
 }
@@ -75,8 +75,8 @@ impl K2GossipConfig {
     }
 
     /// The timeout for a gossip round.
-    pub(crate) fn gossip_timeout(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.gossip_timeout_ms as u64)
+    pub(crate) fn round_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.round_timeout_ms as u64)
     }
 }
 
