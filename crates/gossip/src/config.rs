@@ -18,25 +18,48 @@ pub struct K2GossipConfig {
     /// Default: 100MB
     pub max_gossip_op_bytes: u32,
 
-    /// The interval in seconds between gossip rounds.
+    /// The interval in seconds between initiating gossip rounds.
+    ///
+    /// This controls how often Kitsune will attempt to find a peer to gossip with.
+    ///
+    /// This can be set as low as you'd like, but you will still be limited by
+    /// [K2GossipConfig::min_initiate_interval_ms]. So a low value for this will result in Kitsune
+    /// doing its gossip initiation in a burst. Then, when it has run out of peers, it will idle
+    /// for a while.
+    ///
+    /// Default: 120,000 (2m)
+    pub initiate_interval_ms: u32,
+
+    /// The minimum amount of time that must be allowed to pass before a gossip round can be
+    /// initiated by a given peer.
+    ///
+    /// This is a rate-limiting mechanism to be enforced against incoming gossip and therefore must
+    /// be respected when initiating too.
     ///
     /// Default: 300,000 (5m)
-    pub interval_ms: u32,
+    pub min_initiate_interval_ms: u32,
 }
 
 impl Default for K2GossipConfig {
     fn default() -> Self {
         Self {
             max_gossip_op_bytes: 100 * 1024 * 1024,
-            interval_ms: 300_000,
+            initiate_interval_ms: 120_000,
+            min_initiate_interval_ms: 300_000,
         }
     }
 }
 
 impl K2GossipConfig {
-    /// The interval between gossip rounds.
-    pub(crate) fn interval(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.interval_ms as u64)
+    /// The interval between initiating gossip rounds.
+    pub(crate) fn initiate_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.initiate_interval_ms as u64)
+    }
+
+    /// The minimum amount of time that must be allowed to pass before a gossip round can be
+    /// initiated by a given peer.
+    pub(crate) fn min_initiate_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.min_initiate_interval_ms as u64)
     }
 }
 

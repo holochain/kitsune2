@@ -133,6 +133,18 @@ pub struct AgentBuilder {
 }
 
 impl AgentBuilder {
+    /// Set the peer URL for the agent.
+    pub fn with_url(mut self, url: Option<Url>) -> Self {
+        self.url = Some(url);
+        self
+    }
+
+    /// Set the storage arc for the agent.
+    pub fn with_storage_arc(mut self, arc: DhtArc) -> Self {
+        self.storage_arc = Some(arc);
+        self
+    }
+
     /// Build an agent from given values or defaults.
     pub fn build<A: agent::LocalAgent>(
         self,
@@ -146,7 +158,7 @@ impl AgentBuilder {
         });
         let is_tombstone = self.is_tombstone.unwrap_or(false);
         let url = self.url.unwrap_or(None);
-        let storage_arc = self.storage_arc.unwrap_or(DhtArc::FULL);
+        let storage_arc = self.storage_arc.unwrap_or_default();
         let agent_info = agent::AgentInfo {
             agent,
             space,

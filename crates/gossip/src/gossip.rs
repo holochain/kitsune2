@@ -1,3 +1,4 @@
+use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
     deserialize_gossip_message, encode_agent_ids, encode_agent_infos,
@@ -180,6 +181,13 @@ impl K2Gossip {
             Arc::new(gossip.clone()),
         );
 
+        spawn_initiate_task(
+            gossip.config.clone(),
+            gossip.peer_store.clone(),
+            gossip.local_agent_store.clone(),
+            gossip.peer_meta_store.clone(),
+        );
+
         gossip
     }
 }
@@ -295,8 +303,8 @@ impl K2Gossip {
                             K2Error::other("could not calculate elapsed time")
                         })?;
 
-                    if elapsed < self.config.interval() {
-                        tracing::info!("peer {:?} attempted to initiate too soon {:?} < {:?}", from_peer, elapsed, self.config.interval());
+                    if elapsed < self.config.min_initiate_interval() {
+                        tracing::info!("peer {:?} attempted to initiate too soon {:?} < {:?}", from_peer, elapsed, self.config.min_initiate_interval());
                         return Err(K2Error::other("initiate too soon"));
                     }
                 }
