@@ -124,17 +124,12 @@ impl std::fmt::Debug for TxHandlerTranslator {
 }
 
 impl transport::TxBaseHandler for TxHandlerTranslator {
-    fn new_listening_address(
-        &self,
-        this_url: Url,
-    ) -> BoxFut<'static, K2Result<()>> {
+    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         let space = self.1.upgrade();
         Box::pin(async move {
             if let Some(this) = space {
-                this.new_url(this_url).await?;
+                this.new_url(this_url).await;
             }
-
-            Ok(())
         })
     }
 }
@@ -210,16 +205,17 @@ impl CoreSpace {
         }
     }
 
-    pub async fn new_url(&self, this_url: Url) -> K2Result<()> {
+    pub async fn new_url(&self, this_url: Url) {
         {
             let mut lock = self.inner.lock().unwrap();
             lock.current_url = Some(this_url);
         }
-        for local_agent in self.local_agent_store.get_all().await? {
-            local_agent.invoke_cb();
-        }
 
-        Ok(())
+        if let Ok(local_agents) = self.local_agent_store.get_all().await {
+            for local_agent in local_agents {
+                local_agent.invoke_cb();
+            }
+        }
     }
 }
 
