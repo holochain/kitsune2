@@ -1,3 +1,4 @@
+use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::K2GossipConfig;
 use kitsune2_api::agent::{AgentInfoSigned, LocalAgent};
@@ -11,9 +12,7 @@ use tokio::task::AbortHandle;
 
 pub fn spawn_initiate_task(
     config: Arc<K2GossipConfig>,
-    peer_store: DynPeerStore,
-    local_agent_store: DynLocalAgentStore,
-    peer_meta_store: Arc<K2PeerMetaStore>,
+    gossip: K2Gossip,
 ) -> AbortHandle {
     tracing::info!("Start initiate task");
 
@@ -25,15 +24,17 @@ pub fn spawn_initiate_task(
 
             match select_next_target(
                 min_initiate_interval,
-                peer_store.clone(),
-                local_agent_store.clone(),
-                peer_meta_store.clone(),
+                gossip.peer_store.clone(),
+                gossip.local_agent_store.clone(),
+                gossip.peer_meta_store.clone(),
             )
             .await
             {
                 Ok(Some(url)) => {
                     tracing::info!("Initiating gossip with {}", url);
-                    // initiate_gossip(url, peer_store.clone(), local_agent_store.clone()).await;
+                    if let Err(e) = gossip.initiate_gossip(url).await {
+                        tracing::error!("Error initiating gossip: {:?}", e);
+                    }
                 }
                 Ok(None) => {
                     tracing::info!("No target to gossip with");
