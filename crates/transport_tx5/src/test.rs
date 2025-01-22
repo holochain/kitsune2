@@ -38,6 +38,7 @@ impl Test {
             .config
             .set_module_config(&config::Tx5TransportModConfig {
                 tx5_transport: config::Tx5TransportConfig {
+                    signal_allow_plain_text: true,
                     server_url: format!("ws://127.0.0.1:{}", this.port),
                 },
             })

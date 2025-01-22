@@ -32,6 +32,12 @@ pub mod config {
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Tx5TransportConfig {
+        /// Allow connecting to plaintext (ws) signal server
+        /// instead of the default requiring TLS (wss).
+        ///
+        /// Default: false.
+        pub signal_allow_plain_text: bool,
+
         /// The url of the sbd signal server. E.g. `wss://sbd.kitsu.ne`.
         pub server_url: String,
     }
@@ -39,6 +45,7 @@ pub mod config {
     impl Default for Tx5TransportConfig {
         fn default() -> Self {
             Self {
+                signal_allow_plain_text: false,
                 server_url: "<wss://your.sbd.url>".into(),
             }
         }
@@ -116,7 +123,7 @@ impl Tx5Transport {
 
         let preflight_send_handler = handler.clone();
         let tx5_config = Arc::new(tx5::Config {
-            signal_allow_plain_text: true,
+            signal_allow_plain_text: config.signal_allow_plain_text,
             preflight: Some((
                 Arc::new(move |peer_url| {
                     // gather any preflight data, and send to remote
