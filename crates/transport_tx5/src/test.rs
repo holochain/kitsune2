@@ -27,6 +27,8 @@ impl Test {
             builder: Arc::new(kitsune2_core::default_test_builder()),
         };
 
+        // Note the `port: 0` above, so we get a free port the first time.
+        // This restart function will set the port to the actual value.
         this.restart().await;
 
         let builder = kitsune2_api::builder::Builder {
@@ -49,6 +51,12 @@ impl Test {
         this
     }
 
+    /// Restart the sbd server, but re-use the port we first got in our
+    /// constructor so that already configured transports being tested
+    /// will be able to find the server automatically again.
+    ///
+    /// There is a small chance something else could grab the port
+    /// in the mean time, and this will error/flake.
     pub async fn restart(&mut self) {
         std::mem::drop(self.srv.take());
 
