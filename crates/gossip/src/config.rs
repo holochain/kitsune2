@@ -20,15 +20,15 @@ pub struct K2GossipConfig {
 
     /// The interval in seconds between gossip rounds.
     ///
-    /// Default: 300 (5m)
-    pub interval_s: u32,
+    /// Default: 300,000 (5m)
+    pub interval_ms: u32,
 }
 
 impl Default for K2GossipConfig {
     fn default() -> Self {
         Self {
             max_gossip_op_bytes: 100 * 1024 * 1024,
-            interval_s: 300,
+            interval_ms: 300_000,
         }
     }
 }
@@ -36,7 +36,7 @@ impl Default for K2GossipConfig {
 impl K2GossipConfig {
     /// The interval between gossip rounds.
     pub(crate) fn interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.interval_s as u64)
+        std::time::Duration::from_millis(self.interval_ms as u64)
     }
 }
 

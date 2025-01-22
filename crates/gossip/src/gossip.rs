@@ -753,8 +753,7 @@ mod test {
                         .iter()
                         .any(|a| a.agent.clone() == agent_id)
                     {
-                        tokio::time::sleep(std::time::Duration::from_millis(5))
-                            .await;
+                        tokio::time::sleep(Duration::from_millis(5)).await;
                     }
                 }
             })
@@ -765,7 +764,7 @@ mod test {
         }
 
         async fn wait_for_agent_in_peer_store(&self, agent: AgentId) {
-            tokio::time::timeout(std::time::Duration::from_millis(100), {
+            tokio::time::timeout(Duration::from_millis(100), {
                 let this = self.clone();
                 async move {
                     loop {
