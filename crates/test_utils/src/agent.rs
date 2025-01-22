@@ -1,11 +1,9 @@
-//! Test Utility helpers around agents and agent info.
+//! Test utilities associated with agents and agent info.
 
 use kitsune2_api::*;
 use std::sync::{Arc, Mutex};
 
-/// A default test space id.
-pub const TEST_SPACE: SpaceId =
-    SpaceId(id::Id(bytes::Bytes::from_static(b"test-space")));
+use crate::space::TEST_SPACE_ID;
 
 /// The test signature bytes.
 pub const TEST_SIG: &[u8] = b"test-signature";
@@ -139,7 +137,7 @@ impl AgentBuilder {
         a: A,
     ) -> Arc<agent::AgentInfoSigned> {
         let agent = self.agent.unwrap_or_else(|| a.agent().clone());
-        let space = self.space.unwrap_or_else(|| TEST_SPACE.clone());
+        let space = self.space.unwrap_or_else(|| TEST_SPACE_ID.clone());
         let created_at = self.created_at.unwrap_or_else(Timestamp::now);
         let expires_at = self.expires_at.unwrap_or_else(|| {
             created_at + std::time::Duration::from_secs(60 * 20)

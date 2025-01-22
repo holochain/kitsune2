@@ -1,5 +1,5 @@
 use kitsune2_api::{kitsune::*, space::*, *};
-use kitsune2_test_utils::agent::*;
+use kitsune2_test_utils::{agent::*, space::TEST_SPACE_ID};
 use std::sync::{Arc, Mutex};
 
 macro_rules! iter_check {
@@ -54,7 +54,7 @@ async fn space_local_agent_join_leave() {
     let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
     let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
 
-    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
 
     s1.local_agent_join(bob.clone()).await.unwrap();
     s1.local_agent_join(ned.clone()).await.unwrap();
@@ -153,7 +153,7 @@ async fn space_notify_send_recv() {
     .build(k)
     .await
     .unwrap();
-    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
     let u1 = u_r.recv().await.unwrap();
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
@@ -166,7 +166,7 @@ async fn space_notify_send_recv() {
     .build(k)
     .await
     .unwrap();
-    let s2 = k2.space(TEST_SPACE.clone()).await.unwrap();
+    let s2 = k2.space(TEST_SPACE_ID.clone()).await.unwrap();
     let u2 = u_r.recv().await.unwrap();
 
     println!("url: {u1}, {u2}");
@@ -198,7 +198,7 @@ async fn space_notify_send_recv() {
     let (t, f, s, d) = recv.lock().unwrap().remove(0);
     assert_eq!(bob.agent(), &t);
     assert_eq!(ned.agent(), &f);
-    assert_eq!(TEST_SPACE, s);
+    assert_eq!(TEST_SPACE_ID, s);
     assert_eq!("hello", String::from_utf8_lossy(&d));
 
     s2.send_notify(
@@ -212,7 +212,7 @@ async fn space_notify_send_recv() {
     let (t, f, s, d) = recv.lock().unwrap().remove(0);
     assert_eq!(ned.agent(), &t);
     assert_eq!(bob.agent(), &f);
-    assert_eq!(TEST_SPACE, s);
+    assert_eq!(TEST_SPACE_ID, s);
     assert_eq!("world", String::from_utf8_lossy(&d));
 }
 
@@ -297,7 +297,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
 
     let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
 
-    let s1 = k1.space(TEST_SPACE.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
 
     s1.local_agent_join(bob.clone()).await.unwrap();
 

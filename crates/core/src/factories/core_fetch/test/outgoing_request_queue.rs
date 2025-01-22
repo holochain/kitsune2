@@ -1,6 +1,4 @@
-use super::utils::{
-    create_op_list, random_agent_id, random_op_id, random_peer_url,
-};
+use super::test_utils::{create_op_id_list, random_peer_url};
 use crate::{
     default_test_builder,
     factories::{
@@ -12,14 +10,10 @@ use kitsune2_api::{
     fetch::{
         k2_fetch_message::FetchMessageType, Fetch, FetchRequest, K2FetchMessage,
     },
-    peer_store::DynPeerStore,
     transport::MockTransport,
     K2Error, OpId, Url,
 };
-use kitsune2_test_utils::{
-    agent::{AgentBuilder, TestLocalAgent},
-    space::TEST_SPACE_ID,
-};
+use kitsune2_test_utils::{id::random_op_id, space::TEST_SPACE_ID};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
@@ -30,7 +24,6 @@ type RequestsSent = Vec<(OpId, Url)>;
 
 struct TestCase {
     fetch: CoreFetch,
-    peer_store: DynPeerStore,
     requests_sent: Arc<Mutex<RequestsSent>>,
 }
 
@@ -40,7 +33,6 @@ async fn setup_test(
 ) -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), TEST_SPACE_ID)
         .await
@@ -58,7 +50,6 @@ async fn setup_test(
 
     TestCase {
         fetch,
-        peer_store,
         requests_sent,
     }
 }
@@ -77,17 +68,16 @@ fn make_mock_transport(
                 let requests_sent = requests_sent.clone();
                 async move {
                     let fetch_message = K2FetchMessage::decode(data).unwrap();
-                    let op_ids: Vec<OpId> = match FetchMessageType::try_from(
-                        fetch_message.fetch_message_type,
-                    ) {
-                        Ok(FetchMessageType::Request) => {
-                            let request =
-                                FetchRequest::decode(fetch_message.data)
-                                    .unwrap();
-                            request.into()
-                        }
-                        _ => panic!("unexpected fetch message type"),
-                    };
+                    let op_ids: Vec<OpId> =
+                        match fetch_message.fetch_message_type() {
+                            FetchMessageType::Request => {
+                                let request =
+                                    FetchRequest::decode(fetch_message.data)
+                                        .unwrap();
+                                request.into()
+                            }
+                            _ => panic!("unexpected fetch message type"),
+                        };
                     let mut lock = requests_sent.lock().unwrap();
                     op_ids.into_iter().for_each(|op_id| {
                         lock.push((op_id, peer.clone()));
@@ -120,24 +110,13 @@ async fn outgoing_request_queue() {
     };
     let TestCase {
         fetch,
-        peer_store,
         requests_sent,
         ..
     } = setup_test(&config, false).await;
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
-    let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
-        space: Some(TEST_SPACE_ID),
-        url: Some(Some(random_peer_url())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let peer_url = agent_info.url.clone().unwrap();
-    let agent_url = agent_info.url.clone().unwrap();
-    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+    let peer_url = random_peer_url();
 
     assert!(requests_sent.lock().unwrap().is_empty());
 
@@ -146,7 +125,7 @@ async fn outgoing_request_queue() {
 
     // Let the fetch request be sent multiple times. As only 1 op was added to the queue,
     // this proves that it is being re-added to the queue after sending a request for it.
-    tokio::time::timeout(Duration::from_millis(20), async {
+    tokio::time::timeout(Duration::from_millis(30), async {
         loop {
             tokio::task::yield_now().await;
             if requests_sent.lock().unwrap().len() >= 2 {
@@ -167,11 +146,11 @@ async fn outgoing_request_queue() {
         .lock()
         .unwrap()
         .iter()
-        .all(|request| request == &(op_id.clone(), agent_url.clone())));
+        .all(|request| request == &(op_id.clone(), peer_url.clone())));
 
     // Give time for more requests to be sent, which shouldn't happen now that the set of
     // ops to fetch is cleared.
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::time::sleep(Duration::from_millis(30)).await;
 
     // No more requests should have been sent.
     // Ideally it were possible to check that no more fetch request have been passed back into
@@ -188,84 +167,55 @@ async fn happy_op_fetch_from_multiple_agents() {
     };
     let TestCase {
         fetch,
-        peer_store,
         requests_sent,
         ..
     } = setup_test(&config, false).await;
 
-    let op_list_1 = create_op_list(10);
-    let agent_1 = random_agent_id();
-    let op_list_2 = create_op_list(20);
-    let agent_2 = random_agent_id();
-    let op_list_3 = create_op_list(30);
-    let agent_3 = random_agent_id();
+    let op_list_1 = create_op_id_list(10);
+    let op_list_2 = create_op_id_list(20);
+    let op_list_3 = create_op_id_list(30);
     let total_ops = op_list_1.len() + op_list_2.len() + op_list_3.len();
 
-    let agent_info_1 = AgentBuilder {
-        agent: Some(agent_1.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        space: Some(TEST_SPACE_ID),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_info_2 = AgentBuilder {
-        agent: Some(agent_2.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        space: Some(TEST_SPACE_ID),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_info_3 = AgentBuilder {
-        agent: Some(agent_3.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:3").unwrap())),
-        space: Some(TEST_SPACE_ID),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_url_1 = agent_info_1.url.clone().unwrap();
-    let agent_url_2 = agent_info_2.url.clone().unwrap();
-    let agent_url_3 = agent_info_3.url.clone().unwrap();
-    peer_store
-        .insert(vec![agent_info_1, agent_info_2, agent_info_3])
-        .await
-        .unwrap();
+    let peer_url_1 = random_peer_url();
+    let peer_url_2 = random_peer_url();
+    let peer_url_3 = random_peer_url();
 
     let mut expected_requests = Vec::new();
     op_list_1
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_requests.push((op_id, agent_url_1.clone())));
+        .for_each(|op_id| expected_requests.push((op_id, peer_url_1.clone())));
     op_list_2
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_requests.push((op_id, agent_url_2.clone())));
+        .for_each(|op_id| expected_requests.push((op_id, peer_url_2.clone())));
     op_list_3
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_requests.push((op_id, agent_url_3.clone())));
+        .for_each(|op_id| expected_requests.push((op_id, peer_url_3.clone())));
     let mut expected_ops = Vec::new();
     op_list_1
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_url_1.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, peer_url_1.clone())));
     op_list_2
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_url_2.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, peer_url_2.clone())));
     op_list_3
         .clone()
         .into_iter()
-        .for_each(|op_id| expected_ops.push((op_id, agent_url_3.clone())));
+        .for_each(|op_id| expected_ops.push((op_id, peer_url_3.clone())));
 
     futures::future::join_all([
-        fetch.request_ops(op_list_1.clone(), agent_url_1.clone()),
-        fetch.request_ops(op_list_2.clone(), agent_url_2.clone()),
-        fetch.request_ops(op_list_3.clone(), agent_url_3.clone()),
+        fetch.request_ops(op_list_1.clone(), peer_url_1.clone()),
+        fetch.request_ops(op_list_2.clone(), peer_url_2.clone()),
+        fetch.request_ops(op_list_3.clone(), peer_url_3.clone()),
     ])
     .await;
 
     // Check that at least one request was sent for each op.
-    tokio::time::timeout(Duration::from_millis(20), async {
+    tokio::time::timeout(Duration::from_millis(30), async {
         loop {
             tokio::task::yield_now().await;
             let requests_sent = requests_sent.lock().unwrap().clone();
@@ -290,62 +240,41 @@ async fn happy_op_fetch_from_multiple_agents() {
 async fn unresponsive_agents_are_put_on_back_off_list() {
     let TestCase {
         fetch,
-        peer_store,
         requests_sent,
         ..
     } = setup_test(&CoreFetchConfig::default(), true).await;
 
-    let op_list_1 = create_op_list(5);
-    let agent_1 = random_agent_id();
-    let op_list_2 = create_op_list(5);
-    let agent_2 = random_agent_id();
+    let op_list_1 = create_op_id_list(5);
+    let op_list_2 = create_op_id_list(5);
 
-    let agent_info_1 = AgentBuilder {
-        agent: Some(agent_1.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        space: Some(TEST_SPACE_ID),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_info_2 = AgentBuilder {
-        agent: Some(agent_2.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        space: Some(TEST_SPACE_ID),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_url_1 = agent_info_1.url.clone().unwrap();
-    let agent_url_2 = agent_info_2.url.clone().unwrap();
-    peer_store
-        .insert(vec![agent_info_1, agent_info_2])
-        .await
-        .unwrap();
+    let peer_url_1 = random_peer_url();
+    let peer_url_2 = random_peer_url();
 
     // Add all ops to the queue.
     futures::future::join_all([
-        fetch.request_ops(op_list_1.clone(), agent_url_1.clone()),
-        fetch.request_ops(op_list_2.clone(), agent_url_2.clone()),
+        fetch.request_ops(op_list_1.clone(), peer_url_1.clone()),
+        fetch.request_ops(op_list_2.clone(), peer_url_2.clone()),
     ])
     .await;
 
     // Wait for one request for each agent.
-    let expected_agent_url = [agent_url_1, agent_url_2];
+    let expected_peer_url = [peer_url_1, peer_url_2];
     tokio::time::timeout(Duration::from_millis(100), async {
         loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
             let requests_sent = requests_sent.lock().unwrap();
             let request_destinations = requests_sent
                 .iter()
                 .map(|(_, agent_id)| agent_id)
                 .collect::<Vec<_>>();
-            if expected_agent_url
+            if expected_peer_url
                 .iter()
                 .all(|peer_url| request_destinations.contains(&peer_url))
             {
                 // Check all agents are on back off list.
                 let back_off_list =
                     &mut fetch.state.lock().unwrap().back_off_list;
-                if expected_agent_url
+                if expected_peer_url
                     .iter()
                     .all(|peer_url| back_off_list.is_peer_on_back_off(peer_url))
                 {
@@ -366,21 +295,11 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     };
     let TestCase {
         fetch,
-        peer_store,
         requests_sent,
     } = setup_test(&config, false).await;
 
-    let op_list = create_op_list(1);
-    let agent_id = random_agent_id();
-    let agent_info = AgentBuilder {
-        agent: Some(agent_id.clone()),
-        space: Some(TEST_SPACE_ID),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let peer_url = agent_info.url.clone().unwrap();
-    peer_store.insert(vec![agent_info.clone()]).await.unwrap();
+    let op_list = create_op_id_list(1);
+    let peer_url = random_peer_url();
 
     let first_back_off_interval = {
         let mut lock = fetch.state.lock().unwrap();
@@ -396,7 +315,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 
     fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
 
-    tokio::time::timeout(Duration::from_millis(20), async {
+    tokio::time::timeout(Duration::from_millis(30), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             if !requests_sent.lock().unwrap().is_empty() {
@@ -420,42 +339,23 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     };
     let TestCase {
         fetch,
-        peer_store,
         requests_sent,
     } = setup_test(&config, true).await;
 
-    let op_list_1 = create_op_list(2);
-    let agent_id_1 = random_agent_id();
-    let agent_info_1 = AgentBuilder {
-        agent: Some(agent_id_1.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:1").unwrap())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_url_1 = agent_info_1.url.clone().unwrap();
+    let op_list_1 = create_op_id_list(2);
+    let peer_url_1 = random_peer_url();
 
     // Create a second agent to later check that their ops have not been removed.
-    let op_list_2 = create_op_list(2);
-    let agent_id_2 = random_agent_id();
-    let agent_info_2 = AgentBuilder {
-        agent: Some(agent_id_2.clone()),
-        url: Some(Some(Url::from_str("wss://127.0.0.1:2").unwrap())),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default());
-    let agent_url_2 = agent_info_2.url.clone().unwrap();
-    peer_store
-        .insert(vec![agent_info_1.clone(), agent_info_2.clone()])
-        .await
-        .unwrap();
+    let op_list_2 = create_op_id_list(2);
+    let peer_url_2 = random_peer_url();
 
     fetch
-        .request_ops(op_list_1.clone(), agent_url_1.clone())
+        .request_ops(op_list_1.clone(), peer_url_1.clone())
         .await
         .unwrap();
 
     // Wait for one request to fail, so agent is put on back off list.
-    tokio::time::timeout(Duration::from_millis(20), async {
+    tokio::time::timeout(Duration::from_millis(30), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             if !requests_sent.lock().unwrap().clone().is_empty() {
@@ -470,7 +370,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(_, a)| *a != agent_url_1)
+        .filter(|(_, a)| *a != peer_url_1)
         .count();
 
     // Back off agent the maximum possible number of times.
@@ -478,9 +378,9 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         let mut lock = fetch.state.lock().unwrap();
         assert!(op_list_1.iter().all(|op_id| lock
             .requests
-            .contains(&(op_id.clone(), agent_url_1.clone()))));
+            .contains(&(op_id.clone(), peer_url_1.clone()))));
         for _ in 0..config.num_back_off_intervals {
-            lock.back_off_list.back_off_peer(&agent_url_1);
+            lock.back_off_list.back_off_peer(&peer_url_1);
         }
 
         lock.back_off_list.last_back_off_interval_ms
@@ -496,24 +396,24 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .lock()
         .unwrap()
         .back_off_list
-        .has_last_back_off_expired(&agent_url_1));
+        .has_last_back_off_expired(&peer_url_1));
 
     // Add control agent's ops to set.
     fetch
-        .request_ops(op_list_2, agent_url_2.clone())
+        .request_ops(op_list_2, peer_url_2.clone())
         .await
         .unwrap();
 
     // Wait for another request attempt to agent 1, which should remove all of their requests
     // from the set.
-    tokio::time::timeout(Duration::from_millis(20), async {
+    tokio::time::timeout(Duration::from_millis(30), async {
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
             if requests_sent
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|(_, a)| *a != agent_url_1)
+                .filter(|(_, a)| *a != peer_url_1)
                 .count()
                 > current_number_of_requests_to_agent_1
             {
@@ -530,5 +430,5 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .unwrap()
         .requests
         .iter()
-        .all(|(_, peer_url)| *peer_url != agent_url_1),);
+        .all(|(_, peer_url)| *peer_url != peer_url_1),);
 }

@@ -24,14 +24,15 @@ impl TxModuleHandler for FetchMessageHandler {
         _module: String,
         data: bytes::Bytes,
     ) -> K2Result<()> {
+        tracing::debug!("receiving module message from {peer}");
         let fetch = K2FetchMessage::decode(data).map_err(|err| {
             K2Error::other_src(
                 format!("could not decode module message from {peer}"),
                 err,
             )
         })?;
-        match FetchMessageType::try_from(fetch.fetch_message_type) {
-            Ok(FetchMessageType::Request) => {
+        match fetch.fetch_message_type() {
+            FetchMessageType::Request => {
                 let request =
                     FetchRequest::decode(fetch.data).map_err(|err| {
                         K2Error::other_src(
@@ -48,7 +49,7 @@ impl TxModuleHandler for FetchMessageHandler {
                         )
                     })
             }
-            Ok(FetchMessageType::Response) => {
+            FetchMessageType::Response => {
                 let response =
                     FetchResponse::decode(fetch.data).map_err(|err| {
                         K2Error::other_src(
@@ -77,7 +78,7 @@ impl TxBaseHandler for FetchMessageHandler {}
 #[cfg(test)]
 mod test {
     use super::FetchMessageHandler;
-    use crate::factories::core_fetch::test::utils::{make_op, random_op_id};
+    use crate::factories::core_fetch::test::test_utils::make_op;
     use bytes::Bytes;
     use kitsune2_api::{
         fetch::{
@@ -88,6 +89,7 @@ mod test {
         transport::TxModuleHandler,
         SpaceId, Url,
     };
+    use kitsune2_test_utils::id::random_op_id;
     use prost::Message;
     use std::time::Duration;
 

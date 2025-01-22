@@ -1,4 +1,4 @@
-//! Test tools associated with Kitsune spaces.
+//! Test utilities associated with spaces.
 
 use bytes::Bytes;
 use kitsune2_api::{id::Id, SpaceId};
