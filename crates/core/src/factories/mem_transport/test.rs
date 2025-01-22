@@ -28,12 +28,9 @@ impl std::fmt::Debug for TrackHnd {
 }
 
 impl TxBaseHandler for TrackHnd {
-    fn new_listening_address(
-        &self,
-        this_url: Url,
-    ) -> BoxFut<'static, K2Result<()>> {
+    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         self.track.lock().unwrap().push(Track::ThisUrl(this_url));
-        Box::pin(async { Ok(()) })
+        Box::pin(async move {})
     }
 
     fn peer_connect(&self, peer: Url) -> K2Result<()> {

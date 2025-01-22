@@ -47,10 +47,7 @@ impl KitsuneFactory for CoreKitsuneFactory {
 struct TxHandlerTranslator(DynKitsuneHandler);
 
 impl transport::TxBaseHandler for TxHandlerTranslator {
-    fn new_listening_address(
-        &self,
-        this_url: Url,
-    ) -> BoxFut<'static, K2Result<()>> {
+    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         self.0.new_listening_address(this_url)
     }
 
