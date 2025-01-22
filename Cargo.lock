@@ -1054,7 +1054,6 @@ name = "kitsune2_gossip"
 version = "0.0.1-alpha"
 dependencies = [
  "bytes",
- "futures",
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_dht",

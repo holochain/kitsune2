@@ -124,6 +124,7 @@ async fn select_next_target(
         return Ok(None);
     }
 
+    // Sort by last gossip timestamp with None first and then by oldest to newest
     possible_targets.sort_by_key(|(timestamp, _)| *timestamp);
 
     let end_of_new_peers = possible_targets
