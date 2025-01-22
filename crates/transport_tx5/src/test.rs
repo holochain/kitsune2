@@ -132,8 +132,9 @@ impl Default for CbHandler {
 }
 
 impl TxBaseHandler for CbHandler {
-    fn new_listening_address(&self, this_url: Url) {
+    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         (self.new_addr)(this_url);
+        Box::pin(async {})
     }
 
     fn peer_connect(&self, peer: Url) -> K2Result<()> {

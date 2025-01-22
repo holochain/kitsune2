@@ -170,7 +170,9 @@ impl Tx5Transport {
             )
             .await
         {
-            handler.new_listening_address(Url::from_str(local_url.as_ref())?);
+            handler
+                .new_listening_address(Url::from_str(local_url.as_ref())?)
+                .await;
         }
 
         let pre_task = tokio::task::spawn(pre_task(handler.clone(), pre_recv));
@@ -274,7 +276,7 @@ async fn evt_task(
                         continue;
                     }
                 };
-                handler.new_listening_address(local_url);
+                handler.new_listening_address(local_url).await;
             }
             ListeningAddressClosed { local_url: _ } => {
                 // MAYBE trigger tombstone of our bootstrap entry here
