@@ -33,7 +33,6 @@ struct TestCase {
 async fn setup_test() -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), TEST_SPACE_ID)
         .await
@@ -45,7 +44,6 @@ async fn setup_test() -> TestCase {
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
-        peer_store.clone(),
         op_store.clone(),
         mock_transport.clone(),
     );
@@ -195,7 +193,6 @@ async fn no_response_sent_when_no_ops_found() {
 async fn fail_to_respond_once_then_succeed() {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), TEST_SPACE_ID)
         .await
@@ -237,13 +234,8 @@ async fn fail_to_respond_once_then_succeed() {
         .unwrap();
     let agent_url = Url::from_str("wss://127.0.0.1:1").unwrap();
 
-    let fetch = CoreFetch::new(
-        config.clone(),
-        TEST_SPACE_ID,
-        peer_store.clone(),
-        op_store,
-        mock_transport,
-    );
+    let fetch =
+        CoreFetch::new(config.clone(), TEST_SPACE_ID, op_store, mock_transport);
 
     // Receive incoming request.
     let data = serialize_request_message(vec![op.compute_op_id()]);

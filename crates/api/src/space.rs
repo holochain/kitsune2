@@ -44,6 +44,9 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// you have a need to determine peers for direct messaging.
     fn peer_store(&self) -> &peer_store::DynPeerStore;
 
+    /// Get a reference to the local agent store being used by this space.
+    fn local_agent_store(&self) -> &DynLocalAgentStore;
+
     /// Indicate that an agent is now online, and should begin receiving
     /// messages and exchanging dht information.
     fn local_agent_join(

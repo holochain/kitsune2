@@ -9,16 +9,18 @@ use crate::state::{GossipRoundState, RoundStage};
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use bytes::Bytes;
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
+use kitsune2_api::fetch::DynFetch;
+use kitsune2_api::id::decode_ids;
 use kitsune2_api::peer_store::DynPeerStore;
-use kitsune2_api::space::{DynSpace, Space};
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
-    AgentId, DynGossip, DynGossipFactory, DynOpStore, DynPeerMetaStore, Gossip,
-    GossipFactory, K2Error, K2Result, SpaceId, Timestamp, Url, UNIX_TIMESTAMP,
+    AgentId, DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
+    DynPeerMetaStore, Gossip, GossipFactory, K2Error, K2Result, SpaceId,
+    Timestamp, Url, UNIX_TIMESTAMP,
 };
 use kitsune2_dht::ArcSet;
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
@@ -45,11 +47,12 @@ impl GossipFactory for K2GossipFactory {
         &self,
         builder: Arc<kitsune2_api::builder::Builder>,
         space_id: SpaceId,
-        space: DynSpace,
         peer_store: DynPeerStore,
+        local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
+        fetch: DynFetch,
     ) -> kitsune2_api::BoxFut<'static, K2Result<DynGossip>> {
         Box::pin(async move {
             let config: K2GossipConfig = builder.config.get_module_config()?;
@@ -57,11 +60,12 @@ impl GossipFactory for K2GossipFactory {
             let gossip: DynGossip = Arc::new(K2Gossip::create(
                 config,
                 space_id,
-                space,
                 peer_store,
+                local_agent_store,
                 peer_meta_store,
                 op_store,
                 transport,
+                fetch,
                 builder.verifier.clone(),
             ));
 
@@ -102,10 +106,11 @@ struct K2Gossip {
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
     // create a cycle.
-    space: Weak<dyn Space>,
     peer_store: DynPeerStore,
+    local_agent_store: DynLocalAgentStore,
     peer_meta_store: Arc<K2PeerMetaStore>,
     op_store: DynOpStore,
+    fetch: DynFetch,
     agent_verifier: DynVerifier,
     response_tx: Sender<GossipResponse>,
     _response_task: Arc<DropAbortHandle>,
@@ -117,11 +122,12 @@ impl K2Gossip {
     pub fn create(
         config: K2GossipConfig,
         space_id: SpaceId,
-        space: DynSpace,
         peer_store: DynPeerStore,
+        local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
         op_store: DynOpStore,
         transport: DynTransport,
+        fetch: DynFetch,
         agent_verifier: DynVerifier,
     ) -> K2Gossip {
         let (response_tx, mut rx) =
@@ -152,13 +158,14 @@ impl K2Gossip {
             initiated_round_state: Arc::new(Mutex::new(None)),
             accepted_round_states: Arc::new(Mutex::new(HashMap::new())),
             space_id: space_id.clone(),
-            space: Arc::downgrade(&space),
             peer_store,
+            local_agent_store,
             peer_meta_store: Arc::new(K2PeerMetaStore::new(
                 peer_meta_store,
                 space_id.clone(),
             )),
             op_store,
+            fetch,
             agent_verifier,
             response_tx,
             _response_task: Arc::new(DropAbortHandle {
@@ -402,8 +409,11 @@ impl K2Gossip {
                 )
                 .await?;
 
-                // TODO Send to fetch queue
-                println!("Discovered op ids: {:?}", accept.new_ops);
+                // Send discovered ops to the fetch queue
+                self.fetch
+                    .request_ops(decode_ids(accept.new_ops), from_peer.clone())
+                    .await?;
+
                 self.peer_meta_store
                     .set_new_ops_bookmark(
                         from_peer.clone(),
@@ -446,8 +456,9 @@ impl K2Gossip {
                 )
                 .await?;
 
-                // TODO Send to fetch queue
-                println!("Discovered op ids: {:?}", no_diff.new_ops);
+                self.fetch
+                    .request_ops(decode_ids(no_diff.new_ops), from_peer.clone())
+                    .await?;
                 self.peer_meta_store
                     .set_new_ops_bookmark(
                         from_peer.clone(),
@@ -615,11 +626,7 @@ impl K2Gossip {
     }
 
     async fn local_agent_state(&self) -> K2Result<(Vec<AgentId>, ArcSet)> {
-        let space = self
-            .space
-            .upgrade()
-            .ok_or_else(|| K2Error::other("space was dropped"))?;
-        let local_agents = space.get_local_agents().await?;
+        let local_agents = self.local_agent_store.get_all().await?;
         let (send_agents, our_arcs) = local_agents
             .iter()
             .map(|a| (a.agent().clone(), a.get_tgt_storage_arc()))
@@ -712,11 +719,13 @@ mod test {
     use super::*;
     use kitsune2_api::agent::{DynLocalAgent, LocalAgent};
     use kitsune2_api::builder::Builder;
-    use kitsune2_api::space::SpaceHandler;
+    use kitsune2_api::space::{DynSpace, SpaceHandler};
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
+    use kitsune2_api::OpId;
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_test_utils::enable_tracing;
+    use std::time::Duration;
 
     #[derive(Debug, Clone)]
     struct GossipTestHarness {
@@ -779,6 +788,43 @@ mod test {
             .await
             .unwrap();
         }
+
+        async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<MemoryOp> {
+            tokio::time::timeout(Duration::from_millis(100), {
+                let this = self.clone();
+                async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+
+                        let ops = this
+                            .op_store
+                            .retrieve_ops(op_ids.clone())
+                            .await
+                            .unwrap();
+
+                        if ops.len() != op_ids.len() {
+                            tracing::info!(
+                                "Have {}/{} requested ops",
+                                ops.len(),
+                                op_ids.len()
+                            );
+                            continue;
+                        }
+
+                        return ops
+                            .into_iter()
+                            .map(|op| {
+                                let out: MemoryOp = op.op_data.into();
+
+                                out
+                            })
+                            .collect::<Vec<_>>();
+                    }
+                }
+            })
+            .await
+            .unwrap()
+        }
     }
 
     struct TestGossipFactory {
@@ -836,8 +882,8 @@ mod test {
             let gossip = K2Gossip::create(
                 K2GossipConfig::default(),
                 self.space_id.clone(),
-                space.clone(),
                 space.peer_store().clone(),
+                space.local_agent_store().clone(),
                 self.builder
                     .peer_meta_store
                     .create(self.builder.clone())
@@ -845,6 +891,16 @@ mod test {
                     .unwrap(),
                 op_store.clone(),
                 transport.clone(),
+                self.builder
+                    .fetch
+                    .create(
+                        self.builder.clone(),
+                        self.space_id.clone(),
+                        op_store.clone(),
+                        transport.clone(),
+                    )
+                    .await
+                    .unwrap(),
                 self.builder.verifier.clone(),
             );
 
@@ -930,25 +986,21 @@ mod test {
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
         let agent_1 = harness_1.join_local_agent().await;
+        let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
+        let op_id_1 = op_1.compute_op_id();
         harness_1
             .op_store
-            .process_incoming_ops(vec![MemoryOp::new(
-                Timestamp::now(),
-                vec![1; 128],
-            )
-            .into()])
+            .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
         harness_2.join_local_agent().await;
+        let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
+        let op_id_2 = op_2.compute_op_id();
         harness_2
             .op_store
-            .process_incoming_ops(vec![MemoryOp::new(
-                Timestamp::now(),
-                vec![2; 128],
-            )
-            .into()])
+            .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();
 
@@ -958,8 +1010,12 @@ mod test {
             .await
             .unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let received_ops = harness_1.wait_for_ops(vec![op_id_2]).await;
+        assert_eq!(1, received_ops.len());
+        assert_eq!(op_2, received_ops[0]);
 
-        // TODO fetch ops and assert that the op stores get updated.
+        let received_ops = harness_2.wait_for_ops(vec![op_id_1]).await;
+        assert_eq!(1, received_ops.len());
+        assert_eq!(op_1, received_ops[0]);
     }
 }
