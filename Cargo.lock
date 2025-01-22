@@ -1074,6 +1074,7 @@ dependencies = [
  "bytes",
  "futures",
  "kitsune2_api",
+ "rand",
  "tracing",
  "tracing-subscriber",
 ]

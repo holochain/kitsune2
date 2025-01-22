@@ -20,7 +20,6 @@ async fn create_gossip_instance() {
         .create(builder.clone(), Arc::new(NoopTxHandler))
         .await
         .unwrap();
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), space_id.clone())
@@ -30,7 +29,7 @@ async fn create_gossip_instance() {
         .create(
             builder.clone(),
             space_id.clone(),
-            peer_store.clone(),
+            builder.peer_store.create(builder.clone()).await.unwrap(),
             builder
                 .local_agent_store
                 .create(builder.clone())

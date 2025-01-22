@@ -86,7 +86,8 @@ mod message_handler;
 #[cfg(test)]
 mod test;
 
-const MOD_NAME: &str = "Fetch";
+/// CoreFetch module name.
+pub const MOD_NAME: &str = "Fetch";
 
 /// CoreFetch configuration types.
 pub mod config {
@@ -208,18 +209,18 @@ impl Fetch for CoreFetch {
         op_ids: Vec<OpId>,
         source: Url,
     ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move {
-            // Add requests to set.
-            {
-                let requests = &mut self.state.lock().unwrap().requests;
-                requests.extend(
-                    op_ids
-                        .clone()
-                        .into_iter()
-                        .map(|op_id| (op_id.clone(), source.clone())),
-                );
-            }
+        // Add requests to set.
+        {
+            let requests = &mut self.state.lock().unwrap().requests;
+            requests.extend(
+                op_ids
+                    .clone()
+                    .into_iter()
+                    .map(|op_id| (op_id.clone(), source.clone())),
+            );
+        }
 
+        Box::pin(async move {
             // Insert requests into fetch queue.
             for op_id in op_ids {
                 if let Err(err) =
@@ -368,7 +369,7 @@ impl CoreFetch {
                             .remove_peer(&peer_url);
                     }
                     Err(err) => {
-                        tracing::warn!("could not send fetch request for op {op_id} to peer {peer_url}: {err}");
+                        tracing::warn!("could not send fetch request for op {op_id} to peer {peer_url}: {err}. Putting peer on back off list.");
                         let mut lock = state.lock().unwrap();
                         lock.back_off_list.back_off_peer(&peer_url);
 
@@ -410,7 +411,7 @@ impl CoreFetch {
         space_id: SpaceId,
     ) {
         while let Some((op_ids, peer)) = response_rx.recv().await {
-            tracing::debug!(?op_ids, ?peer, "incoming request");
+            tracing::debug!(?peer, ?op_ids, "incoming request");
 
             // Retrieve ops to send from store.
             let ops = match op_store.retrieve_ops(op_ids.clone()).await {
@@ -424,6 +425,9 @@ impl CoreFetch {
             };
 
             if ops.is_empty() {
+                tracing::info!(
+                    "none of the ops requested from {peer} found in store"
+                );
                 // Do not send a response when no ops could be retrieved.
                 continue;
             }
@@ -453,6 +457,7 @@ impl CoreFetch {
         state: Arc<Mutex<State>>,
     ) {
         while let Some(ops) = incoming_response_rx.recv().await {
+            tracing::debug!(?ops, "incoming op response");
             let ops_data = ops.clone().into_iter().map(|op| op.data).collect();
             match op_store.process_incoming_ops(ops_data).await {
                 Err(err) => {
@@ -462,6 +467,9 @@ impl CoreFetch {
                     continue;
                 }
                 Ok(processed_op_ids) => {
+                    tracing::info!(
+                        "processed incoming ops with op ids {processed_op_ids:?}"
+                    );
                     // Ops were processed successfully by op store. Op ids are returned.
                     // The op ids are removed from the set of ops to fetch.
                     let mut lock = state.lock().unwrap();

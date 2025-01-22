@@ -120,7 +120,7 @@ impl BackOff {
 #[cfg(test)]
 mod test {
     use crate::factories::core_fetch::back_off::BackOffList;
-    use crate::factories::core_fetch::test::utils::random_peer_url;
+    use crate::factories::core_fetch::test::test_utils::random_peer_url;
 
     #[test]
     fn back_off() {

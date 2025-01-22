@@ -1,8 +1,7 @@
-use super::utils::random_op_id;
 use crate::{
     default_test_builder,
     factories::{
-        core_fetch::{test::utils::make_op, CoreFetch, CoreFetchConfig},
+        core_fetch::{test::test_utils::make_op, CoreFetch, CoreFetchConfig},
         MemOpStoreFactory, MemoryOp,
     },
 };
@@ -15,7 +14,9 @@ use kitsune2_api::{
     transport::MockTransport,
     DynOpStore, K2Error, Url,
 };
-use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{
+    enable_tracing, id::random_op_id, space::TEST_SPACE_ID,
+};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
@@ -68,11 +69,7 @@ fn make_mock_transport(
             assert_eq!(space, TEST_SPACE_ID);
             assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
             let fetch_message = K2FetchMessage::decode(data).unwrap();
-            let response = match FetchMessageType::try_from(
-                fetch_message.fetch_message_type,
-            )
-            .unwrap()
-            {
+            let response = match fetch_message.fetch_message_type() {
                 FetchMessageType::Response => {
                     FetchResponse::decode(fetch_message.data).unwrap()
                 }
@@ -96,8 +93,8 @@ async fn respond_to_multiple_requests() {
         ..
     } = setup_test().await;
 
-    let agent_url_1 = Url::from_str("wss://127.0.0.1:1").unwrap();
-    let agent_url_2 = Url::from_str("wss://127.0.0.1:2").unwrap();
+    let peer_url_1 = Url::from_str("wss://127.0.0.1:1").unwrap();
+    let peer_url_2 = Url::from_str("wss://127.0.0.1:2").unwrap();
 
     // Insert ops to be read and sent into op store.
     let op_1 = make_op(vec![1; 128]);
@@ -121,7 +118,7 @@ async fn respond_to_multiple_requests() {
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url_1.clone(),
+            peer_url_1.clone(),
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             requested_op_ids_1.clone(),
@@ -130,7 +127,7 @@ async fn respond_to_multiple_requests() {
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url_2.clone(),
+            peer_url_2.clone(),
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             requested_op_ids_2.clone(),
@@ -152,12 +149,12 @@ async fn respond_to_multiple_requests() {
     assert!(responses_sent
         .lock()
         .unwrap()
-        .contains(&(vec![op_1.into(), op_2.into()], agent_url_1)));
+        .contains(&(vec![op_1.into(), op_2.into()], peer_url_1)));
     // Only op 3 is in op store.
     assert!(responses_sent
         .lock()
         .unwrap()
-        .contains(&(vec![op_3.into()], agent_url_2)));
+        .contains(&(vec![op_3.into()], peer_url_2)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -170,14 +167,14 @@ async fn no_response_sent_when_no_ops_found() {
 
     let op_id_1 = random_op_id();
     let op_id_2 = random_op_id();
-    let agent_url = Url::from_str("wss://127.0.0.1:1").unwrap();
+    let peer_url = Url::from_str("wss://127.0.0.1:1").unwrap();
 
     // Receive incoming request.
     let data = serialize_request_message(vec![op_id_1, op_id_2]);
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url,
+            peer_url,
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             data,
@@ -232,7 +229,7 @@ async fn fail_to_respond_once_then_succeed() {
         .process_incoming_ops(vec![op.clone().into()])
         .await
         .unwrap();
-    let agent_url = Url::from_str("wss://127.0.0.1:1").unwrap();
+    let peer_url = Url::from_str("wss://127.0.0.1:1").unwrap();
 
     let fetch =
         CoreFetch::new(config.clone(), TEST_SPACE_ID, op_store, mock_transport);
@@ -242,7 +239,7 @@ async fn fail_to_respond_once_then_succeed() {
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url.clone(),
+            peer_url.clone(),
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             data.clone(),
@@ -258,7 +255,7 @@ async fn fail_to_respond_once_then_succeed() {
     fetch
         .message_handler
         .recv_module_msg(
-            agent_url.clone(),
+            peer_url.clone(),
             TEST_SPACE_ID,
             crate::factories::core_fetch::MOD_NAME.to_string(),
             data.clone(),
