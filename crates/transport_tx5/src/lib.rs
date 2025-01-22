@@ -92,8 +92,8 @@ impl TransportFactory for Tx5TransportFactory {
 #[derive(Debug)]
 struct Tx5Transport {
     ep: Arc<tx5::Endpoint>,
-    pre_task: tokio::task::JoinHandle<()>,
-    evt_task: tokio::task::JoinHandle<()>,
+    pre_task: tokio::task::AbortHandle,
+    evt_task: tokio::task::AbortHandle,
 }
 
 impl Drop for Tx5Transport {
@@ -175,10 +175,12 @@ impl Tx5Transport {
                 .await;
         }
 
-        let pre_task = tokio::task::spawn(pre_task(handler.clone(), pre_recv));
+        let pre_task = tokio::task::spawn(pre_task(handler.clone(), pre_recv))
+            .abort_handle();
 
         let evt_task =
-            tokio::task::spawn(evt_task(handler, ep.clone(), ep_recv));
+            tokio::task::spawn(evt_task(handler, ep.clone(), ep_recv))
+                .abort_handle();
 
         let out: DynTxImp = Arc::new(Self {
             ep,
