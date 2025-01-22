@@ -14,8 +14,7 @@ pub(crate) struct GossipRoundState {
     /// The time at which this round was initiated.
     ///
     /// This is used to apply a timeout to the round.
-    #[allow(dead_code)]
-    started_at: std::time::Instant,
+    pub started_at: tokio::time::Instant,
 
     /// The session id of this round.
     ///
@@ -39,7 +38,7 @@ impl GossipRoundState {
 
         Self {
             session_with_peer,
-            started_at: std::time::Instant::now(),
+            started_at: tokio::time::Instant::now(),
             session_id: session_id.freeze(),
             stage: RoundStage::Initiated { our_agents },
         }
@@ -52,7 +51,7 @@ impl GossipRoundState {
     ) -> Self {
         Self {
             session_with_peer,
-            started_at: std::time::Instant::now(),
+            started_at: tokio::time::Instant::now(),
             session_id,
             stage: RoundStage::Accepted { our_agents },
         }

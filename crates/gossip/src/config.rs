@@ -38,6 +38,17 @@ pub struct K2GossipConfig {
     ///
     /// Default: 300,000 (5m)
     pub min_initiate_interval_ms: u32,
+
+    /// The timeout for a gossip round.
+    ///
+    /// This will be loosely enforced on both sides. Kitsune periodically checks for timed out
+    /// rounds and will terminate them if they have been running for longer than this timeout.
+    ///
+    /// There is no point setting this lower than 5s because that is how often Kitsune checks for
+    /// timed out rounds.
+    ///
+    /// Default: 60,000 (1m)
+    pub gossip_timeout_ms: u32,
 }
 
 impl Default for K2GossipConfig {
@@ -46,6 +57,7 @@ impl Default for K2GossipConfig {
             max_gossip_op_bytes: 100 * 1024 * 1024,
             initiate_interval_ms: 120_000,
             min_initiate_interval_ms: 300_000,
+            gossip_timeout_ms: 60_000,
         }
     }
 }
@@ -60,6 +72,11 @@ impl K2GossipConfig {
     /// initiated by a given peer.
     pub(crate) fn min_initiate_interval(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.min_initiate_interval_ms as u64)
+    }
+
+    /// The timeout for a gossip round.
+    pub(crate) fn gossip_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.gossip_timeout_ms as u64)
     }
 }
 

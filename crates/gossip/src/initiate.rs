@@ -14,7 +14,7 @@ pub fn spawn_initiate_task(
     config: Arc<K2GossipConfig>,
     gossip: K2Gossip,
 ) -> AbortHandle {
-    tracing::info!("Start initiate task");
+    tracing::info!("Starting initiate task");
 
     let initiate_interval = config.initiate_interval();
     let min_initiate_interval = config.min_initiate_interval();

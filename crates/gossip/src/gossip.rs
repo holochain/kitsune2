@@ -7,6 +7,7 @@ use crate::protocol::{
     K2GossipNoDiffMessage,
 };
 use crate::state::{GossipRoundState, RoundStage};
+use crate::timeout::spawn_timeout_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use bytes::Bytes;
 use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
@@ -97,12 +98,13 @@ pub(crate) struct K2Gossip {
     /// The state of the current initiated gossip round.
     ///
     /// We only initiate one round at a time, so this is a single value.
-    initiated_round_state: Arc<Mutex<Option<GossipRoundState>>>,
+    pub(crate) initiated_round_state: Arc<Mutex<Option<GossipRoundState>>>,
     /// The state of currently accepted gossip rounds.
     ///
     /// This is a map of agent ids to their round state. We can accept gossip from multiple agents
     /// at once, mostly to avoid coordinating initiation.
-    accepted_round_states: Arc<Mutex<HashMap<Url, GossipRoundState>>>,
+    pub(crate) accepted_round_states:
+        Arc<Mutex<HashMap<Url, GossipRoundState>>>,
     space_id: SpaceId,
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
@@ -182,6 +184,7 @@ impl K2Gossip {
         );
 
         spawn_initiate_task(gossip.config.clone(), gossip.clone());
+        spawn_timeout_task(gossip.config.clone(), gossip.clone());
 
         gossip
     }
