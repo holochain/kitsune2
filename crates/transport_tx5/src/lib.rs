@@ -1,4 +1,5 @@
-//! The core stub transport implementation provided by Kitsune2.
+#![deny(missing_docs)]
+//! kitsune2 tx5 transport module.
 
 use kitsune2_api::{config::*, transport::*, *};
 use std::sync::Arc;
@@ -54,9 +55,7 @@ pub mod config {
 
 use config::*;
 
-/// The core stub transport implementation provided by Kitsune2.
-/// This is NOT a production module. It is for testing only.
-/// It will only establish "connections" within the same process.
+/// Provides a Kitsune2 transport module based on the Tx5 crate.
 #[derive(Debug)]
 pub struct Tx5TransportFactory {}
 
@@ -120,6 +119,7 @@ impl Tx5Transport {
             signal_allow_plain_text: true,
             preflight: Some((
                 Arc::new(move |peer_url| {
+                    // gather any preflight data, and send to remote
                     let handler = preflight_send_handler.clone();
                     let peer_url = peer_url.to_k();
                     Box::pin(async move {
@@ -132,13 +132,20 @@ impl Tx5Transport {
                     })
                 }),
                 Arc::new(move |peer_url, data| {
+                    // process sent preflight data
                     let peer_url = peer_url.clone();
                     let pre_send = pre_send.clone();
                     Box::pin(async move {
                         let (s, r) = tokio::sync::oneshot::channel();
-                        pre_send
-                            .try_send((peer_url, data, s))
-                            .map_err(std::io::Error::other)?;
+                        // kitsune2 expects this to be sent in the normal
+                        // "recv_data" handler, so we need another task
+                        // to forward that.
+                        //
+                        // If the app is too slow processing incoming
+                        // preflights, reject it to close the connection.
+                        pre_send.try_send((peer_url, data, s)).map_err(
+                            |_| std::io::Error::other("app overloaded"),
+                        )?;
                         r.await.map_err(|_| {
                             std::io::Error::other("channel closed")
                         })?
@@ -168,7 +175,8 @@ impl Tx5Transport {
 
         let pre_task = tokio::task::spawn(pre_task(handler.clone(), pre_recv));
 
-        let evt_task = tokio::task::spawn(evt_task(handler, ep_recv));
+        let evt_task =
+            tokio::task::spawn(evt_task(handler, ep.clone(), ep_recv));
 
         let out: DynTxImp = Arc::new(Self {
             ep,
@@ -231,7 +239,16 @@ fn handle_msg(
     Ok(())
 }
 
+struct TaskDrop(&'static str);
+
+impl Drop for TaskDrop {
+    fn drop(&mut self) {
+        tracing::error!(task = %self.0, "Task Ended");
+    }
+}
+
 async fn pre_task(handler: Arc<TxImpHnd>, mut pre_recv: PreCheckRecv) {
+    let _drop = TaskDrop("pre_task");
     while let Some((peer_url, message, resp)) = pre_recv.recv().await {
         let _ = resp.send(
             handle_msg(&handler, peer_url, message)
@@ -240,7 +257,12 @@ async fn pre_task(handler: Arc<TxImpHnd>, mut pre_recv: PreCheckRecv) {
     }
 }
 
-async fn evt_task(handler: Arc<TxImpHnd>, mut ep_recv: tx5::EndpointRecv) {
+async fn evt_task(
+    handler: Arc<TxImpHnd>,
+    ep: Arc<tx5::Endpoint>,
+    mut ep_recv: tx5::EndpointRecv,
+) {
+    let _drop = TaskDrop("evt_task");
     use tx5::EndpointEvent::*;
     while let Some(evt) = ep_recv.recv().await {
         match evt {
@@ -255,7 +277,7 @@ async fn evt_task(handler: Arc<TxImpHnd>, mut ep_recv: tx5::EndpointRecv) {
                 handler.new_listening_address(local_url);
             }
             ListeningAddressClosed { local_url: _ } => {
-                // MABYE trigger tombstone of our bootstrap entry here
+                // MAYBE trigger tombstone of our bootstrap entry here
             }
             Connected { peer_url: _ } => {
                 // This is handled in our preflight hook,
@@ -272,8 +294,10 @@ async fn evt_task(handler: Arc<TxImpHnd>, mut ep_recv: tx5::EndpointRecv) {
                 handler.peer_disconnect(peer_url, None);
             }
             Message { peer_url, message } => {
-                if let Err(err) = handle_msg(&handler, peer_url, message) {
-                    // TODO - ban the connection
+                if let Err(err) =
+                    handle_msg(&handler, peer_url.clone(), message)
+                {
+                    ep.close(&peer_url);
                     tracing::debug!(?err);
                 }
             }
