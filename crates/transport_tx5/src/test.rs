@@ -1,4 +1,5 @@
 use super::*;
+use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::sync::Mutex;
 
 // We don't need or want to test all of tx5 in here... that should be done
@@ -195,8 +196,6 @@ impl TxModuleHandler for CbHandler {
     }
 }
 
-const S1: SpaceId = SpaceId(id::Id(bytes::Bytes::from_static(b"space1")));
-
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_addr() {
     let mut test = Test::new().await;
@@ -270,9 +269,13 @@ async fn peer_connect_disconnect() {
     println!("got u2: {}", u2);
 
     // trigger a connection establish
-    t1.send_space_notify(u2, S1, bytes::Bytes::from_static(b"hello"))
-        .await
-        .unwrap();
+    t1.send_space_notify(
+        u2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
 
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         let con = s_recv.recv().await.unwrap();
@@ -288,7 +291,7 @@ async fn peer_connect_disconnect() {
             // trigger a connection establish
             t2.send_space_notify(
                 u1.clone(),
-                S1,
+                TEST_SPACE_ID,
                 bytes::Bytes::from_static(b"world"),
             )
             .await
@@ -316,8 +319,8 @@ async fn message_send_recv() {
         ..Default::default()
     });
     let t1 = test.build_transport(h1.clone()).await;
-    t1.register_space_handler(S1, h1.clone());
-    t1.register_module_handler(S1, "mod".into(), h1.clone());
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
+    t1.register_module_handler(TEST_SPACE_ID, "mod".into(), h1.clone());
 
     let (s_send, mut s_recv) = tokio::sync::mpsc::unbounded_channel();
     let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
@@ -333,16 +336,20 @@ async fn message_send_recv() {
         ..Default::default()
     });
     let t2 = test.build_transport(h2.clone()).await;
-    t2.register_space_handler(S1, h2.clone());
-    t2.register_module_handler(S1, "mod".into(), h2.clone());
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
+    t2.register_module_handler(TEST_SPACE_ID, "mod".into(), h2.clone());
 
     let u2: Url = u2.lock().unwrap().clone();
     println!("got u2: {}", u2);
 
     // checks that send works
-    t1.send_space_notify(u2, S1, bytes::Bytes::from_static(b"hello"))
-        .await
-        .unwrap();
+    t1.send_space_notify(
+        u2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
 
     // checks that recv works
     let r = tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -398,9 +405,13 @@ async fn preflight_send_recv() {
     println!("got u2: {}", u2);
 
     // establish a connection
-    t1.send_space_notify(u2, S1, bytes::Bytes::from_static(b"hello"))
-        .await
-        .unwrap();
+    t1.send_space_notify(
+        u2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
 
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {

@@ -1359,6 +1359,7 @@ dependencies = [
  "bytes",
  "kitsune2_api",
  "kitsune2_core",
+ "kitsune2_test_utils",
  "sbd-server",
  "serde",
  "tokio",
