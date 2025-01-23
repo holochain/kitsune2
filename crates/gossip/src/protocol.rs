@@ -8,6 +8,9 @@ use kitsune2_dht::snapshot::DhtSnapshot;
 use prost::{bytes, Message};
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
+use crate::protocol::k2_gossip_disc_sectors_diff_message::SnapshotDiscSectorsMessage;
+use crate::protocol::k2_gossip_ring_sector_details_diff_message::{RingSectorHashes, SnapshotRingSectorDetailsMessage};
 
 include!("../proto/gen/kitsune2.gossip.rs");
 

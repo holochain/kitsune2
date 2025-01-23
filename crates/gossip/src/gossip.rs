@@ -1,6 +1,6 @@
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::protocol::{deserialize_gossip_message, encode_agent_ids, encode_agent_infos, encode_op_ids, serialize_gossip_message, AcceptResponseMessage, ArcSetMessage, GossipMessage, K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipDiscSectorsDiffMessage, K2GossipInitiateMessage, K2GossipNoDiffMessage, K2GossipRingSectorDetailsDiffMessage, SnapshotMinimalMessage};
+use crate::protocol::{deserialize_gossip_message, encode_agent_ids, encode_agent_infos, encode_op_ids, serialize_gossip_message, AcceptResponseMessage, ArcSetMessage, GossipMessage, K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipDiscSectorsDiffMessage, K2GossipInitiateMessage, K2GossipNoDiffMessage, K2GossipRingSectorDetailsDiffMessage};
 use crate::state::{GossipRoundState, RoundStage};
 use crate::timeout::spawn_timeout_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -22,6 +22,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 
 /// A factory for creating K2Gossip instances.
 #[derive(Debug)]

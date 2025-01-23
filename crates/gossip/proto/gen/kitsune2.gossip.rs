@@ -76,60 +76,6 @@ pub struct ArcSetMessage {
     #[prost(uint32, repeated, tag = "1")]
     pub value: ::prost::alloc::vec::Vec<u32>,
 }
-/// Message representation of kitsune2_dht::DhtSnapshot::Minimal
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnapshotMinimalMessage {
-    #[prost(int64, tag = "1")]
-    pub disc_boundary: i64,
-    #[prost(bytes = "bytes", tag = "2")]
-    pub disc_top_hash: ::prost::bytes::Bytes,
-    #[prost(bytes = "bytes", repeated, tag = "3")]
-    pub ring_top_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-}
-/// Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnapshotDiscSectorsMessage {
-    #[prost(int64, tag = "1")]
-    pub disc_boundary: i64,
-    #[prost(uint32, repeated, tag = "2")]
-    pub disc_sectors: ::prost::alloc::vec::Vec<u32>,
-    #[prost(bytes = "bytes", repeated, tag = "3")]
-    pub disc_sector_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DiscSliceHashes {
-    #[prost(uint32, repeated, tag = "1")]
-    pub slice_indices: ::prost::alloc::vec::Vec<u32>,
-    #[prost(bytes = "bytes", repeated, tag = "2")]
-    pub hash: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-}
-/// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnapshotDiscSectorDetailsMessage {
-    #[prost(int64, tag = "1")]
-    pub disc_boundary: i64,
-    #[prost(uint32, repeated, tag = "2")]
-    pub sector_indices: ::prost::alloc::vec::Vec<u32>,
-    #[prost(message, repeated, tag = "3")]
-    pub disc_slice_hashes: ::prost::alloc::vec::Vec<DiscSliceHashes>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RingSectorHashes {
-    #[prost(uint32, repeated, tag = "1")]
-    pub sector_indices: ::prost::alloc::vec::Vec<u32>,
-    #[prost(bytes = "bytes", repeated, tag = "2")]
-    pub hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-}
-/// Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnapshotRingSectorDetailsMessage {
-    #[prost(int64, tag = "1")]
-    pub disc_boundary: i64,
-    #[prost(uint32, repeated, tag = "2")]
-    pub ring_indices: ::prost::alloc::vec::Vec<u32>,
-    #[prost(message, repeated, tag = "3")]
-    pub ring_sector_hashes: ::prost::alloc::vec::Vec<RingSectorHashes>,
-}
 /// Common fields to be sent in response to an accept message
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcceptResponseMessage {
@@ -202,7 +148,22 @@ pub struct K2GossipAcceptMessage {
     pub updated_new_since: i64,
     /// The DHT snapshot of the acceptor.
     #[prost(message, optional, tag = "30")]
-    pub snapshot: ::core::option::Option<SnapshotMinimalMessage>,
+    pub snapshot: ::core::option::Option<
+        k2_gossip_accept_message::SnapshotMinimalMessage,
+    >,
+}
+/// Nested message and enum types in `K2GossipAcceptMessage`.
+pub mod k2_gossip_accept_message {
+    /// Message representation of kitsune2_dht::DhtSnapshot::Minimal
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SnapshotMinimalMessage {
+        #[prost(int64, tag = "1")]
+        pub disc_boundary: i64,
+        #[prost(bytes = "bytes", tag = "2")]
+        pub disc_top_hash: ::prost::bytes::Bytes,
+        #[prost(bytes = "bytes", repeated, tag = "3")]
+        pub ring_top_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    }
 }
 /// A Kitsune2 gossip no diff protocol message.
 ///
@@ -231,7 +192,54 @@ pub struct K2GossipDiscSectorsDiffMessage {
     #[prost(message, optional, tag = "2")]
     pub accept_response: ::core::option::Option<AcceptResponseMessage>,
     #[prost(message, optional, tag = "10")]
-    pub snapshot: ::core::option::Option<SnapshotDiscSectorsMessage>,
+    pub snapshot: ::core::option::Option<
+        k2_gossip_disc_sectors_diff_message::SnapshotDiscSectorsMessage,
+    >,
+}
+/// Nested message and enum types in `K2GossipDiscSectorsDiffMessage`.
+pub mod k2_gossip_disc_sectors_diff_message {
+    /// Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SnapshotDiscSectorsMessage {
+        #[prost(int64, tag = "1")]
+        pub disc_boundary: i64,
+        #[prost(uint32, repeated, tag = "2")]
+        pub disc_sectors: ::prost::alloc::vec::Vec<u32>,
+        #[prost(bytes = "bytes", repeated, tag = "3")]
+        pub disc_sector_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    }
+}
+/// A Kitsune2 gossip disc sector details diff protocol message.
+///
+/// Acceptable responses:
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipDiscSectorDetailsDiffMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag = "10")]
+    pub snapshot: ::core::option::Option<
+        k2_gossip_disc_sector_details_diff_message::SnapshotDiscSectorDetailsMessage,
+    >,
+}
+/// Nested message and enum types in `K2GossipDiscSectorDetailsDiffMessage`.
+pub mod k2_gossip_disc_sector_details_diff_message {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DiscSliceHashes {
+        #[prost(uint32, repeated, tag = "1")]
+        pub slice_indices: ::prost::alloc::vec::Vec<u32>,
+        #[prost(bytes = "bytes", repeated, tag = "2")]
+        pub hash: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    }
+    /// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SnapshotDiscSectorDetailsMessage {
+        #[prost(int64, tag = "1")]
+        pub disc_boundary: i64,
+        #[prost(uint32, repeated, tag = "2")]
+        pub sector_indices: ::prost::alloc::vec::Vec<u32>,
+        #[prost(message, repeated, tag = "3")]
+        pub disc_slice_hashes: ::prost::alloc::vec::Vec<DiscSliceHashes>,
+    }
 }
 /// A Kitsune2 gossip ring sector details diff protocol message.
 ///
@@ -243,7 +251,29 @@ pub struct K2GossipRingSectorDetailsDiffMessage {
     #[prost(message, optional, tag = "2")]
     pub accept_response: ::core::option::Option<AcceptResponseMessage>,
     #[prost(message, optional, tag = "10")]
-    pub snapshot: ::core::option::Option<SnapshotRingSectorDetailsMessage>,
+    pub snapshot: ::core::option::Option<
+        k2_gossip_ring_sector_details_diff_message::SnapshotRingSectorDetailsMessage,
+    >,
+}
+/// Nested message and enum types in `K2GossipRingSectorDetailsDiffMessage`.
+pub mod k2_gossip_ring_sector_details_diff_message {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct RingSectorHashes {
+        #[prost(uint32, repeated, tag = "1")]
+        pub sector_indices: ::prost::alloc::vec::Vec<u32>,
+        #[prost(bytes = "bytes", repeated, tag = "2")]
+        pub hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    }
+    /// Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct SnapshotRingSectorDetailsMessage {
+        #[prost(int64, tag = "1")]
+        pub disc_boundary: i64,
+        #[prost(uint32, repeated, tag = "2")]
+        pub ring_indices: ::prost::alloc::vec::Vec<u32>,
+        #[prost(message, repeated, tag = "3")]
+        pub ring_sector_hashes: ::prost::alloc::vec::Vec<RingSectorHashes>,
+    }
 }
 /// A Kitsune2 gossip agents protocol message.
 ///
