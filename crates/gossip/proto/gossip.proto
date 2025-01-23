@@ -39,44 +39,6 @@ message ArcSetMessage {
   repeated uint32 value = 1;
 }
 
-// Message representation of kitsune2_dht::DhtSnapshot::Minimal
-message SnapshotMinimalMessage {
-  int64 disc_boundary = 1;
-  bytes disc_top_hash = 2;
-  repeated bytes ring_top_hashes = 3;
-}
-
-// Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
-message SnapshotDiscSectorsMessage {
-  int64 disc_boundary = 1;
-  repeated uint32 disc_sectors = 2;
-  repeated bytes disc_sector_hashes = 3;
-}
-
-message DiscSliceHashes {
-  repeated uint32 slice_indices = 1;
-  repeated bytes hash = 2;
-}
-
-// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
-message SnapshotDiscSectorDetailsMessage {
-  int64 disc_boundary = 1;
-  repeated uint32 sector_indices = 2;
-  repeated DiscSliceHashes disc_slice_hashes = 3;
-}
-
-message RingSectorHashes {
-  repeated uint32 sector_indices = 1;
-  repeated bytes hashes = 2;
-}
-
-// Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
-message SnapshotRingSectorDetailsMessage {
-  int64 disc_boundary = 1;
-  repeated uint32 ring_indices = 2;
-  repeated RingSectorHashes ring_sector_hashes = 3;
-}
-
 // Common fields to be sent in response to an accept message
 message AcceptResponseMessage {
   // Agent ids of agents that were mentioned in the acceptor's participating_agents list
@@ -119,6 +81,13 @@ message K2GossipInitiateMessage {
 // Acceptable responses:
 // - `K2GossipNoDiffMessage`
 message K2GossipAcceptMessage {
+  // Message representation of kitsune2_dht::DhtSnapshot::Minimal
+  message SnapshotMinimalMessage {
+    int64 disc_boundary = 1;
+    bytes disc_top_hash = 2;
+    repeated bytes ring_top_hashes = 3;
+  }
+
   bytes session_id = 1;
 
   // The agent ids of the agents from the acceptor who are in the peer store for the space where gossip is running.
@@ -168,6 +137,13 @@ message K2GossipNoDiffMessage {
 //
 // Acceptable responses:
 message K2GossipDiscSectorsDiffMessage {
+  // Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
+  message SnapshotDiscSectorsMessage {
+    int64 disc_boundary = 1;
+    repeated uint32 disc_sectors = 2;
+    repeated bytes disc_sector_hashes = 3;
+  }
+
   bytes session_id = 1;
 
   AcceptResponseMessage accept_response = 2;
@@ -175,10 +151,44 @@ message K2GossipDiscSectorsDiffMessage {
   SnapshotDiscSectorsMessage snapshot = 10;
 }
 
+// A Kitsune2 gossip disc sector details diff protocol message.
+//
+// Acceptable responses:
+message K2GossipDiscSectorDetailsDiffMessage {
+  message DiscSliceHashes {
+    repeated uint32 slice_indices = 1;
+    repeated bytes hash = 2;
+  }
+
+  // Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
+  message SnapshotDiscSectorDetailsMessage {
+    int64 disc_boundary = 1;
+    repeated uint32 sector_indices = 2;
+    repeated DiscSliceHashes disc_slice_hashes = 3;
+  }
+
+  bytes session_id = 1;
+
+  SnapshotDiscSectorDetailsMessage snapshot = 10;
+}
+
 // A Kitsune2 gossip ring sector details diff protocol message.
 //
 // Acceptable responses:
 message K2GossipRingSectorDetailsDiffMessage {
+  message RingSectorHashes {
+    repeated uint32 sector_indices = 1;
+    repeated bytes hashes = 2;
+  }
+
+  // Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
+  message SnapshotRingSectorDetailsMessage {
+    int64 disc_boundary = 1;
+    repeated uint32 ring_indices = 2;
+    repeated RingSectorHashes ring_sector_hashes = 3;
+  }
+
+
   bytes session_id = 1;
 
   AcceptResponseMessage accept_response = 2;
