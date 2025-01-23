@@ -1,22 +1,6 @@
 use kitsune2_api::{kitsune::*, space::*, *};
-use kitsune2_test_utils::{agent::*, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{agent::*, iter_check, space::TEST_SPACE_ID};
 use std::sync::{Arc, Mutex};
-
-macro_rules! iter_check {
-    ($millis:literal, $code:block) => {
-        tokio::time::timeout(
-            std::time::Duration::from_millis($millis),
-            async {
-                loop {
-                    $code
-                    tokio::time::sleep(
-                        std::time::Duration::from_millis(1)
-                    ).await;
-                }
-            }
-        ).await.unwrap();
-    }
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn space_local_agent_join_leave() {
