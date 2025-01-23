@@ -31,8 +31,12 @@ pub mod k2_gossip_message {
         Accept = 2,
         /// A gossip no diff protocol message.
         NoDiff = 3,
+        /// A gossip disc sectors diff protocol message.
+        DiscSectorsDiff = 4,
+        /// A gossip ring sector details diff protocol message.
+        RingSectorDetailsDiff = 5,
         /// A gossip agents protocol message.
-        Agents = 4,
+        Agents = 6,
     }
     impl GossipMessageType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -45,6 +49,8 @@ pub mod k2_gossip_message {
                 Self::Initiate => "INITIATE",
                 Self::Accept => "ACCEPT",
                 Self::NoDiff => "NO_DIFF",
+                Self::DiscSectorsDiff => "DISC_SECTORS_DIFF",
+                Self::RingSectorDetailsDiff => "RING_SECTOR_DETAILS_DIFF",
                 Self::Agents => "AGENTS",
             }
         }
@@ -55,6 +61,8 @@ pub mod k2_gossip_message {
                 "INITIATE" => Some(Self::Initiate),
                 "ACCEPT" => Some(Self::Accept),
                 "NO_DIFF" => Some(Self::NoDiff),
+                "DISC_SECTORS_DIFF" => Some(Self::DiscSectorsDiff),
+                "RING_SECTOR_DETAILS_DIFF" => Some(Self::RingSectorDetailsDiff),
                 "AGENTS" => Some(Self::Agents),
                 _ => None,
             }
@@ -68,6 +76,78 @@ pub struct ArcSetMessage {
     #[prost(uint32, repeated, tag = "1")]
     pub value: ::prost::alloc::vec::Vec<u32>,
 }
+/// Message representation of kitsune2_dht::DhtSnapshot::Minimal
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotMinimalMessage {
+    #[prost(int64, tag = "1")]
+    pub disc_boundary: i64,
+    #[prost(bytes = "bytes", tag = "2")]
+    pub disc_top_hash: ::prost::bytes::Bytes,
+    #[prost(bytes = "bytes", repeated, tag = "3")]
+    pub ring_top_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+}
+/// Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotDiscSectorsMessage {
+    #[prost(int64, tag = "1")]
+    pub disc_boundary: i64,
+    #[prost(uint32, repeated, tag = "2")]
+    pub disc_sectors: ::prost::alloc::vec::Vec<u32>,
+    #[prost(bytes = "bytes", repeated, tag = "3")]
+    pub disc_sector_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscSliceHashes {
+    #[prost(uint32, repeated, tag = "1")]
+    pub slice_indices: ::prost::alloc::vec::Vec<u32>,
+    #[prost(bytes = "bytes", repeated, tag = "2")]
+    pub hash: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+}
+/// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotDiscSectorDetailsMessage {
+    #[prost(int64, tag = "1")]
+    pub disc_boundary: i64,
+    #[prost(uint32, repeated, tag = "2")]
+    pub sector_indices: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "3")]
+    pub disc_slice_hashes: ::prost::alloc::vec::Vec<DiscSliceHashes>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RingSectorHashes {
+    #[prost(uint32, repeated, tag = "1")]
+    pub sector_indices: ::prost::alloc::vec::Vec<u32>,
+    #[prost(bytes = "bytes", repeated, tag = "2")]
+    pub hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+}
+/// Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotRingSectorDetailsMessage {
+    #[prost(int64, tag = "1")]
+    pub disc_boundary: i64,
+    #[prost(uint32, repeated, tag = "2")]
+    pub ring_indices: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "3")]
+    pub ring_sector_hashes: ::prost::alloc::vec::Vec<RingSectorHashes>,
+}
+/// Common fields to be sent in response to an accept message
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcceptResponseMessage {
+    /// Agent ids of agents that were mentioned in the acceptor's participating_agents list
+    /// that we do not have in our peer store.
+    #[prost(bytes = "bytes", repeated, tag = "1")]
+    pub missing_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
+    #[prost(bytes = "bytes", repeated, tag = "2")]
+    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
+    #[prost(bytes = "bytes", repeated, tag = "3")]
+    pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    /// Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
+    /// and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
+    #[prost(int64, tag = "4")]
+    pub updated_new_since: i64,
+}
 /// A Kitsune2 gossip initiation protocol message.
 ///
 /// Acceptable responses:
@@ -76,7 +156,7 @@ pub struct ArcSetMessage {
 pub struct K2GossipInitiateMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
-    /// The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
+    /// The agent ids of the agents from the initiator who are in the peer store for the space where gossip is running.
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub participating_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// The DHT sectors covered by the union of the agents in the participating_agents list.
@@ -97,7 +177,7 @@ pub struct K2GossipInitiateMessage {
 pub struct K2GossipAcceptMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
-    /// The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
+    /// The agent ids of the agents from the acceptor who are in the peer store for the space where gossip is running.
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub participating_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// The DHT sectors covered by the union of the agents in the participating_agents list.
@@ -120,6 +200,9 @@ pub struct K2GossipAcceptMessage {
     /// and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
     #[prost(int64, tag = "23")]
     pub updated_new_since: i64,
+    /// The DHT snapshot of the acceptor.
+    #[prost(message, optional, tag = "30")]
+    pub snapshot: ::core::option::Option<SnapshotMinimalMessage>,
 }
 /// A Kitsune2 gossip no diff protocol message.
 ///
@@ -132,23 +215,35 @@ pub struct K2GossipAcceptMessage {
 pub struct K2GossipNoDiffMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
-    /// Agent ids of agents that were mentioned in the acceptor's participating_agents list
-    /// that we do not have in our peer store.
-    #[prost(bytes = "bytes", repeated, tag = "10")]
-    pub missing_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-    /// The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
-    #[prost(bytes = "bytes", repeated, tag = "11")]
-    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-    /// Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
-    #[prost(bytes = "bytes", repeated, tag = "20")]
-    pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-    /// Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
-    /// and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
-    #[prost(int64, tag = "21")]
-    pub updated_new_since: i64,
+    #[prost(message, optional, tag = "2")]
+    pub accept_response: ::core::option::Option<AcceptResponseMessage>,
     /// Set when the initiator could not compare the acceptor's DHT diff with their own.
-    #[prost(bool, tag = "30")]
+    #[prost(bool, tag = "10")]
     pub cannot_compare: bool,
+}
+/// A Kitsune2 gossip disc sectors diff protocol message.
+///
+/// Acceptable responses:
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipDiscSectorsDiffMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag = "2")]
+    pub accept_response: ::core::option::Option<AcceptResponseMessage>,
+    #[prost(message, optional, tag = "10")]
+    pub snapshot: ::core::option::Option<SnapshotDiscSectorsMessage>,
+}
+/// A Kitsune2 gossip ring sector details diff protocol message.
+///
+/// Acceptable responses:
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipRingSectorDetailsDiffMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
+    #[prost(message, optional, tag = "2")]
+    pub accept_response: ::core::option::Option<AcceptResponseMessage>,
+    #[prost(message, optional, tag = "10")]
+    pub snapshot: ::core::option::Option<SnapshotRingSectorDetailsMessage>,
 }
 /// A Kitsune2 gossip agents protocol message.
 ///

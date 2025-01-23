@@ -3,6 +3,7 @@ use crate::protocol::{
 };
 use bytes::Bytes;
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
+use kitsune2_dht::ArcSet;
 use rand::RngCore;
 
 /// The state of a gossip round.
@@ -32,6 +33,7 @@ impl GossipRoundState {
     pub(crate) fn new(
         session_with_peer: Url,
         our_agents: Vec<AgentId>,
+        our_arc_set: ArcSet,
     ) -> Self {
         let mut session_id = bytes::BytesMut::zeroed(12);
         rand::thread_rng().fill_bytes(&mut session_id);
@@ -40,7 +42,10 @@ impl GossipRoundState {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id: session_id.freeze(),
-            stage: RoundStage::Initiated { our_agents },
+            stage: RoundStage::Initiated(RoundStageInitiated {
+                our_agents,
+                our_arc_set,
+            }),
         }
     }
 
@@ -48,12 +53,16 @@ impl GossipRoundState {
         session_with_peer: Url,
         session_id: Bytes,
         our_agents: Vec<AgentId>,
+        common_arc_set: ArcSet,
     ) -> Self {
         Self {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id,
-            stage: RoundStage::Accepted { our_agents },
+            stage: RoundStage::Accepted {
+                our_agents,
+                common_arc_set,
+            },
         }
     }
 
@@ -61,7 +70,7 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         accept: &K2GossipAcceptMessage,
-    ) -> K2Result<()> {
+    ) -> K2Result<&RoundStageInitiated> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "Accept message from wrong peer: {} != {}",
@@ -77,7 +86,9 @@ impl GossipRoundState {
         }
 
         match &self.stage {
-            RoundStage::Initiated { our_agents } => {
+            RoundStage::Initiated(
+                initiated @ RoundStageInitiated { our_agents, .. },
+            ) => {
                 tracing::trace!("Initiated round state found");
 
                 if accept
@@ -89,16 +100,14 @@ impl GossipRoundState {
                         "Accept message contains agents that we didn't declare",
                     ));
                 }
-            }
-            stage => {
-                return Err(K2Error::other(format!(
-                    "Unexpected round state for accept: Initiated != {:?}",
-                    stage
-                )));
-            }
-        }
 
-        Ok(())
+                Ok(initiated)
+            }
+            stage => Err(K2Error::other(format!(
+                "Unexpected round state for accept: Initiated != {:?}",
+                stage
+            ))),
+        }
     }
 
     pub(crate) fn validate_no_diff(
@@ -121,10 +130,14 @@ impl GossipRoundState {
         }
 
         match &self.stage {
-            RoundStage::Accepted { our_agents } => {
+            RoundStage::Accepted { our_agents, .. } => {
                 tracing::trace!("Accepted round state found");
 
-                if no_diff
+                let Some(accept_response) = &no_diff.accept_response else {
+                    return Err(K2Error::other("Received NoDiff message without accept response"));
+                };
+
+                if accept_response
                     .missing_agents
                     .iter()
                     .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
@@ -183,27 +196,35 @@ impl GossipRoundState {
 /// The state of a gossip round.
 #[derive(Debug)]
 pub(crate) enum RoundStage {
-    Initiated {
-        our_agents: Vec<AgentId>,
-    },
+    Initiated(RoundStageInitiated),
     Accepted {
         #[allow(dead_code)]
         our_agents: Vec<AgentId>,
+        common_arc_set: ArcSet,
     },
     NoDiff,
+}
+
+/// The state of a gossip round that has been initiated.
+#[derive(Debug)]
+pub(crate) struct RoundStageInitiated {
+    pub our_agents: Vec<AgentId>,
+    pub our_arc_set: ArcSet,
 }
 
 #[cfg(test)]
 mod tests {
     use crate::state::GossipRoundState;
     use bytes::Bytes;
-    use kitsune2_api::{AgentId, Url};
+    use kitsune2_api::{AgentId, DhtArc, Url};
+    use kitsune2_dht::ArcSet;
 
     #[test]
     fn create_round_state() {
         let state = GossipRoundState::new(
             Url::from_str("ws://test:80").unwrap(),
             vec![AgentId::from(Bytes::from_static(b"test-agent"))],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
         );
 
         assert_eq!(12, state.session_id.len());
