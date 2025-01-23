@@ -66,13 +66,12 @@ use crate::{TimePartition, SECTOR_SIZE};
 use kitsune2_api::{
     DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A partition of the hash space into sectors.
 ///
 /// Partitions the hash structure into a fixed number of sectors. Each sector is
 /// responsible for managing the time slices for that sector using a [TimePartition].
-#[derive(Debug)]
 pub struct HashPartition {
     /// This is just a convenience for internal function use.
     /// This should always be exactly `(u32::MAX / self.partitioned_hashes.len()) + 1`.
@@ -81,6 +80,14 @@ pub struct HashPartition {
     ///
     /// That is, (2**0, 2**1, etc). It is currently always 512 and is not configurable.
     sectors: Vec<TimePartition>,
+}
+
+impl std::fmt::Debug for HashPartition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HashPartition")
+            .field("size", &self.size)
+            .finish()
+    }
 }
 
 pub(crate) type PartialTimeSliceDetails =
@@ -364,9 +371,8 @@ impl HashPartition {
         sector_indices: Vec<u32>,
         store: DynOpStore,
     ) -> K2Result<(HashMap<u32, HashMap<u64, bytes::Bytes>>, Timestamp)> {
-        let sectors_indices = sector_indices
-            .into_iter()
-            .collect::<std::collections::HashSet<_>>();
+        let sectors_indices =
+            sector_indices.into_iter().collect::<HashSet<_>>();
 
         let mut out = HashMap::new();
 
@@ -416,7 +422,7 @@ impl HashPartition {
             for ring_index in &ring_indices {
                 let hash = sector.partial_slice_hash(*ring_index)?;
 
-                // Important to capture that the ring didn't match even if the hash is empty and
+                // Important to capture that the ring didn't match even if the hash is empty, and
                 // therefore we won't communicate this sector.
                 let entry = out.entry(*ring_index).or_insert_with(HashMap::new);
                 if !hash.is_empty() {

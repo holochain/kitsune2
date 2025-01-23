@@ -298,14 +298,15 @@ impl OpStore for Kitsune2MemoryOpStore {
     fn store_slice_hash(
         &self,
         arc: DhtArc,
-        slice_id: u64,
+        slice_index: u64,
         slice_hash: bytes::Bytes,
     ) -> BoxFuture<'_, K2Result<()>> {
         Box::pin(async move {
-            self.write()
-                .await
-                .time_slice_hashes
-                .insert(arc, slice_id, slice_hash)
+            self.write().await.time_slice_hashes.insert(
+                arc,
+                slice_index,
+                slice_hash,
+            )
         })
     }
 
@@ -343,10 +344,10 @@ impl OpStore for Kitsune2MemoryOpStore {
     fn retrieve_slice_hash(
         &self,
         arc: DhtArc,
-        slice_id: u64,
+        slice_index: u64,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
         Box::pin(async move {
-            Ok(self.read().await.time_slice_hashes.get(&arc, slice_id))
+            Ok(self.read().await.time_slice_hashes.get(&arc, slice_index))
         })
     }
 

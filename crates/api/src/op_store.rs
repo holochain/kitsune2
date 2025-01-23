@@ -120,7 +120,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn store_slice_hash(
         &self,
         arc: DhtArc,
-        slice_id: u64,
+        slice_index: u64,
         slice_hash: Bytes,
     ) -> BoxFuture<'_, K2Result<()>>;
 
@@ -135,7 +135,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn retrieve_slice_hash(
         &self,
         arc: DhtArc,
-        slice_id: u64,
+        slice_index: u64,
     ) -> BoxFuture<'_, K2Result<Option<Bytes>>>;
 
     /// Retrieve all slice hashes for a given arc.

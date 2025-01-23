@@ -22,6 +22,7 @@ use crate::arc_set::ArcSet;
 use crate::HashPartition;
 use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp};
 use snapshot::{DhtSnapshot, SnapshotDiff};
+use std::fmt::Formatter;
 
 pub mod snapshot;
 #[cfg(test)]
@@ -34,6 +35,14 @@ mod tests;
 pub struct Dht {
     partition: HashPartition,
     store: DynOpStore,
+}
+
+impl std::fmt::Debug for Dht {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Dht")
+            .field("partition", &self.partition)
+            .finish()
+    }
 }
 
 /// The next action to take after comparing two DHT snapshots.
