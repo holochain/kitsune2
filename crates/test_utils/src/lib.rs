@@ -3,6 +3,10 @@
 
 use rand::RngCore;
 
+pub mod agent;
+pub mod id;
+pub mod space;
+
 /// Enable tracing with the RUST_LOG environment variable.
 ///
 /// This is intended to be used in tests, so it defaults to DEBUG level.
@@ -25,6 +29,26 @@ pub fn random_bytes(length: u16) -> Vec<u8> {
     bytes
 }
 
-pub mod agent;
-pub mod id;
-pub mod space;
+/// Repeat a code block after a pause until a timeout has elapsed.
+/// The default timeout is 100 ms.
+#[macro_export]
+macro_rules! iter_check {
+    ($millis:literal, $code:block) => {
+        tokio::time::timeout(
+            std::time::Duration::from_millis($millis),
+            async {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(1))
+                        .await;
+                    $code
+                }
+            },
+        )
+        .await
+        .unwrap();
+    };
+
+    ($code:block) => {
+        iter_check!(100, $code)
+    };
+}
