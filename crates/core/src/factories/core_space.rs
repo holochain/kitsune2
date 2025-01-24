@@ -241,7 +241,6 @@ impl Space for CoreSpace {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // set some starting values
-            local_agent.set_tgt_storage_arc_hint(DhtArc::Empty);
             local_agent.set_cur_storage_arc(DhtArc::Empty);
 
             // update our local map

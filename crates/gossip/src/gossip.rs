@@ -18,7 +18,7 @@ use crate::state::{
 use crate::timeout::spawn_timeout_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use bytes::Bytes;
-use kitsune2_api::agent::{AgentInfoSigned, DynVerifier};
+use kitsune2_api::agent::{AgentInfoSigned, DynVerifier, LocalAgent};
 use kitsune2_api::fetch::DynFetch;
 use kitsune2_api::id::decode_ids;
 use kitsune2_api::peer_store::DynPeerStore;
@@ -129,7 +129,7 @@ pub(crate) struct K2Gossip {
     ///
     /// This is used to calculate the diff between local DHT state and the remote state of peers
     /// during gossip rounds.
-    dht: Arc<Dht>,
+    dht: Arc<RwLock<Dht>>,
     space_id: SpaceId,
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
@@ -195,7 +195,7 @@ impl K2Gossip {
             config: Arc::new(config),
             initiated_round_state: Default::default(),
             accepted_round_states: Default::default(),
-            dht: Arc::new(dht),
+            dht: Arc::new(RwLock::new(dht)),
             space_id: space_id.clone(),
             peer_store,
             local_agent_store,
@@ -377,8 +377,12 @@ impl K2Gossip {
                     .covered_sector_count()
                     > 0
                 {
-                    let snapshot =
-                        self.dht.snapshot_minimal(&common_arc_set).await?;
+                    let snapshot = self
+                        .dht
+                        .read()
+                        .await
+                        .snapshot_minimal(&common_arc_set)
+                        .await?;
                     Some(snapshot.try_into()?)
                 } else {
                     // TODO Need to decide what to do here. It's useful for now and it's reasonable
@@ -511,6 +515,8 @@ impl K2Gossip {
                             other_arc_set.intersection(&initiated.our_arc_set);
                         let next_action = self
                             .dht
+                            .read()
+                            .await
                             .handle_snapshot(
                                 &their_snapshot.into(),
                                 None,
@@ -666,6 +672,8 @@ impl K2Gossip {
 
                 let next_action = self
                     .dht
+                    .read()
+                    .await
                     .handle_snapshot(&their_snapshot, None, common_arc_set)
                     .await?;
 
@@ -744,6 +752,8 @@ impl K2Gossip {
 
                 let next_action = self
                     .dht
+                    .read()
+                    .await
                     .handle_snapshot(&their_snapshot, None, &common_arc_set)
                     .await?;
 
@@ -808,12 +818,23 @@ impl K2Gossip {
                     }
                 };
 
+                self.fetch
+                    .request_ops(
+                        decode_ids(
+                            disc_sector_details_response_diff.maybe_missing_ids,
+                        ),
+                        from_peer.clone(),
+                    )
+                    .await?;
+
                 let their_snapshot = disc_sector_details_response_diff.snapshot.expect(
                     "Snapshot present checked by validate_disc_sector_details_diff",
                 ).try_into()?;
 
                 let next_action = self
                     .dht
+                    .read()
+                    .await
                     .handle_snapshot(
                         &their_snapshot,
                         Some(our_snapshot.clone()),
@@ -922,7 +943,7 @@ impl K2Gossip {
                     false
                 };
 
-                if !handled_as_acceptor {
+                if !handled_as_initiator && !handled_as_acceptor {
                     return Err(K2Error::other("Unsolicited Hashes message"));
                 }
 
@@ -1258,7 +1279,7 @@ mod test {
     use kitsune2_api::builder::Builder;
     use kitsune2_api::space::{DynSpace, SpaceHandler};
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
-    use kitsune2_api::OpId;
+    use kitsune2_api::{DhtArc, OpId};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_test_utils::enable_tracing;
@@ -1273,8 +1294,13 @@ mod test {
     }
 
     impl GossipTestHarness {
-        async fn join_local_agent(&self) -> Arc<AgentInfoSigned> {
+        async fn join_local_agent(
+            &self,
+            target_arc: DhtArc,
+        ) -> Arc<AgentInfoSigned> {
             let local_agent = Arc::new(Ed25519LocalAgent::default());
+            local_agent.set_tgt_storage_arc_hint(target_arc.clone());
+
             self.space
                 .local_agent_join(local_agent.clone())
                 .await
@@ -1332,7 +1358,7 @@ mod test {
         }
 
         async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<MemoryOp> {
-            tokio::time::timeout(Duration::from_millis(100), {
+            tokio::time::timeout(Duration::from_millis(500), {
                 let this = self.clone();
                 async move {
                     loop {
@@ -1474,7 +1500,7 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent().await;
+        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let agent_info_1 = harness_1
             .peer_store
             .get(agent_1.agent.clone())
@@ -1483,7 +1509,7 @@ mod test {
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        harness_2.join_local_agent().await;
+        harness_2.join_local_agent(DhtArc::FULL).await;
         harness_2
             .peer_store
             .insert(vec![agent_info_1.clone()])
@@ -1492,8 +1518,8 @@ mod test {
 
         // Join extra agents for each peer. These will take a few seconds to be
         // found by bootstrap. Try to sync them with gossip.
-        let secret_agent_1 = harness_1.join_local_agent().await;
-        let secret_agent_2 = harness_2.join_local_agent().await;
+        let secret_agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        let secret_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
 
         assert!(harness_1
             .peer_store
@@ -1529,7 +1555,7 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent().await;
+        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
@@ -1545,7 +1571,7 @@ mod test {
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        harness_2.join_local_agent().await;
+        harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
@@ -1576,7 +1602,7 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent().await;
+        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
@@ -1585,13 +1611,31 @@ mod test {
             .await
             .unwrap();
 
+        harness_1
+            .gossip
+            .dht
+            .write()
+            .await
+            .inform_ops_stored(vec![op_1.clone().into()])
+            .await
+            .unwrap();
+
         let harness_2 = factory.new_instance().await;
-        let agent_2 = harness_2.join_local_agent().await;
+        let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .op_store
             .process_incoming_ops(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        harness_2
+            .gossip
+            .dht
+            .write()
+            .await
+            .inform_ops_stored(vec![op_2.clone().into()])
             .await
             .unwrap();
 
