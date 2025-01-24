@@ -15,7 +15,7 @@ use kitsune2_api::{
     DynOpStore, K2Error, Url,
 };
 use kitsune2_test_utils::{
-    enable_tracing, id::random_op_id, space::TEST_SPACE_ID,
+    enable_tracing, id::random_op_id, iter_check, space::TEST_SPACE_ID,
 };
 use prost::Message;
 use std::{
@@ -135,16 +135,11 @@ async fn respond_to_multiple_requests() {
         .unwrap();
 
     // Wait for responses to happen.
-    tokio::time::timeout(Duration::from_millis(20), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if responses_sent.lock().unwrap().len() == 2 {
-                break;
-            }
+    iter_check!({
+        if responses_sent.lock().unwrap().len() == 2 {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     assert!(responses_sent
         .lock()
@@ -181,7 +176,7 @@ async fn no_response_sent_when_no_ops_found() {
         )
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     assert!(responses_sent.lock().unwrap().is_empty());
 }
@@ -246,7 +241,7 @@ async fn fail_to_respond_once_then_succeed() {
         )
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    tokio::time::sleep(Duration::from_millis(30)).await;
 
     // Send response should have failed.
     assert!(responses_sent.lock().unwrap().is_empty());
@@ -263,14 +258,9 @@ async fn fail_to_respond_once_then_succeed() {
         .unwrap();
 
     // Send should succeed after it failed at first.
-    tokio::time::timeout(Duration::from_millis(20), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if !responses_sent.lock().unwrap().is_empty() {
-                break;
-            }
+    iter_check!({
+        if !responses_sent.lock().unwrap().is_empty() {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 }

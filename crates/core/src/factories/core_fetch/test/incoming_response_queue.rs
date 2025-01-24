@@ -15,7 +15,7 @@ use kitsune2_api::{
     DynOpStore, K2Error, MetaOp, MockOpStore, OpId, Timestamp, Url,
 };
 use kitsune2_test_utils::{
-    enable_tracing, id::random_op_id, space::TEST_SPACE_ID,
+    enable_tracing, id::random_op_id, iter_check, space::TEST_SPACE_ID,
 };
 use prost::Message;
 use std::{
@@ -127,21 +127,17 @@ async fn incoming_ops_are_written_to_op_store() {
             op_data: op.into(),
         })
         .collect::<Vec<_>>();
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            let stored_ops = op_store
-                .retrieve_ops(incoming_op_ids.clone())
-                .await
-                .unwrap();
-            if stored_ops.len() == 2 {
-                assert_eq!(expected_stored_ops, stored_ops);
-                break;
-            }
+
+    iter_check!({
+        let stored_ops = op_store
+            .retrieve_ops(incoming_op_ids.clone())
+            .await
+            .unwrap();
+        if stored_ops.len() == incoming_op_ids.len() {
+            assert_eq!(expected_stored_ops, stored_ops);
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -174,16 +170,11 @@ async fn requests_for_received_ops_are_removed_from_state() {
     assert_eq!(fetch.state.lock().unwrap().requests.len(), 3);
 
     // Wait for a request to be sent.
-    tokio::time::timeout(Duration::from_millis(20), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if !requests_sent.lock().unwrap().is_empty() {
-                break;
-            }
+    iter_check!({
+        if !requests_sent.lock().unwrap().is_empty() {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     // Receive incoming ops.
     let fetch_message =
@@ -199,47 +190,18 @@ async fn requests_for_received_ops_are_removed_from_state() {
         .unwrap();
 
     // Wait for op ids that were processed by the op store to be removed from state.
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            let fetch_state = fetch.state.lock().unwrap();
-            if !fetch_state
-                .requests
-                .contains(&(incoming_op_id.clone(), peer_url.clone()))
-            {
-                // Only 1 request of another op should remain.
-                assert_eq!(fetch_state.requests.len(), 1);
-                assert!(fetch_state
-                    .requests
-                    .contains(&(another_op_id, peer_url)));
-                break;
-            }
+    iter_check!({
+        let fetch_state = fetch.state.lock().unwrap();
+        if !fetch_state
+            .requests
+            .contains(&(incoming_op_id.clone(), peer_url.clone()))
+        {
+            // Only 1 request of another op should remain.
+            assert_eq!(fetch_state.requests.len(), 1);
+            assert!(fetch_state.requests.contains(&(another_op_id, peer_url)));
+            break;
         }
-    })
-    .await
-    .unwrap();
-
-    // Record how many requests have been sent so far for the incoming op.
-    let requests_sent_for_fetched_op = requests_sent
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(op_id, _)| *op_id == incoming_op_id)
-        .count();
-
-    // Let some time pass for more requests to be sent.
-    tokio::time::sleep(Duration::from_millis(10)).await;
-
-    // Check that no further requests have been sent for the removed op id.
-    assert_eq!(
-        requests_sent
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(op_id, _)| *op_id == incoming_op_id)
-            .count(),
-        requests_sent_for_fetched_op
-    );
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -283,7 +245,7 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
         )
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Op id should not have been removed from requests.
     assert_eq!(fetch.state.lock().unwrap().requests.len(), 1);

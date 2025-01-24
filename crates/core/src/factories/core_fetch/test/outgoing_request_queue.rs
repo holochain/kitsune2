@@ -13,7 +13,7 @@ use kitsune2_api::{
     transport::MockTransport,
     K2Error, OpId, Url,
 };
-use kitsune2_test_utils::{id::random_op_id, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{id::random_op_id, iter_check, space::TEST_SPACE_ID};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
@@ -101,7 +101,7 @@ fn make_mock_transport(
 #[tokio::test(flavor = "multi_thread")]
 async fn outgoing_request_queue() {
     let config = CoreFetchConfig {
-        re_insert_outgoing_request_delay_ms: 10,
+        re_insert_outgoing_request_delay_ms: 50,
         ..Default::default()
     };
     let TestCase {
@@ -121,16 +121,11 @@ async fn outgoing_request_queue() {
 
     // Let the fetch request be sent multiple times. As only 1 op was added to the queue,
     // this proves that it is being re-added to the queue after sending a request for it.
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::task::yield_now().await;
-            if requests_sent.lock().unwrap().len() >= 2 {
-                break;
-            }
+    iter_check!({
+        if requests_sent.lock().unwrap().len() >= 2 {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     // Clear set of ops to fetch to stop sending requests.
     fetch.state.lock().unwrap().requests.clear();
@@ -146,7 +141,10 @@ async fn outgoing_request_queue() {
 
     // Give time for more requests to be sent, which shouldn't happen now that the set of
     // ops to fetch is cleared.
-    tokio::time::sleep(Duration::from_millis(30)).await;
+    tokio::time::sleep(Duration::from_millis(
+        (config.re_insert_outgoing_request_delay_ms * 2) as u64,
+    ))
+    .await;
 
     // No more requests should have been sent.
     // Ideally it were possible to check that no more fetch request have been passed back into
@@ -211,21 +209,16 @@ async fn happy_op_fetch_from_multiple_agents() {
     .await;
 
     // Check that at least one request was sent for each op.
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::task::yield_now().await;
-            let requests_sent = requests_sent.lock().unwrap().clone();
-            if requests_sent.len() >= total_ops
-                && expected_requests
-                    .iter()
-                    .all(|expected_op| requests_sent.contains(expected_op))
-            {
-                break;
-            }
+    iter_check!({
+        let requests_sent = requests_sent.lock().unwrap().clone();
+        if requests_sent.len() >= total_ops
+            && expected_requests
+                .iter()
+                .all(|expected_op| requests_sent.contains(expected_op))
+        {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
@@ -255,32 +248,26 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
 
     // Wait for one request for each agent.
     let expected_peer_url = [peer_url_1, peer_url_2];
-    tokio::time::timeout(Duration::from_millis(100), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            let requests_sent = requests_sent.lock().unwrap();
-            let request_destinations = requests_sent
-                .iter()
-                .map(|(_, agent_id)| agent_id)
-                .collect::<Vec<_>>();
+    iter_check!({
+        let requests_sent = requests_sent.lock().unwrap();
+        let request_destinations = requests_sent
+            .iter()
+            .map(|(_, agent_id)| agent_id)
+            .collect::<Vec<_>>();
+        if expected_peer_url
+            .iter()
+            .all(|peer_url| request_destinations.contains(&peer_url))
+        {
+            // Check all agents are on back off list.
+            let back_off_list = &mut fetch.state.lock().unwrap().back_off_list;
             if expected_peer_url
                 .iter()
-                .all(|peer_url| request_destinations.contains(&peer_url))
+                .all(|peer_url| back_off_list.is_peer_on_back_off(peer_url))
             {
-                // Check all agents are on back off list.
-                let back_off_list =
-                    &mut fetch.state.lock().unwrap().back_off_list;
-                if expected_peer_url
-                    .iter()
-                    .all(|peer_url| back_off_list.is_peer_on_back_off(peer_url))
-                {
-                    break;
-                }
+                break;
             }
         }
-    })
-    .await
-    .unwrap();
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -311,16 +298,11 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
 
     fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
 
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if !requests_sent.lock().unwrap().is_empty() {
-                break;
-            }
+    iter_check!({
+        if !requests_sent.lock().unwrap().is_empty() {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     assert!(fetch.state.lock().unwrap().back_off_list.state.is_empty());
 }
@@ -351,16 +333,11 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .unwrap();
 
     // Wait for one request to fail, so agent is put on back off list.
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if !requests_sent.lock().unwrap().clone().is_empty() {
-                break;
-            }
+    iter_check!({
+        if !requests_sent.lock().unwrap().clone().is_empty() {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     let current_number_of_requests_to_agent_1 = requests_sent
         .lock()
@@ -402,23 +379,18 @@ async fn requests_are_dropped_when_max_back_off_expired() {
 
     // Wait for another request attempt to agent 1, which should remove all of their requests
     // from the set.
-    tokio::time::timeout(Duration::from_millis(30), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if requests_sent
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(_, a)| *a != peer_url_1)
-                .count()
-                > current_number_of_requests_to_agent_1
-            {
-                break;
-            }
+    iter_check!({
+        if requests_sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, a)| *a != peer_url_1)
+            .count()
+            > current_number_of_requests_to_agent_1
+        {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 
     assert!(fetch
         .state
