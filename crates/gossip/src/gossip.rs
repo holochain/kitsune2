@@ -10,10 +10,11 @@ use crate::protocol::{
     K2GossipDiscSectorsDiffMessage, K2GossipHashesMessage,
     K2GossipInitiateMessage, K2GossipNoDiffMessage,
     K2GossipRingSectorDetailsDiffMessage,
+    K2GossipRingSectorDetailsDiffResponseMessage,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
-    RoundStageDiscSectorsDiff,
+    RoundStageDiscSectorsDiff, RoundStageRingSectorDetailsDiff,
 };
 use crate::timeout::spawn_timeout_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -580,7 +581,10 @@ impl K2Gossip {
                                             initiated_lock.as_mut()
                                         {
                                             state.stage =
-                                                RoundStage::RingSectorDetailsDiff;
+                                                RoundStage::RingSectorDetailsDiff(RoundStageRingSectorDetailsDiff {
+                                                    common_arc_set,
+                                                    snapshot: snapshot.clone(),
+                                                });
                                         }
 
                                         Ok(Some(GossipMessage::RingSectorDetailsDiff(
@@ -782,7 +786,7 @@ impl K2Gossip {
                             );
                         }
 
-                        Ok(Some(GossipMessage::DiscSectorDetailsResponseDiff(
+                        Ok(Some(GossipMessage::DiscSectorDetailsDiffResponse(
                             K2GossipDiscSectorDetailsDiffResponseMessage {
                                 session_id: disc_sector_details_diff.session_id,
                                 maybe_missing_ids: encode_op_ids(ops),
@@ -795,7 +799,7 @@ impl K2Gossip {
                     }
                 }
             }
-            GossipMessage::DiscSectorDetailsResponseDiff(
+            GossipMessage::DiscSectorDetailsDiffResponse(
                 disc_sector_details_response_diff,
             ) => {
                 let state = self
@@ -873,8 +877,179 @@ impl K2Gossip {
                     }
                 }
             }
-            GossipMessage::RingSectorDetailsDiff(_ring_sector_details_diff) => {
-                unimplemented!()
+            GossipMessage::RingSectorDetailsDiff(ring_sector_details_diff) => {
+                let state = self
+                    .update_incoming_ring_sector_details_diff_state(
+                        from_peer.clone(),
+                        &ring_sector_details_diff,
+                    )
+                    .await?;
+
+                // TODO check in validation
+                let accept_response_message =
+                    ring_sector_details_diff.accept_response.unwrap();
+                self.handle_accept_response(
+                    &from_peer,
+                    accept_response_message.clone(),
+                )
+                .await?;
+
+                let mut state_lock = state.lock().await;
+
+                let common_arc_set = match &state_lock.stage {
+                    RoundStage::Accepted { common_arc_set, .. } => {
+                        common_arc_set.clone()
+                    }
+                    _ => {
+                        unreachable!()
+                    }
+                };
+
+                let their_snapshot = ring_sector_details_diff.snapshot.expect(
+                    "Snapshot present checked by validate_ring_sector_details_diff",
+                ).try_into()?;
+
+                let next_action = self
+                    .dht
+                    .read()
+                    .await
+                    .handle_snapshot(&their_snapshot, None, &common_arc_set)
+                    .await?;
+
+                match next_action {
+                    DhtSnapshotNextAction::CannotCompare
+                    | DhtSnapshotNextAction::Identical => {
+                        tracing::info!("Received a ring sector details diff but no diff to send back, responding with agents");
+
+                        // Terminating the session, so remove the state.
+                        self.accepted_round_states
+                            .write()
+                            .await
+                            .remove(&from_peer);
+
+                        let send_agents = self
+                            .load_agent_infos(
+                                accept_response_message.missing_agents,
+                            )
+                            .await;
+                        if !send_agents.is_empty() {
+                            Ok(Some(GossipMessage::Agents(
+                                K2GossipAgentsMessage {
+                                    session_id: ring_sector_details_diff
+                                        .session_id,
+                                    provided_agents: encode_agent_infos(
+                                        send_agents,
+                                    )?,
+                                },
+                            )))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    DhtSnapshotNextAction::NewSnapshotAndHashList(
+                        snapshot,
+                        op_ids,
+                    ) => {
+                        state_lock.stage = RoundStage::RingSectorDetailsDiff(
+                            RoundStageRingSectorDetailsDiff {
+                                common_arc_set,
+                                snapshot: snapshot.clone(),
+                            },
+                        );
+
+                        Ok(Some(GossipMessage::RingSectorDetailsDiffResponse(
+                            K2GossipRingSectorDetailsDiffResponseMessage {
+                                session_id: ring_sector_details_diff.session_id,
+                                maybe_missing_ids: encode_op_ids(op_ids),
+                                snapshot: Some(snapshot.try_into()?),
+                            },
+                        )))
+                    }
+                    _ => {
+                        unreachable!("unexpected next action")
+                    }
+                }
+            }
+            GossipMessage::RingSectorDetailsDiffResponse(
+                ring_sector_details_diff_response,
+            ) => {
+                let mut initiated_lock =
+                    self.initiated_round_state.lock().await;
+                let state = match initiated_lock.as_ref() {
+                    Some(state) => {
+                        // TODO validation
+                        // state.validate_agents(from_peer.clone(), &agents)?;
+                        state
+                    }
+                    None => {
+                        return Err(K2Error::other(
+                            "Unsolicited Agents message",
+                        ));
+                    }
+                };
+
+                self.fetch
+                    .request_ops(
+                        decode_ids(
+                            ring_sector_details_diff_response.maybe_missing_ids,
+                        ),
+                        from_peer.clone(),
+                    )
+                    .await?;
+
+                let their_snapshot: DhtSnapshot =
+                    ring_sector_details_diff_response
+                        .snapshot
+                        .unwrap()
+                        .try_into()?;
+
+                let (common_arc_set, our_snapshot) = match &state.stage {
+                    RoundStage::RingSectorDetailsDiff(
+                        RoundStageRingSectorDetailsDiff {
+                            common_arc_set,
+                            snapshot,
+                        },
+                    ) => (common_arc_set.clone(), snapshot.clone()),
+                    _ => {
+                        unreachable!()
+                    }
+                };
+
+                let next_action = self
+                    .dht
+                    .read()
+                    .await
+                    .handle_snapshot(
+                        &their_snapshot,
+                        Some(our_snapshot),
+                        &common_arc_set,
+                    )
+                    .await?;
+
+                match next_action {
+                    DhtSnapshotNextAction::CannotCompare
+                    | DhtSnapshotNextAction::Identical => {
+                        tracing::info!("Received a ring sector details diff response that we can't respond to, terminating gossip round");
+
+                        // Terminating the session, so remove the state.
+                        initiated_lock.take();
+
+                        Ok(None)
+                    }
+                    DhtSnapshotNextAction::HashList(op_ids) => {
+                        // This is the final message we're going to send, remove state
+                        initiated_lock.take();
+
+                        Ok(Some(GossipMessage::Hashes(K2GossipHashesMessage {
+                            session_id: ring_sector_details_diff_response
+                                .session_id,
+                            maybe_missing_ids: encode_op_ids(op_ids),
+                        })))
+                    }
+                    _ => {
+                        unreachable!("unexpected next action")
+                    }
+                }
             }
             GossipMessage::Hashes(hashes) => {
                 // This could be received from either the initiator or the acceptor.
@@ -1082,6 +1257,34 @@ impl K2Gossip {
         Ok(state.clone())
     }
 
+    async fn update_incoming_ring_sector_details_diff_state(
+        &self,
+        from_peer: Url,
+        _ring_sector_details_diff: &K2GossipRingSectorDetailsDiffMessage,
+    ) -> K2Result<Arc<Mutex<GossipRoundState>>> {
+        let Some(state) = self
+            .accepted_round_states
+            .read()
+            .await
+            .get(&from_peer)
+            .cloned()
+        else {
+            return Err(K2Error::other(format!(
+                "Unsolicited RingSectorDetailsDiff message from peer: {:?}",
+                from_peer
+            )));
+        };
+
+        // TODO validate
+        // let state_lock = state.lock().await;
+        // state_lock.validate_disc_sector_details_diff_response(
+        //     from_peer.clone(),
+        //     disc_sector_details_diff_response,
+        // )?;
+
+        Ok(state.clone())
+    }
+
     async fn handle_accept_response(
         &self,
         from_peer: &Url,
@@ -1282,6 +1485,7 @@ mod test {
     use kitsune2_api::{DhtArc, OpId};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
+    use kitsune2_dht::UNIT_TIME;
     use kitsune2_test_utils::enable_tracing;
     use std::time::Duration;
 
@@ -1623,6 +1827,92 @@ mod test {
         let harness_2 = factory.new_instance().await;
         let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
+        let op_id_2 = op_2.compute_op_id();
+        harness_2
+            .op_store
+            .process_incoming_ops(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        harness_2
+            .gossip
+            .dht
+            .write()
+            .await
+            .inform_ops_stored(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        // Inform the harnesses that we've already synced up to now. This will force the
+        // ops we just created to be treated as historical disc ops.
+        harness_1
+            .gossip
+            .peer_meta_store
+            .set_new_ops_bookmark(
+                agent_2.url.clone().unwrap(),
+                Timestamp::now(),
+            )
+            .await
+            .unwrap();
+        harness_2
+            .gossip
+            .peer_meta_store
+            .set_new_ops_bookmark(
+                agent_1.url.clone().unwrap(),
+                Timestamp::now(),
+            )
+            .await
+            .unwrap();
+
+        harness_2
+            .gossip
+            .initiate_gossip(agent_1.agent.clone())
+            .await
+            .unwrap();
+
+        let received_ops = harness_1.wait_for_ops(vec![op_id_2]).await;
+        assert_eq!(1, received_ops.len());
+        assert_eq!(op_2, received_ops[0]);
+
+        let received_ops = harness_2.wait_for_ops(vec![op_id_1]).await;
+        assert_eq!(1, received_ops.len());
+        assert_eq!(op_1, received_ops[0]);
+    }
+
+    #[tokio::test]
+    async fn ring_sync() {
+        enable_tracing();
+
+        let space = test_space();
+        let factory = TestGossipFactory::create(space.clone()).await;
+        let harness_1 = factory.new_instance().await;
+        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        let op_1 = MemoryOp::new(
+            (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
+            vec![1; 128],
+        );
+        let op_id_1 = op_1.compute_op_id();
+        harness_1
+            .op_store
+            .process_incoming_ops(vec![op_1.clone().into()])
+            .await
+            .unwrap();
+
+        harness_1
+            .gossip
+            .dht
+            .write()
+            .await
+            .inform_ops_stored(vec![op_1.clone().into()])
+            .await
+            .unwrap();
+
+        let harness_2 = factory.new_instance().await;
+        let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+        let op_2 = MemoryOp::new(
+            (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
+            vec![2; 128],
+        );
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .op_store
