@@ -95,38 +95,46 @@ async fn select_next_target(
     // Filter local agents out of the list of all agents
     remove_local_agents(&mut all_agents, &local_agent_ids);
 
+    let mut using_overlapping_agents = true;
+
     // There are no agents with an overlapping arc to gossip with. We should cast the net
     // wider and gossip with agents that might still be growing their arc and have some ops
     // or agent infos that we are missing
     if all_agents.is_empty() {
+        tracing::info!("No agents with overlapping arcs available, selecting from all agents");
+
         all_agents = peer_store.get_all().await?.into_iter().collect();
         remove_local_agents(&mut all_agents, &local_agent_ids);
+        using_overlapping_agents = false;
     }
 
-    let mut possible_targets = Vec::with_capacity(all_agents.len());
-    for agent in all_agents {
-        // Agent hasn't provided a URL, we won't be able to gossip with them.
-        let Some(url) = agent.url.clone() else {
-            continue;
-        };
+    let mut possible_targets = filter_by_recently_gossiped(
+        all_agents,
+        peer_meta_store.clone(),
+        current_time,
+        min_interval,
+    )
+    .await?;
 
-        let timestamp =
-            peer_meta_store.last_gossip_timestamp(url.clone()).await?;
+    // We tried using overlapping agents, but they're all on timeout
+    if possible_targets.is_empty() && using_overlapping_agents {
+        tracing::info!("All agents with overlapping arcs are on timeout, selecting from all agents");
 
-        // Too soon to gossip with this peer again
-        if let Some(timestamp) = timestamp {
-            if (current_time - timestamp).unwrap_or(Duration::MAX)
-                < min_interval
-            {
-                continue;
-            }
-        }
+        all_agents = peer_store.get_all().await?.into_iter().collect();
+        remove_local_agents(&mut all_agents, &local_agent_ids);
 
-        possible_targets.push((timestamp, agent));
+        possible_targets = filter_by_recently_gossiped(
+            all_agents,
+            peer_meta_store.clone(),
+            current_time,
+            min_interval,
+        )
+        .await?;
     }
 
+    // All options exhausted, give up for now
     if possible_targets.is_empty() {
-        tracing::info!("No possible targets to gossip with");
+        tracing::info!("No agents to gossip with");
         return Ok(None);
     }
 
@@ -160,6 +168,37 @@ fn remove_local_agents(
     local_agents: &HashSet<AgentId>,
 ) {
     agents.retain(|a| !local_agents.contains(&a.get_agent_info().agent));
+}
+
+async fn filter_by_recently_gossiped(
+    all_agents: HashSet<Arc<AgentInfoSigned>>,
+    peer_meta_store: Arc<K2PeerMetaStore>,
+    current_time: Timestamp,
+    min_interval: Duration,
+) -> K2Result<Vec<(Option<Timestamp>, Arc<AgentInfoSigned>)>> {
+    let mut possible_targets = Vec::with_capacity(all_agents.len());
+    for agent in all_agents {
+        // Agent hasn't provided a URL, we won't be able to gossip with them.
+        let Some(url) = agent.url.clone() else {
+            continue;
+        };
+
+        let timestamp =
+            peer_meta_store.last_gossip_timestamp(url.clone()).await?;
+
+        // Too soon to gossip with this peer again
+        if let Some(timestamp) = timestamp {
+            if (current_time - timestamp).unwrap_or(Duration::MAX)
+                < min_interval
+            {
+                continue;
+            }
+        }
+
+        possible_targets.push((timestamp, agent));
+    }
+
+    Ok(possible_targets)
 }
 
 #[cfg(test)]
@@ -281,17 +320,10 @@ mod tests {
         let harness = Harness::create().await;
 
         harness.new_local_agent(DhtArc::FULL).await;
+
         let agent_2 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/1").unwrap()),
-                Some(DhtArc::FULL),
-                Some(DhtArc::FULL),
-            )
-            .await;
-
-        harness
-            .new_remote_agent(
-                Some(Url::from_str("ws://test:80/2").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
@@ -604,7 +636,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ignores_non_overlapping_if_any_overlapping_peers_available() {
+    async fn prioritises_overlapping_arcs() {
         enable_tracing();
 
         let harness = Harness::create().await;
@@ -622,7 +654,7 @@ mod tests {
             )
             .await;
         // Non-overlapping with our local agent
-        harness
+        let agent_3 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/3").unwrap()),
                 Some(DhtArc::Arc(SECTOR_SIZE, SECTOR_SIZE * 2 - 1)),
@@ -630,7 +662,7 @@ mod tests {
             )
             .await;
 
-        let mut seen = HashSet::new();
+        let mut seen = Vec::with_capacity(2);
         while let Some(url) = select_next_target(
             Duration::from_secs(60),
             harness.peer_store.clone(),
@@ -646,10 +678,11 @@ mod tests {
                 .await
                 .unwrap();
 
-            seen.insert(url);
+            seen.push(url);
         }
 
-        assert_eq!(1, seen.len());
-        assert!(seen.contains(&agent_2.url.clone().unwrap()));
+        assert_eq!(2, seen.len());
+        assert_eq!(agent_2.url.clone().unwrap(), seen[0]);
+        assert_eq!(agent_3.url.clone().unwrap(), seen[1]);
     }
 }
