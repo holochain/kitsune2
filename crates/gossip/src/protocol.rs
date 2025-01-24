@@ -1,5 +1,10 @@
 //! Protocol definitions for the gossip module.
 
+use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
+use crate::protocol::k2_gossip_disc_sectors_diff_message::SnapshotDiscSectorsMessage;
+use crate::protocol::k2_gossip_ring_sector_details_diff_message::{
+    RingSectorHashes, SnapshotRingSectorDetailsMessage,
+};
 use bytes::{Bytes, BytesMut};
 use kitsune2_api::agent::AgentInfoSigned;
 use kitsune2_api::id::encode_ids;
@@ -8,9 +13,6 @@ use kitsune2_dht::snapshot::DhtSnapshot;
 use prost::{bytes, Message};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
-use crate::protocol::k2_gossip_disc_sectors_diff_message::SnapshotDiscSectorsMessage;
-use crate::protocol::k2_gossip_ring_sector_details_diff_message::{RingSectorHashes, SnapshotRingSectorDetailsMessage};
 
 include!("../proto/gen/kitsune2.gossip.rs");
 
@@ -20,7 +22,10 @@ pub enum GossipMessage {
     Accept(K2GossipAcceptMessage),
     NoDiff(K2GossipNoDiffMessage),
     DiscSectorsDiff(K2GossipDiscSectorsDiffMessage),
+    DiscSectorDetailsDiff(K2GossipDiscSectorDetailsDiffMessage),
+    DiscSectorDetailsResponseDiff(K2GossipDiscSectorDetailsDiffResponseMessage),
     RingSectorDetailsDiff(K2GossipRingSectorDetailsDiffMessage),
+    Hashes(K2GossipHashesMessage),
     Agents(K2GossipAgentsMessage),
 }
 
@@ -49,11 +54,29 @@ pub fn deserialize_gossip_message(value: Bytes) -> K2Result<GossipMessage> {
                 .map_err(K2Error::other)?;
             Ok(GossipMessage::DiscSectorsDiff(inner))
         }
+        k2_gossip_message::GossipMessageType::DiscSectorDetailsDiff => {
+            let inner =
+                K2GossipDiscSectorDetailsDiffMessage::decode(outer.data)
+                    .map_err(K2Error::other)?;
+            Ok(GossipMessage::DiscSectorDetailsDiff(inner))
+        }
+        k2_gossip_message::GossipMessageType::DiscSectorDetailsResponseDiff => {
+            let inner = K2GossipDiscSectorDetailsDiffResponseMessage::decode(
+                outer.data,
+            )
+            .map_err(K2Error::other)?;
+            Ok(GossipMessage::DiscSectorDetailsResponseDiff(inner))
+        }
         k2_gossip_message::GossipMessageType::RingSectorDetailsDiff => {
             let inner =
                 K2GossipRingSectorDetailsDiffMessage::decode(outer.data)
                     .map_err(K2Error::other)?;
             Ok(GossipMessage::RingSectorDetailsDiff(inner))
+        }
+        k2_gossip_message::GossipMessageType::Hashes => {
+            let inner = K2GossipHashesMessage::decode(outer.data)
+                .map_err(K2Error::other)?;
+            Ok(GossipMessage::Hashes(inner))
         }
         k2_gossip_message::GossipMessageType::Agents => {
             let inner = K2GossipAgentsMessage::decode(outer.data)
@@ -85,75 +108,56 @@ pub fn serialize_gossip_message(value: GossipMessage) -> K2Result<Bytes> {
 fn serialize_inner_gossip_message(
     value: GossipMessage,
 ) -> K2Result<(k2_gossip_message::GossipMessageType, Bytes)> {
-    let mut out = BytesMut::new();
+    let out = BytesMut::new();
+
+    fn encode<T: prost::Message>(msg: T, mut out: BytesMut) -> K2Result<Bytes> {
+        msg.encode(&mut out).map_err(|e| {
+            K2Error::other(format!(
+                "Failed to serialize gossip message: {:?}",
+                e
+            ))
+        })?;
+
+        Ok(out.freeze())
+    }
 
     match value {
-        GossipMessage::Initiate(inner) => {
-            inner.encode(&mut out).map_err(|e| {
-                K2Error::other(format!(
-                    "Failed to serialize gossip message: {:?}",
-                    e
-                ))
-            })?;
-
-            Ok((k2_gossip_message::GossipMessageType::Initiate, out.freeze()))
-        }
-        GossipMessage::Accept(inner) => {
-            inner.encode(&mut out).map_err(|e| {
-                K2Error::other(format!(
-                    "Failed to serialize gossip message: {:?}",
-                    e
-                ))
-            })?;
-
-            Ok((k2_gossip_message::GossipMessageType::Accept, out.freeze()))
-        }
-        GossipMessage::NoDiff(inner) => {
-            inner.encode(&mut out).map_err(|e| {
-                K2Error::other(format!(
-                    "Failed to serialize gossip message: {:?}",
-                    e
-                ))
-            })?;
-
-            Ok((k2_gossip_message::GossipMessageType::NoDiff, out.freeze()))
-        }
-        GossipMessage::DiscSectorsDiff(inner) => {
-            inner.encode(&mut out).map_err(|e| {
-                K2Error::other(format!(
-                    "Failed to serialize gossip message: {:?}",
-                    e
-                ))
-            })?;
-
-            Ok((
-                k2_gossip_message::GossipMessageType::DiscSectorsDiff,
-                out.freeze(),
-            ))
-        }
-        GossipMessage::RingSectorDetailsDiff(inner) => {
-            inner.encode(&mut out).map_err(|e| {
-                K2Error::other(format!(
-                    "Failed to serialize gossip message: {:?}",
-                    e
-                ))
-            })?;
-
-            Ok((
-                k2_gossip_message::GossipMessageType::RingSectorDetailsDiff,
-                out.freeze(),
-            ))
-        }
-        GossipMessage::Agents(inner) => {
-            inner.encode(&mut out).map_err(|e| {
-                K2Error::other(format!(
-                    "Failed to serialize gossip message: {:?}",
-                    e
-                ))
-            })?;
-
-            Ok((k2_gossip_message::GossipMessageType::Agents, out.freeze()))
-        }
+        GossipMessage::Initiate(inner) => Ok((
+            k2_gossip_message::GossipMessageType::Initiate,
+            encode(inner, out)?,
+        )),
+        GossipMessage::Accept(inner) => Ok((
+            k2_gossip_message::GossipMessageType::Accept,
+            encode(inner, out)?,
+        )),
+        GossipMessage::NoDiff(inner) => Ok((
+            k2_gossip_message::GossipMessageType::NoDiff,
+            encode(inner, out)?,
+        )),
+        GossipMessage::DiscSectorsDiff(inner) => Ok((
+            k2_gossip_message::GossipMessageType::DiscSectorsDiff,
+            encode(inner, out)?,
+        )),
+        GossipMessage::DiscSectorDetailsDiff(inner) => Ok((
+            k2_gossip_message::GossipMessageType::DiscSectorDetailsDiff,
+            encode(inner, out)?,
+        )),
+        GossipMessage::DiscSectorDetailsResponseDiff(inner) => Ok((
+            k2_gossip_message::GossipMessageType::DiscSectorDetailsResponseDiff,
+            encode(inner, out)?,
+        )),
+        GossipMessage::RingSectorDetailsDiff(inner) => Ok((
+            k2_gossip_message::GossipMessageType::RingSectorDetailsDiff,
+            encode(inner, out)?,
+        )),
+        GossipMessage::Hashes(inner) => Ok((
+            k2_gossip_message::GossipMessageType::Hashes,
+            encode(inner, out)?,
+        )),
+        GossipMessage::Agents(inner) => Ok((
+            k2_gossip_message::GossipMessageType::Agents,
+            encode(inner, out)?,
+        )),
     }
 }
 
@@ -193,8 +197,8 @@ impl TryFrom<DhtSnapshot> for SnapshotMinimalMessage {
             } => {
                 Ok(SnapshotMinimalMessage {
                     disc_boundary: disc_boundary.as_micros(),
-                    disc_top_hash: disc_top_hash.into(),
-                    ring_top_hashes: ring_top_hashes.into_iter().map(|h| h.into()).collect(),
+                    disc_top_hash,
+                    ring_top_hashes: ring_top_hashes.into_iter().collect(),
                 })
             }
             _ => {
@@ -255,6 +259,66 @@ impl TryFrom<SnapshotDiscSectorsMessage> for DhtSnapshot {
                 .into_iter()
                 .zip(value.disc_sector_hashes)
                 .collect(),
+        })
+    }
+}
+
+impl TryFrom<DhtSnapshot> for SnapshotDiscSectorDetailsMessage {
+    type Error = K2Error;
+
+    fn try_from(value: DhtSnapshot) -> K2Result<Self> {
+        match value {
+            DhtSnapshot::DiscSectorDetails {
+                disc_boundary,
+                disc_sector_hashes,
+            } => {
+                Ok(SnapshotDiscSectorDetailsMessage {
+                    disc_boundary: disc_boundary.as_micros(),
+                    sector_indices: disc_sector_hashes.keys().cloned().collect(),
+                    disc_slice_hashes: disc_sector_hashes.values().map(|m| {
+                        DiscSliceHashes {
+                            slice_indices: m.keys().cloned().collect(),
+                            hashes: m.values().cloned().collect(),
+                        }
+                    }).collect()
+                })
+            }
+            _ => {
+                Err(K2Error::other("Only DhtSnapshot::DiscSectorDetails can be converted to a SnapshotDiscSectorDetailsMessage".to_string()))
+            }
+        }
+    }
+}
+
+impl TryFrom<SnapshotDiscSectorDetailsMessage> for DhtSnapshot {
+    type Error = K2Error;
+
+    fn try_from(value: SnapshotDiscSectorDetailsMessage) -> K2Result<Self> {
+        if value.sector_indices.len() != value.disc_slice_hashes.len() {
+            return Err(K2Error::other(
+                "Mismatched sector and hash lengths".to_string(),
+            ));
+        }
+
+        Ok(DhtSnapshot::DiscSectorDetails {
+            disc_boundary: Timestamp::from_micros(value.disc_boundary),
+            disc_sector_hashes: value
+                .sector_indices
+                .into_iter()
+                .zip(value.disc_slice_hashes.into_iter().map(|r| {
+                    if r.slice_indices.len() != r.hashes.len() {
+                        return Err(K2Error::other(
+                            "Mismatched slice and hash lengths".to_string(),
+                        ));
+                    }
+
+                    Ok(r.slice_indices.into_iter().zip(r.hashes).collect())
+                }))
+                .map(|(a, b)| match b {
+                    Ok(b) => Ok((a, b)),
+                    Err(e) => Err(e),
+                })
+                .collect::<K2Result<HashMap<_, _>>>()?,
         })
     }
 }

@@ -150,7 +150,7 @@ impl ArcSet {
     }
 
     /// Check whether a given sector index is included in this arc set.
-    pub(crate) fn includes_sector_index(&self, value: u32) -> bool {
+    pub fn includes_sector_index(&self, value: u32) -> bool {
         self.inner.contains(&value)
     }
 }

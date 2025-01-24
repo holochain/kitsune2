@@ -1,7 +1,20 @@
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::protocol::{deserialize_gossip_message, encode_agent_ids, encode_agent_infos, encode_op_ids, serialize_gossip_message, AcceptResponseMessage, ArcSetMessage, GossipMessage, K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipDiscSectorsDiffMessage, K2GossipInitiateMessage, K2GossipNoDiffMessage, K2GossipRingSectorDetailsDiffMessage};
-use crate::state::{GossipRoundState, RoundStage};
+use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
+use crate::protocol::{
+    deserialize_gossip_message, encode_agent_ids, encode_agent_infos,
+    encode_op_ids, serialize_gossip_message, AcceptResponseMessage,
+    ArcSetMessage, GossipMessage, K2GossipAcceptMessage, K2GossipAgentsMessage,
+    K2GossipDiscSectorDetailsDiffMessage,
+    K2GossipDiscSectorDetailsDiffResponseMessage,
+    K2GossipDiscSectorsDiffMessage, K2GossipHashesMessage,
+    K2GossipInitiateMessage, K2GossipNoDiffMessage,
+    K2GossipRingSectorDetailsDiffMessage,
+};
+use crate::state::{
+    GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
+    RoundStageDiscSectorsDiff,
+};
 use crate::timeout::spawn_timeout_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use bytes::Bytes;
@@ -20,9 +33,8 @@ use kitsune2_dht::{ArcSet, Dht, DhtSnapshotNextAction};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
-use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 
 /// A factory for creating K2Gossip instances.
 #[derive(Debug)]
@@ -112,7 +124,7 @@ pub(crate) struct K2Gossip {
     /// This is a map of agent ids to their round state. We can accept gossip from multiple agents
     /// at once, mostly to avoid coordinating initiation.
     pub(crate) accepted_round_states:
-        Arc<Mutex<HashMap<Url, GossipRoundState>>>,
+        Arc<RwLock<HashMap<Url, Arc<Mutex<GossipRoundState>>>>>,
     /// The DHT model.
     ///
     /// This is used to calculate the diff between local DHT state and the remote state of peers
@@ -181,8 +193,8 @@ impl K2Gossip {
 
         let mut gossip = K2Gossip {
             config: Arc::new(config),
-            initiated_round_state: Arc::new(Mutex::new(None)),
-            accepted_round_states: Arc::new(Mutex::new(HashMap::new())),
+            initiated_round_state: Default::default(),
+            accepted_round_states: Default::default(),
             dht: Arc::new(dht),
             space_id: space_id.clone(),
             peer_store,
@@ -265,7 +277,7 @@ impl K2Gossip {
         // initiated with us. If they have, we can just skip initiating.
         if self
             .accepted_round_states
-            .lock()
+            .read()
             .await
             .contains_key(&target_peer_url)
         {
@@ -512,39 +524,66 @@ impl K2Gossip {
                                     state.stage = RoundStage::NoDiff;
                                 }
 
-                                Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
-                                    session_id: accept.session_id,
-                                    accept_response: Some(accept_response),
-                                    cannot_compare: false,
-                                })))
+                                Ok(Some(GossipMessage::NoDiff(
+                                    K2GossipNoDiffMessage {
+                                        session_id: accept.session_id,
+                                        accept_response: Some(accept_response),
+                                        cannot_compare: false,
+                                    },
+                                )))
                             }
                             DhtSnapshotNextAction::CannotCompare => {
                                 if let Some(state) = initiated_lock.as_mut() {
                                     state.stage = RoundStage::NoDiff;
                                 }
 
-                                Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
-                                    session_id: accept.session_id,
-                                    accept_response: Some(accept_response),
-                                    // TODO just this is different
-                                    cannot_compare: true,
-                                })))
+                                Ok(Some(GossipMessage::NoDiff(
+                                    K2GossipNoDiffMessage {
+                                        session_id: accept.session_id,
+                                        accept_response: Some(accept_response),
+                                        cannot_compare: true,
+                                    },
+                                )))
                             }
                             DhtSnapshotNextAction::NewSnapshot(snapshot) => {
                                 match snapshot {
                                     DhtSnapshot::DiscSectors { .. } => {
-                                        Ok(Some(GossipMessage::DiscSectorsDiff(K2GossipDiscSectorsDiffMessage {
-                                            session_id: accept.session_id,
-                                            accept_response: Some(accept_response),
-                                            snapshot: Some(snapshot.try_into()?),
-                                        })))
+                                        if let Some(state) =
+                                            initiated_lock.as_mut()
+                                        {
+                                            state.stage =
+                                                RoundStage::DiscSectorsDiff(
+                                                    RoundStageDiscSectorsDiff {
+                                                        common_arc_set,
+                                                    },
+                                                );
+                                        }
+
+                                        Ok(Some(GossipMessage::DiscSectorsDiff(
+                                            K2GossipDiscSectorsDiffMessage {
+                                                session_id: accept.session_id,
+                                                accept_response: Some(accept_response),
+                                                snapshot: Some(snapshot.try_into()?),
+                                            },
+                                        )))
                                     }
-                                    DhtSnapshot::RingSectorDetails { .. } => {
-                                        Ok(Some(GossipMessage::RingSectorDetailsDiff(K2GossipRingSectorDetailsDiffMessage {
-                                            session_id: accept.session_id,
-                                            accept_response: Some(accept_response),
-                                            snapshot: Some(snapshot.try_into()?),
-                                        })))
+                                    DhtSnapshot::RingSectorDetails {
+                                        ..
+                                    } => {
+                                        if let Some(state) =
+                                            initiated_lock.as_mut()
+                                        {
+                                            state.stage =
+                                                RoundStage::RingSectorDetailsDiff;
+                                        }
+
+                                        Ok(Some(GossipMessage::RingSectorDetailsDiff(
+                                            K2GossipRingSectorDetailsDiffMessage {
+                                                session_id: accept.session_id,
+                                                accept_response: Some(accept_response),
+                                                snapshot: Some(snapshot.try_into()?),
+                                            },
+                                        )))
                                     }
                                     _ => {
                                         unreachable!("unexpected snapshot type")
@@ -563,6 +602,8 @@ impl K2Gossip {
                             state.stage = RoundStage::NoDiff;
                         }
 
+                        // They didn't send us a diff, presumably because we have an empty common
+                        // arc set, but we can still send new ops to them and agents.
                         Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
                             session_id: accept.session_id,
                             accept_response: Some(accept_response),
@@ -578,41 +619,314 @@ impl K2Gossip {
                 // Unwrap because checked by validate_no_diff
                 let accept_response = no_diff.accept_response.unwrap();
 
-                self.receive_agent_infos(accept_response.provided_agents).await?;
-
-                self.update_new_ops_bookmark(
-                    from_peer.clone(),
-                    Timestamp::from_micros(accept_response.updated_new_since),
-                )
-                .await?;
-
-                self.fetch
-                    .request_ops(decode_ids(accept_response.new_ops), from_peer.clone())
-                    .await?;
-                self.peer_meta_store
-                    .set_new_ops_bookmark(
-                        from_peer.clone(),
-                        Timestamp::from_micros(accept_response.updated_new_since),
-                    )
+                let send_agents = self
+                    .handle_accept_response(&from_peer, accept_response)
                     .await?;
 
-                if accept_response.missing_agents.is_empty() {
-                    Ok(None)
-                } else {
-                    let send_agent_infos =
-                        self.load_agent_infos(accept_response.missing_agents).await;
-
-                    Ok(Some(GossipMessage::Agents(K2GossipAgentsMessage {
-                        session_id: no_diff.session_id,
-                        provided_agents: encode_agent_infos(send_agent_infos)?,
-                    })))
+                match send_agents {
+                    Some(agents) => {
+                        Ok(Some(GossipMessage::Agents(K2GossipAgentsMessage {
+                            session_id: no_diff.session_id,
+                            provided_agents: encode_agent_infos(agents)?,
+                        })))
+                    }
+                    None => Ok(None),
                 }
             }
             GossipMessage::DiscSectorsDiff(disc_sectors_diff) => {
+                let state = self
+                    .update_incoming_disc_sectors_diff_state(
+                        from_peer.clone(),
+                        &disc_sectors_diff,
+                    )
+                    .await?;
+                let mut state_lock = state.lock().await;
+
+                // Unwrap because checked by validate_no_diff
+                let accept_response =
+                    disc_sectors_diff.accept_response.unwrap();
+
+                let send_agents = self
+                    .handle_accept_response(&from_peer, accept_response)
+                    .await?;
+
+                let their_snapshot: DhtSnapshot = disc_sectors_diff.snapshot.expect(
+                    "Snapshot present checked by validate_disc_sectors_diff",
+                ).try_into()?;
+
+                // TODO untidy, there is a better way of getting this from the validate check
+                let common_arc_set = match &state_lock.stage {
+                    RoundStage::Accepted { common_arc_set, .. } => {
+                        common_arc_set
+                    }
+                    _ => {
+                        unreachable!()
+                    }
+                };
+
+                let next_action = self
+                    .dht
+                    .handle_snapshot(&their_snapshot, None, common_arc_set)
+                    .await?;
+
+                match next_action {
+                    DhtSnapshotNextAction::CannotCompare
+                    | DhtSnapshotNextAction::Identical => {
+                        tracing::info!("Received a disc sectors diff but no diff to send back, responding with agents");
+
+                        // Terminating the session, so remove the state.
+                        self.accepted_round_states
+                            .write()
+                            .await
+                            .remove(&from_peer);
+
+                        if let Some(send_agents) = send_agents {
+                            Ok(Some(GossipMessage::Agents(
+                                K2GossipAgentsMessage {
+                                    session_id: disc_sectors_diff.session_id,
+                                    provided_agents: encode_agent_infos(
+                                        send_agents,
+                                    )?,
+                                },
+                            )))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    DhtSnapshotNextAction::NewSnapshot(snapshot) => {
+                        state_lock.stage = RoundStage::DiscSectorDetailsDiff(
+                            RoundStageDiscSectorDetailsDiff {
+                                common_arc_set: common_arc_set.clone(),
+                                snapshot: snapshot.clone(),
+                            },
+                        );
+
+                        Ok(Some(GossipMessage::DiscSectorDetailsDiff(
+                            K2GossipDiscSectorDetailsDiffMessage {
+                                session_id: disc_sectors_diff.session_id,
+                                provided_agents: encode_agent_infos(
+                                    send_agents.unwrap_or_default(),
+                                )?,
+                                snapshot: Some(snapshot.try_into()?),
+                            },
+                        )))
+                    }
+                    _ => {
+                        unreachable!("unexpected next action")
+                    }
+                }
+            }
+            GossipMessage::DiscSectorDetailsDiff(disc_sector_details_diff) => {
+                // Validate the incoming disc sector details diff against our own state.
+                let mut disc_sectors_diff_lock =
+                    self.initiated_round_state.lock().await;
+                // TODO messy borrow handling
+                let common_arc_set = {
+                    let disc_sectors_diff =
+                        match disc_sectors_diff_lock.as_ref() {
+                            Some(state) => state
+                                .validate_disc_sector_details_diff(
+                                    from_peer.clone(),
+                                    &disc_sector_details_diff,
+                                )?,
+                            None => {
+                                return Err(K2Error::other(
+                                    "Unsolicited DiscSectorDetailsDiff message",
+                                ));
+                            }
+                        };
+                    disc_sectors_diff.common_arc_set.clone()
+                };
+
+                let their_snapshot = disc_sector_details_diff.snapshot.expect(
+                    "Snapshot present checked by validate_disc_sector_details_diff",
+                ).try_into()?;
+
+                let next_action = self
+                    .dht
+                    .handle_snapshot(&their_snapshot, None, &common_arc_set)
+                    .await?;
+
+                match next_action {
+                    DhtSnapshotNextAction::CannotCompare
+                    | DhtSnapshotNextAction::Identical => {
+                        tracing::info!("Received a disc sector details diff but no diff to send back, responding with agents");
+
+                        // TODO These cases where we terminate don't notify the remote so they'll
+                        //      end up timing out. Should do something differently here.
+                        // Terminating the session, so remove the state.
+                        disc_sectors_diff_lock.take();
+
+                        Ok(None)
+                    }
+                    DhtSnapshotNextAction::NewSnapshotAndHashList(
+                        snapshot,
+                        ops,
+                    ) => {
+                        if let Some(state) = disc_sectors_diff_lock.as_mut() {
+                            state.stage = RoundStage::DiscSectorDetailsDiff(
+                                RoundStageDiscSectorDetailsDiff {
+                                    common_arc_set: common_arc_set.clone(),
+                                    snapshot: snapshot.clone(),
+                                },
+                            );
+                        }
+
+                        Ok(Some(GossipMessage::DiscSectorDetailsResponseDiff(
+                            K2GossipDiscSectorDetailsDiffResponseMessage {
+                                session_id: disc_sector_details_diff.session_id,
+                                maybe_missing_ids: encode_op_ids(ops),
+                                snapshot: Some(snapshot.try_into()?),
+                            },
+                        )))
+                    }
+                    _ => {
+                        unreachable!("unexpected next action")
+                    }
+                }
+            }
+            GossipMessage::DiscSectorDetailsResponseDiff(
+                disc_sector_details_response_diff,
+            ) => {
+                let state = self
+                    .update_incoming_disc_sectors_diff_response_state(
+                        from_peer.clone(),
+                        &disc_sector_details_response_diff,
+                    )
+                    .await?;
+
+                let state_lock = state.lock().await;
+                let (common_arc_set, our_snapshot) = match &state_lock.stage {
+                    RoundStage::DiscSectorDetailsDiff(
+                        RoundStageDiscSectorDetailsDiff {
+                            common_arc_set,
+                            snapshot,
+                        },
+                    ) => (common_arc_set, snapshot),
+                    _ => {
+                        unreachable!()
+                    }
+                };
+
+                let their_snapshot = disc_sector_details_response_diff.snapshot.expect(
+                    "Snapshot present checked by validate_disc_sector_details_diff",
+                ).try_into()?;
+
+                let next_action = self
+                    .dht
+                    .handle_snapshot(
+                        &their_snapshot,
+                        Some(our_snapshot.clone()),
+                        common_arc_set,
+                    )
+                    .await?;
+
+                match next_action {
+                    DhtSnapshotNextAction::CannotCompare
+                    | DhtSnapshotNextAction::Identical => {
+                        tracing::info!("Received a disc sector details diff response that we can't respond to, terminating gossip round");
+
+                        // Terminating the session, so remove the state.
+                        self.accepted_round_states
+                            .write()
+                            .await
+                            .remove(&from_peer);
+
+                        Ok(None)
+                    }
+                    DhtSnapshotNextAction::HashList(op_ids) => {
+                        // This is the final message we're going to send, remove state
+                        self.accepted_round_states
+                            .write()
+                            .await
+                            .remove(&from_peer);
+
+                        Ok(Some(GossipMessage::Hashes(K2GossipHashesMessage {
+                            session_id: disc_sector_details_response_diff
+                                .session_id,
+                            maybe_missing_ids: encode_op_ids(op_ids),
+                        })))
+                    }
+                    _ => {
+                        unreachable!("unexpected next action")
+                    }
+                }
+            }
+            GossipMessage::RingSectorDetailsDiff(_ring_sector_details_diff) => {
                 unimplemented!()
             }
-            GossipMessage::RingSectorDetailsDiff(ring_sector_details_diff) => {
-                unimplemented!()
+            GossipMessage::Hashes(hashes) => {
+                // This could be received from either the initiator or the acceptor.
+                // So we have to check in both places!
+
+                let handled_as_initiator = {
+                    let mut initiated_state =
+                        self.initiated_round_state.lock().await;
+                    if let Some(state) = initiated_state.as_ref() {
+                        if state.session_with_peer == from_peer
+                            && state.session_id == hashes.session_id
+                        {
+                            // Session is complete, remove state
+                            initiated_state.take();
+
+                            self.fetch
+                                .request_ops(
+                                    decode_ids(
+                                        hashes.maybe_missing_ids.clone(),
+                                    ),
+                                    from_peer.clone(),
+                                )
+                                .await?;
+
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                let handled_as_acceptor = if !handled_as_initiator {
+                    let accepted = self
+                        .accepted_round_states
+                        .read()
+                        .await
+                        .get(&from_peer)
+                        .cloned();
+
+                    if let Some(accepted) = accepted {
+                        let accepted_state = accepted.lock().await;
+                        if accepted_state.session_id == hashes.session_id {
+                            // Session is complete, remove state
+                            self.accepted_round_states
+                                .write()
+                                .await
+                                .remove(&from_peer);
+
+                            self.fetch
+                                .request_ops(
+                                    decode_ids(hashes.maybe_missing_ids),
+                                    from_peer.clone(),
+                                )
+                                .await?;
+
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if !handled_as_acceptor {
+                    return Err(K2Error::other("Unsolicited Hashes message"));
+                }
+
+                Ok(None)
             }
             GossipMessage::Agents(agents) => {
                 // Validate the incoming agents message against our own state.
@@ -651,7 +965,7 @@ impl K2Gossip {
         our_agents: Vec<AgentId>,
         common_arc_set: ArcSet,
     ) -> K2Result<()> {
-        let mut accepted_states = self.accepted_round_states.lock().await;
+        let mut accepted_states = self.accepted_round_states.write().await;
         let accepted_entry = accepted_states.entry(from_peer.clone());
         match accepted_entry {
             std::collections::hash_map::Entry::Occupied(_) => {
@@ -661,12 +975,14 @@ impl K2Gossip {
                 )));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(GossipRoundState::new_accepted(
-                    from_peer.clone(),
-                    initiate.session_id.clone(),
-                    our_agents,
-                    common_arc_set,
-                ));
+                entry.insert(Arc::new(Mutex::new(
+                    GossipRoundState::new_accepted(
+                        from_peer.clone(),
+                        initiate.session_id.clone(),
+                        our_agents,
+                        common_arc_set,
+                    ),
+                )));
             }
         }
 
@@ -678,7 +994,7 @@ impl K2Gossip {
         from_peer: Url,
         no_diff: &K2GossipNoDiffMessage,
     ) -> K2Result<()> {
-        let mut accepted_states = self.accepted_round_states.lock().await;
+        let mut accepted_states = self.accepted_round_states.write().await;
         if !accepted_states.contains_key(&from_peer) {
             return Err(K2Error::other(format!(
                 "Unsolicited NoDiff message from peer: {:?}",
@@ -687,6 +1003,8 @@ impl K2Gossip {
         }
 
         accepted_states[&from_peer]
+            .lock()
+            .await
             .validate_no_diff(from_peer.clone(), no_diff)?;
 
         // We're at the end of the round. We might send back an Agents message, but we shouldn't
@@ -694,6 +1012,87 @@ impl K2Gossip {
         accepted_states.remove(&from_peer);
 
         Ok(())
+    }
+
+    async fn update_incoming_disc_sectors_diff_state(
+        &self,
+        from_peer: Url,
+        disc_sectors_diff: &K2GossipDiscSectorsDiffMessage,
+    ) -> K2Result<Arc<Mutex<GossipRoundState>>> {
+        let accepted_states = self.accepted_round_states.read().await;
+        let Some(state) = accepted_states.get(&from_peer) else {
+            return Err(K2Error::other(format!(
+                "Unsolicited DiscSectorsDiff message from peer: {:?}",
+                from_peer
+            )));
+        };
+
+        let state_lock = state.lock().await;
+        state_lock
+            .validate_disc_sectors_diff(from_peer.clone(), disc_sectors_diff)?;
+
+        Ok(state.clone())
+    }
+
+    async fn update_incoming_disc_sectors_diff_response_state(
+        &self,
+        from_peer: Url,
+        disc_sector_details_diff_response: &K2GossipDiscSectorDetailsDiffResponseMessage,
+    ) -> K2Result<Arc<Mutex<GossipRoundState>>> {
+        let Some(state) = self
+            .accepted_round_states
+            .read()
+            .await
+            .get(&from_peer)
+            .cloned()
+        else {
+            return Err(K2Error::other(format!(
+                "Unsolicited DiscSectorDetailsDiffResponse message from peer: {:?}",
+                from_peer
+            )));
+        };
+
+        let state_lock = state.lock().await;
+        state_lock.validate_disc_sector_details_diff_response(
+            from_peer.clone(),
+            disc_sector_details_diff_response,
+        )?;
+
+        Ok(state.clone())
+    }
+
+    async fn handle_accept_response(
+        &self,
+        from_peer: &Url,
+        accept_response: AcceptResponseMessage,
+    ) -> K2Result<Option<Vec<Arc<AgentInfoSigned>>>> {
+        self.receive_agent_infos(accept_response.provided_agents)
+            .await?;
+
+        self.update_new_ops_bookmark(
+            from_peer.clone(),
+            Timestamp::from_micros(accept_response.updated_new_since),
+        )
+        .await?;
+
+        self.fetch
+            .request_ops(decode_ids(accept_response.new_ops), from_peer.clone())
+            .await?;
+        self.peer_meta_store
+            .set_new_ops_bookmark(
+                from_peer.clone(),
+                Timestamp::from_micros(accept_response.updated_new_since),
+            )
+            .await?;
+
+        if accept_response.missing_agents.is_empty() {
+            Ok(None)
+        } else {
+            let send_agent_infos =
+                self.load_agent_infos(accept_response.missing_agents).await;
+
+            Ok(Some(send_agent_infos))
+        }
     }
 
     /// Filter out agents that are already known and return a list of unknown agents.
@@ -880,7 +1279,7 @@ mod test {
 
             // Wait for the agent info to be published
             // This means tests can rely on the agent being available in the peer store
-            tokio::time::timeout(std::time::Duration::from_secs(5), {
+            tokio::time::timeout(Duration::from_secs(5), {
                 let agent_id = agent_1.agent().clone();
                 let peer_store = self.peer_store.clone();
                 async move {
@@ -917,8 +1316,7 @@ mod test {
                             break;
                         }
 
-                        tokio::time::sleep(std::time::Duration::from_millis(5))
-                            .await;
+                        tokio::time::sleep(Duration::from_millis(5)).await;
                     }
                 }
             })
