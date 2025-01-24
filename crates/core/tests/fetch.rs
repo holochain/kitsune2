@@ -11,7 +11,9 @@ use kitsune2_core::{
         MemoryOp,
     },
 };
-use kitsune2_test_utils::{enable_tracing, random_bytes, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{
+    enable_tracing, iter_check, random_bytes, space::TEST_SPACE_ID,
+};
 use std::{sync::Arc, time::Duration};
 
 #[derive(Debug)]
@@ -99,22 +101,12 @@ async fn make_peer(
 }
 
 async fn assert_ops_arrived_in_store(op_store: DynOpStore, op_ids: Vec<OpId>) {
-    tokio::time::timeout(Duration::from_millis(100), async {
-        loop {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            let ops_now_alice =
-                op_store.retrieve_ops(op_ids.clone()).await.unwrap();
-            let ops_now_bob =
-                op_store.retrieve_ops(op_ids.clone()).await.unwrap();
-            if ops_now_alice.len() == op_ids.len()
-                && ops_now_bob.len() == op_ids.len()
-            {
-                break;
-            }
+    iter_check!({
+        let ops_in_store = op_store.retrieve_ops(op_ids.clone()).await.unwrap();
+        if ops_in_store.len() == op_ids.len() {
+            break;
         }
-    })
-    .await
-    .unwrap();
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
