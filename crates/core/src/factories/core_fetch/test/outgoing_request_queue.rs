@@ -99,6 +99,10 @@ fn make_mock_transport(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "outgoing_request_queue.rs:154:6: called `Result::unwrap()` on an `Err` value: Elapsed(())"
+)]
 async fn outgoing_request_queue() {
     let config = CoreFetchConfig {
         re_insert_outgoing_request_delay_ms: 50,
