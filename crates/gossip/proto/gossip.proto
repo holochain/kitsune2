@@ -23,16 +23,19 @@ message K2GossipMessage {
     DISC_SECTOR_DETAILS_DIFF = 5;
 
     // A gossip disc sector details diff response protocol message.
-    DISC_SECTOR_DETAILS_RESPONSE_DIFF = 6;
+    DISC_SECTOR_DETAILS_DIFF_RESPONSE = 6;
 
     // A gossip ring sector details diff protocol message.
     RING_SECTOR_DETAILS_DIFF = 7;
 
+    // A gossip ring sector details diff response protocol message.
+    RING_SECTOR_DETAILS_DIFF_RESPONSE = 8;
+
     // A gossip hashes protocol message.
-    HASHES = 8;
+    HASHES = 9;
 
     // A gossip agents protocol message.
-    AGENTS = 9;
+    AGENTS = 10;
   }
 
   // The type of this message.
@@ -196,27 +199,39 @@ message K2GossipDiscSectorDetailsDiffResponseMessage {
   SnapshotDiscSectorDetailsMessage snapshot = 20;
 }
 
+message RingSectorHashes {
+  repeated uint32 sector_indices = 1;
+  repeated bytes hashes = 2;
+}
+
+// Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
+message SnapshotRingSectorDetailsMessage {
+  int64 disc_boundary = 1;
+  repeated uint32 ring_indices = 2;
+  repeated RingSectorHashes ring_sector_hashes = 3;
+}
+
 // A Kitsune2 gossip ring sector details diff protocol message.
 //
 // Acceptable responses:
 message K2GossipRingSectorDetailsDiffMessage {
-  message RingSectorHashes {
-    repeated uint32 sector_indices = 1;
-    repeated bytes hashes = 2;
-  }
-
-  // Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
-  message SnapshotRingSectorDetailsMessage {
-    int64 disc_boundary = 1;
-    repeated uint32 ring_indices = 2;
-    repeated RingSectorHashes ring_sector_hashes = 3;
-  }
 
   bytes session_id = 1;
 
-  AcceptResponseMessage accept_response = 2;
+  AcceptResponseMessage accept_response = 10;
 
-  SnapshotRingSectorDetailsMessage snapshot = 10;
+  SnapshotRingSectorDetailsMessage snapshot = 20;
+}
+
+// A Kitsune2 gossip ring sector details diff response protocol message.
+//
+// Acceptable responses:
+message K2GossipRingSectorDetailsDiffResponseMessage {
+  bytes session_id = 1;
+
+  repeated bytes maybe_missing_ids = 10;
+
+  SnapshotRingSectorDetailsMessage snapshot = 20;
 }
 
 // A Kitsune2 gossip hashes protocol message.
@@ -237,5 +252,3 @@ message K2GossipAgentsMessage {
   // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
   repeated bytes provided_agents = 10;
 }
-
-// TODO Further gossip protocol messages.

@@ -2,9 +2,6 @@
 
 use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 use crate::protocol::k2_gossip_disc_sectors_diff_message::SnapshotDiscSectorsMessage;
-use crate::protocol::k2_gossip_ring_sector_details_diff_message::{
-    RingSectorHashes, SnapshotRingSectorDetailsMessage,
-};
 use bytes::{Bytes, BytesMut};
 use kitsune2_api::agent::AgentInfoSigned;
 use kitsune2_api::id::encode_ids;
@@ -23,8 +20,9 @@ pub enum GossipMessage {
     NoDiff(K2GossipNoDiffMessage),
     DiscSectorsDiff(K2GossipDiscSectorsDiffMessage),
     DiscSectorDetailsDiff(K2GossipDiscSectorDetailsDiffMessage),
-    DiscSectorDetailsResponseDiff(K2GossipDiscSectorDetailsDiffResponseMessage),
+    DiscSectorDetailsDiffResponse(K2GossipDiscSectorDetailsDiffResponseMessage),
     RingSectorDetailsDiff(K2GossipRingSectorDetailsDiffMessage),
+    RingSectorDetailsDiffResponse(K2GossipRingSectorDetailsDiffResponseMessage),
     Hashes(K2GossipHashesMessage),
     Agents(K2GossipAgentsMessage),
 }
@@ -60,18 +58,25 @@ pub fn deserialize_gossip_message(value: Bytes) -> K2Result<GossipMessage> {
                     .map_err(K2Error::other)?;
             Ok(GossipMessage::DiscSectorDetailsDiff(inner))
         }
-        k2_gossip_message::GossipMessageType::DiscSectorDetailsResponseDiff => {
+        k2_gossip_message::GossipMessageType::DiscSectorDetailsDiffResponse => {
             let inner = K2GossipDiscSectorDetailsDiffResponseMessage::decode(
                 outer.data,
             )
             .map_err(K2Error::other)?;
-            Ok(GossipMessage::DiscSectorDetailsResponseDiff(inner))
+            Ok(GossipMessage::DiscSectorDetailsDiffResponse(inner))
         }
         k2_gossip_message::GossipMessageType::RingSectorDetailsDiff => {
             let inner =
                 K2GossipRingSectorDetailsDiffMessage::decode(outer.data)
                     .map_err(K2Error::other)?;
             Ok(GossipMessage::RingSectorDetailsDiff(inner))
+        }
+        k2_gossip_message::GossipMessageType::RingSectorDetailsDiffResponse => {
+            let inner = K2GossipRingSectorDetailsDiffResponseMessage::decode(
+                outer.data,
+            )
+            .map_err(K2Error::other)?;
+            Ok(GossipMessage::RingSectorDetailsDiffResponse(inner))
         }
         k2_gossip_message::GossipMessageType::Hashes => {
             let inner = K2GossipHashesMessage::decode(outer.data)
@@ -142,12 +147,16 @@ fn serialize_inner_gossip_message(
             k2_gossip_message::GossipMessageType::DiscSectorDetailsDiff,
             encode(inner, out)?,
         )),
-        GossipMessage::DiscSectorDetailsResponseDiff(inner) => Ok((
-            k2_gossip_message::GossipMessageType::DiscSectorDetailsResponseDiff,
+        GossipMessage::DiscSectorDetailsDiffResponse(inner) => Ok((
+            k2_gossip_message::GossipMessageType::DiscSectorDetailsDiffResponse,
             encode(inner, out)?,
         )),
         GossipMessage::RingSectorDetailsDiff(inner) => Ok((
             k2_gossip_message::GossipMessageType::RingSectorDetailsDiff,
+            encode(inner, out)?,
+        )),
+        GossipMessage::RingSectorDetailsDiffResponse(inner) => Ok((
+            k2_gossip_message::GossipMessageType::RingSectorDetailsDiffResponse,
             encode(inner, out)?,
         )),
         GossipMessage::Hashes(inner) => Ok((

@@ -366,7 +366,7 @@ pub(crate) enum RoundStage {
     NoDiff,
     DiscSectorsDiff(RoundStageDiscSectorsDiff),
     DiscSectorDetailsDiff(RoundStageDiscSectorDetailsDiff),
-    RingSectorDetailsDiff,
+    RingSectorDetailsDiff(RoundStageRingSectorDetailsDiff),
 }
 
 /// The state of a gossip round that has been initiated.
@@ -383,6 +383,12 @@ pub(crate) struct RoundStageDiscSectorsDiff {
 
 #[derive(Debug)]
 pub(crate) struct RoundStageDiscSectorDetailsDiff {
+    pub common_arc_set: ArcSet,
+    pub snapshot: DhtSnapshot,
+}
+
+#[derive(Debug)]
+pub(crate) struct RoundStageRingSectorDetailsDiff {
     pub common_arc_set: ArcSet,
     pub snapshot: DhtSnapshot,
 }
