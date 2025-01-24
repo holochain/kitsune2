@@ -49,12 +49,11 @@ async fn remove_timed_out_rounds(
     }
 
     accepted_round_states.lock().await.retain(|_, state| {
-        match state.started_at.elapsed() > round_timeout {
-            true => {
-                tracing::warn!("Accepted round timed out: {:?}", state);
-                false
-            }
-            false => true,
+        if state.started_at.elapsed() > round_timeout {
+            tracing::warn!("Accepted round timed out: {:?}", state);
+            false
+        } else {
+            true
         }
     });
 }
@@ -109,12 +108,10 @@ mod tests {
 
         tokio::time::advance(std::time::Duration::from_secs(30)).await;
 
+        let expected_url = Url::from_str("ws://test:80/2").unwrap();
         accepted.lock().await.insert(
-            Url::from_str("ws://test:80/2").unwrap(),
-            GossipRoundState::new(
-                Url::from_str("ws://test:80/2").unwrap(),
-                vec![],
-            ),
+            expected_url.clone(),
+            GossipRoundState::new(expected_url.clone(), vec![]),
         );
 
         remove_timed_out_rounds(
@@ -137,7 +134,7 @@ mod tests {
 
         assert_eq!(1, accepted.lock().await.len());
         assert_eq!(
-            Url::from_str("ws://test:80/2").unwrap(),
+            expected_url,
             accepted.lock().await.keys().next().unwrap().clone()
         );
 

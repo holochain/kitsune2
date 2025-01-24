@@ -117,6 +117,8 @@ pub(crate) struct K2Gossip {
     agent_verifier: DynVerifier,
     response_tx: Sender<GossipResponse>,
     _response_task: Arc<DropAbortHandle>,
+    _initiate_task: Arc<Option<DropAbortHandle>>,
+    _timeout_task: Arc<Option<DropAbortHandle>>,
 }
 
 impl K2Gossip {
@@ -156,7 +158,7 @@ impl K2Gossip {
         })
         .abort_handle();
 
-        let gossip = K2Gossip {
+        let mut gossip = K2Gossip {
             config: Arc::new(config),
             initiated_round_state: Arc::new(Mutex::new(None)),
             accepted_round_states: Arc::new(Mutex::new(HashMap::new())),
@@ -175,6 +177,8 @@ impl K2Gossip {
                 name: "Gossip response task".to_string(),
                 handle: response_task,
             }),
+            _initiate_task: Default::default(),
+            _timeout_task: Default::default(),
         };
 
         transport.register_module_handler(
@@ -183,8 +187,18 @@ impl K2Gossip {
             Arc::new(gossip.clone()),
         );
 
-        spawn_initiate_task(gossip.config.clone(), gossip.clone());
-        spawn_timeout_task(gossip.config.clone(), gossip.clone());
+        let initiate_task =
+            spawn_initiate_task(gossip.config.clone(), gossip.clone());
+        gossip._initiate_task = Arc::new(Some(DropAbortHandle {
+            name: "Gossip initiate task".to_string(),
+            handle: initiate_task,
+        }));
+        let timeout_task =
+            spawn_timeout_task(gossip.config.clone(), gossip.clone());
+        gossip._timeout_task = Arc::new(Some(DropAbortHandle {
+            name: "Gossip timeout task".to_string(),
+            handle: timeout_task,
+        }));
 
         gossip
     }

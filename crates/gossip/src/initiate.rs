@@ -22,6 +22,11 @@ pub fn spawn_initiate_task(
         loop {
             tokio::time::sleep(initiate_interval).await;
 
+            if gossip.initiated_round_state.lock().await.is_some() {
+                tracing::info!("Not initiating gossip because there is already an initiated round");
+                continue;
+            }
+
             match select_next_target(
                 min_initiate_interval,
                 gossip.peer_store.clone(),
@@ -37,7 +42,7 @@ pub fn spawn_initiate_task(
                     }
                 }
                 Ok(None) => {
-                    tracing::info!("No target to gossip with");
+                    // Nobody to gossip with, expect `select_next_target` to have logged a reason
                 }
                 Err(e) => {
                     tracing::error!("Error selecting target: {:?}", e);
@@ -78,7 +83,7 @@ async fn select_next_target(
         .map(|a| a.agent().clone())
         .collect::<HashSet<_>>();
 
-    // Discover remote agents that overlap with at least one of our local agents
+    // Discover remote agents whose arc overlaps with at least one of our local agents' arcs
     let mut all_agents = HashSet::new();
     for local_arc in local_arcs {
         let by_local_arc_agents =
@@ -128,12 +133,12 @@ async fn select_next_target(
     // Sort by last gossip timestamp with None first and then by oldest to newest
     possible_targets.sort_by_key(|(timestamp, _)| *timestamp);
 
-    let end_of_new_peers = possible_targets
+    let last_new_peer = possible_targets
         .iter()
         .enumerate()
         .find(|(_, (t, _))| t.is_some())
         .map(|(i, _)| i);
-    match end_of_new_peers {
+    match last_new_peer {
         Some(0) => {
             // Nothing to do
         }
@@ -278,7 +283,7 @@ mod tests {
         harness.new_local_agent(DhtArc::FULL).await;
         let agent_2 = harness
             .new_remote_agent(
-                Some(Url::from_str("ws://test:80/2").unwrap()),
+                Some(Url::from_str("ws://test:80/1").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
@@ -514,16 +519,18 @@ mod tests {
 
         harness.new_local_agent(DhtArc::FULL).await;
 
+        let agent_2_url = Url::from_str("ws://test:80/2").unwrap();
         harness
             .new_remote_agent(
-                Some(Url::from_str("ws://test:80/2").unwrap()),
+                Some(agent_2_url.clone()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
             .await;
+        let agent_3_url = Url::from_str("ws://test:80/3").unwrap();
         harness
             .new_remote_agent(
-                Some(Url::from_str("ws://test:80/3").unwrap()),
+                Some(agent_3_url.clone()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
@@ -544,10 +551,12 @@ mod tests {
         }
 
         assert_eq!(2, seen.len());
+        assert!(seen.contains(&agent_2_url));
+        assert!(seen.contains(&agent_3_url));
     }
 
     #[tokio::test]
-    async fn prioritises_overlapping_arc() {
+    async fn selects_non_overlapping_when_no_overlapping_peers_available() {
         enable_tracing();
 
         let harness = Harness::create().await;
