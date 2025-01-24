@@ -1299,7 +1299,7 @@ mod test {
             target_arc: DhtArc,
         ) -> Arc<AgentInfoSigned> {
             let local_agent = Arc::new(Ed25519LocalAgent::default());
-            local_agent.set_tgt_storage_arc_hint(target_arc.clone());
+            local_agent.set_tgt_storage_arc_hint(target_arc);
 
             self.space
                 .local_agent_join(local_agent.clone())
