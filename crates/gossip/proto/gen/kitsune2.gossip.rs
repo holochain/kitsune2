@@ -33,10 +33,16 @@ pub mod k2_gossip_message {
         NoDiff = 3,
         /// A gossip disc sectors diff protocol message.
         DiscSectorsDiff = 4,
+        /// A gossip disc sector details diff protocol message.
+        DiscSectorDetailsDiff = 5,
+        /// A gossip disc sector details diff response protocol message.
+        DiscSectorDetailsResponseDiff = 6,
         /// A gossip ring sector details diff protocol message.
-        RingSectorDetailsDiff = 5,
+        RingSectorDetailsDiff = 7,
+        /// A gossip hashes protocol message.
+        Hashes = 8,
         /// A gossip agents protocol message.
-        Agents = 6,
+        Agents = 9,
     }
     impl GossipMessageType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -50,7 +56,12 @@ pub mod k2_gossip_message {
                 Self::Accept => "ACCEPT",
                 Self::NoDiff => "NO_DIFF",
                 Self::DiscSectorsDiff => "DISC_SECTORS_DIFF",
+                Self::DiscSectorDetailsDiff => "DISC_SECTOR_DETAILS_DIFF",
+                Self::DiscSectorDetailsResponseDiff => {
+                    "DISC_SECTOR_DETAILS_RESPONSE_DIFF"
+                }
                 Self::RingSectorDetailsDiff => "RING_SECTOR_DETAILS_DIFF",
+                Self::Hashes => "HASHES",
                 Self::Agents => "AGENTS",
             }
         }
@@ -62,7 +73,12 @@ pub mod k2_gossip_message {
                 "ACCEPT" => Some(Self::Accept),
                 "NO_DIFF" => Some(Self::NoDiff),
                 "DISC_SECTORS_DIFF" => Some(Self::DiscSectorsDiff),
+                "DISC_SECTOR_DETAILS_DIFF" => Some(Self::DiscSectorDetailsDiff),
+                "DISC_SECTOR_DETAILS_RESPONSE_DIFF" => {
+                    Some(Self::DiscSectorDetailsResponseDiff)
+                }
                 "RING_SECTOR_DETAILS_DIFF" => Some(Self::RingSectorDetailsDiff),
+                "HASHES" => Some(Self::Hashes),
                 "AGENTS" => Some(Self::Agents),
                 _ => None,
             }
@@ -209,6 +225,23 @@ pub mod k2_gossip_disc_sectors_diff_message {
         pub disc_sector_hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     }
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscSliceHashes {
+    #[prost(uint64, repeated, tag = "1")]
+    pub slice_indices: ::prost::alloc::vec::Vec<u64>,
+    #[prost(bytes = "bytes", repeated, tag = "2")]
+    pub hashes: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+}
+/// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotDiscSectorDetailsMessage {
+    #[prost(int64, tag = "1")]
+    pub disc_boundary: i64,
+    #[prost(uint32, repeated, tag = "2")]
+    pub sector_indices: ::prost::alloc::vec::Vec<u32>,
+    #[prost(message, repeated, tag = "3")]
+    pub disc_slice_hashes: ::prost::alloc::vec::Vec<DiscSliceHashes>,
+}
 /// A Kitsune2 gossip disc sector details diff protocol message.
 ///
 /// Acceptable responses:
@@ -216,30 +249,23 @@ pub mod k2_gossip_disc_sectors_diff_message {
 pub struct K2GossipDiscSectorDetailsDiffMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
-    #[prost(message, optional, tag = "10")]
-    pub snapshot: ::core::option::Option<
-        k2_gossip_disc_sector_details_diff_message::SnapshotDiscSectorDetailsMessage,
-    >,
+    /// The agent infos for the agents that were sent back in the missing_agents list of the previous message.
+    #[prost(bytes = "bytes", repeated, tag = "10")]
+    pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    #[prost(message, optional, tag = "20")]
+    pub snapshot: ::core::option::Option<SnapshotDiscSectorDetailsMessage>,
 }
-/// Nested message and enum types in `K2GossipDiscSectorDetailsDiffMessage`.
-pub mod k2_gossip_disc_sector_details_diff_message {
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct DiscSliceHashes {
-        #[prost(uint32, repeated, tag = "1")]
-        pub slice_indices: ::prost::alloc::vec::Vec<u32>,
-        #[prost(bytes = "bytes", repeated, tag = "2")]
-        pub hash: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-    }
-    /// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct SnapshotDiscSectorDetailsMessage {
-        #[prost(int64, tag = "1")]
-        pub disc_boundary: i64,
-        #[prost(uint32, repeated, tag = "2")]
-        pub sector_indices: ::prost::alloc::vec::Vec<u32>,
-        #[prost(message, repeated, tag = "3")]
-        pub disc_slice_hashes: ::prost::alloc::vec::Vec<DiscSliceHashes>,
-    }
+/// A Kitsune2 gossip disc sector details diff protocol message.
+///
+/// Acceptable responses:
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipDiscSectorDetailsDiffResponseMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
+    #[prost(bytes = "bytes", repeated, tag = "10")]
+    pub maybe_missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    #[prost(message, optional, tag = "20")]
+    pub snapshot: ::core::option::Option<SnapshotDiscSectorDetailsMessage>,
 }
 /// A Kitsune2 gossip ring sector details diff protocol message.
 ///
@@ -274,6 +300,16 @@ pub mod k2_gossip_ring_sector_details_diff_message {
         #[prost(message, repeated, tag = "3")]
         pub ring_sector_hashes: ::prost::alloc::vec::Vec<RingSectorHashes>,
     }
+}
+/// A Kitsune2 gossip hashes protocol message.
+///
+/// This message is a final message when used in a gossip round.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipHashesMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
+    #[prost(bytes = "bytes", repeated, tag = "10")]
+    pub maybe_missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
 }
 /// A Kitsune2 gossip agents protocol message.
 ///
