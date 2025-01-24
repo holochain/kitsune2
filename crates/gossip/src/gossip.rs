@@ -1254,7 +1254,7 @@ pub(crate) fn send_gossip_message(
 #[cfg(test)]
 mod test {
     use super::*;
-    use kitsune2_api::agent::{DynLocalAgent, LocalAgent};
+    use kitsune2_api::agent::LocalAgent;
     use kitsune2_api::builder::Builder;
     use kitsune2_api::space::{DynSpace, SpaceHandler};
     use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
@@ -1273,14 +1273,17 @@ mod test {
     }
 
     impl GossipTestHarness {
-        async fn join_local_agent(&self) -> DynLocalAgent {
-            let agent_1 = Arc::new(Ed25519LocalAgent::default());
-            self.space.local_agent_join(agent_1.clone()).await.unwrap();
+        async fn join_local_agent(&self) -> Arc<AgentInfoSigned> {
+            let local_agent = Arc::new(Ed25519LocalAgent::default());
+            self.space
+                .local_agent_join(local_agent.clone())
+                .await
+                .unwrap();
 
             // Wait for the agent info to be published
             // This means tests can rely on the agent being available in the peer store
             tokio::time::timeout(Duration::from_secs(5), {
-                let agent_id = agent_1.agent().clone();
+                let agent_id = local_agent.agent().clone();
                 let peer_store = self.peer_store.clone();
                 async move {
                     while !peer_store
@@ -1297,7 +1300,11 @@ mod test {
             .await
             .unwrap();
 
-            agent_1
+            self.peer_store
+                .get(local_agent.agent().clone())
+                .await
+                .unwrap()
+                .unwrap()
         }
 
         async fn wait_for_agent_in_peer_store(&self, agent: AgentId) {
@@ -1470,7 +1477,7 @@ mod test {
         let agent_1 = harness_1.join_local_agent().await;
         let agent_info_1 = harness_1
             .peer_store
-            .get(agent_1.agent().clone())
+            .get(agent_1.agent.clone())
             .await
             .unwrap()
             .unwrap();
@@ -1490,13 +1497,13 @@ mod test {
 
         assert!(harness_1
             .peer_store
-            .get(secret_agent_2.agent().clone())
+            .get(secret_agent_2.agent.clone())
             .await
             .unwrap()
             .is_none());
         assert!(harness_2
             .peer_store
-            .get(secret_agent_1.agent().clone())
+            .get(secret_agent_1.agent.clone())
             .await
             .unwrap()
             .is_none());
@@ -1508,10 +1515,10 @@ mod test {
             .unwrap();
 
         harness_1
-            .wait_for_agent_in_peer_store(secret_agent_2.agent().clone())
+            .wait_for_agent_in_peer_store(secret_agent_2.agent.clone())
             .await;
         harness_2
-            .wait_for_agent_in_peer_store(secret_agent_1.agent().clone())
+            .wait_for_agent_in_peer_store(secret_agent_1.agent.clone())
             .await;
     }
 
@@ -1549,7 +1556,69 @@ mod test {
 
         harness_2
             .gossip
-            .initiate_gossip(agent_info_1.url.clone().unwrap())
+            .initiate_gossip(agent_info_1.url.clone())
+            .await
+            .unwrap();
+
+        let received_ops = harness_1.wait_for_ops(vec![op_id_2]).await;
+        assert_eq!(1, received_ops.len());
+        assert_eq!(op_2, received_ops[0]);
+
+        let received_ops = harness_2.wait_for_ops(vec![op_id_1]).await;
+        assert_eq!(1, received_ops.len());
+        assert_eq!(op_1, received_ops[0]);
+    }
+
+    #[tokio::test]
+    async fn disc_sync() {
+        enable_tracing();
+
+        let space = test_space();
+        let factory = TestGossipFactory::create(space.clone()).await;
+        let harness_1 = factory.new_instance().await;
+        let agent_1 = harness_1.join_local_agent().await;
+        let op_1 = MemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
+        let op_id_1 = op_1.compute_op_id();
+        harness_1
+            .op_store
+            .process_incoming_ops(vec![op_1.clone().into()])
+            .await
+            .unwrap();
+
+        let harness_2 = factory.new_instance().await;
+        let agent_2 = harness_2.join_local_agent().await;
+        let op_2 = MemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
+        let op_id_2 = op_2.compute_op_id();
+        harness_2
+            .op_store
+            .process_incoming_ops(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        // Inform the harnesses that we've already synced up to now. This will force the
+        // ops we just created to be treated as historical disc ops.
+        harness_1
+            .gossip
+            .peer_meta_store
+            .set_new_ops_bookmark(
+                agent_2.url.clone().unwrap(),
+                Timestamp::now(),
+            )
+            .await
+            .unwrap();
+        harness_2
+            .gossip
+            .peer_meta_store
+            .set_new_ops_bookmark(
+                agent_1.url.clone().unwrap(),
+                Timestamp::now(),
+            )
+            .await
+            .unwrap();
+
+        harness_2
+            .gossip
+            .initiate_gossip(agent_1.agent.clone())
             .await
             .unwrap();
 

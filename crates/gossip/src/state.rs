@@ -360,7 +360,6 @@ impl GossipRoundState {
 pub(crate) enum RoundStage {
     Initiated(RoundStageInitiated),
     Accepted {
-        #[allow(dead_code)]
         our_agents: Vec<AgentId>,
         common_arc_set: ArcSet,
     },
