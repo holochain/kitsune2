@@ -1697,13 +1697,7 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
-        let agent_info_1 = harness_1
-            .peer_store
-            .get(agent_1.agent.clone())
-            .await
-            .unwrap()
-            .unwrap();
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
         let harness_2 = factory.new_instance().await;
         harness_2.join_local_agent(DhtArc::FULL).await;
@@ -1752,19 +1746,13 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
             .op_store
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
-            .unwrap();
-        let agent_info_1 = harness_1
-            .peer_store
-            .get(agent_1.agent().clone())
-            .await
-            .unwrap()
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
@@ -1779,7 +1767,7 @@ mod test {
 
         harness_2
             .gossip
-            .initiate_gossip(agent_info_1.url.clone())
+            .initiate_gossip(agent_info_1.url.clone().unwrap())
             .await
             .unwrap();
 
@@ -1799,7 +1787,7 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
@@ -1818,7 +1806,7 @@ mod test {
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
@@ -1842,7 +1830,7 @@ mod test {
             .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
-                agent_2.url.clone().unwrap(),
+                agent_info_2.url.clone().unwrap(),
                 Timestamp::now(),
             )
             .await
@@ -1851,7 +1839,7 @@ mod test {
             .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
-                agent_1.url.clone().unwrap(),
+                agent_info_1.url.clone().unwrap(),
                 Timestamp::now(),
             )
             .await
@@ -1859,7 +1847,7 @@ mod test {
 
         harness_2
             .gossip
-            .initiate_gossip(agent_1.agent.clone())
+            .initiate_gossip(agent_info_1.url.clone().unwrap())
             .await
             .unwrap();
 
@@ -1879,7 +1867,7 @@ mod test {
         let space = test_space();
         let factory = TestGossipFactory::create(space.clone()).await;
         let harness_1 = factory.new_instance().await;
-        let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(
             (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
             vec![1; 128],
@@ -1937,7 +1925,7 @@ mod test {
             .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
-                agent_1.url.clone().unwrap(),
+                agent_info_1.url.clone().unwrap(),
                 Timestamp::now(),
             )
             .await
@@ -1945,7 +1933,7 @@ mod test {
 
         harness_2
             .gossip
-            .initiate_gossip(agent_1.agent.clone())
+            .initiate_gossip(agent_info_1.url.clone().unwrap())
             .await
             .unwrap();
 
