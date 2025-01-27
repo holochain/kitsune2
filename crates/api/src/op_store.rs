@@ -110,6 +110,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// # Returns
     ///
     /// As many op ids as can be returned within the `limit_bytes` limit.
+    // TODO Must respect an arc set because it is used within gossip!
     fn retrieve_op_ids_bounded(
         &self,
         start: Timestamp,
@@ -120,7 +121,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn store_slice_hash(
         &self,
         arc: DhtArc,
-        slice_id: u64,
+        slice_index: u64,
         slice_hash: Bytes,
     ) -> BoxFuture<'_, K2Result<()>>;
 
@@ -135,7 +136,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     fn retrieve_slice_hash(
         &self,
         arc: DhtArc,
-        slice_id: u64,
+        slice_index: u64,
     ) -> BoxFuture<'_, K2Result<Option<Bytes>>>;
 
     /// Retrieve all slice hashes for a given arc.

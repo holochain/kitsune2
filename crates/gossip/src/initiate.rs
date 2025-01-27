@@ -36,9 +36,16 @@ pub fn spawn_initiate_task(
             .await
             {
                 Ok(Some(url)) => {
-                    tracing::info!("Initiating gossip with {}", url);
-                    if let Err(e) = gossip.initiate_gossip(url).await {
-                        tracing::error!("Error initiating gossip: {:?}", e);
+                    match gossip.initiate_gossip(url.clone()).await {
+                        Ok(true) => {
+                            tracing::info!("Initiated gossip with {}", url);
+                        }
+                        Ok(false) => {
+                            // Don't log here, will already have logged the reason
+                        }
+                        Err(e) => {
+                            tracing::error!("Error initiating gossip: {:?}", e);
+                        }
                     }
                 }
                 Ok(None) => {

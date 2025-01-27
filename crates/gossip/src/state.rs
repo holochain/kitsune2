@@ -1,8 +1,15 @@
 use crate::protocol::{
-    K2GossipAcceptMessage, K2GossipAgentsMessage, K2GossipNoDiffMessage,
+    K2GossipAcceptMessage, K2GossipAgentsMessage,
+    K2GossipDiscSectorDetailsDiffMessage,
+    K2GossipDiscSectorDetailsDiffResponseMessage,
+    K2GossipDiscSectorsDiffMessage, K2GossipNoDiffMessage,
+    K2GossipRingSectorDetailsDiffMessage,
+    K2GossipRingSectorDetailsDiffResponseMessage,
 };
 use bytes::Bytes;
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
+use kitsune2_dht::snapshot::DhtSnapshot;
+use kitsune2_dht::ArcSet;
 use rand::RngCore;
 
 /// The state of a gossip round.
@@ -32,6 +39,7 @@ impl GossipRoundState {
     pub(crate) fn new(
         session_with_peer: Url,
         our_agents: Vec<AgentId>,
+        our_arc_set: ArcSet,
     ) -> Self {
         let mut session_id = bytes::BytesMut::zeroed(12);
         rand::thread_rng().fill_bytes(&mut session_id);
@@ -40,7 +48,10 @@ impl GossipRoundState {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id: session_id.freeze(),
-            stage: RoundStage::Initiated { our_agents },
+            stage: RoundStage::Initiated(RoundStageInitiated {
+                our_agents,
+                our_arc_set,
+            }),
         }
     }
 
@@ -48,12 +59,16 @@ impl GossipRoundState {
         session_with_peer: Url,
         session_id: Bytes,
         our_agents: Vec<AgentId>,
+        common_arc_set: ArcSet,
     ) -> Self {
         Self {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id,
-            stage: RoundStage::Accepted { our_agents },
+            stage: RoundStage::Accepted(RoundStageAccepted {
+                our_agents,
+                common_arc_set,
+            }),
         }
     }
 
@@ -61,7 +76,7 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         accept: &K2GossipAcceptMessage,
-    ) -> K2Result<()> {
+    ) -> K2Result<&RoundStageInitiated> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "Accept message from wrong peer: {} != {}",
@@ -77,7 +92,9 @@ impl GossipRoundState {
         }
 
         match &self.stage {
-            RoundStage::Initiated { our_agents } => {
+            RoundStage::Initiated(
+                stage @ RoundStageInitiated { our_agents, .. },
+            ) => {
                 tracing::trace!("Initiated round state found");
 
                 if accept
@@ -89,16 +106,14 @@ impl GossipRoundState {
                         "Accept message contains agents that we didn't declare",
                     ));
                 }
-            }
-            stage => {
-                return Err(K2Error::other(format!(
-                    "Unexpected round state for accept: Initiated != {:?}",
-                    stage
-                )));
-            }
-        }
 
-        Ok(())
+                Ok(stage)
+            }
+            stage => Err(K2Error::other(format!(
+                "Unexpected round state for accept: Initiated != {:?}",
+                stage
+            ))),
+        }
     }
 
     pub(crate) fn validate_no_diff(
@@ -121,10 +136,14 @@ impl GossipRoundState {
         }
 
         match &self.stage {
-            RoundStage::Accepted { our_agents } => {
-                tracing::trace!("Accepted round state found");
+            RoundStage::Accepted(RoundStageAccepted { our_agents, .. }) => {
+                let Some(accept_response) = &no_diff.accept_response else {
+                    return Err(K2Error::other(
+                        "Received NoDiff message without accept response",
+                    ));
+                };
 
-                if no_diff
+                if accept_response
                     .missing_agents
                     .iter()
                     .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
@@ -143,6 +162,273 @@ impl GossipRoundState {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn validate_disc_sectors_diff(
+        &self,
+        from_peer: Url,
+        disc_sectors_diff: &K2GossipDiscSectorsDiffMessage,
+    ) -> K2Result<&RoundStageAccepted> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "DiscSectorsDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != disc_sectors_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, disc_sectors_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &disc_sectors_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received DiscSectorsDiff message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::Accepted(
+                out @ RoundStageAccepted {
+                    our_agents,
+                    common_arc_set,
+                },
+            ) => {
+                let Some(accept_response) = &disc_sectors_diff.accept_response
+                else {
+                    return Err(K2Error::other(
+                        "Received NoDiff message without accept response",
+                    ));
+                };
+
+                if accept_response
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "NoDiff message contains agents that we didn't declare",
+                    ));
+                }
+
+                for sector in &snapshot.disc_sectors {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "DiscSectorsDiff message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(out)
+            }
+            stage => Err(K2Error::other(format!(
+                "Unexpected round state for accept: Accepted != {:?}",
+                stage
+            ))),
+        }
+    }
+
+    pub(crate) fn validate_disc_sector_details_diff(
+        &self,
+        from_peer: Url,
+        disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffMessage,
+    ) -> K2Result<&RoundStageDiscSectorsDiff> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "DiscSectorDetailsDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != disc_sector_details_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, disc_sector_details_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &disc_sector_details_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received DiscSectorDetailsDiff message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::DiscSectorsDiff(stage @ RoundStageDiscSectorsDiff { common_arc_set }) => {
+                for sector in &snapshot.sector_indices {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "DiscSectorDetailsDiff message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(stage)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for disc sector details diff: DiscSectorsDiff != {:?}",
+                    stage
+                )))
+            }
+        }
+    }
+
+    pub(crate) fn validate_disc_sector_details_diff_response(
+        &self,
+        from_peer: Url,
+        disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffResponseMessage,
+    ) -> K2Result<&RoundStageDiscSectorDetailsDiff> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "DiscSectorDetailsDiffResponse message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != disc_sector_details_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, disc_sector_details_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &disc_sector_details_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received DiscSectorDetailsDiffResponse message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::DiscSectorDetailsDiff(state @ RoundStageDiscSectorDetailsDiff { common_arc_set, .. }) => {
+                for sector in &snapshot.sector_indices {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "DiscSectorDetailsDiffResponse message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(state)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for disc sector details diff response: DiscSectorDetailsDiff != {:?}",
+                    stage
+                )))
+            }
+        }
+    }
+
+    pub(crate) fn validate_ring_sector_details_diff(
+        &self,
+        from_peer: Url,
+        ring_sector_details_diff: &K2GossipRingSectorDetailsDiffMessage,
+    ) -> K2Result<&RoundStageAccepted> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "RingSectorDetailsDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != ring_sector_details_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, ring_sector_details_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &ring_sector_details_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received RingSectorDetailsDiff message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::Accepted(stage @ RoundStageAccepted { our_agents, common_arc_set, .. }) => {
+                let Some(accept_response) = &ring_sector_details_diff.accept_response
+                else {
+                    return Err(K2Error::other(
+                        "Received RingSectorDetailsDiff message without accept response",
+                    ));
+                };
+
+                if accept_response
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "RingSectorDetailsDiff message contains agents that we didn't declare",
+                    ));
+                }
+
+                for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "RingSectorDetailsDiff message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(stage)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for ring sector details diff: Accepted != {:?}",
+                    stage
+                )))
+            }
+        }
+    }
+
+    pub(crate) fn validate_ring_sector_details_diff_response(
+        &self,
+        from_peer: Url,
+        ring_sector_details_diff_response: &K2GossipRingSectorDetailsDiffResponseMessage,
+    ) -> K2Result<&RoundStageRingSectorDetailsDiff> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "RingSectorDetailsDiffResponse message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != ring_sector_details_diff_response.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, ring_sector_details_diff_response.session_id
+            )));
+        }
+
+        let Some(snapshot) = &ring_sector_details_diff_response.snapshot else {
+            return Err(K2Error::other(
+                "Received RingSectorDetailsDiffResponse message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::RingSectorDetailsDiff(state @ RoundStageRingSectorDetailsDiff { common_arc_set, .. }) => {
+                for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "RingSectorDetailsDiffResponse message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(state)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {:?}",
+                    stage
+                )))
+            }
+        }
     }
 
     pub(crate) fn validate_agents(
@@ -183,27 +469,57 @@ impl GossipRoundState {
 /// The state of a gossip round.
 #[derive(Debug)]
 pub(crate) enum RoundStage {
-    Initiated {
-        our_agents: Vec<AgentId>,
-    },
-    Accepted {
-        #[allow(dead_code)]
-        our_agents: Vec<AgentId>,
-    },
+    Initiated(RoundStageInitiated),
+    Accepted(RoundStageAccepted),
     NoDiff,
+    DiscSectorsDiff(RoundStageDiscSectorsDiff),
+    DiscSectorDetailsDiff(RoundStageDiscSectorDetailsDiff),
+    RingSectorDetailsDiff(RoundStageRingSectorDetailsDiff),
+}
+
+/// The state of a gossip round that has been initiated.
+#[derive(Debug, Clone)]
+pub(crate) struct RoundStageInitiated {
+    pub our_agents: Vec<AgentId>,
+    pub our_arc_set: ArcSet,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundStageAccepted {
+    pub our_agents: Vec<AgentId>,
+    pub common_arc_set: ArcSet,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundStageDiscSectorsDiff {
+    pub common_arc_set: ArcSet,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundStageDiscSectorDetailsDiff {
+    pub common_arc_set: ArcSet,
+    pub snapshot: DhtSnapshot,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RoundStageRingSectorDetailsDiff {
+    pub common_arc_set: ArcSet,
+    pub snapshot: DhtSnapshot,
 }
 
 #[cfg(test)]
 mod tests {
     use crate::state::GossipRoundState;
     use bytes::Bytes;
-    use kitsune2_api::{AgentId, Url};
+    use kitsune2_api::{AgentId, DhtArc, Url};
+    use kitsune2_dht::ArcSet;
 
     #[test]
     fn create_round_state() {
         let state = GossipRoundState::new(
             Url::from_str("ws://test:80").unwrap(),
             vec![AgentId::from(Bytes::from_static(b"test-agent"))],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
         );
 
         assert_eq!(12, state.session_id.len());

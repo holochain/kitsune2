@@ -10,7 +10,7 @@ use kitsune2_api::{DhtArc, K2Error, K2Result};
 use std::collections::HashSet;
 
 /// Represents a set of [DhtArc]s.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ArcSet {
     inner: HashSet<u32>,
@@ -150,7 +150,7 @@ impl ArcSet {
     }
 
     /// Check whether a given sector index is included in this arc set.
-    pub(crate) fn includes_sector_index(&self, value: u32) -> bool {
+    pub fn includes_sector_index(&self, value: u32) -> bool {
         self.inner.contains(&value)
     }
 }

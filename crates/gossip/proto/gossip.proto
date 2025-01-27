@@ -16,8 +16,26 @@ message K2GossipMessage {
     // A gossip no diff protocol message.
     NO_DIFF = 3;
 
+    // A gossip disc sectors diff protocol message.
+    DISC_SECTORS_DIFF = 4;
+
+    // A gossip disc sector details diff protocol message.
+    DISC_SECTOR_DETAILS_DIFF = 5;
+
+    // A gossip disc sector details diff response protocol message.
+    DISC_SECTOR_DETAILS_DIFF_RESPONSE = 6;
+
+    // A gossip ring sector details diff protocol message.
+    RING_SECTOR_DETAILS_DIFF = 7;
+
+    // A gossip ring sector details diff response protocol message.
+    RING_SECTOR_DETAILS_DIFF_RESPONSE = 8;
+
+    // A gossip hashes protocol message.
+    HASHES = 9;
+
     // A gossip agents protocol message.
-    AGENTS = 4;
+    AGENTS = 10;
   }
 
   // The type of this message.
@@ -33,6 +51,23 @@ message ArcSetMessage {
   repeated uint32 value = 1;
 }
 
+// Common fields to be sent in response to an accept message
+message AcceptResponseMessage {
+  // Agent ids of agents that were mentioned in the acceptor's participating_agents list
+  // that we do not have in our peer store.
+  repeated bytes missing_agents = 1;
+
+  // The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
+  repeated bytes provided_agents = 2;
+
+  // Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
+  repeated bytes new_ops = 3;
+
+  // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
+  // and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
+  int64 updated_new_since = 4;
+}
+
 // A Kitsune2 gossip initiation protocol message.
 //
 // Acceptable responses:
@@ -40,7 +75,7 @@ message ArcSetMessage {
 message K2GossipInitiateMessage {
   bytes session_id = 1;
 
-  // The agent ids of the agents from the initiator who are in the in the peer store for the space where gossip is running.
+  // The agent ids of the agents from the initiator who are in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 10;
 
   // The DHT sectors covered by the union of the agents in the participating_agents list.
@@ -57,10 +92,19 @@ message K2GossipInitiateMessage {
 //
 // Acceptable responses:
 // - `K2GossipNoDiffMessage`
+// - `K2GossipDiscSectorsDiffMessage`
+// - `K2GossipRingSectorDetailsDiffMessage`
 message K2GossipAcceptMessage {
+  // Message representation of kitsune2_dht::DhtSnapshot::Minimal
+  message SnapshotMinimalMessage {
+    int64 disc_boundary = 1;
+    bytes disc_top_hash = 2;
+    repeated bytes ring_top_hashes = 3;
+  }
+
   bytes session_id = 1;
 
-  // The agent ids of the agents from the acceptor who are in the in the peer store for the space where gossip is running.
+  // The agent ids of the agents from the acceptor who are in the peer store for the space where gossip is running.
   repeated bytes participating_agents = 10;
 
   // The DHT sectors covered by the union of the agents in the participating_agents list.
@@ -83,7 +127,8 @@ message K2GossipAcceptMessage {
   // and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
   int64 updated_new_since = 23;
 
-  // TODO Send DHT snapshot diff.
+  // The DHT snapshot of the acceptor.
+  optional SnapshotMinimalMessage snapshot = 30;
 }
 
 // A Kitsune2 gossip no diff protocol message.
@@ -96,22 +141,114 @@ message K2GossipAcceptMessage {
 message K2GossipNoDiffMessage {
   bytes session_id = 1;
 
-  // Agent ids of agents that were mentioned in the acceptor's participating_agents list
-  // that we do not have in our peer store.
-  repeated bytes missing_agents = 10;
-
-  // The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
-  repeated bytes provided_agents = 11;
-
-  // Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
-  repeated bytes new_ops = 20;
-
-  // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
-  // and the acceptor should use this new timestamp in their `new_since` next time they gossip with us.
-  int64 updated_new_since = 21;
+  AcceptResponseMessage accept_response = 2;
 
   // Set when the initiator could not compare the acceptor's DHT diff with their own.
-  bool cannot_compare = 30;
+  bool cannot_compare = 10;
+}
+
+// A Kitsune2 gossip disc sectors diff protocol message.
+//
+// Acceptable responses:
+// - `K2GossipDiscSectorDetailsDiffMessage`
+// - `K2GossipAgentsMessage`
+message K2GossipDiscSectorsDiffMessage {
+  // Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
+  message SnapshotDiscSectorsMessage {
+    int64 disc_boundary = 1;
+    repeated uint32 disc_sectors = 2;
+    repeated bytes disc_sector_hashes = 3;
+  }
+
+  bytes session_id = 1;
+
+  AcceptResponseMessage accept_response = 2;
+
+  SnapshotDiscSectorsMessage snapshot = 10;
+}
+
+message DiscSliceHashes {
+  repeated uint64 slice_indices = 1;
+  repeated bytes hashes = 2;
+}
+
+// Message representation of kitsune2_dht::DhtSnapshot::DiscSectorDetails
+message SnapshotDiscSectorDetailsMessage {
+  int64 disc_boundary = 1;
+  repeated uint32 sector_indices = 2;
+  repeated DiscSliceHashes disc_slice_hashes = 3;
+}
+
+// A Kitsune2 gossip disc sector details diff protocol message.
+//
+// Acceptable responses:
+// - `K2GossipDiscSectorDetailsDiffResponseMessage`
+message K2GossipDiscSectorDetailsDiffMessage {
+  bytes session_id = 1;
+
+  // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
+  repeated bytes provided_agents = 10;
+
+  SnapshotDiscSectorDetailsMessage snapshot = 20;
+}
+
+// A Kitsune2 gossip disc sector details diff protocol message.
+//
+// Acceptable responses:
+// - `K2GossipHashesMessage`
+message K2GossipDiscSectorDetailsDiffResponseMessage {
+  bytes session_id = 1;
+
+  repeated bytes maybe_missing_ids = 10;
+
+  SnapshotDiscSectorDetailsMessage snapshot = 20;
+}
+
+message RingSectorHashes {
+  repeated uint32 sector_indices = 1;
+  repeated bytes hashes = 2;
+}
+
+// Message representation of kitsune2_dht::DhtSnapshot::RingSectorDetails
+message SnapshotRingSectorDetailsMessage {
+  int64 disc_boundary = 1;
+  repeated uint32 ring_indices = 2;
+  repeated RingSectorHashes ring_sector_hashes = 3;
+}
+
+// A Kitsune2 gossip ring sector details diff protocol message.
+//
+// Acceptable responses:
+// - `K2GossipRingSectorDetailsDiffResponseMessage`
+// - `K2GossipAgentsMessage`
+message K2GossipRingSectorDetailsDiffMessage {
+
+  bytes session_id = 1;
+
+  AcceptResponseMessage accept_response = 10;
+
+  SnapshotRingSectorDetailsMessage snapshot = 20;
+}
+
+// A Kitsune2 gossip ring sector details diff response protocol message.
+//
+// Acceptable responses:
+// - `K2GossipHashesMessage`
+message K2GossipRingSectorDetailsDiffResponseMessage {
+  bytes session_id = 1;
+
+  repeated bytes maybe_missing_ids = 10;
+
+  SnapshotRingSectorDetailsMessage snapshot = 20;
+}
+
+// A Kitsune2 gossip hashes protocol message.
+//
+// This message is a final message when used in a gossip round.
+message K2GossipHashesMessage {
+  bytes session_id = 1;
+
+  repeated bytes maybe_missing_ids = 10;
 }
 
 // A Kitsune2 gossip agents protocol message.
@@ -123,5 +260,3 @@ message K2GossipAgentsMessage {
   // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
   repeated bytes provided_agents = 10;
 }
-
-// TODO Further gossip protocol messages.

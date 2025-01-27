@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// This is largely opaque to the user of the [crate::dht::Dht] model. It is intended to be sent
 /// between nodes to compare their DHT states and compared with [DhtSnapshot::compare].
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DhtSnapshot {
     /// The default, smallest snapshot type.
     ///
