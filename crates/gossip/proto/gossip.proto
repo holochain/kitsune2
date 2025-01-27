@@ -92,6 +92,8 @@ message K2GossipInitiateMessage {
 //
 // Acceptable responses:
 // - `K2GossipNoDiffMessage`
+// - `K2GossipDiscSectorsDiffMessage`
+// - `K2GossipRingSectorDetailsDiffMessage`
 message K2GossipAcceptMessage {
   // Message representation of kitsune2_dht::DhtSnapshot::Minimal
   message SnapshotMinimalMessage {
@@ -148,6 +150,8 @@ message K2GossipNoDiffMessage {
 // A Kitsune2 gossip disc sectors diff protocol message.
 //
 // Acceptable responses:
+// - `K2GossipDiscSectorDetailsDiffMessage`
+// - `K2GossipAgentsMessage`
 message K2GossipDiscSectorsDiffMessage {
   // Message representation of kitsune2_dht::DhtSnapshot::DiscSectors
   message SnapshotDiscSectorsMessage {
@@ -178,8 +182,8 @@ message SnapshotDiscSectorDetailsMessage {
 // A Kitsune2 gossip disc sector details diff protocol message.
 //
 // Acceptable responses:
+// - `K2GossipDiscSectorDetailsDiffResponseMessage`
 message K2GossipDiscSectorDetailsDiffMessage {
-
   bytes session_id = 1;
 
   // The agent infos for the agents that were sent back in the missing_agents list of the previous message.
@@ -191,6 +195,7 @@ message K2GossipDiscSectorDetailsDiffMessage {
 // A Kitsune2 gossip disc sector details diff protocol message.
 //
 // Acceptable responses:
+// - `K2GossipHashesMessage`
 message K2GossipDiscSectorDetailsDiffResponseMessage {
   bytes session_id = 1;
 
@@ -214,6 +219,8 @@ message SnapshotRingSectorDetailsMessage {
 // A Kitsune2 gossip ring sector details diff protocol message.
 //
 // Acceptable responses:
+// - `K2GossipRingSectorDetailsDiffResponseMessage`
+// - `K2GossipAgentsMessage`
 message K2GossipRingSectorDetailsDiffMessage {
 
   bytes session_id = 1;
@@ -226,6 +233,7 @@ message K2GossipRingSectorDetailsDiffMessage {
 // A Kitsune2 gossip ring sector details diff response protocol message.
 //
 // Acceptable responses:
+// - `K2GossipHashesMessage`
 message K2GossipRingSectorDetailsDiffResponseMessage {
   bytes session_id = 1;
 
