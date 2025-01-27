@@ -13,8 +13,9 @@ use crate::protocol::{
     K2GossipRingSectorDetailsDiffResponseMessage,
 };
 use crate::state::{
-    GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
-    RoundStageDiscSectorsDiff, RoundStageRingSectorDetailsDiff,
+    GossipRoundState, RoundStage, RoundStageAccepted,
+    RoundStageDiscSectorDetailsDiff, RoundStageDiscSectorsDiff,
+    RoundStageInitiated, RoundStageRingSectorDetailsDiff,
 };
 use crate::timeout::spawn_timeout_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -34,7 +35,7 @@ use kitsune2_dht::{ArcSet, Dht, DhtSnapshotNextAction};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, MutexGuard, OwnedMutexGuard, RwLock};
 use tokio::time::Instant;
 
 /// A factory for creating K2Gossip instances.
@@ -244,12 +245,16 @@ impl K2Gossip {
         &self,
         target_peer_url: Url,
     ) -> K2Result<bool> {
-        let state = self.initiated_round_state.clone();
-        let mut initiated_lock = state.lock().await;
+        let mut initiated_lock = self.initiated_round_state.lock().await;
         if initiated_lock.is_some() {
             tracing::debug!("initiate_gossip: already initiated");
             return Ok(false);
         }
+
+        tracing::debug!(
+            "Attempting to initiate gossip with {}",
+            target_peer_url
+        );
 
         let (our_agents, our_arc_set) = self.local_agent_state().await?;
 
@@ -287,9 +292,9 @@ impl K2Gossip {
         }
 
         tracing::trace!(
-            "Initiate gossip with {:?}: {:?}",
+            ?initiate,
+            "Initiate gossip with {:?}",
             target_peer_url,
-            initiate
         );
 
         send_gossip_message(
@@ -302,7 +307,7 @@ impl K2Gossip {
         Ok(true)
     }
 
-    /// Handle a gossip message.
+    /// Handle an incoming gossip message.
     ///
     /// Produces a response message if the input is acceptable and a response is required.
     /// Otherwise, returns None.
@@ -311,11 +316,7 @@ impl K2Gossip {
         from_peer: Url,
         msg: GossipMessage,
     ) -> K2Result<()> {
-        tracing::debug!(
-            "handle_gossip_message from: {:?}, msg: {:?}",
-            from_peer,
-            msg
-        );
+        tracing::debug!(?msg, "handle_gossip_message from: {:?}", from_peer,);
 
         let this = self.clone();
         tokio::task::spawn(async move {
@@ -335,23 +336,9 @@ impl K2Gossip {
         let res = match msg {
             GossipMessage::Initiate(initiate) => {
                 // Rate limit incoming gossip messages by peer
-                if let Some(timestamp) = self
-                    .peer_meta_store
-                    .last_gossip_timestamp(from_peer.clone())
-                    .await?
-                {
-                    let elapsed =
-                        (Timestamp::now() - timestamp).map_err(|_| {
-                            K2Error::other("could not calculate elapsed time")
-                        })?;
+                self.check_initiate_rate(from_peer.clone()).await?;
 
-                    if elapsed < self.config.min_initiate_interval() {
-                        tracing::info!("peer {:?} attempted to initiate too soon {:?} < {:?}", from_peer, elapsed, self.config.min_initiate_interval());
-                        return Err(K2Error::other("initiate too soon"));
-                    }
-                }
-
-                // Note the gap between the read and write here. It's possible that both peers
+                // Note the gap between the check and write here. It's possible that both peers
                 // could initiate at the same time. This is slightly wasteful but shouldn't be a
                 // problem.
                 self.peer_meta_store
@@ -374,6 +361,19 @@ impl K2Gossip {
                     self.local_agent_state().await?;
                 let common_arc_set = our_arc_set.intersection(&other_arc_set);
 
+                // There's no validation to be done with an accept beyond what's been done above
+                // to check how recently this peer initiated with us. We'll just record that they
+                // have initiated and that we plan to accept.
+                self.create_accept_state(
+                    &from_peer,
+                    &initiate,
+                    our_agents.clone(),
+                    common_arc_set.clone(),
+                )
+                .await?;
+
+                // Now we can start the work of creating an accept response, starting with a
+                // minimal DHT snapshot if there is an arc set overlap.
                 let snapshot: Option<SnapshotMinimalMessage> = if common_arc_set
                     .covered_sector_count()
                     > 0
@@ -393,17 +393,6 @@ impl K2Gossip {
                     None
                 };
 
-                // There's no validation to be done with an accept beyond what's been done above
-                // to check how recently this peer initiated with us. We'll just record that they
-                // have initiated and that we plan to accept.
-                self.create_accept_state(
-                    &from_peer,
-                    &initiate,
-                    our_agents.clone(),
-                    common_arc_set,
-                )
-                .await?;
-
                 let missing_agents = self
                     .filter_known_agents(&initiate.participating_agents)
                     .await?;
@@ -414,6 +403,8 @@ impl K2Gossip {
                     .await?
                     .unwrap_or(UNIX_TIMESTAMP);
 
+                // TODO Use common arc set here to restrict the ops we look up.
+                //      Which also means that changing arc will invalidate the bookmark?
                 let (new_ops, new_bookmark) = self
                     .op_store
                     .retrieve_op_ids_bounded(
@@ -438,21 +429,11 @@ impl K2Gossip {
             }
             GossipMessage::Accept(accept) => {
                 // Validate the incoming accept against our own state.
-                let mut initiated_lock =
-                    self.initiated_round_state.lock().await;
-                let initiated = match initiated_lock.as_ref() {
-                    Some(state) => {
-                        state.validate_accept(from_peer.clone(), &accept)?
-                    }
-                    None => {
-                        return Err(K2Error::other(
-                            "Unsolicited Accept message",
-                        ));
-                    }
-                };
+                let (mut lock, initiated) =
+                    self.check_accept_state(&from_peer, &accept).await?;
 
                 // Only once the other peer has accepted should we record that we've tried to
-                // gossip with them. Otherwise, we risk blocking each other if we both record
+                // gossip with them. Otherwise, we risk lock each other out if we both record
                 // a last gossip timestamp and try to initiate at the same time.
                 self.peer_meta_store
                     .set_last_gossip_timestamp(
@@ -525,9 +506,10 @@ impl K2Gossip {
                             )
                             .await?;
 
+                        // Then pick an appropriate response message based on the snapshot
                         match next_action {
                             DhtSnapshotNextAction::Identical => {
-                                if let Some(state) = initiated_lock.as_mut() {
+                                if let Some(state) = lock.as_mut() {
                                     state.stage = RoundStage::NoDiff;
                                 }
 
@@ -540,7 +522,7 @@ impl K2Gossip {
                                 )))
                             }
                             DhtSnapshotNextAction::CannotCompare => {
-                                if let Some(state) = initiated_lock.as_mut() {
+                                if let Some(state) = lock.as_mut() {
                                     state.stage = RoundStage::NoDiff;
                                 }
 
@@ -555,9 +537,7 @@ impl K2Gossip {
                             DhtSnapshotNextAction::NewSnapshot(snapshot) => {
                                 match snapshot {
                                     DhtSnapshot::DiscSectors { .. } => {
-                                        if let Some(state) =
-                                            initiated_lock.as_mut()
-                                        {
+                                        if let Some(state) = lock.as_mut() {
                                             state.stage =
                                                 RoundStage::DiscSectorsDiff(
                                                     RoundStageDiscSectorsDiff {
@@ -577,9 +557,7 @@ impl K2Gossip {
                                     DhtSnapshot::RingSectorDetails {
                                         ..
                                     } => {
-                                        if let Some(state) =
-                                            initiated_lock.as_mut()
-                                        {
+                                        if let Some(state) = lock.as_mut() {
                                             state.stage =
                                                 RoundStage::RingSectorDetailsDiff(RoundStageRingSectorDetailsDiff {
                                                     common_arc_set,
@@ -596,6 +574,9 @@ impl K2Gossip {
                                         )))
                                     }
                                     _ => {
+                                        // TODO while this would require a local inconsistency between
+                                        //      the DHT and the gossip crates, we should probably still
+                                        //      handle this wihtout a panic.
                                         unreachable!("unexpected snapshot type")
                                     }
                                 }
@@ -608,7 +589,7 @@ impl K2Gossip {
                         }
                     }
                     None => {
-                        if let Some(state) = initiated_lock.as_mut() {
+                        if let Some(state) = lock.as_mut() {
                             state.stage = RoundStage::NoDiff;
                         }
 
@@ -623,8 +604,11 @@ impl K2Gossip {
                 }
             }
             GossipMessage::NoDiff(no_diff) => {
-                self.update_incoming_no_diff_state(from_peer.clone(), &no_diff)
-                    .await?;
+                self.check_no_diff_state_and_remove(
+                    from_peer.clone(),
+                    &no_diff,
+                )
+                .await?;
 
                 // Unwrap because checked by validate_no_diff
                 let accept_response = no_diff.accept_response.unwrap();
@@ -644,15 +628,14 @@ impl K2Gossip {
                 }
             }
             GossipMessage::DiscSectorsDiff(disc_sectors_diff) => {
-                let state = self
-                    .update_incoming_disc_sectors_diff_state(
+                let (mut state, accepted) = self
+                    .check_incoming_disc_sectors_diff_state(
                         from_peer.clone(),
                         &disc_sectors_diff,
                     )
                     .await?;
-                let mut state_lock = state.lock().await;
 
-                // Unwrap because checked by validate_no_diff
+                // Unwrap because checked by validate_disc_sectors_diff
                 let accept_response =
                     disc_sectors_diff.accept_response.unwrap();
 
@@ -664,21 +647,15 @@ impl K2Gossip {
                     "Snapshot present checked by validate_disc_sectors_diff",
                 ).try_into()?;
 
-                // TODO untidy, there is a better way of getting this from the validate check
-                let common_arc_set = match &state_lock.stage {
-                    RoundStage::Accepted { common_arc_set, .. } => {
-                        common_arc_set
-                    }
-                    _ => {
-                        unreachable!()
-                    }
-                };
-
                 let next_action = self
                     .dht
                     .read()
                     .await
-                    .handle_snapshot(&their_snapshot, None, common_arc_set)
+                    .handle_snapshot(
+                        &their_snapshot,
+                        None,
+                        &accepted.common_arc_set,
+                    )
                     .await?;
 
                 match next_action {
@@ -706,9 +683,9 @@ impl K2Gossip {
                         }
                     }
                     DhtSnapshotNextAction::NewSnapshot(snapshot) => {
-                        state_lock.stage = RoundStage::DiscSectorDetailsDiff(
+                        state.stage = RoundStage::DiscSectorDetailsDiff(
                             RoundStageDiscSectorDetailsDiff {
-                                common_arc_set: common_arc_set.clone(),
+                                common_arc_set: accepted.common_arc_set.clone(),
                                 snapshot: snapshot.clone(),
                             },
                         );
@@ -730,25 +707,12 @@ impl K2Gossip {
             }
             GossipMessage::DiscSectorDetailsDiff(disc_sector_details_diff) => {
                 // Validate the incoming disc sector details diff against our own state.
-                let mut disc_sectors_diff_lock =
-                    self.initiated_round_state.lock().await;
-                // TODO messy borrow handling
-                let common_arc_set = {
-                    let disc_sectors_diff =
-                        match disc_sectors_diff_lock.as_ref() {
-                            Some(state) => state
-                                .validate_disc_sector_details_diff(
-                                    from_peer.clone(),
-                                    &disc_sector_details_diff,
-                                )?,
-                            None => {
-                                return Err(K2Error::other(
-                                    "Unsolicited DiscSectorDetailsDiff message",
-                                ));
-                            }
-                        };
-                    disc_sectors_diff.common_arc_set.clone()
-                };
+                let (mut state, disc_sector_details) = self
+                    .check_disc_sector_details_diff_state(
+                        from_peer.clone(),
+                        &disc_sector_details_diff,
+                    )
+                    .await?;
 
                 let their_snapshot = disc_sector_details_diff.snapshot.expect(
                     "Snapshot present checked by validate_disc_sector_details_diff",
@@ -758,7 +722,11 @@ impl K2Gossip {
                     .dht
                     .read()
                     .await
-                    .handle_snapshot(&their_snapshot, None, &common_arc_set)
+                    .handle_snapshot(
+                        &their_snapshot,
+                        None,
+                        &disc_sector_details.common_arc_set,
+                    )
                     .await?;
 
                 match next_action {
@@ -769,7 +737,7 @@ impl K2Gossip {
                         // TODO These cases where we terminate don't notify the remote so they'll
                         //      end up timing out. Should do something differently here.
                         // Terminating the session, so remove the state.
-                        disc_sectors_diff_lock.take();
+                        state.take();
 
                         Ok(None)
                     }
@@ -777,10 +745,12 @@ impl K2Gossip {
                         snapshot,
                         ops,
                     ) => {
-                        if let Some(state) = disc_sectors_diff_lock.as_mut() {
+                        if let Some(state) = state.as_mut() {
                             state.stage = RoundStage::DiscSectorDetailsDiff(
                                 RoundStageDiscSectorDetailsDiff {
-                                    common_arc_set: common_arc_set.clone(),
+                                    common_arc_set: disc_sector_details
+                                        .common_arc_set
+                                        .clone(),
                                     snapshot: snapshot.clone(),
                                 },
                             );
@@ -802,25 +772,12 @@ impl K2Gossip {
             GossipMessage::DiscSectorDetailsDiffResponse(
                 disc_sector_details_response_diff,
             ) => {
-                let state = self
-                    .update_incoming_disc_sectors_diff_response_state(
+                let (_state, disc_sector_details) = self
+                    .check_disc_sectors_diff_response_state(
                         from_peer.clone(),
                         &disc_sector_details_response_diff,
                     )
                     .await?;
-
-                let state_lock = state.lock().await;
-                let (common_arc_set, our_snapshot) = match &state_lock.stage {
-                    RoundStage::DiscSectorDetailsDiff(
-                        RoundStageDiscSectorDetailsDiff {
-                            common_arc_set,
-                            snapshot,
-                        },
-                    ) => (common_arc_set, snapshot),
-                    _ => {
-                        unreachable!()
-                    }
-                };
 
                 self.fetch
                     .request_ops(
@@ -841,8 +798,8 @@ impl K2Gossip {
                     .await
                     .handle_snapshot(
                         &their_snapshot,
-                        Some(our_snapshot.clone()),
-                        common_arc_set,
+                        Some(disc_sector_details.snapshot.clone()),
+                        &disc_sector_details.common_arc_set,
                     )
                     .await?;
 
@@ -878,14 +835,13 @@ impl K2Gossip {
                 }
             }
             GossipMessage::RingSectorDetailsDiff(ring_sector_details_diff) => {
-                let state = self
-                    .update_incoming_ring_sector_details_diff_state(
+                let (mut state, accepted) = self
+                    .check_ring_sector_details_diff_state(
                         from_peer.clone(),
                         &ring_sector_details_diff,
                     )
                     .await?;
 
-                // TODO check in validation
                 let accept_response_message =
                     ring_sector_details_diff.accept_response.unwrap();
                 self.handle_accept_response(
@@ -893,17 +849,6 @@ impl K2Gossip {
                     accept_response_message.clone(),
                 )
                 .await?;
-
-                let mut state_lock = state.lock().await;
-
-                let common_arc_set = match &state_lock.stage {
-                    RoundStage::Accepted { common_arc_set, .. } => {
-                        common_arc_set.clone()
-                    }
-                    _ => {
-                        unreachable!()
-                    }
-                };
 
                 let their_snapshot = ring_sector_details_diff.snapshot.expect(
                     "Snapshot present checked by validate_ring_sector_details_diff",
@@ -913,7 +858,11 @@ impl K2Gossip {
                     .dht
                     .read()
                     .await
-                    .handle_snapshot(&their_snapshot, None, &common_arc_set)
+                    .handle_snapshot(
+                        &their_snapshot,
+                        None,
+                        &accepted.common_arc_set,
+                    )
                     .await?;
 
                 match next_action {
@@ -950,9 +899,9 @@ impl K2Gossip {
                         snapshot,
                         op_ids,
                     ) => {
-                        state_lock.stage = RoundStage::RingSectorDetailsDiff(
+                        state.stage = RoundStage::RingSectorDetailsDiff(
                             RoundStageRingSectorDetailsDiff {
-                                common_arc_set,
+                                common_arc_set: accepted.common_arc_set.clone(),
                                 snapshot: snapshot.clone(),
                             },
                         );
@@ -973,20 +922,12 @@ impl K2Gossip {
             GossipMessage::RingSectorDetailsDiffResponse(
                 ring_sector_details_diff_response,
             ) => {
-                let mut initiated_lock =
-                    self.initiated_round_state.lock().await;
-                let state = match initiated_lock.as_ref() {
-                    Some(state) => {
-                        // TODO validation
-                        // state.validate_agents(from_peer.clone(), &agents)?;
-                        state
-                    }
-                    None => {
-                        return Err(K2Error::other(
-                            "Unsolicited Agents message",
-                        ));
-                    }
-                };
+                let (mut state, ring_sector_details) = self
+                    .check_ring_sector_details_diff_response_state(
+                        from_peer.clone(),
+                        &ring_sector_details_diff_response,
+                    )
+                    .await?;
 
                 self.fetch
                     .request_ops(
@@ -1003,26 +944,14 @@ impl K2Gossip {
                         .unwrap()
                         .try_into()?;
 
-                let (common_arc_set, our_snapshot) = match &state.stage {
-                    RoundStage::RingSectorDetailsDiff(
-                        RoundStageRingSectorDetailsDiff {
-                            common_arc_set,
-                            snapshot,
-                        },
-                    ) => (common_arc_set.clone(), snapshot.clone()),
-                    _ => {
-                        unreachable!()
-                    }
-                };
-
                 let next_action = self
                     .dht
                     .read()
                     .await
                     .handle_snapshot(
                         &their_snapshot,
-                        Some(our_snapshot),
-                        &common_arc_set,
+                        Some(ring_sector_details.snapshot.clone()),
+                        &ring_sector_details.common_arc_set,
                     )
                     .await?;
 
@@ -1032,13 +961,13 @@ impl K2Gossip {
                         tracing::info!("Received a ring sector details diff response that we can't respond to, terminating gossip round");
 
                         // Terminating the session, so remove the state.
-                        initiated_lock.take();
+                        state.take();
 
                         Ok(None)
                     }
                     DhtSnapshotNextAction::HashList(op_ids) => {
                         // This is the final message we're going to send, remove state
-                        initiated_lock.take();
+                        state.take();
 
                         Ok(Some(GossipMessage::Hashes(K2GossipHashesMessage {
                             session_id: ring_sector_details_diff_response
@@ -1185,7 +1114,7 @@ impl K2Gossip {
         Ok(())
     }
 
-    async fn update_incoming_no_diff_state(
+    async fn check_no_diff_state_and_remove(
         &self,
         from_peer: Url,
         no_diff: &K2GossipNoDiffMessage,
@@ -1210,79 +1139,77 @@ impl K2Gossip {
         Ok(())
     }
 
-    async fn update_incoming_disc_sectors_diff_state(
+    async fn check_incoming_disc_sectors_diff_state(
         &self,
         from_peer: Url,
         disc_sectors_diff: &K2GossipDiscSectorsDiffMessage,
-    ) -> K2Result<Arc<Mutex<GossipRoundState>>> {
-        let accepted_states = self.accepted_round_states.read().await;
-        let Some(state) = accepted_states.get(&from_peer) else {
-            return Err(K2Error::other(format!(
+    ) -> K2Result<(OwnedMutexGuard<GossipRoundState>, RoundStageAccepted)> {
+        match self.accepted_round_states.read().await.get(&from_peer) {
+            Some(state) => {
+                let state = state.clone().lock_owned().await;
+                let accepted = state
+                    .validate_disc_sectors_diff(
+                        from_peer.clone(),
+                        disc_sectors_diff,
+                    )?
+                    .clone();
+
+                Ok((state, accepted))
+            }
+            None => Err(K2Error::other(format!(
                 "Unsolicited DiscSectorsDiff message from peer: {:?}",
                 from_peer
-            )));
-        };
-
-        let state_lock = state.lock().await;
-        state_lock
-            .validate_disc_sectors_diff(from_peer.clone(), disc_sectors_diff)?;
-
-        Ok(state.clone())
+            ))),
+        }
     }
 
-    async fn update_incoming_disc_sectors_diff_response_state(
+    async fn check_disc_sectors_diff_response_state(
         &self,
         from_peer: Url,
         disc_sector_details_diff_response: &K2GossipDiscSectorDetailsDiffResponseMessage,
-    ) -> K2Result<Arc<Mutex<GossipRoundState>>> {
-        let Some(state) = self
-            .accepted_round_states
-            .read()
-            .await
-            .get(&from_peer)
-            .cloned()
-        else {
-            return Err(K2Error::other(format!(
+    ) -> K2Result<(
+        OwnedMutexGuard<GossipRoundState>,
+        RoundStageDiscSectorDetailsDiff,
+    )> {
+        match self.accepted_round_states.read().await.get(&from_peer) {
+            Some(state) => {
+                let state = state.clone().lock_owned().await;
+                let disc_sector_details = state.validate_disc_sector_details_diff_response(
+                    from_peer.clone(),
+                    disc_sector_details_diff_response,
+                )?.clone();
+
+                Ok((state, disc_sector_details))
+            }
+            None => Err(K2Error::other(format!(
                 "Unsolicited DiscSectorDetailsDiffResponse message from peer: {:?}",
                 from_peer
-            )));
-        };
-
-        let state_lock = state.lock().await;
-        state_lock.validate_disc_sector_details_diff_response(
-            from_peer.clone(),
-            disc_sector_details_diff_response,
-        )?;
-
-        Ok(state.clone())
+            )))
+        }
     }
 
-    async fn update_incoming_ring_sector_details_diff_state(
+    async fn check_ring_sector_details_diff_state(
         &self,
         from_peer: Url,
-        _ring_sector_details_diff: &K2GossipRingSectorDetailsDiffMessage,
-    ) -> K2Result<Arc<Mutex<GossipRoundState>>> {
-        let Some(state) = self
-            .accepted_round_states
-            .read()
-            .await
-            .get(&from_peer)
-            .cloned()
-        else {
-            return Err(K2Error::other(format!(
+        ring_sector_details_diff: &K2GossipRingSectorDetailsDiffMessage,
+    ) -> K2Result<(OwnedMutexGuard<GossipRoundState>, RoundStageAccepted)> {
+        match self.accepted_round_states.read().await.get(&from_peer) {
+            Some(state) => {
+                let state = state.clone().lock_owned().await;
+                let out = state
+                    .validate_ring_sector_details_diff(
+                        from_peer.clone(),
+                        ring_sector_details_diff,
+                    )?
+                    .clone();
+
+                Ok((state, out))
+            }
+            None => Err(K2Error::other(format!(
                 "Unsolicited RingSectorDetailsDiff message from peer: {:?}",
                 from_peer
-            )));
-        };
-
-        // TODO validate
-        // let state_lock = state.lock().await;
-        // state_lock.validate_disc_sector_details_diff_response(
-        //     from_peer.clone(),
-        //     disc_sector_details_diff_response,
-        // )?;
-
-        Ok(state.clone())
+            ))),
+        }
     }
 
     async fn handle_accept_response(
@@ -1425,6 +1352,103 @@ impl K2Gossip {
         }
 
         Ok(())
+    }
+
+    async fn check_initiate_rate(&self, from_peer: Url) -> K2Result<()> {
+        if let Some(timestamp) = self
+            .peer_meta_store
+            .last_gossip_timestamp(from_peer.clone())
+            .await?
+        {
+            let elapsed = (Timestamp::now() - timestamp).map_err(|_| {
+                K2Error::other("could not calculate elapsed time")
+            })?;
+
+            if elapsed < self.config.min_initiate_interval() {
+                tracing::info!(
+                    "Peer [{:?}] attempted to initiate too soon: {:?} < {:?}",
+                    from_peer,
+                    elapsed,
+                    self.config.min_initiate_interval()
+                );
+                return Err(K2Error::other("initiate too soon"));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn check_accept_state<'a>(
+        &'a self,
+        from_peer: &Url,
+        accept: &K2GossipAcceptMessage,
+    ) -> K2Result<(
+        MutexGuard<'a, Option<GossipRoundState>>,
+        RoundStageInitiated,
+    )> {
+        let round_state = self.initiated_round_state.lock().await;
+        let initiated = match round_state.as_ref() {
+            Some(state) => {
+                state.validate_accept(from_peer.clone(), accept)?.clone()
+            }
+            None => {
+                return Err(K2Error::other("Unsolicited Accept message"));
+            }
+        };
+
+        Ok((round_state, initiated))
+    }
+
+    async fn check_disc_sector_details_diff_state<'a>(
+        &'a self,
+        from_peer: Url,
+        disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffMessage,
+    ) -> K2Result<(
+        MutexGuard<'a, Option<GossipRoundState>>,
+        RoundStageDiscSectorsDiff,
+    )> {
+        let lock = self.initiated_round_state.lock().await;
+        let disc_sectors_diff = match lock.as_ref() {
+            Some(state) => state
+                .validate_disc_sector_details_diff(
+                    from_peer.clone(),
+                    disc_sector_details_diff,
+                )?
+                .clone(),
+            None => {
+                return Err(K2Error::other(
+                    "Unsolicited DiscSectorDetailsDiff message",
+                ));
+            }
+        };
+
+        Ok((lock, disc_sectors_diff))
+    }
+
+    async fn check_ring_sector_details_diff_response_state<'a>(
+        &'a self,
+        from_peer: Url,
+        ring_sector_details_diff_response: &K2GossipRingSectorDetailsDiffResponseMessage,
+    ) -> K2Result<(
+        MutexGuard<'a, Option<GossipRoundState>>,
+        RoundStageRingSectorDetailsDiff,
+    )> {
+        let lock = self.initiated_round_state.lock().await;
+        let ring_sector_details_diff = match lock.as_ref() {
+            Some(state) => state
+                .validate_ring_sector_details_diff_response(
+                    from_peer.clone(),
+                    ring_sector_details_diff_response,
+                )?
+                .clone(),
+            None => {
+                return Err(K2Error::other(
+                    "Unsolicited RingSectorDetailsDiffResponse message",
+                ));
+            }
+        };
+
+        Ok((lock, ring_sector_details_diff))
     }
 }
 

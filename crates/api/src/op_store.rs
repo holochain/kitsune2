@@ -110,6 +110,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// # Returns
     ///
     /// As many op ids as can be returned within the `limit_bytes` limit.
+    // TODO Must respect an arc set because it is used within gossip!
     fn retrieve_op_ids_bounded(
         &self,
         start: Timestamp,
