@@ -5,6 +5,7 @@ members = [
   "crates/core",
   "crates/dht",
   "crates/gossip",
+  "crates/kitsune2",
   "crates/test_utils",
   "crates/tool_proto_build",
   "crates/transport_tx5",

@@ -51,7 +51,8 @@ impl LocalAgentStore for CoreLocalAgentStore {
 pub struct CoreLocalAgentStoreFactory;
 
 impl CoreLocalAgentStoreFactory {
-    pub(crate) fn create() -> Arc<dyn LocalAgentStoreFactory> {
+    /// Construct a new CoreLocalAgentStoreFactory.
+    pub fn create() -> Arc<dyn LocalAgentStoreFactory> {
         Arc::new(CoreLocalAgentStoreFactory)
     }
 }

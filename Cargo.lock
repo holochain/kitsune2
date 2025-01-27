@@ -1250,6 +1250,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "kitsune2"
+version = "0.0.1-alpha"
+dependencies = [
+ "bytes",
+ "kitsune2_api",
+ "kitsune2_core",
+ "kitsune2_gossip",
+ "kitsune2_test_utils",
+ "kitsune2_transport_tx5",
+ "sbd-server",
+ "tokio",
+]
+
+[[package]]
 name = "kitsune2_api"
 version = "0.0.1-alpha"
 dependencies = [
