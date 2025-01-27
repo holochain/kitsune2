@@ -143,6 +143,8 @@ pub struct K2GossipInitiateMessage {
 ///
 /// Acceptable responses:
 /// - `K2GossipNoDiffMessage`
+/// - `K2GossipDiscSectorsDiffMessage`
+/// - `K2GossipRingSectorDetailsDiffMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipAcceptMessage {
     #[prost(bytes = "bytes", tag = "1")]
@@ -209,6 +211,8 @@ pub struct K2GossipNoDiffMessage {
 /// A Kitsune2 gossip disc sectors diff protocol message.
 ///
 /// Acceptable responses:
+/// - `K2GossipDiscSectorDetailsDiffMessage`
+/// - `K2GossipAgentsMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipDiscSectorsDiffMessage {
     #[prost(bytes = "bytes", tag = "1")]
@@ -253,6 +257,7 @@ pub struct SnapshotDiscSectorDetailsMessage {
 /// A Kitsune2 gossip disc sector details diff protocol message.
 ///
 /// Acceptable responses:
+/// - `K2GossipDiscSectorDetailsDiffResponseMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipDiscSectorDetailsDiffMessage {
     #[prost(bytes = "bytes", tag = "1")]
@@ -266,6 +271,7 @@ pub struct K2GossipDiscSectorDetailsDiffMessage {
 /// A Kitsune2 gossip disc sector details diff protocol message.
 ///
 /// Acceptable responses:
+/// - `K2GossipHashesMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipDiscSectorDetailsDiffResponseMessage {
     #[prost(bytes = "bytes", tag = "1")]
@@ -295,6 +301,8 @@ pub struct SnapshotRingSectorDetailsMessage {
 /// A Kitsune2 gossip ring sector details diff protocol message.
 ///
 /// Acceptable responses:
+/// - `K2GossipRingSectorDetailsDiffResponseMessage`
+/// - `K2GossipAgentsMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipRingSectorDetailsDiffMessage {
     #[prost(bytes = "bytes", tag = "1")]
@@ -307,6 +315,7 @@ pub struct K2GossipRingSectorDetailsDiffMessage {
 /// A Kitsune2 gossip ring sector details diff response protocol message.
 ///
 /// Acceptable responses:
+/// - `K2GossipHashesMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipRingSectorDetailsDiffResponseMessage {
     #[prost(bytes = "bytes", tag = "1")]
