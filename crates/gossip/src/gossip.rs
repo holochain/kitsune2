@@ -251,6 +251,18 @@ impl K2Gossip {
             target_peer_url
         );
 
+        // Before we send the initiate message, check whether the target has already
+        // initiated with us. If they have, we can just skip initiating.
+        if self
+            .accepted_round_states
+            .read()
+            .await
+            .contains_key(&target_peer_url)
+        {
+            tracing::info!("initiate_gossip: already accepted");
+            return Ok(false);
+        }
+
         let (our_agents, our_arc_set) = self.local_agent_state().await?;
 
         let new_since = self
@@ -273,18 +285,6 @@ impl K2Gossip {
             new_since: new_since.as_micros(),
             max_new_bytes: self.config.max_gossip_op_bytes,
         };
-
-        // Right before we send the initiate message, check whether the target has already
-        // initiated with us. If they have, we can just skip initiating.
-        if self
-            .accepted_round_states
-            .read()
-            .await
-            .contains_key(&target_peer_url)
-        {
-            tracing::info!("initiate_gossip: already accepted");
-            return Ok(false);
-        }
 
         tracing::trace!(
             ?initiate,
