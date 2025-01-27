@@ -52,6 +52,7 @@ impl Default for ConfigMap {
 struct Inner {
     map: ConfigMap,
     are_defaults_set: bool,
+    did_validate: bool,
     is_runtime: bool,
 }
 
@@ -78,6 +79,7 @@ impl Default for Config {
         Self(Mutex::new(Inner {
             map: ConfigMap::default(),
             are_defaults_set: false,
+            did_validate: false,
             is_runtime: false,
         }))
     }
@@ -89,6 +91,15 @@ impl Config {
     /// config parameters.
     pub fn mark_defaults_set(&self) {
         self.0.lock().unwrap().are_defaults_set = true;
+    }
+
+    /// Validate this config before using it in runtime.
+    /// Returns the previous validation state.
+    pub fn mark_validated(&self) -> bool {
+        let mut lock = self.0.lock().unwrap();
+        let out = lock.did_validate;
+        lock.did_validate = true;
+        out
     }
 
     /// Once we are done setting initial config, generate warnings for

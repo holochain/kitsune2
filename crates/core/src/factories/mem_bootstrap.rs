@@ -65,6 +65,13 @@ impl BootstrapFactory for MemBootstrapFactory {
         config.set_module_config(&MemBootstrapModConfig::default())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<builder::Builder>,

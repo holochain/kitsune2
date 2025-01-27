@@ -64,6 +64,13 @@ impl LocalAgentStoreFactory for CoreLocalAgentStoreFactory {
         Ok(())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         _builder: Arc<crate::builder::Builder>,

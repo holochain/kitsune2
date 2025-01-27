@@ -152,6 +152,13 @@ impl FetchFactory for CoreFetchFactory {
         Ok(())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<builder::Builder>,

@@ -71,6 +71,13 @@ impl BootstrapFactory for CoreBootstrapFactory {
         config.set_module_config(&CoreBootstrapModConfig::default())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<builder::Builder>,

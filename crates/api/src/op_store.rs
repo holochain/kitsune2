@@ -154,6 +154,9 @@ pub trait OpStoreFactory: 'static + Send + Sync + std::fmt::Debug {
     /// module factories.
     fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
+    /// Validate configuration.
+    fn validate_config(&self, config: &config::Config) -> K2Result<()>;
+
     /// Construct an op store instance.
     fn create(
         &self,
