@@ -4,6 +4,7 @@
 use rand::RngCore;
 
 pub mod agent;
+pub mod bootstrap;
 pub mod id;
 pub mod space;
 
@@ -33,19 +34,25 @@ pub fn random_bytes(length: u16) -> Vec<u8> {
 /// The default timeout is 100 ms.
 #[macro_export]
 macro_rules! iter_check {
-    ($millis:literal, $code:block) => {
+    ($timeout_ms:literal, $sleep_ms:literal, $code:block) => {
         tokio::time::timeout(
-            std::time::Duration::from_millis($millis),
+            std::time::Duration::from_millis($timeout_ms),
             async {
                 loop {
-                    tokio::time::sleep(std::time::Duration::from_millis(1))
-                        .await;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        $sleep_ms,
+                    ))
+                    .await;
                     $code
                 }
             },
         )
         .await
         .unwrap();
+    };
+
+    ($timeout_ms:literal, $code:block) => {
+        iter_check!($timeout_ms, 1, $code)
     };
 
     ($code:block) => {

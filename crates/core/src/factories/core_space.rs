@@ -1,6 +1,6 @@
 //! The core space implementation provided by Kitsune2.
 
-use kitsune2_api::{config::*, space::*, *};
+use kitsune2_api::{config::*, fetch::DynFetch, space::*, *};
 use std::sync::{Arc, Mutex, Weak};
 
 mod protocol;
@@ -101,6 +101,35 @@ impl SpaceFactory for CoreSpaceFactory {
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
             let inner = Arc::new(Mutex::new(InnerData { current_url: None }));
+            let op_store = builder
+                .op_store
+                .create(builder.clone(), space.clone())
+                .await?;
+            let fetch = builder
+                .fetch
+                .create(
+                    builder.clone(),
+                    space.clone(),
+                    op_store.clone(),
+                    tx.clone(),
+                )
+                .await?;
+            let peer_meta_store =
+                builder.peer_meta_store.create(builder.clone()).await?;
+            let gossip = builder
+                .gossip
+                .create(
+                    builder.clone(),
+                    space.clone(),
+                    peer_store.clone(),
+                    local_agent_store.clone(),
+                    peer_meta_store,
+                    op_store.clone(),
+                    tx.clone(),
+                    fetch.clone(),
+                )
+                .await?;
+
             let out: DynSpace = Arc::new_cyclic(move |this| {
                 let current_url = tx.register_space_handler(
                     space.clone(),
@@ -115,6 +144,9 @@ impl SpaceFactory for CoreSpaceFactory {
                     bootstrap,
                     local_agent_store,
                     inner,
+                    op_store,
+                    fetch,
+                    gossip,
                 )
             });
             Ok(out)
@@ -168,6 +200,9 @@ struct CoreSpace {
     peer_store: peer_store::DynPeerStore,
     bootstrap: bootstrap::DynBootstrap,
     local_agent_store: DynLocalAgentStore,
+    op_store: DynOpStore,
+    fetch: DynFetch,
+    gossip: DynGossip,
     inner: Arc<Mutex<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
 }
@@ -187,6 +222,7 @@ impl std::fmt::Debug for CoreSpace {
 }
 
 impl CoreSpace {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: CoreSpaceConfig,
         space: SpaceId,
@@ -195,6 +231,9 @@ impl CoreSpace {
         bootstrap: bootstrap::DynBootstrap,
         local_agent_store: DynLocalAgentStore,
         inner: Arc<Mutex<InnerData>>,
+        op_store: DynOpStore,
+        fetch: DynFetch,
+        gossip: DynGossip,
     ) -> Self {
         let task_check_agent_infos = tokio::task::spawn(check_agent_infos(
             config,
@@ -208,7 +247,10 @@ impl CoreSpace {
             bootstrap,
             local_agent_store,
             inner,
+            op_store,
             task_check_agent_infos,
+            fetch,
+            gossip,
         }
     }
 
@@ -233,6 +275,18 @@ impl Space for CoreSpace {
 
     fn local_agent_store(&self) -> &DynLocalAgentStore {
         &self.local_agent_store
+    }
+
+    fn op_store(&self) -> &DynOpStore {
+        &self.op_store
+    }
+
+    fn fetch(&self) -> &DynFetch {
+        &self.fetch
+    }
+
+    fn gossip(&self) -> &DynGossip {
+        &self.gossip
     }
 
     fn local_agent_join(

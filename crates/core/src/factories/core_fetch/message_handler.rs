@@ -24,7 +24,7 @@ impl TxModuleHandler for FetchMessageHandler {
         _module: String,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        tracing::debug!("receiving module message from {peer}");
+        tracing::trace!("receiving module message from {peer}");
         let fetch = K2FetchMessage::decode(data).map_err(|err| {
             K2Error::other_src(
                 format!("could not decode module message from {peer}"),

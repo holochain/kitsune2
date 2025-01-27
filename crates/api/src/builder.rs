@@ -50,6 +50,7 @@ pub struct Builder {
     /// The [gossip::GossipFactory] to be used for creating
     /// [gossip::Gossip] instances.
     pub gossip: gossip::DynGossipFactory,
+
     /// The [local_agent_store::LocalAgentStoreFactory] to be used for creating
     /// [local_agent_store::LocalAgentStore] instances.
     pub local_agent_store: Arc<dyn LocalAgentStoreFactory>,

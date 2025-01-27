@@ -27,10 +27,6 @@ ureq = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
-axum = { workspace = true, default-features = false, features = [
-  "http1",
-  "tokio",
-] }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 kitsune2_api = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }

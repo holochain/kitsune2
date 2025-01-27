@@ -1,6 +1,7 @@
 //! Kitsune2 space related types.
 
 use crate::agent::DynLocalAgent;
+use crate::fetch::DynFetch;
 use crate::*;
 use std::sync::Arc;
 
@@ -46,6 +47,16 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
 
     /// Get a reference to the local agent store being used by this space.
     fn local_agent_store(&self) -> &DynLocalAgentStore;
+
+    /// Get a reference to the op store of this space. Ops can be injected and
+    /// retrieved from the op store.
+    fn op_store(&self) -> &DynOpStore;
+
+    /// Get a reference to the fetch module of this space.
+    fn fetch(&self) -> &DynFetch;
+
+    /// Get a reference to the gossip module of this space.
+    fn gossip(&self) -> &DynGossip;
 
     /// Indicate that an agent is now online, and should begin receiving
     /// messages and exchanging dht information.

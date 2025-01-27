@@ -1,5 +1,6 @@
 use kitsune2_api::{id::*, *};
-use std::sync::{Arc, Mutex};
+use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
+use std::sync::Arc;
 
 #[derive(Debug)]
 struct TestCrypto;
@@ -129,112 +130,6 @@ impl Test {
     }
 }
 
-pub struct Srv {
-    kill: Option<tokio::sync::oneshot::Sender<()>>,
-    task: tokio::task::JoinHandle<std::io::Result<()>>,
-    halt: Arc<std::sync::atomic::AtomicBool>,
-    addr: String,
-}
-
-impl Drop for Srv {
-    fn drop(&mut self) {
-        if let Some(kill) = self.kill.take() {
-            let _ = kill.send(());
-        }
-        self.task.abort();
-    }
-}
-
-impl Srv {
-    pub async fn new() -> Self {
-        use axum::*;
-        use std::sync::atomic::*;
-
-        let (kill, kill_r) = tokio::sync::oneshot::channel();
-        let kill = Some(kill);
-        let kill_r = async move {
-            let _ = kill_r.await;
-        };
-
-        let l = tokio::net::TcpListener::bind(std::net::SocketAddr::from((
-            [127, 0, 0, 1],
-            0,
-        )))
-        .await
-        .unwrap();
-        let addr = format!("http://{:?}", l.local_addr().unwrap());
-
-        let halt = Arc::new(std::sync::atomic::AtomicBool::new(true));
-
-        #[derive(Clone)]
-        struct State {
-            halt: Arc<AtomicBool>,
-            data: Arc<Mutex<Vec<String>>>,
-        }
-
-        let get_state = State {
-            halt: halt.clone(),
-            data: Arc::new(Mutex::new(Vec::new())),
-        };
-        let put_state = get_state.clone();
-
-        let app: Router = Router::new()
-            .route(
-                "/bootstrap/:space",
-                routing::get(move || async move {
-                    if get_state.halt.load(Ordering::SeqCst) {
-                        return Err(
-                            http::status::StatusCode::INTERNAL_SERVER_ERROR,
-                        );
-                    }
-                    let mut out = "[".to_string();
-                    let mut is_first = true;
-                    for d in get_state.data.lock().unwrap().iter() {
-                        if is_first {
-                            is_first = false;
-                        } else {
-                            out.push(',');
-                        }
-                        out.push_str(d);
-                    }
-                    out.push(']');
-                    Ok(out)
-                }),
-            )
-            .route(
-                "/bootstrap/:space/:agent",
-                routing::put(move |body: String| async move {
-                    if put_state.halt.load(Ordering::SeqCst) {
-                        return Err(
-                            http::status::StatusCode::INTERNAL_SERVER_ERROR,
-                        );
-                    }
-                    put_state.data.lock().unwrap().push(body);
-                    Ok("{}".to_string())
-                }),
-            );
-
-        let task = tokio::task::spawn(std::future::IntoFuture::into_future(
-            serve(l, app).with_graceful_shutdown(kill_r),
-        ));
-
-        Self {
-            kill,
-            task,
-            halt,
-            addr,
-        }
-    }
-
-    pub fn set_halt(&self, halt: bool) {
-        self.halt.store(halt, std::sync::atomic::Ordering::SeqCst);
-    }
-
-    pub fn addr(&self) -> &str {
-        &self.addr
-    }
-}
-
 #[test]
 fn validate_bad_server_url() {
     let builder = kitsune2_api::builder::Builder {
@@ -259,7 +154,7 @@ fn validate_bad_server_url() {
 async fn bootstrap_delayed_online() {
     // this custom server will reject all requests with 500 errors
     // until we call set_halt(false) on it.
-    let srv = Srv::new().await;
+    let srv = TestBootstrapSrv::new(true).await;
 
     println!("addr: {}", srv.addr());
 
