@@ -235,6 +235,26 @@ impl Srv {
     }
 }
 
+#[test]
+fn validate_bad_server_url() {
+    let builder = kitsune2_api::builder::Builder {
+        bootstrap: super::CoreBootstrapFactory::create(),
+        ..crate::default_test_builder()
+    };
+
+    builder
+        .config
+        .set_module_config(&super::config::CoreBootstrapModConfig {
+            core_bootstrap: super::config::CoreBootstrapConfig {
+                server_url: "<bad-url>".into(),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    assert!(builder.validate_config().is_err());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn bootstrap_delayed_online() {
     // this custom server will reject all requests with 500 errors
