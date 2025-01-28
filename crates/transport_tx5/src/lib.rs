@@ -26,6 +26,17 @@ impl UrlExt for Url {
     }
 }
 
+trait SigUrlExt {
+    fn to_sig_url(&self) -> K2Result<tx5::SigUrl>;
+}
+
+impl SigUrlExt for &str {
+    fn to_sig_url(&self) -> K2Result<tx5::SigUrl> {
+        tx5::SigUrl::parse(self)
+            .map_err(|e| K2Error::other_src("parsing tx5 sig url", e))
+    }
+}
+
 /// Tx5Transport configuration types.
 pub mod config {
     /// Configuration parameters for [Tx5TransportFactory](super::Tx5TransportFactory).
@@ -77,6 +88,18 @@ impl Tx5TransportFactory {
 impl TransportFactory for Tx5TransportFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
         config.set_module_config(&Tx5TransportModConfig::default())
+    }
+
+    fn validate_config(
+        &self,
+        config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        let config: Tx5TransportModConfig = config.get_module_config()?;
+
+        // make sure our signal server url is parse-able.
+        config.tx5_transport.server_url.as_str().to_sig_url()?;
+
+        Ok(())
     }
 
     fn create(
@@ -169,13 +192,8 @@ impl Tx5Transport {
         let (ep, ep_recv) = tx5::Endpoint::new(tx5_config);
         let ep = Arc::new(ep);
 
-        if let Some(local_url) = ep
-            .listen(
-                tx5::SigUrl::parse(&config.server_url).map_err(|e| {
-                    K2Error::other_src("parsing tx5 sig url", e)
-                })?,
-            )
-            .await
+        if let Some(local_url) =
+            ep.listen(config.server_url.as_str().to_sig_url()?).await
         {
             handler
                 .new_listening_address(Url::from_str(local_url.as_ref())?)

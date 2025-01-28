@@ -57,8 +57,9 @@ pub struct Builder {
 
 impl Builder {
     /// Construct a default config given the configured module factories.
-    /// Note, this should be called before freezing the Builder instance
-    /// in an Arc<>.
+    ///
+    /// Note, this should be called before [Self::build] or otherwise
+    /// freezing the Builder instance in an Arc<>.
     pub fn with_default_config(mut self) -> K2Result<Self> {
         {
             let Self {
@@ -93,13 +94,37 @@ impl Builder {
         Ok(self)
     }
 
-    /// This will generate an actual kitsune instance.
+    /// Validate the current configuration.
+    pub fn validate_config(&self) -> K2Result<()> {
+        self.kitsune.validate_config(&self.config)?;
+        self.space.validate_config(&self.config)?;
+        self.peer_store.validate_config(&self.config)?;
+        self.bootstrap.validate_config(&self.config)?;
+        self.fetch.validate_config(&self.config)?;
+        self.transport.validate_config(&self.config)?;
+        self.op_store.validate_config(&self.config)?;
+        self.peer_meta_store.validate_config(&self.config)?;
+        self.gossip.validate_config(&self.config)?;
+        self.local_agent_store.validate_config(&self.config)?;
+
+        self.config.mark_validated();
+
+        Ok(())
+    }
+
+    /// Generate the actual kitsune instance, validating configuration
+    /// if that has not already explicitly been done.
     pub async fn build(
         self,
         handler: kitsune::DynKitsuneHandler,
     ) -> K2Result<kitsune::DynKitsune> {
+        if !self.config.mark_validated() {
+            self.validate_config()?;
+        }
+
         self.config.mark_runtime();
         let builder = Arc::new(self);
+
         builder.kitsune.create(builder.clone(), handler).await
     }
 }

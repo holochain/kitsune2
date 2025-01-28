@@ -67,6 +67,13 @@ impl PeerStoreFactory for MemPeerStoreFactory {
         config.set_module_config(&MemPeerStoreModConfig::default())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<builder::Builder>,

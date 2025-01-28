@@ -196,6 +196,26 @@ impl TxModuleHandler for CbHandler {
     }
 }
 
+#[test]
+fn validate_bad_server_url() {
+    let builder = kitsune2_api::builder::Builder {
+        transport: Tx5TransportFactory::create(),
+        ..kitsune2_core::default_test_builder()
+    };
+
+    builder
+        .config
+        .set_module_config(&config::Tx5TransportModConfig {
+            tx5_transport: config::Tx5TransportConfig {
+                signal_allow_plain_text: true,
+                server_url: "<bad-url>".into(),
+            },
+        })
+        .unwrap();
+
+    assert!(builder.validate_config().is_err());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_addr() {
     let mut test = Test::new().await;

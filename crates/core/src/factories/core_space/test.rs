@@ -221,6 +221,13 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
             Ok(())
         }
 
+        fn validate_config(
+            &self,
+            _config: &kitsune2_api::config::Config,
+        ) -> K2Result<()> {
+            Ok(())
+        }
+
         fn create(
             &self,
             _builder: Arc<builder::Builder>,

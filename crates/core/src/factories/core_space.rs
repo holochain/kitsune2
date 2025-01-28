@@ -76,6 +76,13 @@ impl SpaceFactory for CoreSpaceFactory {
         config.set_module_config(&CoreSpaceModConfig::default())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<builder::Builder>,

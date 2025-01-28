@@ -419,6 +419,9 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
     /// module factories.
     fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
+    /// Validate configuration.
+    fn validate_config(&self, config: &config::Config) -> K2Result<()>;
+
     /// Construct a transport instance.
     fn create(
         &self,

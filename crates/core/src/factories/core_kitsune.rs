@@ -23,6 +23,10 @@ impl KitsuneFactory for CoreKitsuneFactory {
         Ok(())
     }
 
+    fn validate_config(&self, _config: &config::Config) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<builder::Builder>,

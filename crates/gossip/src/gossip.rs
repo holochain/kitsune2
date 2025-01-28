@@ -45,6 +45,13 @@ impl GossipFactory for K2GossipFactory {
         config.set_module_config(&K2GossipModConfig::default())
     }
 
+    fn validate_config(
+        &self,
+        _config: &kitsune2_api::config::Config,
+    ) -> K2Result<()> {
+        Ok(())
+    }
+
     fn create(
         &self,
         builder: Arc<kitsune2_api::builder::Builder>,
