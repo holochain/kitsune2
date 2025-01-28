@@ -18,6 +18,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: "Check who"
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_USER_TOKEN }}
+        run:
+          gh auth status
+
       - name: Toml format
         run: make static-toml
 
