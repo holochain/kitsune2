@@ -11,6 +11,8 @@ pub struct K2GossipMessage {
 }
 /// Nested message and enum types in `K2GossipMessage`.
 pub mod k2_gossip_message {
+    /// / These enum variants correspond to `K2Gossip*Message` types,
+    /// / e.g. `INITIATE` -> `K2GossipInitiateMessage`.
     #[derive(
         Clone,
         Copy,

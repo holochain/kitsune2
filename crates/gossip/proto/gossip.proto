@@ -4,6 +4,8 @@ package kitsune2.gossip;
 
 // A Kitsune2 gossip protocol message.
 message K2GossipMessage {
+  /// These enum variants correspond to `K2Gossip*Message` types,
+  /// e.g. `INITIATE` -> `K2GossipInitiateMessage`.
   enum GossipMessageType {
     UNSPECIFIED = 0;
 
