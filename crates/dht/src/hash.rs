@@ -84,6 +84,9 @@ pub struct HashPartition {
 
 impl std::fmt::Debug for HashPartition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Note that `sectors` are not included by default because it is a large amount of
+        // information to see on in logs. If you need to debug the stored data, then consider
+        // using the query methods to understand what is present.
         f.debug_struct("HashPartition")
             .field("size", &self.size)
             .finish()
