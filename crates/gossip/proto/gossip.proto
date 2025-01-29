@@ -201,7 +201,7 @@ message K2GossipDiscSectorDetailsDiffMessage {
 message K2GossipDiscSectorDetailsDiffResponseMessage {
   bytes session_id = 1;
 
-  repeated bytes maybe_missing_ids = 10;
+  repeated bytes missing_ids = 10;
 
   SnapshotDiscSectorDetailsMessage snapshot = 20;
 }
@@ -239,7 +239,7 @@ message K2GossipRingSectorDetailsDiffMessage {
 message K2GossipRingSectorDetailsDiffResponseMessage {
   bytes session_id = 1;
 
-  repeated bytes maybe_missing_ids = 10;
+  repeated bytes missing_ids = 10;
 
   SnapshotRingSectorDetailsMessage snapshot = 20;
 }
@@ -250,7 +250,7 @@ message K2GossipRingSectorDetailsDiffResponseMessage {
 message K2GossipHashesMessage {
   bytes session_id = 1;
 
-  repeated bytes maybe_missing_ids = 10;
+  repeated bytes missing_ids = 10;
 }
 
 // A Kitsune2 gossip agents protocol message.

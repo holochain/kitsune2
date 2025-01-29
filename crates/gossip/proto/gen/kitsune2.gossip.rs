@@ -11,8 +11,8 @@ pub struct K2GossipMessage {
 }
 /// Nested message and enum types in `K2GossipMessage`.
 pub mod k2_gossip_message {
-    /// / These enum variants correspond to `K2Gossip*Message` types,
-    /// / e.g. `INITIATE` -> `K2GossipInitiateMessage`.
+    /// These enum variants correspond to `K2Gossip*Message` types,
+    /// e.g. `INITIATE` -> `K2GossipInitiateMessage`.
     #[derive(
         Clone,
         Copy,
@@ -112,7 +112,7 @@ pub struct AcceptResponseMessage {
     /// The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
     #[prost(bytes = "bytes", repeated, tag = "2")]
     pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
-    /// Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
+    /// Ops that we have stored since the timestamp provided by the acceptor in `new_since`.
     #[prost(bytes = "bytes", repeated, tag = "3")]
     pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     /// Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
@@ -279,7 +279,7 @@ pub struct K2GossipDiscSectorDetailsDiffResponseMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
     #[prost(bytes = "bytes", repeated, tag = "10")]
-    pub maybe_missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    pub missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     #[prost(message, optional, tag = "20")]
     pub snapshot: ::core::option::Option<SnapshotDiscSectorDetailsMessage>,
 }
@@ -323,7 +323,7 @@ pub struct K2GossipRingSectorDetailsDiffResponseMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
     #[prost(bytes = "bytes", repeated, tag = "10")]
-    pub maybe_missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    pub missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
     #[prost(message, optional, tag = "20")]
     pub snapshot: ::core::option::Option<SnapshotRingSectorDetailsMessage>,
 }
@@ -335,7 +335,7 @@ pub struct K2GossipHashesMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
     #[prost(bytes = "bytes", repeated, tag = "10")]
-    pub maybe_missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+    pub missing_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
 }
 /// A Kitsune2 gossip agents protocol message.
 ///

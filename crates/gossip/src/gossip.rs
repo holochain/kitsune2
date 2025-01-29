@@ -759,7 +759,7 @@ impl K2Gossip {
                         Ok(Some(GossipMessage::DiscSectorDetailsDiffResponse(
                             K2GossipDiscSectorDetailsDiffResponseMessage {
                                 session_id: disc_sector_details_diff.session_id,
-                                maybe_missing_ids: encode_op_ids(ops),
+                                missing_ids: encode_op_ids(ops),
                                 snapshot: Some(snapshot.try_into()?),
                             },
                         )))
@@ -782,7 +782,7 @@ impl K2Gossip {
                 self.fetch
                     .request_ops(
                         decode_ids(
-                            disc_sector_details_response_diff.maybe_missing_ids,
+                            disc_sector_details_response_diff.missing_ids,
                         ),
                         from_peer.clone(),
                     )
@@ -826,7 +826,7 @@ impl K2Gossip {
                         Ok(Some(GossipMessage::Hashes(K2GossipHashesMessage {
                             session_id: disc_sector_details_response_diff
                                 .session_id,
-                            maybe_missing_ids: encode_op_ids(op_ids),
+                            missing_ids: encode_op_ids(op_ids),
                         })))
                     }
                     _ => {
@@ -909,7 +909,7 @@ impl K2Gossip {
                         Ok(Some(GossipMessage::RingSectorDetailsDiffResponse(
                             K2GossipRingSectorDetailsDiffResponseMessage {
                                 session_id: ring_sector_details_diff.session_id,
-                                maybe_missing_ids: encode_op_ids(op_ids),
+                                missing_ids: encode_op_ids(op_ids),
                                 snapshot: Some(snapshot.try_into()?),
                             },
                         )))
@@ -932,7 +932,7 @@ impl K2Gossip {
                 self.fetch
                     .request_ops(
                         decode_ids(
-                            ring_sector_details_diff_response.maybe_missing_ids,
+                            ring_sector_details_diff_response.missing_ids,
                         ),
                         from_peer.clone(),
                     )
@@ -972,7 +972,7 @@ impl K2Gossip {
                         Ok(Some(GossipMessage::Hashes(K2GossipHashesMessage {
                             session_id: ring_sector_details_diff_response
                                 .session_id,
-                            maybe_missing_ids: encode_op_ids(op_ids),
+                            missing_ids: encode_op_ids(op_ids),
                         })))
                     }
                     _ => {
@@ -996,9 +996,7 @@ impl K2Gossip {
 
                             self.fetch
                                 .request_ops(
-                                    decode_ids(
-                                        hashes.maybe_missing_ids.clone(),
-                                    ),
+                                    decode_ids(hashes.missing_ids.clone()),
                                     from_peer.clone(),
                                 )
                                 .await?;
@@ -1031,7 +1029,7 @@ impl K2Gossip {
 
                             self.fetch
                                 .request_ops(
-                                    decode_ids(hashes.maybe_missing_ids),
+                                    decode_ids(hashes.missing_ids),
                                     from_peer.clone(),
                                 )
                                 .await?;
