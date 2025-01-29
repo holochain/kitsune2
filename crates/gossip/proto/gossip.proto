@@ -62,7 +62,7 @@ message AcceptResponseMessage {
   // The agent infos for the agents that were sent back in the missing_agents list in the acceptor's response.
   repeated bytes provided_agents = 2;
 
-  // Ops that we have stored since the timestamp provided by the acceptors in `new_since`.
+  // Ops that we have stored since the timestamp provided by the acceptor in `new_since`.
   repeated bytes new_ops = 3;
 
   // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
