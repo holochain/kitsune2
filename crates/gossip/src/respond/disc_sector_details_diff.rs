@@ -107,3 +107,51 @@ impl K2Gossip {
         Ok((lock, disc_sectors_diff))
     }
 }
+
+impl GossipRoundState {
+    fn validate_disc_sector_details_diff(
+        &self,
+        from_peer: Url,
+        disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffMessage,
+    ) -> K2Result<&RoundStageDiscSectorsDiff> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "DiscSectorDetailsDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != disc_sector_details_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, disc_sector_details_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &disc_sector_details_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received DiscSectorDetailsDiff message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::DiscSectorsDiff(stage @ RoundStageDiscSectorsDiff { common_arc_set }) => {
+                for sector in &snapshot.sector_indices {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "DiscSectorDetailsDiff message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(stage)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for disc sector details diff: DiscSectorsDiff != {:?}",
+                    stage
+                )))
+            }
+        }
+    }
+}

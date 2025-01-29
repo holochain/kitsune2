@@ -9,7 +9,7 @@ use crate::state::{
     RoundStageInitiated, RoundStageRingSectorDetailsDiff,
 };
 use kitsune2_api::id::decode_ids;
-use kitsune2_api::{K2Error, K2Result, Timestamp, Url};
+use kitsune2_api::{AgentId, K2Error, K2Result, Timestamp, Url};
 use kitsune2_dht::snapshot::DhtSnapshot;
 use kitsune2_dht::{ArcSet, DhtSnapshotNextAction};
 use tokio::sync::MutexGuard;
@@ -207,5 +207,51 @@ impl K2Gossip {
         };
 
         Ok((round_state, initiated))
+    }
+}
+
+impl GossipRoundState {
+    fn validate_accept(
+        &self,
+        from_peer: Url,
+        accept: &K2GossipAcceptMessage,
+    ) -> K2Result<&RoundStageInitiated> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "Accept message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != accept.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, accept.session_id
+            )));
+        }
+
+        match &self.stage {
+            RoundStage::Initiated(
+                stage @ RoundStageInitiated { our_agents, .. },
+            ) => {
+                tracing::trace!("Initiated round state found");
+
+                if accept
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "Accept message contains agents that we didn't declare",
+                    ));
+                }
+
+                Ok(stage)
+            }
+            stage => Err(K2Error::other(format!(
+                "Unexpected round state for accept: Initiated != {:?}",
+                stage
+            ))),
+        }
     }
 }

@@ -3,7 +3,9 @@ use crate::protocol::{
     encode_op_ids, GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
     K2GossipHashesMessage,
 };
-use crate::state::{GossipRoundState, RoundStageDiscSectorDetailsDiff};
+use crate::state::{
+    GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
+};
 use kitsune2_api::id::decode_ids;
 use kitsune2_api::{K2Error, K2Result, Url};
 use kitsune2_dht::DhtSnapshotNextAction;
@@ -91,6 +93,54 @@ impl K2Gossip {
                 "Unsolicited DiscSectorDetailsDiffResponse message from peer: {:?}",
                 from_peer
             )))
+        }
+    }
+}
+
+impl GossipRoundState {
+    fn validate_disc_sector_details_diff_response(
+        &self,
+        from_peer: Url,
+        disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffResponseMessage,
+    ) -> K2Result<&RoundStageDiscSectorDetailsDiff> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "DiscSectorDetailsDiffResponse message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != disc_sector_details_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, disc_sector_details_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &disc_sector_details_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received DiscSectorDetailsDiffResponse message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::DiscSectorDetailsDiff(state @ RoundStageDiscSectorDetailsDiff { common_arc_set, .. }) => {
+                for sector in &snapshot.sector_indices {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "DiscSectorDetailsDiffResponse message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(state)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for disc sector details diff response: DiscSectorDetailsDiff != {:?}",
+                    stage
+                )))
+            }
         }
     }
 }

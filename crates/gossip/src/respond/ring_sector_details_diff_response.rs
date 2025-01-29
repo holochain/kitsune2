@@ -3,7 +3,9 @@ use crate::protocol::{
     encode_op_ids, GossipMessage, K2GossipHashesMessage,
     K2GossipRingSectorDetailsDiffResponseMessage,
 };
-use crate::state::{GossipRoundState, RoundStageRingSectorDetailsDiff};
+use crate::state::{
+    GossipRoundState, RoundStage, RoundStageRingSectorDetailsDiff,
+};
 use kitsune2_api::id::decode_ids;
 use kitsune2_api::{K2Error, K2Result, Url};
 use kitsune2_dht::snapshot::DhtSnapshot;
@@ -90,5 +92,53 @@ impl K2Gossip {
         };
 
         Ok((lock, ring_sector_details_diff))
+    }
+}
+
+impl GossipRoundState {
+    fn validate_ring_sector_details_diff_response(
+        &self,
+        from_peer: Url,
+        ring_sector_details_diff_response: &K2GossipRingSectorDetailsDiffResponseMessage,
+    ) -> K2Result<&RoundStageRingSectorDetailsDiff> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "RingSectorDetailsDiffResponse message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != ring_sector_details_diff_response.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, ring_sector_details_diff_response.session_id
+            )));
+        }
+
+        let Some(snapshot) = &ring_sector_details_diff_response.snapshot else {
+            return Err(K2Error::other(
+                "Received RingSectorDetailsDiffResponse message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::RingSectorDetailsDiff(state @ RoundStageRingSectorDetailsDiff { common_arc_set, .. }) => {
+                for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "RingSectorDetailsDiffResponse message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(state)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {:?}",
+                    stage
+                )))
+            }
+        }
     }
 }

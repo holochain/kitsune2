@@ -8,7 +8,7 @@ use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,
     RoundStageRingSectorDetailsDiff,
 };
-use kitsune2_api::{K2Error, K2Result, Url};
+use kitsune2_api::{AgentId, K2Error, K2Result, Url};
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
 
@@ -110,6 +110,71 @@ impl K2Gossip {
                 "Unsolicited RingSectorDetailsDiff message from peer: {:?}",
                 from_peer
             ))),
+        }
+    }
+}
+
+impl GossipRoundState {
+    fn validate_ring_sector_details_diff(
+        &self,
+        from_peer: Url,
+        ring_sector_details_diff: &K2GossipRingSectorDetailsDiffMessage,
+    ) -> K2Result<&RoundStageAccepted> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "RingSectorDetailsDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != ring_sector_details_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, ring_sector_details_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &ring_sector_details_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received RingSectorDetailsDiff message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::Accepted(stage @ RoundStageAccepted { our_agents, common_arc_set, .. }) => {
+                let Some(accept_response) = &ring_sector_details_diff.accept_response
+                else {
+                    return Err(K2Error::other(
+                        "Received RingSectorDetailsDiff message without accept response",
+                    ));
+                };
+
+                if accept_response
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "RingSectorDetailsDiff message contains agents that we didn't declare",
+                    ));
+                }
+
+                for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "RingSectorDetailsDiff message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(stage)
+            }
+            stage => {
+                Err(K2Error::other(format!(
+                    "Unexpected round state for ring sector details diff: Accepted != {:?}",
+                    stage
+                )))
+            }
         }
     }
 }

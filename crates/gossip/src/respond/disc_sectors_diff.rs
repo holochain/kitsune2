@@ -7,7 +7,7 @@ use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,
     RoundStageDiscSectorDetailsDiff,
 };
-use kitsune2_api::{K2Error, K2Result, Url};
+use kitsune2_api::{AgentId, K2Error, K2Result, Url};
 use kitsune2_dht::snapshot::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
@@ -105,6 +105,74 @@ impl K2Gossip {
             None => Err(K2Error::other(format!(
                 "Unsolicited DiscSectorsDiff message from peer: {:?}",
                 from_peer
+            ))),
+        }
+    }
+}
+
+impl GossipRoundState {
+    fn validate_disc_sectors_diff(
+        &self,
+        from_peer: Url,
+        disc_sectors_diff: &K2GossipDiscSectorsDiffMessage,
+    ) -> K2Result<&RoundStageAccepted> {
+        if self.session_with_peer != from_peer {
+            return Err(K2Error::other(format!(
+                "DiscSectorsDiff message from wrong peer: {} != {}",
+                self.session_with_peer, from_peer
+            )));
+        }
+
+        if self.session_id != disc_sectors_diff.session_id {
+            return Err(K2Error::other(format!(
+                "Session id mismatch: {:?} != {:?}",
+                self.session_id, disc_sectors_diff.session_id
+            )));
+        }
+
+        let Some(snapshot) = &disc_sectors_diff.snapshot else {
+            return Err(K2Error::other(
+                "Received DiscSectorsDiff message without snapshot",
+            ));
+        };
+
+        match &self.stage {
+            RoundStage::Accepted(
+                out @ RoundStageAccepted {
+                    our_agents,
+                    common_arc_set,
+                },
+            ) => {
+                let Some(accept_response) = &disc_sectors_diff.accept_response
+                else {
+                    return Err(K2Error::other(
+                        "Received NoDiff message without accept response",
+                    ));
+                };
+
+                if accept_response
+                    .missing_agents
+                    .iter()
+                    .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
+                {
+                    return Err(K2Error::other(
+                        "NoDiff message contains agents that we didn't declare",
+                    ));
+                }
+
+                for sector in &snapshot.disc_sectors {
+                    if !common_arc_set.includes_sector_index(*sector) {
+                        return Err(K2Error::other(
+                            "DiscSectorsDiff message contains sector that isn't in the common arc set",
+                        ));
+                    }
+                }
+
+                Ok(out)
+            }
+            stage => Err(K2Error::other(format!(
+                "Unexpected round state for accept: Accepted != {:?}",
+                stage
             ))),
         }
     }
