@@ -316,7 +316,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     let config = CoreFetchConfig {
         first_back_off_interval_ms: 10,
         last_back_off_interval_ms: 10,
-        re_insert_outgoing_request_delay_ms: 1,
+        re_insert_outgoing_request_delay_ms: 10,
         ..Default::default()
     };
     let TestCase {
@@ -336,19 +336,11 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .await
         .unwrap();
 
-    // Wait for one request to fail, so agent is put on back off list.
-    iter_check!({
-        if !requests_sent.lock().unwrap().clone().is_empty() {
-            break;
-        }
-    });
-
-    let current_number_of_requests_to_agent_1 = requests_sent
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(_, a)| *a != peer_url_1)
-        .count();
+    // Add control agent's ops to set.
+    fetch
+        .request_ops(op_list_2, peer_url_2.clone())
+        .await
+        .unwrap();
 
     // Back off agent the maximum possible number of times.
     let last_back_off_interval = {
@@ -356,7 +348,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         assert!(op_list_1.iter().all(|op_id| lock
             .requests
             .contains(&(op_id.clone(), peer_url_1.clone()))));
-        for _ in 0..config.num_back_off_intervals {
+        for _ in 0..config.num_back_off_intervals + 1 {
             lock.back_off_list.back_off_peer(&peer_url_1);
         }
 
@@ -375,11 +367,12 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .back_off_list
         .has_last_back_off_expired(&peer_url_1));
 
-    // Add control agent's ops to set.
-    fetch
-        .request_ops(op_list_2, peer_url_2.clone())
-        .await
-        .unwrap();
+    let current_number_of_requests_to_agent_1 = requests_sent
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, a)| *a != peer_url_1)
+        .count();
 
     // Wait for another request attempt to agent 1, which should remove all of their requests
     // from the set.
