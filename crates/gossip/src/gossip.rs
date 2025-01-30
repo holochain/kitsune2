@@ -86,9 +86,9 @@ impl GossipFactory for K2GossipFactory {
 }
 
 #[derive(Debug)]
-struct DropAbortHandle {
-    name: String,
-    handle: tokio::task::AbortHandle,
+pub(crate) struct DropAbortHandle {
+    pub(crate) name: String,
+    pub(crate) handle: tokio::task::AbortHandle,
 }
 
 impl Drop for DropAbortHandle {
@@ -119,7 +119,7 @@ pub(crate) struct K2Gossip {
     /// This is used to calculate the diff between local DHT state and the remote state of peers
     /// during gossip rounds.
     pub(crate) dht: Arc<RwLock<dyn DhtApi>>,
-    space_id: SpaceId,
+    pub(crate) space_id: SpaceId,
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
     // create a cycle.
@@ -130,10 +130,10 @@ pub(crate) struct K2Gossip {
     pub(crate) fetch: DynFetch,
     pub(crate) agent_verifier: DynVerifier,
     pub(crate) response_tx: Sender<GossipResponse>,
-    _response_task: Arc<DropAbortHandle>,
-    _initiate_task: Arc<Option<DropAbortHandle>>,
-    _timeout_task: Arc<Option<DropAbortHandle>>,
-    _dht_update_task: Arc<Option<DropAbortHandle>>,
+    pub(crate) _response_task: Arc<DropAbortHandle>,
+    pub(crate) _initiate_task: Arc<Option<DropAbortHandle>>,
+    pub(crate) _timeout_task: Arc<Option<DropAbortHandle>>,
+    pub(crate) _dht_update_task: Arc<Option<DropAbortHandle>>,
 }
 
 impl K2Gossip {

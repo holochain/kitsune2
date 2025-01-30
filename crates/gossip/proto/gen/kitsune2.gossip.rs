@@ -47,6 +47,8 @@ pub mod k2_gossip_message {
         Hashes = 9,
         /// A gossip agents protocol message.
         Agents = 10,
+        /// A gossip busy protocol message.
+        Busy = 11,
     }
     impl GossipMessageType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -70,6 +72,7 @@ pub mod k2_gossip_message {
                 }
                 Self::Hashes => "HASHES",
                 Self::Agents => "AGENTS",
+                Self::Busy => "BUSY",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -90,6 +93,7 @@ pub mod k2_gossip_message {
                 }
                 "HASHES" => Some(Self::Hashes),
                 "AGENTS" => Some(Self::Agents),
+                "BUSY" => Some(Self::Busy),
                 _ => None,
             }
         }
@@ -124,6 +128,7 @@ pub struct AcceptResponseMessage {
 ///
 /// Acceptable responses:
 /// - `K2GossipAcceptMessage`
+/// - `K2GossipBusyMessage`
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2GossipInitiateMessage {
     #[prost(bytes = "bytes", tag = "1")]
@@ -347,4 +352,13 @@ pub struct K2GossipAgentsMessage {
     /// The agent infos for the agents that were sent back in the missing_agents list of the previous message.
     #[prost(bytes = "bytes", repeated, tag = "10")]
     pub provided_agents: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
+}
+/// A Kitsune2 gossip busy protocol message.
+///
+/// If the receiver of an initiate is busy and will not accept the round, they should respond with this message instead.
+/// This allows the initiator to retry the round later, without waiting for a timeout.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipBusyMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
 }

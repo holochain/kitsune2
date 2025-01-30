@@ -49,6 +49,22 @@ pub struct K2GossipConfig {
     ///
     /// Default: 60,000 (1m)
     pub round_timeout_ms: u32,
+
+    /// The maximum number of concurrent accepted gossip rounds.
+    ///
+    /// These are gossip rounds initiated by a remote peer. Being involved in a gossip round
+    /// requires us to use resources, so in an attempt to protect ourselves against resource
+    /// exhaustion, we can limit the number of concurrent rounds we will accept.
+    ///
+    /// This value does not have to be set to the same value for all nodes on a network. It is
+    /// acceptable for nodes with fewer resources to set a lower value than nodes with more.
+    ///
+    /// A value of `0` will disable this limit. This would represent a tradeoff between making a
+    /// node available to participate in gossip rounds but potentially harming its availability to
+    /// serve data if it is overwhelmed.
+    ///
+    /// Default: 10
+    pub max_concurrent_accepted_rounds: u32,
 }
 
 impl Default for K2GossipConfig {
@@ -58,6 +74,7 @@ impl Default for K2GossipConfig {
             initiate_interval_ms: 120_000,
             min_initiate_interval_ms: 300_000,
             round_timeout_ms: 60_000,
+            max_concurrent_accepted_rounds: 20,
         }
     }
 }

@@ -25,6 +25,7 @@ pub enum GossipMessage {
     RingSectorDetailsDiffResponse(K2GossipRingSectorDetailsDiffResponseMessage),
     Hashes(K2GossipHashesMessage),
     Agents(K2GossipAgentsMessage),
+    Busy(K2GossipBusyMessage),
 }
 
 /// Deserialize a gossip message
@@ -87,6 +88,11 @@ pub fn deserialize_gossip_message(value: Bytes) -> K2Result<GossipMessage> {
             let inner = K2GossipAgentsMessage::decode(outer.data)
                 .map_err(K2Error::other)?;
             Ok(GossipMessage::Agents(inner))
+        }
+        k2_gossip_message::GossipMessageType::Busy => {
+            let inner = K2GossipBusyMessage::decode(outer.data)
+                .map_err(K2Error::other)?;
+            Ok(GossipMessage::Busy(inner))
         }
         _ => Err(K2Error::other("Unknown gossip message type".to_string())),
     }
@@ -165,6 +171,10 @@ fn serialize_inner_gossip_message(
         )),
         GossipMessage::Agents(inner) => Ok((
             k2_gossip_message::GossipMessageType::Agents,
+            encode(inner, out)?,
+        )),
+        GossipMessage::Busy(inner) => Ok((
+            k2_gossip_message::GossipMessageType::Busy,
             encode(inner, out)?,
         )),
     }

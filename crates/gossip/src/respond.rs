@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 
 mod accept;
 mod agents;
+mod busy;
 mod disc_sector_details_diff;
 mod disc_sector_details_diff_response;
 mod disc_sectors_diff;
@@ -21,6 +22,9 @@ mod initiate;
 mod no_diff;
 mod ring_sector_details_diff;
 mod ring_sector_details_diff_response;
+
+#[cfg(test)]
+mod harness;
 
 impl K2Gossip {
     pub(super) async fn respond_to_msg(
@@ -82,6 +86,10 @@ impl K2Gossip {
             }
             GossipMessage::Agents(agents) => {
                 self.respond_to_agents(from_peer.clone(), agents).await
+            }
+            GossipMessage::Busy(busy) => {
+                self.respond_to_busy(from_peer.clone(), busy).await?;
+                Ok(None)
             }
         }?;
 

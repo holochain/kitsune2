@@ -2,7 +2,7 @@ use crate::gossip::K2Gossip;
 use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 use crate::protocol::{
     encode_agent_ids, encode_op_ids, ArcSetMessage, GossipMessage,
-    K2GossipAcceptMessage, K2GossipInitiateMessage,
+    K2GossipAcceptMessage, K2GossipBusyMessage, K2GossipInitiateMessage,
 };
 use kitsune2_api::{K2Error, K2Result, Timestamp, Url, UNIX_TIMESTAMP};
 use kitsune2_dht::ArcSet;
@@ -14,7 +14,19 @@ impl K2Gossip {
         initiate: K2GossipInitiateMessage,
     ) -> K2Result<Option<GossipMessage>> {
         // Rate limit incoming gossip messages by peer
-        self.check_initiate_rate(from_peer.clone()).await?;
+        self.check_peer_initiate_rate(from_peer.clone()).await?;
+
+        // If we've already accepted the maximum number of rounds, we can't accept another.
+        // Send back a busy message to let the peer know.
+        if self.config.max_concurrent_accepted_rounds != 0
+            && self.accepted_round_states.read().await.len()
+                >= self.config.max_concurrent_accepted_rounds as usize
+        {
+            tracing::debug!("Busy, refusing initiate from {:?}", from_peer);
+            return Ok(Some(GossipMessage::Busy(K2GossipBusyMessage {
+                session_id: initiate.session_id,
+            })));
+        }
 
         // Note the gap between the check and write here. It's possible that both peers
         // could initiate at the same time. This is slightly wasteful but shouldn't be a
@@ -100,7 +112,7 @@ impl K2Gossip {
         })))
     }
 
-    async fn check_initiate_rate(&self, from_peer: Url) -> K2Result<()> {
+    async fn check_peer_initiate_rate(&self, from_peer: Url) -> K2Result<()> {
         if let Some(timestamp) = self
             .peer_meta_store
             .last_gossip_timestamp(from_peer.clone())
@@ -122,5 +134,104 @@ impl K2Gossip {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::protocol::{
+        ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
+    };
+    use crate::respond::harness::{test_session_id, RespondTestHarness};
+    use crate::state::GossipRoundState;
+    use crate::K2GossipConfig;
+    use kitsune2_api::{DhtArc, Timestamp, Url};
+    use kitsune2_dht::ArcSet;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn initiate_while_busy() {
+        let mut harness = RespondTestHarness::create().await;
+
+        // Full up our accepted round states.
+        for i in 0..harness.gossip.config.max_concurrent_accepted_rounds {
+            let url =
+                Url::from_str(format!("ws://test-host:80/init-{}", i)).unwrap();
+            harness.gossip.accepted_round_states.write().await.insert(
+                url.clone(),
+                Arc::new(Mutex::new(GossipRoundState::new_accepted(
+                    url,
+                    test_session_id(),
+                    vec![],
+                    ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+                ))),
+            );
+        }
+
+        // Set up a new initiate request and try to process it
+        let other_peer_url = Url::from_str("ws://test-host:80/extra").unwrap();
+        let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+        harness
+            .gossip
+            .respond_to_msg(
+                other_peer_url,
+                GossipMessage::Initiate(K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: vec![],
+                    arc_set: Some(ArcSetMessage {
+                        value: arc_set.encode(),
+                    }),
+                    new_since: Timestamp::now().as_micros(),
+                    max_new_bytes: 0,
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Should result in a busy response
+        let response = harness.wait_for_response().await;
+        assert!(matches!(response, GossipMessage::Busy(_)));
+    }
+
+    #[tokio::test]
+    async fn initiate_with_unlimited_concurrent_rounds() {
+        // Configure max rounds to 0, which should be treated as unlimited
+        let config = K2GossipConfig {
+            max_concurrent_accepted_rounds: 0,
+            ..Default::default()
+        };
+
+        let mut harness = RespondTestHarness::create_with_config(config).await;
+
+        // Try to initiate some rounds
+        for i in 0..3 {
+            // Set up a new initiate request and try to process it
+            let other_peer_url =
+                Url::from_str(format!("ws://test-host:80/{i}")).unwrap();
+            let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+            harness
+                .gossip
+                .respond_to_msg(
+                    other_peer_url,
+                    GossipMessage::Initiate(K2GossipInitiateMessage {
+                        session_id: test_session_id(),
+                        participating_agents: vec![],
+                        arc_set: Some(ArcSetMessage {
+                            value: arc_set.encode(),
+                        }),
+                        new_since: Timestamp::now().as_micros(),
+                        max_new_bytes: 0,
+                    }),
+                )
+                .await
+                .unwrap();
+
+            // Each one should result in an accept response
+            let response = harness.wait_for_response().await;
+            assert!(matches!(response, GossipMessage::Accept(_)));
+        }
+
+        assert_eq!(3, harness.gossip.accepted_round_states.read().await.len());
     }
 }
