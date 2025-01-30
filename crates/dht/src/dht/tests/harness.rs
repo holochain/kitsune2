@@ -1,7 +1,7 @@
 use crate::arc_set::ArcSet;
 use crate::dht::snapshot::DhtSnapshot;
 use crate::test::test_store;
-use crate::{Dht, DhtSnapshotNextAction};
+use crate::{Dht, DhtApi, DhtSnapshotNextAction};
 use kitsune2_api::{
     AgentId, DhtArc, DynOpStore, K2Result, OpId, StoredOp, Timestamp,
 };
@@ -107,10 +107,11 @@ impl DhtSyncHarness {
         let arc_set_1 = ArcSet::new(vec![self.arc])?;
         let arc_set_2 = ArcSet::new(vec![other.arc])?;
         let arc_set = arc_set_1.intersection(&arc_set_2);
-        let initial_snapshot = self.dht.snapshot_minimal(&arc_set).await?;
+        let initial_snapshot =
+            self.dht.snapshot_minimal(arc_set.clone()).await?;
         match other
             .dht
-            .handle_snapshot(&initial_snapshot, None, &arc_set)
+            .handle_snapshot(initial_snapshot, None, arc_set.clone())
             .await?
         {
             DhtSnapshotNextAction::Identical => Ok(true),
@@ -127,12 +128,13 @@ impl DhtSyncHarness {
         let arc_set = arc_set_1.intersection(&arc_set_2);
 
         // Create the initial snapshot locally
-        let initial_snapshot = self.dht.snapshot_minimal(&arc_set).await?;
+        let initial_snapshot =
+            self.dht.snapshot_minimal(arc_set.clone()).await?;
 
         // Send it to the other agent and have them diff against it
         let outcome = other
             .dht
-            .handle_snapshot(&initial_snapshot, None, &arc_set)
+            .handle_snapshot(initial_snapshot, None, arc_set.clone())
             .await?;
 
         match outcome {
@@ -188,8 +190,10 @@ impl DhtSyncHarness {
 
         // We expect the sync to have been initiated by self, so the disc snapshot should be
         // coming back to us
-        let outcome =
-            self.dht.handle_snapshot(&snapshot, None, arc_set).await?;
+        let outcome = self
+            .dht
+            .handle_snapshot(snapshot, None, arc_set.clone())
+            .await?;
 
         let our_details_snapshot = match outcome {
             DhtSnapshotNextAction::NewSnapshot(new_snapshot) => new_snapshot,
@@ -217,7 +221,11 @@ impl DhtSyncHarness {
         // Now we need to ask the other agent to diff against this details snapshot
         let outcome = other
             .dht
-            .handle_snapshot(&our_details_snapshot, None, arc_set)
+            .handle_snapshot(
+                our_details_snapshot.clone(),
+                None,
+                arc_set.clone(),
+            )
             .await?;
 
         let (snapshot, hash_list_from_other) = match outcome {
@@ -248,7 +256,11 @@ impl DhtSyncHarness {
         // back our ops
         let outcome = self
             .dht
-            .handle_snapshot(&snapshot, Some(our_details_snapshot), arc_set)
+            .handle_snapshot(
+                snapshot,
+                Some(our_details_snapshot),
+                arc_set.clone(),
+            )
             .await?;
 
         let hash_list_from_self = match outcome {
@@ -300,7 +312,11 @@ impl DhtSyncHarness {
         // have been sent to us
         let outcome = self
             .dht
-            .handle_snapshot(&other_details_snapshot, None, arc_set)
+            .handle_snapshot(
+                other_details_snapshot.clone(),
+                None,
+                arc_set.clone(),
+            )
             .await?;
 
         let (snapshot, hash_list_from_self) = match outcome {
@@ -329,7 +345,11 @@ impl DhtSyncHarness {
         // produce a hash list for us
         let outcome = other
             .dht
-            .handle_snapshot(&snapshot, Some(other_details_snapshot), arc_set)
+            .handle_snapshot(
+                snapshot,
+                Some(other_details_snapshot),
+                arc_set.clone(),
+            )
             .await?;
 
         let hash_list_from_other = match outcome {

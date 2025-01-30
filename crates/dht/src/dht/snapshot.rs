@@ -1,8 +1,8 @@
 //! A snapshot of the DHT state at a given point in time.
 //!
 //! This module is public because its types need to be communicated between DHT instances, but it is
-//! largely opaque to the user. See [crate::dht::Dht::snapshot_minimal] and
-//! [crate::dht::Dht::handle_snapshot] for more information about using this module.
+//! largely opaque to the user. See [crate::dht::DhtApi::snapshot_minimal] and
+//! [crate::dht::DhtApi::handle_snapshot] for more information about using this module.
 
 use kitsune2_api::Timestamp;
 use std::collections::{HashMap, HashSet};
@@ -67,7 +67,7 @@ impl DhtSnapshot {
     /// Compare two snapshots to determine how they differ.
     ///
     /// Produces a [SnapshotDiff] that describes the differences between the two snapshots.
-    /// This should not be use directly, please see [crate::dht::Dht::handle_snapshot].
+    /// This should not be use directly, please see [crate::dht::DhtApi::handle_snapshot].
     pub fn compare(&self, other: &Self) -> SnapshotDiff {
         // Check if they match exactly, before doing further work to check how they differ.
         if self == other {

@@ -1319,6 +1319,7 @@ dependencies = [
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_test_utils",
+ "mockall",
  "rand",
  "tokio",
  "tracing",

@@ -20,7 +20,9 @@
 
 use crate::arc_set::ArcSet;
 use crate::HashPartition;
-use kitsune2_api::{DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp};
+use kitsune2_api::{
+    BoxFut, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
+};
 use snapshot::{DhtSnapshot, SnapshotDiff};
 use std::fmt::Formatter;
 
@@ -69,41 +71,53 @@ pub enum DhtSnapshotNextAction {
     HashList(Vec<OpId>),
 }
 
-impl Dht {
-    /// Create a new DHT instance from an op store.
-    ///
-    /// Creates the inner [HashPartition] using the store. The sizing for the sectors and time
-    /// slices are currently hard-coded. This will create 512 sectors and each full time slice will
-    /// be approximately 5.3 days.
-    pub async fn try_from_store(
-        current_time: Timestamp,
-        store: DynOpStore,
-    ) -> K2Result<Dht> {
-        Ok(Dht {
-            partition: HashPartition::try_from_store(
-                9,
-                current_time,
-                store.clone(),
-            )
-            .await?,
-            store,
-        })
-    }
+/// API trait for the DHT model.
+#[cfg_attr(feature = "mockall", mockall::automock)]
+pub trait DhtApi: 'static + Send + Sync + std::fmt::Debug {
+    /// Get the next update time for the model.
+    fn next_update_at(&self) -> Timestamp;
 
+    /// Update the model, as indicated by [DhtApi::next_update_at].
+    fn update(&mut self, current_time: Timestamp) -> BoxFut<'_, K2Result<()>>;
+
+    /// Inform the model that ops have been stored.
+    fn inform_ops_stored(
+        &mut self,
+        stored_ops: Vec<StoredOp>,
+    ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Get a minimal snapshot of the DHT model.
+    fn snapshot_minimal(
+        &self,
+        arc_set: ArcSet,
+    ) -> BoxFut<'_, K2Result<DhtSnapshot>>;
+
+    /// Handle a snapshot from another DHT model.
+    fn handle_snapshot(
+        &self,
+        their_snapshot: DhtSnapshot,
+        our_previous_snapshot: Option<DhtSnapshot>,
+        arc_set: ArcSet,
+    ) -> BoxFut<'_, K2Result<DhtSnapshotNextAction>>;
+}
+
+impl DhtApi for Dht {
     /// Get the next time at which the DHT model should be updated.
     ///
     /// When this time is reached, [Dht::update] should be called.
-    pub fn next_update_at(&self) -> Timestamp {
+    fn next_update_at(&self) -> Timestamp {
         self.partition.next_update_at()
     }
 
     /// Update the DHT model.
     ///
     /// This delegates to [HashPartition::update] to update the inner hash partition.
-    pub async fn update(&mut self, current_time: Timestamp) -> K2Result<()> {
-        self.partition
-            .update(self.store.clone(), current_time)
-            .await
+    fn update(&mut self, current_time: Timestamp) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            self.partition
+                .update(self.store.clone(), current_time)
+                .await
+        })
     }
 
     /// Inform the DHT model that some ops have been stored.
@@ -112,13 +126,15 @@ impl Dht {
     /// and timestamp.
     ///
     /// See also [HashPartition::inform_ops_stored] for more details.
-    pub async fn inform_ops_stored(
+    fn inform_ops_stored(
         &mut self,
         stored_ops: Vec<StoredOp>,
-    ) -> K2Result<()> {
-        self.partition
-            .inform_ops_stored(self.store.clone(), stored_ops)
-            .await
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            self.partition
+                .inform_ops_stored(self.store.clone(), stored_ops)
+                .await
+        })
     }
 
     /// Get a minimal snapshot of the DHT model.
@@ -133,23 +149,25 @@ impl Dht {
     /// sets of two DHT models then there is no point in comparing them because it will always
     /// yield an empty diff. The [ArcSet::covered_sector_count] should be checked before calling
     /// this method.
-    pub async fn snapshot_minimal(
+    fn snapshot_minimal(
         &self,
-        arc_set: &ArcSet,
-    ) -> K2Result<DhtSnapshot> {
-        if arc_set.covered_sector_count() == 0 {
-            return Err(K2Error::other("No arcs to snapshot"));
-        }
+        arc_set: ArcSet,
+    ) -> BoxFut<'_, K2Result<DhtSnapshot>> {
+        Box::pin(async move {
+            if arc_set.covered_sector_count() == 0 {
+                return Err(K2Error::other("No arcs to snapshot"));
+            }
 
-        let (disc_top_hash, disc_boundary) = self
-            .partition
-            .disc_top_hash(arc_set, self.store.clone())
-            .await?;
+            let (disc_top_hash, disc_boundary) = self
+                .partition
+                .disc_top_hash(&arc_set, self.store.clone())
+                .await?;
 
-        Ok(DhtSnapshot::Minimal {
-            disc_top_hash,
-            disc_boundary,
-            ring_top_hashes: self.partition.ring_top_hashes(arc_set),
+            Ok(DhtSnapshot::Minimal {
+                disc_top_hash,
+                disc_boundary,
+                ring_top_hashes: self.partition.ring_top_hashes(&arc_set),
+            })
         })
     }
 
@@ -198,180 +216,134 @@ impl Dht {
     /// sets of two DHT models then there is no point in comparing them because it will always
     /// yield an empty diff. The [ArcSet::covered_sector_count] should be checked before calling
     /// this method.
-    pub async fn handle_snapshot(
+    fn handle_snapshot(
         &self,
-        their_snapshot: &DhtSnapshot,
+        their_snapshot: DhtSnapshot,
         our_previous_snapshot: Option<DhtSnapshot>,
-        arc_set: &ArcSet,
-    ) -> K2Result<DhtSnapshotNextAction> {
-        if arc_set.covered_sector_count() == 0 {
-            return Err(K2Error::other("No arcs to snapshot"));
-        }
-
-        let is_final = matches!(
-            our_previous_snapshot,
-            Some(
-                DhtSnapshot::DiscSectorDetails { .. }
-                    | DhtSnapshot::RingSectorDetails { .. }
-            )
-        );
-
-        // Check what snapshot we've been sent and compute a matching snapshot.
-        // In the case where we've already produced a most details snapshot type, we can use the
-        // already computed snapshot.
-        let our_snapshot = match &their_snapshot {
-            DhtSnapshot::Minimal { .. } => {
-                self.snapshot_minimal(arc_set).await?
+        arc_set: ArcSet,
+    ) -> BoxFut<'_, K2Result<DhtSnapshotNextAction>> {
+        Box::pin(async move {
+            if arc_set.covered_sector_count() == 0 {
+                return Err(K2Error::other("No arcs to snapshot"));
             }
-            DhtSnapshot::DiscSectors { .. } => {
-                self.snapshot_disc_sectors(arc_set).await?
-            }
-            DhtSnapshot::DiscSectorDetails {
-                disc_sector_hashes, ..
-            } => match our_previous_snapshot {
-                Some(snapshot @ DhtSnapshot::DiscSectorDetails { .. }) => {
-                    #[cfg(test)]
-                    {
-                        let would_have_used = self
-                            .snapshot_disc_sector_details(
-                                disc_sector_hashes.keys().cloned().collect(),
-                                arc_set,
-                                self.store.clone(),
-                            )
-                            .await?;
 
-                        assert_eq!(would_have_used, snapshot);
-                    }
+            let is_final = matches!(
+                our_previous_snapshot,
+                Some(
+                    DhtSnapshot::DiscSectorDetails { .. }
+                        | DhtSnapshot::RingSectorDetails { .. }
+                )
+            );
 
-                    // There is no value in recomputing if we already have a matching snapshot.
-                    // The disc sector details only requires a list of mismatched sectors which
-                    // we already had when we computed the previous detailed snapshot.
-                    // What we were missing previously was the detailed snapshot from the other
-                    // party, which we now have and can use to produce a hash list.
-                    snapshot
+            // Check what snapshot we've been sent and compute a matching snapshot.
+            // In the case where we've already produced a most details snapshot type, we can use the
+            // already computed snapshot.
+            let our_snapshot = match &their_snapshot {
+                DhtSnapshot::Minimal { .. } => {
+                    self.snapshot_minimal(arc_set.clone()).await?
                 }
-                _ => {
-                    self.snapshot_disc_sector_details(
-                        disc_sector_hashes.keys().cloned().collect(),
-                        arc_set,
-                        self.store.clone(),
-                    )
-                    .await?
+                DhtSnapshot::DiscSectors { .. } => {
+                    self.snapshot_disc_sectors(&arc_set).await?
                 }
-            },
-            DhtSnapshot::RingSectorDetails {
-                ring_sector_hashes, ..
-            } => {
-                match our_previous_snapshot {
-                    Some(snapshot @ DhtSnapshot::RingSectorDetails { .. }) => {
+                DhtSnapshot::DiscSectorDetails {
+                    disc_sector_hashes, ..
+                } => match our_previous_snapshot {
+                    Some(snapshot @ DhtSnapshot::DiscSectorDetails { .. }) => {
                         #[cfg(test)]
                         {
                             let would_have_used = self
-                                .snapshot_ring_sector_details(
-                                    ring_sector_hashes
+                                .snapshot_disc_sector_details(
+                                    disc_sector_hashes
                                         .keys()
                                         .cloned()
                                         .collect(),
-                                    arc_set,
-                                )?;
+                                    &arc_set,
+                                    self.store.clone(),
+                                )
+                                .await?;
 
                             assert_eq!(would_have_used, snapshot);
                         }
 
-                        // No need to recompute, see the comment above for DiscSectorDetails
+                        // There is no value in recomputing if we already have a matching snapshot.
+                        // The disc sector details only requires a list of mismatched sectors which
+                        // we already had when we computed the previous detailed snapshot.
+                        // What we were missing previously was the detailed snapshot from the other
+                        // party, which we now have and can use to produce a hash list.
                         snapshot
                     }
-                    _ => self.snapshot_ring_sector_details(
-                        ring_sector_hashes.keys().cloned().collect(),
-                        arc_set,
-                    )?,
-                }
-            }
-        };
+                    _ => {
+                        self.snapshot_disc_sector_details(
+                            disc_sector_hashes.keys().cloned().collect(),
+                            &arc_set,
+                            self.store.clone(),
+                        )
+                        .await?
+                    }
+                },
+                DhtSnapshot::RingSectorDetails {
+                    ring_sector_hashes, ..
+                } => {
+                    match our_previous_snapshot {
+                        Some(
+                            snapshot @ DhtSnapshot::RingSectorDetails { .. },
+                        ) => {
+                            #[cfg(test)]
+                            {
+                                let would_have_used = self
+                                    .snapshot_ring_sector_details(
+                                        ring_sector_hashes
+                                            .keys()
+                                            .cloned()
+                                            .collect(),
+                                        &arc_set,
+                                    )?;
 
-        // Now compare the snapshots to determine what to do next.
-        // We will either send a more detailed snapshot back or a list of possible mismatched op
-        // hashes. In the case that we produce a most detailed snapshot type, we can send the list
-        // of op hashes at the same time.
-        match our_snapshot.compare(their_snapshot) {
-            SnapshotDiff::Identical => Ok(DhtSnapshotNextAction::Identical),
-            SnapshotDiff::CannotCompare => {
-                Ok(DhtSnapshotNextAction::CannotCompare)
-            }
-            SnapshotDiff::DiscMismatch => {
-                Ok(DhtSnapshotNextAction::NewSnapshot(
-                    self.snapshot_disc_sectors(arc_set).await?,
-                ))
-            }
-            SnapshotDiff::DiscSectorMismatches(mismatched_sectors) => {
-                Ok(DhtSnapshotNextAction::NewSnapshot(
-                    self.snapshot_disc_sector_details(
-                        mismatched_sectors,
-                        arc_set,
-                        self.store.clone(),
-                    )
-                    .await?,
-                ))
-            }
-            SnapshotDiff::DiscSectorSliceMismatches(
-                mismatched_slice_indices,
-            ) => {
-                let mut out = Vec::new();
-                for (sector_index, missing_slices) in mismatched_slice_indices {
-                    let Ok(arc) =
-                        self.partition.dht_arc_for_sector_index(sector_index)
-                    else {
-                        tracing::error!(
-                            "Sector index {} out of bounds, ignoring",
-                            sector_index
-                        );
-                        continue;
-                    };
+                                assert_eq!(would_have_used, snapshot);
+                            }
 
-                    for missing_slice in missing_slices {
-                        let Ok((start, end)) = self
-                            .partition
-                            .time_bounds_for_full_slice_index(missing_slice)
-                        else {
-                            tracing::error!(
-                                "Missing slice {} out of bounds, ignoring",
-                                missing_slice
-                            );
-                            continue;
-                        };
-
-                        out.extend(
-                            self.store
-                                .retrieve_op_hashes_in_time_slice(
-                                    arc, start, end,
-                                )
-                                .await?,
-                        );
+                            // No need to recompute, see the comment above for DiscSectorDetails
+                            snapshot
+                        }
+                        _ => self.snapshot_ring_sector_details(
+                            ring_sector_hashes.keys().cloned().collect(),
+                            &arc_set,
+                        )?,
                     }
                 }
+            };
 
-                Ok(if is_final {
-                    DhtSnapshotNextAction::HashList(out)
-                } else {
-                    DhtSnapshotNextAction::NewSnapshotAndHashList(
-                        our_snapshot,
-                        out,
-                    )
-                })
-            }
-            SnapshotDiff::RingMismatches(mismatched_rings) => {
-                Ok(DhtSnapshotNextAction::NewSnapshot(
-                    self.snapshot_ring_sector_details(
-                        mismatched_rings,
-                        arc_set,
-                    )?,
-                ))
-            }
-            SnapshotDiff::RingSectorMismatches(mismatched_sectors) => {
-                let mut out = Vec::new();
-
-                for (ring_index, missing_sectors) in mismatched_sectors {
-                    for sector_index in missing_sectors {
+            // Now compare the snapshots to determine what to do next.
+            // We will either send a more detailed snapshot back or a list of possible mismatched op
+            // hashes. In the case that we produce a most detailed snapshot type, we can send the list
+            // of op hashes at the same time.
+            match our_snapshot.compare(&their_snapshot) {
+                SnapshotDiff::Identical => Ok(DhtSnapshotNextAction::Identical),
+                SnapshotDiff::CannotCompare => {
+                    Ok(DhtSnapshotNextAction::CannotCompare)
+                }
+                SnapshotDiff::DiscMismatch => {
+                    Ok(DhtSnapshotNextAction::NewSnapshot(
+                        self.snapshot_disc_sectors(&arc_set).await?,
+                    ))
+                }
+                SnapshotDiff::DiscSectorMismatches(mismatched_sectors) => {
+                    Ok(DhtSnapshotNextAction::NewSnapshot(
+                        self.snapshot_disc_sector_details(
+                            mismatched_sectors,
+                            &arc_set,
+                            self.store.clone(),
+                        )
+                        .await?,
+                    ))
+                }
+                SnapshotDiff::DiscSectorSliceMismatches(
+                    mismatched_slice_indices,
+                ) => {
+                    let mut out = Vec::new();
+                    for (sector_index, missing_slices) in
+                        mismatched_slice_indices
+                    {
                         let Ok(arc) = self
                             .partition
                             .dht_arc_for_sector_index(sector_index)
@@ -383,37 +355,133 @@ impl Dht {
                             continue;
                         };
 
-                        let Ok((start, end)) = self
-                            .partition
-                            .time_bounds_for_partial_slice_index(ring_index)
-                        else {
-                            tracing::error!(
+                        for missing_slice in missing_slices {
+                            let Ok((start, end)) = self
+                                .partition
+                                .time_bounds_for_full_slice_index(
+                                    missing_slice,
+                                )
+                            else {
+                                tracing::error!(
+                                    "Missing slice {} out of bounds, ignoring",
+                                    missing_slice
+                                );
+                                continue;
+                            };
+
+                            out.extend(
+                                self.store
+                                    .retrieve_op_hashes_in_time_slice(
+                                        arc, start, end,
+                                    )
+                                    .await?,
+                            );
+                        }
+                    }
+
+                    Ok(if is_final {
+                        DhtSnapshotNextAction::HashList(out)
+                    } else {
+                        DhtSnapshotNextAction::NewSnapshotAndHashList(
+                            our_snapshot,
+                            out,
+                        )
+                    })
+                }
+                SnapshotDiff::RingMismatches(mismatched_rings) => {
+                    Ok(DhtSnapshotNextAction::NewSnapshot(
+                        self.snapshot_ring_sector_details(
+                            mismatched_rings,
+                            &arc_set,
+                        )?,
+                    ))
+                }
+                SnapshotDiff::RingSectorMismatches(mismatched_sectors) => {
+                    let mut out = Vec::new();
+
+                    for (ring_index, missing_sectors) in mismatched_sectors {
+                        for sector_index in missing_sectors {
+                            let Ok(arc) = self
+                                .partition
+                                .dht_arc_for_sector_index(sector_index)
+                            else {
+                                tracing::error!(
+                                    "Sector index {} out of bounds, ignoring",
+                                    sector_index
+                                );
+                                continue;
+                            };
+
+                            let Ok((start, end)) = self
+                                .partition
+                                .time_bounds_for_partial_slice_index(
+                                    ring_index,
+                                )
+                            else {
+                                tracing::error!(
                                 "Partial slice index {} out of bounds, ignoring",
                                 ring_index
                             );
-                            continue;
-                        };
+                                continue;
+                            };
 
-                        out.extend(
-                            self.store
-                                .retrieve_op_hashes_in_time_slice(
-                                    arc, start, end,
-                                )
-                                .await?,
-                        );
+                            out.extend(
+                                self.store
+                                    .retrieve_op_hashes_in_time_slice(
+                                        arc, start, end,
+                                    )
+                                    .await?,
+                            );
+                        }
                     }
-                }
 
-                Ok(if is_final {
-                    DhtSnapshotNextAction::HashList(out)
-                } else {
-                    DhtSnapshotNextAction::NewSnapshotAndHashList(
-                        our_snapshot,
-                        out,
-                    )
-                })
+                    Ok(if is_final {
+                        DhtSnapshotNextAction::HashList(out)
+                    } else {
+                        DhtSnapshotNextAction::NewSnapshotAndHashList(
+                            our_snapshot,
+                            out,
+                        )
+                    })
+                }
             }
-        }
+        })
+    }
+}
+
+impl Dht {
+    /// Create a new DHT instance from an op store.
+    ///
+    /// Creates the inner [HashPartition] using the store. The sizing for the sectors and time
+    /// slices are currently hard-coded. This will create 512 sectors and each full time slice will
+    /// be approximately 5.3 days.
+    pub async fn try_from_store(
+        current_time: Timestamp,
+        store: DynOpStore,
+    ) -> K2Result<Dht> {
+        Ok(Dht {
+            partition: HashPartition::try_from_store(
+                9,
+                current_time,
+                store.clone(),
+            )
+            .await?,
+            store,
+        })
+    }
+
+    fn snapshot_ring_sector_details(
+        &self,
+        mismatched_rings: Vec<u32>,
+        arc_set: &ArcSet,
+    ) -> K2Result<DhtSnapshot> {
+        let (ring_sector_hashes, disc_boundary) =
+            self.partition.ring_details(arc_set, mismatched_rings)?;
+
+        Ok(DhtSnapshot::RingSectorDetails {
+            ring_sector_hashes,
+            disc_boundary,
+        })
     }
 
     async fn snapshot_disc_sectors(
@@ -448,20 +516,6 @@ impl Dht {
 
         Ok(DhtSnapshot::DiscSectorDetails {
             disc_sector_hashes,
-            disc_boundary,
-        })
-    }
-
-    fn snapshot_ring_sector_details(
-        &self,
-        mismatched_rings: Vec<u32>,
-        arc_set: &ArcSet,
-    ) -> K2Result<DhtSnapshot> {
-        let (ring_sector_hashes, disc_boundary) =
-            self.partition.ring_details(arc_set, mismatched_rings)?;
-
-        Ok(DhtSnapshot::RingSectorDetails {
-            ring_sector_hashes,
             disc_boundary,
         })
     }
