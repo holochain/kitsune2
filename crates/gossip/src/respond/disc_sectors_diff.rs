@@ -41,7 +41,11 @@ impl K2Gossip {
             .dht
             .read()
             .await
-            .handle_snapshot(&their_snapshot, None, &accepted.common_arc_set)
+            .handle_snapshot(
+                their_snapshot,
+                None,
+                accepted.common_arc_set.clone(),
+            )
             .await?;
 
         match next_action {

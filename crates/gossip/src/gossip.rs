@@ -6,6 +6,7 @@ use crate::protocol::{
 };
 use crate::state::GossipRoundState;
 use crate::timeout::spawn_timeout_task;
+use crate::update::spawn_dht_update_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use bytes::Bytes;
 use kitsune2_api::agent::DynVerifier;
@@ -17,7 +18,7 @@ use kitsune2_api::{
     DynPeerMetaStore, Gossip, GossipFactory, K2Error, K2Result, SpaceId,
     Timestamp, Url, UNIX_TIMESTAMP,
 };
-use kitsune2_dht::Dht;
+use kitsune2_dht::{Dht, DhtApi};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -117,7 +118,7 @@ pub(crate) struct K2Gossip {
     ///
     /// This is used to calculate the diff between local DHT state and the remote state of peers
     /// during gossip rounds.
-    pub(crate) dht: Arc<RwLock<Dht>>,
+    pub(crate) dht: Arc<RwLock<dyn DhtApi>>,
     space_id: SpaceId,
     // This is a weak reference because we need to call the space, but we do not create and own it.
     // Only a problem in this case because we register the gossip module with the transport and
@@ -132,6 +133,7 @@ pub(crate) struct K2Gossip {
     _response_task: Arc<DropAbortHandle>,
     _initiate_task: Arc<Option<DropAbortHandle>>,
     _timeout_task: Arc<Option<DropAbortHandle>>,
+    _dht_update_task: Arc<Option<DropAbortHandle>>,
 }
 
 impl K2Gossip {
@@ -201,6 +203,7 @@ impl K2Gossip {
             }),
             _initiate_task: Default::default(),
             _timeout_task: Default::default(),
+            _dht_update_task: Default::default(),
         };
 
         transport.register_module_handler(
@@ -220,6 +223,11 @@ impl K2Gossip {
         gossip._timeout_task = Arc::new(Some(DropAbortHandle {
             name: "Gossip timeout task".to_string(),
             handle: timeout_task,
+        }));
+        let dht_update_task = spawn_dht_update_task(gossip.dht.clone());
+        gossip._dht_update_task = Arc::new(Some(DropAbortHandle {
+            name: "Gossip DHT update task".to_string(),
+            handle: dht_update_task,
         }));
 
         Ok(gossip)

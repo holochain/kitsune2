@@ -37,9 +37,9 @@ impl K2Gossip {
             .read()
             .await
             .handle_snapshot(
-                &their_snapshot,
+                their_snapshot,
                 None,
-                &disc_sector_details.common_arc_set,
+                disc_sector_details.common_arc_set.clone(),
             )
             .await?;
 

@@ -26,6 +26,7 @@ rand = { workspace = true }
 [dev-dependencies]
 kitsune2_api = { workspace = true, features = ["mockall"] }
 kitsune2_core = { workspace = true }
+kitsune2_dht = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 
 tokio = { workspace = true, features = ["test-util"] }

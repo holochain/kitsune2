@@ -52,7 +52,7 @@ impl K2Gossip {
                     .dht
                     .read()
                     .await
-                    .snapshot_minimal(&common_arc_set)
+                    .snapshot_minimal(common_arc_set)
                     .await?;
                 Some(snapshot.try_into()?)
             } else {
