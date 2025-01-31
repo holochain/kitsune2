@@ -94,6 +94,7 @@ impl RespondTestHarness {
                 }),
                 _initiate_task: Default::default(),
                 _timeout_task: Default::default(),
+                _dht_update_task: Default::default(),
             },
             response_rx: rx,
         }
