@@ -4,7 +4,7 @@ use kitsune2_api::{DhtArc, DynOpStore, SpaceId, Timestamp};
 use std::sync::Arc;
 
 fn op_at_location(loc: u32) -> MemoryOp {
-    let mut out = vec![];
+    let mut out = Vec::with_capacity(32);
     out.extend_from_slice(&loc.to_le_bytes());
     out.resize(32, 0);
 
