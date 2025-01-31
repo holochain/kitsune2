@@ -74,7 +74,7 @@ impl Default for K2GossipConfig {
             initiate_interval_ms: 120_000,
             min_initiate_interval_ms: 300_000,
             round_timeout_ms: 60_000,
-            max_concurrent_accepted_rounds: 20,
+            max_concurrent_accepted_rounds: 10,
         }
     }
 }
