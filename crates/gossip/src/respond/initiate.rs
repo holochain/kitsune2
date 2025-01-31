@@ -154,7 +154,7 @@ mod tests {
     async fn initiate_while_busy() {
         let mut harness = RespondTestHarness::create().await;
 
-        // Full up our accepted round states.
+        // Fill up our accepted round states.
         for i in 0..harness.gossip.config.max_concurrent_accepted_rounds {
             let url =
                 Url::from_str(format!("ws://test-host:80/init-{}", i)).unwrap();
