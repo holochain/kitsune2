@@ -6,7 +6,7 @@ use crate::state::GossipRoundState;
 use bytes::Bytes;
 use kitsune2_api::agent::AgentInfoSigned;
 use kitsune2_api::id::decode_ids;
-use kitsune2_api::{AgentId, K2Error, K2Result, Timestamp, Url};
+use kitsune2_api::{AgentId, K2Error, K2Result, OpId, Timestamp, Url};
 use kitsune2_dht::ArcSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -273,5 +273,35 @@ impl K2Gossip {
         }
 
         Ok(())
+    }
+
+    pub(crate) async fn retrieve_new_op_ids(
+        &self,
+        common_arc_set: &ArcSet,
+        new_since: Timestamp,
+        max_new_bytes: usize,
+    ) -> K2Result<(Vec<OpId>, Timestamp)> {
+        let mut used_bytes = 0;
+        let mut send_new_ops = Vec::new();
+        let mut send_new_bookmark = Timestamp::now();
+
+        for arc in common_arc_set.as_arcs() {
+            let (new_ops, used, new_bookmark) = self
+                .op_store
+                .retrieve_op_ids_bounded(
+                    arc,
+                    new_since,
+                    max_new_bytes - used_bytes,
+                )
+                .await?;
+
+            send_new_ops.extend(new_ops);
+            used_bytes += used;
+            if new_bookmark < send_new_bookmark {
+                send_new_bookmark = new_bookmark;
+            }
+        }
+
+        Ok((send_new_ops, send_new_bookmark))
     }
 }

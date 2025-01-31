@@ -31,6 +31,8 @@ impl K2Gossip {
             .set_last_gossip_timestamp(from_peer.clone(), Timestamp::now())
             .await?;
 
+        let common_arc_set = Self::get_common_arc_set(&initiated, &accept)?;
+
         let missing_agents = self
             .filter_known_agents(&accept.participating_agents)
             .await?;
@@ -49,6 +51,9 @@ impl K2Gossip {
             .request_ops(decode_ids(accept.new_ops), from_peer.clone())
             .await?;
 
+        // TODO Ideally we'd reset this if their arc set changes, to avoid missing ops in new
+        //      sectors. Do this by updating bookmark to `Timestamp::now() - UNIT_TIME` when
+        //      receiving or creating an agent id which has a peer URL in the meta store.
         self.peer_meta_store
             .set_new_ops_bookmark(
                 from_peer.clone(),
@@ -56,9 +61,9 @@ impl K2Gossip {
             )
             .await?;
 
-        let (new_ops, new_bookmark) = self
-            .op_store
-            .retrieve_op_ids_bounded(
+        let (send_new_ops, send_new_bookmark) = self
+            .retrieve_new_op_ids(
+                &common_arc_set,
                 Timestamp::from_micros(accept.new_since),
                 accept.max_new_bytes as usize,
             )
@@ -68,22 +73,12 @@ impl K2Gossip {
         let accept_response = AcceptResponseMessage {
             missing_agents,
             provided_agents: encode_agent_infos(send_agent_infos)?,
-            new_ops: encode_op_ids(new_ops),
-            updated_new_since: new_bookmark.as_micros(),
+            new_ops: encode_op_ids(send_new_ops),
+            updated_new_since: send_new_bookmark.as_micros(),
         };
 
         match accept.snapshot {
             Some(their_snapshot) => {
-                let other_arc_set = match &accept.arc_set {
-                    Some(message) => ArcSet::decode(&message.value)?,
-                    None => {
-                        return Err(K2Error::other(
-                            "no arc set in accept message",
-                        ));
-                    }
-                };
-                let common_arc_set =
-                    other_arc_set.intersection(&initiated.our_arc_set);
                 let next_action = self
                     .dht
                     .read()
@@ -207,6 +202,20 @@ impl K2Gossip {
         };
 
         Ok((round_state, initiated))
+    }
+
+    fn get_common_arc_set(
+        initiated: &RoundStageInitiated,
+        accept: &K2GossipAcceptMessage,
+    ) -> K2Result<ArcSet> {
+        let other_arc_set = match &accept.arc_set {
+            Some(message) => ArcSet::decode(&message.value)?,
+            None => {
+                return Err(K2Error::other("no arc set in accept message"));
+            }
+        };
+
+        Ok(other_arc_set.intersection(&initiated.our_arc_set))
     }
 }
 

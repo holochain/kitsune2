@@ -64,7 +64,7 @@ impl K2Gossip {
                     .dht
                     .read()
                     .await
-                    .snapshot_minimal(common_arc_set)
+                    .snapshot_minimal(common_arc_set.clone())
                     .await?;
                 Some(snapshot.try_into()?)
             } else {
@@ -87,11 +87,9 @@ impl K2Gossip {
             .await?
             .unwrap_or(UNIX_TIMESTAMP);
 
-        // TODO Use common arc set here to restrict the ops we look up.
-        //      Which also means that changing arc will invalidate the bookmark?
         let (new_ops, new_bookmark) = self
-            .op_store
-            .retrieve_op_ids_bounded(
+            .retrieve_new_op_ids(
+                &common_arc_set,
                 Timestamp::from_micros(initiate.new_since),
                 initiate.max_new_bytes as usize,
             )
