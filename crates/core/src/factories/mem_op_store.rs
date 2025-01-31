@@ -242,19 +242,22 @@ impl OpStore for Kitsune2MemoryOpStore {
 
     fn retrieve_op_ids_bounded(
         &self,
+        arc: DhtArc,
         start: Timestamp,
         limit_bytes: usize,
-    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, Timestamp)>> {
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, usize, Timestamp)>> {
         Box::pin(async move {
             let new_start = Timestamp::now();
 
             let self_lock = self.read().await;
 
-            // Capture all ops that are after the start time
+            // Capture all ops that are within the arc and after the start time
             let mut candidate_ops = self_lock
                 .op_list
                 .values()
-                .filter(|op| op.stored_at >= start)
+                .filter(|op| {
+                    arc.contains(op.op_id.loc()) && op.stored_at >= start
+                })
                 .collect::<Vec<_>>();
 
             // Sort the ops by the time they were stored
@@ -266,9 +269,8 @@ impl OpStore for Kitsune2MemoryOpStore {
             let op_ids = candidate_ops
                 .into_iter()
                 .take_while(|op| {
-                    total_bytes += op.op_data.len();
-
-                    if total_bytes <= limit_bytes {
+                    if total_bytes + op.op_data.len() <= limit_bytes {
+                        total_bytes += op.op_data.len();
                         true
                     } else {
                         last_op_timestamp = Some(op.stored_at);
@@ -280,6 +282,7 @@ impl OpStore for Kitsune2MemoryOpStore {
 
             Ok((
                 op_ids,
+                total_bytes,
                 if let Some(ts) = last_op_timestamp {
                     ts
                 } else {
