@@ -153,6 +153,51 @@ impl ArcSet {
     pub fn includes_sector_index(&self, value: u32) -> bool {
         self.inner.contains(&value)
     }
+
+    /// Convert an arc set to a list of arcs.
+    ///
+    /// Note that an [ArcSet] is created from a `Vec<DhtArc>`, so if you have just created an
+    /// [ArcSet] then this should return an equivalent list of arcs to what you provided, though
+    /// not necessarily the same list. E.g. `ArcSet::new(vec![DhtArc::FULL, DhtArc::FULL])` will
+    /// return `vec![DhtArc::FULL]`.
+    ///
+    /// This method is intended to be used after taking an intersection with [ArcSet::intersection].
+    /// In that case, the list of arcs is not known and converting to a list of arcs is useful.
+    pub fn as_arcs(&self) -> Vec<DhtArc> {
+        if self.inner.is_empty() {
+            return vec![];
+        } else if self.inner.len() == 512 {
+            return vec![DhtArc::FULL];
+        }
+
+        let mut arcs = vec![];
+
+        let mut sectors = self.inner.iter().copied().collect::<Vec<_>>();
+        sectors.sort();
+
+        let mut start = 0;
+        while start < sectors.len() {
+            let mut end = start;
+            while end + 1 < sectors.len()
+                && sectors[end] + 1 == sectors[end + 1]
+            {
+                end += 1;
+            }
+
+            let start_sector = sectors[start];
+            let end_sector = sectors[end];
+
+            let top = (end_sector + 1).saturating_mul(SECTOR_SIZE);
+            arcs.push(DhtArc::Arc(
+                start_sector * SECTOR_SIZE,
+                if top == u32::MAX { u32::MAX } else { top - 1 },
+            ));
+
+            start = end + 1;
+        }
+
+        arcs
+    }
 }
 
 #[cfg(test)]
@@ -350,5 +395,64 @@ mod test {
         let decoded = ArcSet::decode(&encoded).unwrap();
 
         assert_eq!(set, decoded);
+    }
+
+    #[test]
+    fn as_arcs_empty() {
+        let set = ArcSet::new(vec![DhtArc::Empty]).unwrap();
+        assert_eq!(set.as_arcs(), vec![]);
+    }
+
+    #[test]
+    fn as_arcs_full() {
+        let set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+        assert_eq!(set.as_arcs(), vec![DhtArc::FULL]);
+    }
+
+    #[test]
+    fn as_arcs_full_from_overlap() {
+        let set = ArcSet::new(vec![
+            DhtArc::Arc(0, 2 * SECTOR_SIZE - 1),
+            DhtArc::Arc(SECTOR_SIZE, u32::MAX),
+        ])
+        .unwrap();
+        assert_eq!(set.as_arcs(), vec![DhtArc::FULL]);
+    }
+
+    #[test]
+    fn as_arcs_multiple_disjoint() {
+        let arc_1 = DhtArc::Arc(0, 2 * SECTOR_SIZE - 1);
+        let arc_2 = DhtArc::Arc(10 * SECTOR_SIZE, 40 * SECTOR_SIZE - 1);
+        let set = ArcSet::new(vec![arc_1, arc_2]).unwrap();
+
+        assert_eq!(set.as_arcs(), vec![arc_1, arc_2]);
+    }
+
+    #[test]
+    fn as_arcs_full_on_wrap() {
+        let set = ArcSet::new(vec![
+            DhtArc::Arc(SECTOR_SIZE, 2 * SECTOR_SIZE - 1),
+            DhtArc::Arc(2 * SECTOR_SIZE, SECTOR_SIZE - 1),
+        ])
+        .unwrap();
+
+        assert_eq!(set.as_arcs(), vec![DhtArc::FULL]);
+    }
+
+    #[test]
+    fn as_arcs_split_on_wrap() {
+        let set = ArcSet::new(vec![DhtArc::Arc(
+            510 * SECTOR_SIZE,
+            2 * SECTOR_SIZE - 1,
+        )])
+        .unwrap();
+
+        assert_eq!(
+            set.as_arcs(),
+            vec![
+                DhtArc::Arc(0, 2 * SECTOR_SIZE - 1),
+                DhtArc::Arc(510 * SECTOR_SIZE, u32::MAX)
+            ]
+        );
     }
 }
