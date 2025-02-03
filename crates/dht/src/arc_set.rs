@@ -177,6 +177,7 @@ impl ArcSet {
 
         let mut start = 0;
         while start < sectors.len() {
+            // Determine consecutive sectors.
             let mut end = start;
             while end + 1 < sectors.len()
                 && sectors[end] + 1 == sectors[end + 1]
