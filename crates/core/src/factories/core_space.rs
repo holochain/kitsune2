@@ -123,7 +123,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     space.clone(),
                     peer_store.clone(),
                     local_agent_store.clone(),
-                    peer_meta_store,
+                    peer_meta_store.clone(),
                     op_store.clone(),
                     tx.clone(),
                     fetch.clone(),
@@ -143,6 +143,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     peer_store,
                     bootstrap,
                     local_agent_store,
+                    peer_meta_store,
                     inner,
                     op_store,
                     fetch,
@@ -200,6 +201,7 @@ struct CoreSpace {
     peer_store: peer_store::DynPeerStore,
     bootstrap: bootstrap::DynBootstrap,
     local_agent_store: DynLocalAgentStore,
+    peer_meta_store: DynPeerMetaStore,
     op_store: DynOpStore,
     fetch: DynFetch,
     gossip: DynGossip,
@@ -230,6 +232,7 @@ impl CoreSpace {
         peer_store: peer_store::DynPeerStore,
         bootstrap: bootstrap::DynBootstrap,
         local_agent_store: DynLocalAgentStore,
+        peer_meta_store: DynPeerMetaStore,
         inner: Arc<Mutex<InnerData>>,
         op_store: DynOpStore,
         fetch: DynFetch,
@@ -246,6 +249,7 @@ impl CoreSpace {
             peer_store,
             bootstrap,
             local_agent_store,
+            peer_meta_store,
             inner,
             op_store,
             task_check_agent_infos,
@@ -287,6 +291,10 @@ impl Space for CoreSpace {
 
     fn gossip(&self) -> &DynGossip {
         &self.gossip
+    }
+
+    fn peer_meta_store(&self) -> &DynPeerMetaStore {
+        &self.peer_meta_store
     }
 
     fn local_agent_join(
@@ -468,6 +476,13 @@ impl Space for CoreSpace {
                 .send_space_notify(url, self.space.clone(), enc)
                 .await
         })
+    }
+
+    fn inform_ops_stored(
+        &self,
+        ops: Vec<StoredOp>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.gossip.inform_ops_stored(ops)
     }
 }
 

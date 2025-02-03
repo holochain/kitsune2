@@ -5,7 +5,7 @@ use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
     BoxFut, DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
-    DynPeerMetaStore, Gossip, GossipFactory, K2Result, SpaceId,
+    DynPeerMetaStore, Gossip, GossipFactory, K2Result, SpaceId, StoredOp,
 };
 use std::sync::Arc;
 
@@ -60,7 +60,17 @@ impl GossipFactory for CoreGossipStubFactory {
 #[derive(Debug, Clone)]
 pub struct CoreGossipStub;
 
-impl Gossip for CoreGossipStub {}
+impl Gossip for CoreGossipStub {
+    fn inform_ops_stored(
+        &self,
+        ops: Vec<StoredOp>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            drop(ops);
+            Ok(())
+        })
+    }
+}
 
 impl TxBaseHandler for CoreGossipStub {}
 impl TxModuleHandler for CoreGossipStub {}
