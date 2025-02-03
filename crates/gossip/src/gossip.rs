@@ -14,9 +14,9 @@ use kitsune2_api::fetch::DynFetch;
 use kitsune2_api::peer_store::DynPeerStore;
 use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
 use kitsune2_api::{
-    DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
+    BoxFut, DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
     DynPeerMetaStore, Gossip, GossipFactory, K2Error, K2Result, SpaceId,
-    Timestamp, Url, UNIX_TIMESTAMP,
+    StoredOp, Timestamp, Url, UNIX_TIMESTAMP,
 };
 use kitsune2_dht::{Dht, DhtApi};
 use std::collections::HashMap;
@@ -63,11 +63,12 @@ impl GossipFactory for K2GossipFactory {
         fetch: DynFetch,
     ) -> kitsune2_api::BoxFut<'static, K2Result<DynGossip>> {
         Box::pin(async move {
-            let config: K2GossipConfig = builder.config.get_module_config()?;
+            let config =
+                builder.config.get_module_config::<K2GossipModConfig>()?;
 
             let gossip: DynGossip = Arc::new(
                 K2Gossip::create(
-                    config,
+                    config.k2_gossip,
                     space_id,
                     peer_store,
                     local_agent_store,
@@ -273,7 +274,7 @@ impl K2Gossip {
             max_new_bytes: self.config.max_gossip_op_bytes,
         };
 
-        // Right before we send the initiate message, check whether the target has already
+        // Before we send the initiate message, check whether the target has already
         // initiated with us. If they have, we can just skip initiating.
         if self
             .accepted_round_states
@@ -323,7 +324,16 @@ impl K2Gossip {
     }
 }
 
-impl Gossip for K2Gossip {}
+impl Gossip for K2Gossip {
+    fn inform_ops_stored(
+        &self,
+        ops: Vec<StoredOp>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(
+            async move { self.dht.write().await.inform_ops_stored(ops).await },
+        )
+    }
+}
 
 impl TxBaseHandler for K2Gossip {}
 impl TxModuleHandler for K2Gossip {
@@ -382,14 +392,17 @@ mod test {
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_dht::UNIT_TIME;
     use kitsune2_test_utils::enable_tracing;
+    use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
+    use kitsune2_test_utils::space::TEST_SPACE_ID;
     use std::time::Duration;
 
     #[derive(Debug, Clone)]
     struct GossipTestHarness {
-        gossip: K2Gossip,
+        _gossip: DynGossip,
         peer_store: DynPeerStore,
         op_store: DynOpStore,
         space: DynSpace,
+        peer_meta_store: Arc<K2PeerMetaStore>,
     }
 
     impl GossipTestHarness {
@@ -500,11 +513,30 @@ mod test {
     }
 
     impl TestGossipFactory {
-        pub async fn create(space: SpaceId) -> TestGossipFactory {
-            let mut builder = default_test_builder();
+        pub async fn create(
+            space: SpaceId,
+            bootstrap: bool,
+        ) -> TestGossipFactory {
+            let mut builder =
+                default_test_builder().with_default_config().unwrap();
             // Replace the core builder with a real gossip factory
             builder.gossip = K2GossipFactory::create();
-            let builder = Arc::new(builder.with_default_config().unwrap());
+
+            if !bootstrap {
+                builder.bootstrap = Arc::new(NoopBootstrapFactory);
+            }
+
+            builder
+                .config
+                .set_module_config(&K2GossipModConfig {
+                    k2_gossip: K2GossipConfig {
+                        initiate_interval_ms: 10,
+                        min_initiate_interval_ms: 10,
+                        ..Default::default()
+                    },
+                })
+                .unwrap();
+            let builder = Arc::new(builder);
 
             TestGossipFactory {
                 space_id: space,
@@ -539,97 +571,54 @@ mod test {
                 .await
                 .unwrap();
 
-            let op_store = self
-                .builder
-                .op_store
-                .create(self.builder.clone(), self.space_id.clone())
-                .await
-                .unwrap();
-
-            let gossip = K2Gossip::create(
-                K2GossipConfig::default(),
+            let peer_meta_store = K2PeerMetaStore::new(
+                space.peer_meta_store().clone(),
                 self.space_id.clone(),
-                space.peer_store().clone(),
-                space.local_agent_store().clone(),
-                self.builder
-                    .peer_meta_store
-                    .create(self.builder.clone())
-                    .await
-                    .unwrap(),
-                op_store.clone(),
-                transport.clone(),
-                self.builder
-                    .fetch
-                    .create(
-                        self.builder.clone(),
-                        self.space_id.clone(),
-                        op_store.clone(),
-                        transport.clone(),
-                    )
-                    .await
-                    .unwrap(),
-                self.builder.verifier.clone(),
-            )
-            .await
-            .unwrap();
+            );
 
             GossipTestHarness {
-                gossip,
+                _gossip: space.gossip().clone(),
                 peer_store: space.peer_store().clone(),
-                op_store,
+                op_store: space.op_store().clone(),
                 space,
+                peer_meta_store: Arc::new(peer_meta_store),
             }
         }
-    }
-
-    fn test_space() -> SpaceId {
-        SpaceId::from(Bytes::from_static(b"test-space"))
-    }
-
-    #[tokio::test]
-    async fn create_gossip_instance() {
-        let factory = TestGossipFactory::create(test_space()).await;
-        factory.new_instance().await;
     }
 
     #[tokio::test]
     async fn two_way_agent_sync() {
         enable_tracing();
 
-        let space = test_space();
-        let factory = TestGossipFactory::create(space.clone()).await;
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(space.clone(), false).await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
         let harness_2 = factory.new_instance().await;
         harness_2.join_local_agent(DhtArc::FULL).await;
-        harness_2
-            .peer_store
-            .insert(vec![agent_info_1.clone()])
-            .await
-            .unwrap();
 
         // Join extra agents for each peer. These will take a few seconds to be
         // found by bootstrap. Try to sync them with gossip.
         let secret_agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
-        let secret_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
-
-        assert!(harness_1
-            .peer_store
-            .get(secret_agent_2.agent.clone())
-            .await
-            .unwrap()
-            .is_none());
         assert!(harness_2
             .peer_store
             .get(secret_agent_1.agent.clone())
             .await
             .unwrap()
             .is_none());
+        let secret_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+        assert!(harness_1
+            .peer_store
+            .get(secret_agent_2.agent.clone())
+            .await
+            .unwrap()
+            .is_none());
 
+        // Simulate peer discovery so that gossip can sync agents
         harness_2
-            .gossip
-            .initiate_gossip(agent_info_1.url.clone().unwrap())
+            .peer_store
+            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 
@@ -645,10 +634,10 @@ mod test {
     async fn two_way_op_sync() {
         enable_tracing();
 
-        let space = test_space();
-        let factory = TestGossipFactory::create(space.clone()).await;
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(space.clone(), true).await;
         let harness_1 = factory.new_instance().await;
-        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
@@ -667,12 +656,6 @@ mod test {
             .await
             .unwrap();
 
-        harness_2
-            .gossip
-            .initiate_gossip(agent_info_1.url.clone().unwrap())
-            .await
-            .unwrap();
-
         let received_ops = harness_1.wait_for_ops(vec![op_id_2]).await;
         assert_eq!(1, received_ops.len());
         assert_eq!(op_2, received_ops[0]);
@@ -686,8 +669,9 @@ mod test {
     async fn disc_sync() {
         enable_tracing();
 
-        let space = test_space();
-        let factory = TestGossipFactory::create(space.clone()).await;
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(space.clone(), false).await;
+
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
@@ -697,12 +681,8 @@ mod test {
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
-
         harness_1
-            .gossip
-            .dht
-            .write()
-            .await
+            .space
             .inform_ops_stored(vec![op_1.clone().into()])
             .await
             .unwrap();
@@ -716,12 +696,8 @@ mod test {
             .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();
-
         harness_2
-            .gossip
-            .dht
-            .write()
-            .await
+            .space
             .inform_ops_stored(vec![op_2.clone().into()])
             .await
             .unwrap();
@@ -729,7 +705,6 @@ mod test {
         // Inform the harnesses that we've already synced up to now. This will force the
         // ops we just created to be treated as historical disc ops.
         harness_1
-            .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
                 agent_info_2.url.clone().unwrap(),
@@ -738,7 +713,6 @@ mod test {
             .await
             .unwrap();
         harness_2
-            .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
                 agent_info_1.url.clone().unwrap(),
@@ -747,9 +721,10 @@ mod test {
             .await
             .unwrap();
 
-        harness_2
-            .gossip
-            .initiate_gossip(agent_info_1.url.clone().unwrap())
+        // Simulate peer discovery so that gossip can perform a disc sync
+        harness_1
+            .peer_store
+            .insert(vec![agent_info_2.clone()])
             .await
             .unwrap();
 
@@ -766,8 +741,8 @@ mod test {
     async fn ring_sync() {
         enable_tracing();
 
-        let space = test_space();
-        let factory = TestGossipFactory::create(space.clone()).await;
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(space.clone(), false).await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(
@@ -780,18 +755,14 @@ mod test {
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
-
         harness_1
-            .gossip
-            .dht
-            .write()
-            .await
+            .space
             .inform_ops_stored(vec![op_1.clone().into()])
             .await
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(
             (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
             vec![2; 128],
@@ -802,29 +773,23 @@ mod test {
             .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();
-
         harness_2
-            .gossip
-            .dht
-            .write()
-            .await
+            .space
             .inform_ops_stored(vec![op_2.clone().into()])
             .await
             .unwrap();
 
         // Inform the harnesses that we've already synced up to now. This will force the
-        // ops we just created to be treated as historical disc ops.
+        // ops we just created to be treated as historical ring ops.
         harness_1
-            .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
-                agent_2.url.clone().unwrap(),
+                agent_info_2.url.clone().unwrap(),
                 Timestamp::now(),
             )
             .await
             .unwrap();
         harness_2
-            .gossip
             .peer_meta_store
             .set_new_ops_bookmark(
                 agent_info_1.url.clone().unwrap(),
@@ -833,9 +798,10 @@ mod test {
             .await
             .unwrap();
 
-        harness_2
-            .gossip
-            .initiate_gossip(agent_info_1.url.clone().unwrap())
+        // Simulate peer discovery so that gossip can perform a ring sync
+        harness_1
+            .peer_store
+            .insert(vec![agent_info_2.clone()])
             .await
             .unwrap();
 
