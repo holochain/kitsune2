@@ -1,6 +1,7 @@
 use crate::factories::mem_op_store::Kitsune2MemoryOpStore;
 use crate::factories::MemoryOp;
 use kitsune2_api::{DhtArc, DynOpStore, SpaceId, Timestamp};
+use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::sync::Arc;
 
 fn op_at_location(loc: u32) -> MemoryOp {
@@ -13,9 +14,8 @@ fn op_at_location(loc: u32) -> MemoryOp {
 
 #[tokio::test]
 async fn process_and_retrieve_op() {
-    let op_store: DynOpStore = Arc::new(Kitsune2MemoryOpStore::new(
-        SpaceId::from(bytes::Bytes::from_static(b"test")),
-    ));
+    let op_store: DynOpStore =
+        Arc::new(Kitsune2MemoryOpStore::new(TEST_SPACE_ID));
 
     let op = MemoryOp::new(Timestamp::now(), vec![1, 2, 3]);
     let op_id = op.compute_op_id();
@@ -34,9 +34,8 @@ async fn process_and_retrieve_op() {
 
 #[tokio::test]
 async fn retrieve_op_ids_bounded_empty_arc() {
-    let op_store: DynOpStore = Arc::new(Kitsune2MemoryOpStore::new(
-        SpaceId::from(bytes::Bytes::from_static(b"test")),
-    ));
+    let op_store: DynOpStore =
+        Arc::new(Kitsune2MemoryOpStore::new(TEST_SPACE_ID));
 
     op_store
         .process_incoming_ops(vec![op_at_location(1).clone().into()])
