@@ -286,6 +286,18 @@ impl K2Gossip {
             max_new_bytes: self.config.max_gossip_op_bytes,
         };
 
+        // Before we send the initiate message, check whether the target has already
+        // initiated with us. If they have, we can just skip initiating.
+        if self
+            .accepted_round_states
+            .read()
+            .await
+            .contains_key(&target_peer_url)
+        {
+            tracing::info!("initiate_gossip: already accepted");
+            return Ok(false);
+        }
+
         tracing::trace!(
             ?initiate,
             "Initiate gossip with {:?}",
