@@ -270,7 +270,7 @@ impl K2Gossip {
                 value: our_arc_set.encode(),
             }),
             new_since: new_since.as_micros(),
-            max_new_bytes: self.config.max_gossip_op_bytes,
+            max_op_data_bytes: self.config.max_gossip_op_bytes,
         };
 
         // Right before we send the initiate message, check whether the target has already

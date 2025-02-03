@@ -576,7 +576,7 @@ mod tests {
             .await;
 
         let mut seen = HashSet::new();
-        for _ in 0..10 {
+        for _ in 0..100 {
             let url = select_next_target(
                 Duration::from_secs(60),
                 harness.peer_store.clone(),

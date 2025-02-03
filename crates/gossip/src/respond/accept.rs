@@ -61,13 +61,22 @@ impl K2Gossip {
             )
             .await?;
 
-        let (send_new_ops, send_new_bookmark) = self
+        let (send_new_ops, used_bytes, send_new_bookmark) = self
             .retrieve_new_op_ids(
                 &common_arc_set,
                 Timestamp::from_micros(accept.new_since),
-                accept.max_new_bytes as usize,
+                accept.max_op_data_bytes,
             )
             .await?;
+
+        // Update the peer's max op data bytes to reflect the amount of data we're sending ids for.
+        // The remaining limit will be used for the DHT diff as required.
+        if let Some(state) = lock.as_mut() {
+            // Note that this value will have been initialised to 0 here when we created the
+            // initial state. So we need to initialise and subtract here.
+            state.peer_max_op_data_bytes =
+                accept.max_op_data_bytes - used_bytes;
+        }
 
         // The common part
         let accept_response = AcceptResponseMessage {
@@ -79,7 +88,7 @@ impl K2Gossip {
 
         match accept.snapshot {
             Some(their_snapshot) => {
-                let next_action = self
+                let (next_action, _) = self
                     .dht
                     .read()
                     .await
@@ -87,6 +96,8 @@ impl K2Gossip {
                         their_snapshot.into(),
                         None,
                         common_arc_set.clone(),
+                        // Zero because this cannot return op ids
+                        0,
                     )
                     .await?;
 

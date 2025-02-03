@@ -142,9 +142,11 @@ pub struct K2GossipInitiateMessage {
     /// Request ops that are new since the given timestamp.
     #[prost(int64, tag = "20")]
     pub new_since: i64,
-    /// The maximum number of bytes of new ops to respond with.
+    /// Gossip exchanges just op ids. This value is a hint to the other party about how many bytes of op data
+    /// those op ids should point to. The other party can't check this until they have fetched and checked the
+    /// op data, so you cannot rely on this being respected during gossip.
     #[prost(uint32, tag = "21")]
-    pub max_new_bytes: u32,
+    pub max_op_data_bytes: u32,
 }
 /// A Kitsune2 gossip acceptance protocol message.
 ///
@@ -169,9 +171,11 @@ pub struct K2GossipAcceptMessage {
     /// Request ops that are new since the given timestamp.
     #[prost(int64, tag = "20")]
     pub new_since: i64,
-    /// The maximum number of bytes of new ops to respond with.
+    /// Gossip exchanges just op ids. This value is a hint to the other party about how many bytes of op data
+    /// those op ids should point to. The other party can't check this until they have fetched and checked the
+    /// op data, so you cannot rely on this being respected during gossip.
     #[prost(uint32, tag = "21")]
-    pub max_new_bytes: u32,
+    pub max_op_data_bytes: u32,
     /// Ops that we have stored since the timestamp provided by the initiator in `new_since`.
     #[prost(bytes = "bytes", repeated, tag = "22")]
     pub new_ops: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,

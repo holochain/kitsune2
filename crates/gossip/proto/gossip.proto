@@ -90,8 +90,10 @@ message K2GossipInitiateMessage {
   // Request ops that are new since the given timestamp.
   int64 new_since = 20;
 
-  // The maximum number of bytes of new ops to respond with.
-  uint32 max_new_bytes = 21;
+  // Gossip exchanges just op ids. This value is a hint to the other party about how many bytes of op data
+  // those op ids should point to. The other party can't check this until they have fetched and checked the
+  // op data, so you cannot rely on this being respected during gossip.
+  uint32 max_op_data_bytes = 21;
 }
 
 // A Kitsune2 gossip acceptance protocol message.
@@ -123,8 +125,10 @@ message K2GossipAcceptMessage {
   // Request ops that are new since the given timestamp.
   int64 new_since = 20;
 
-  // The maximum number of bytes of new ops to respond with.
-  uint32 max_new_bytes = 21;
+  // Gossip exchanges just op ids. This value is a hint to the other party about how many bytes of op data
+  // those op ids should point to. The other party can't check this until they have fetched and checked the
+  // op data, so you cannot rely on this being respected during gossip.
+  uint32 max_op_data_bytes = 21;
 
   // Ops that we have stored since the timestamp provided by the initiator in `new_since`.
   repeated bytes new_ops = 22;

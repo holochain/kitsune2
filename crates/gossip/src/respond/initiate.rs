@@ -48,13 +48,14 @@ impl K2Gossip {
         // There's no validation to be done with an accept beyond what's been done above
         // to check how recently this peer initiated with us. We'll just record that they
         // have initiated and that we plan to accept.
-        self.create_accept_state(
-            &from_peer,
-            &initiate,
-            our_agents.clone(),
-            common_arc_set.clone(),
-        )
-        .await?;
+        let mut state = self
+            .create_accept_state(
+                &from_peer,
+                &initiate,
+                our_agents.clone(),
+                common_arc_set.clone(),
+            )
+            .await?;
 
         // Now we can start the work of creating an accept response, starting with a
         // minimal DHT snapshot if there is an arc set overlap.
@@ -87,13 +88,17 @@ impl K2Gossip {
             .await?
             .unwrap_or(UNIX_TIMESTAMP);
 
-        let (new_ops, new_bookmark) = self
+        let (new_ops, used_bytes, new_bookmark) = self
             .retrieve_new_op_ids(
                 &common_arc_set,
                 Timestamp::from_micros(initiate.new_since),
-                initiate.max_new_bytes as usize,
+                initiate.max_op_data_bytes,
             )
             .await?;
+
+        // Update the peer's max op data bytes to reflect the amount of data we're sending ids for.
+        // The remaining limit will be used for the DHT diff as required.
+        state.peer_max_op_data_bytes -= used_bytes;
 
         Ok(Some(GossipMessage::Accept(K2GossipAcceptMessage {
             session_id: initiate.session_id,
@@ -103,7 +108,7 @@ impl K2Gossip {
             }),
             missing_agents,
             new_since: new_since.as_micros(),
-            max_new_bytes: self.config.max_gossip_op_bytes,
+            max_op_data_bytes: self.config.max_gossip_op_bytes,
             new_ops: encode_op_ids(new_ops),
             updated_new_since: new_bookmark.as_micros(),
             snapshot,
@@ -161,6 +166,7 @@ mod tests {
                 Arc::new(Mutex::new(GossipRoundState::new_accepted(
                     url,
                     test_session_id(),
+                    500,
                     vec![],
                     ArcSet::new(vec![DhtArc::FULL]).unwrap(),
                 ))),
@@ -181,7 +187,7 @@ mod tests {
                         value: arc_set.encode(),
                     }),
                     new_since: Timestamp::now().as_micros(),
-                    max_new_bytes: 0,
+                    max_op_data_bytes: 0,
                 }),
             )
             .await
@@ -219,7 +225,7 @@ mod tests {
                             value: arc_set.encode(),
                         }),
                         new_since: Timestamp::now().as_micros(),
-                        max_new_bytes: 0,
+                        max_op_data_bytes: 0,
                     }),
                 )
                 .await
