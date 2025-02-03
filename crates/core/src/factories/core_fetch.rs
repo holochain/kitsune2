@@ -98,7 +98,7 @@ pub mod config {
         /// How many parallel op fetch requests can be made at once. Default: 2.  
         pub parallel_request_count: u8,
         /// Delay before re-inserting ops to request back into the outgoing request queue.
-        /// Default: 100 ms.
+        /// Default: 2 s.
         pub re_insert_outgoing_request_delay_ms: u32,
         /// Duration of first interval to back off an unresponsive peer. Default: 20 s.
         pub first_back_off_interval_ms: u32,
@@ -113,7 +113,7 @@ pub mod config {
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                re_insert_outgoing_request_delay_ms: 100,
+                re_insert_outgoing_request_delay_ms: 2000,
                 first_back_off_interval_ms: 1000 * 20,
                 last_back_off_interval_ms: 1000 * 60 * 10,
                 num_back_off_intervals: 4,
@@ -355,9 +355,15 @@ impl CoreFetch {
 
             // Send request if peer is not on back off list.
             if !is_peer_on_back_off {
-                let data = serialize_request_message(vec![op_id.clone()]);
+                tracing::debug!(
+                    ?peer_url,
+                    ?space_id,
+                    ?op_id,
+                    "sending fetch request"
+                );
 
                 // Send fetch request to peer.
+                let data = serialize_request_message(vec![op_id.clone()]);
                 match transport
                     .send_module(
                         peer_url.clone(),
@@ -376,7 +382,7 @@ impl CoreFetch {
                             .remove_peer(&peer_url);
                     }
                     Err(err) => {
-                        tracing::warn!("could not send fetch request for op {op_id} to peer {peer_url}: {err}. Putting peer on back off list.");
+                        tracing::warn!(?op_id, ?peer_url, "could not send fetch request: {err}. Putting peer on back off list.");
                         let mut lock = state.lock().unwrap();
                         lock.back_off_list.back_off_peer(&peer_url);
 

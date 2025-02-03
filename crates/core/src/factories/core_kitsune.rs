@@ -140,6 +140,8 @@ impl Kitsune for CoreKitsune {
 
 #[cfg(test)]
 mod test {
+    use kitsune2_test_utils::space::TEST_SPACE_ID;
+
     #[tokio::test(flavor = "multi_thread")]
     async fn happy_space_construct() {
         use kitsune2_api::{kitsune::*, space::*, *};
@@ -186,8 +188,6 @@ mod test {
             .await
             .unwrap();
 
-        k.space(bytes::Bytes::from_static(b"space1").into())
-            .await
-            .unwrap();
+        k.space(TEST_SPACE_ID).await.unwrap();
     }
 }

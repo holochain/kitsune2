@@ -38,7 +38,7 @@ async fn space_local_agent_join_leave() {
     let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
     let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
 
-    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID).await.unwrap();
 
     s1.local_agent_join(bob.clone()).await.unwrap();
     s1.local_agent_join(ned.clone()).await.unwrap();
