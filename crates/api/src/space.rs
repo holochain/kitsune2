@@ -1,6 +1,7 @@
 //! Kitsune2 space related types.
 
 use crate::agent::DynLocalAgent;
+use crate::fetch::DynFetch;
 use crate::*;
 use std::sync::Arc;
 
@@ -47,6 +48,19 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// Get a reference to the local agent store being used by this space.
     fn local_agent_store(&self) -> &DynLocalAgentStore;
 
+    /// Get a reference to the op store of this space. Ops can be injected and
+    /// retrieved from the op store.
+    fn op_store(&self) -> &DynOpStore;
+
+    /// Get a reference to the fetch module of this space.
+    fn fetch(&self) -> &DynFetch;
+
+    /// Get a reference to the gossip module of this space.
+    fn gossip(&self) -> &DynGossip;
+
+    /// Get a reference to the peer meta store being used by this space.
+    fn peer_meta_store(&self) -> &DynPeerMetaStore;
+
     /// Indicate that an agent is now online, and should begin receiving
     /// messages and exchanging dht information.
     fn local_agent_join(
@@ -80,6 +94,19 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
         from_agent: AgentId,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Inform the space that a set of ops have been stored.
+    ///
+    /// This should be called once the ops have been:
+    /// - Checked to be correctly structured according to the Kitsune2 host implementation.
+    /// - Persisted to the op store.
+    ///
+    /// Until this is called, gossip will not include these ops in its DHT model, and they will
+    /// therefore not be synced with other peers. They may be synced with other peers through the
+    /// "new ops" mechanism, depending on the op store implementation, but that only makes them
+    /// available briefly.
+    fn inform_ops_stored(&self, ops: Vec<StoredOp>)
+        -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Space].

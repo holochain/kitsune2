@@ -5,12 +5,19 @@ use crate::peer_store::DynPeerStore;
 use crate::transport::DynTransport;
 use crate::{
     builder, config, BoxFut, DynLocalAgentStore, DynOpStore, DynPeerMetaStore,
-    K2Result, SpaceId,
+    K2Result, SpaceId, StoredOp,
 };
 use std::sync::Arc;
 
 /// Represents the ability to sync DHT data with other agents through background communication.
-pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {}
+pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
+    /// Inform the gossip module that a set of ops have been stored.
+    ///
+    /// This is not expected to be called directly. It is intended to be used by the
+    /// space that owns this gossip module. See [crate::space::Space::inform_ops_stored].
+    fn inform_ops_stored(&self, ops: Vec<StoredOp>)
+        -> BoxFut<'_, K2Result<()>>;
+}
 
 /// Trait-object [Gossip].
 pub type DynGossip = Arc<dyn Gossip>;
