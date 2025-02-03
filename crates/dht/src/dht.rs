@@ -98,7 +98,8 @@ pub trait DhtApi: 'static + Send + Sync + std::fmt::Debug {
         their_snapshot: DhtSnapshot,
         our_previous_snapshot: Option<DhtSnapshot>,
         arc_set: ArcSet,
-    ) -> BoxFut<'_, K2Result<DhtSnapshotNextAction>>;
+        max_op_data_bytes: u32,
+    ) -> BoxFut<'_, K2Result<(DhtSnapshotNextAction, u32)>>;
 }
 
 impl DhtApi for Dht {
@@ -221,7 +222,8 @@ impl DhtApi for Dht {
         their_snapshot: DhtSnapshot,
         our_previous_snapshot: Option<DhtSnapshot>,
         arc_set: ArcSet,
-    ) -> BoxFut<'_, K2Result<DhtSnapshotNextAction>> {
+        max_op_data_bytes: u32,
+    ) -> BoxFut<'_, K2Result<(DhtSnapshotNextAction, u32)>> {
         Box::pin(async move {
             if arc_set.covered_sector_count() == 0 {
                 return Err(K2Error::other("No arcs to snapshot"));
@@ -318,29 +320,34 @@ impl DhtApi for Dht {
             // hashes. In the case that we produce a most detailed snapshot type, we can send the list
             // of op hashes at the same time.
             match our_snapshot.compare(&their_snapshot) {
-                SnapshotDiff::Identical => Ok(DhtSnapshotNextAction::Identical),
+                SnapshotDiff::Identical => {
+                    Ok((DhtSnapshotNextAction::Identical, 0))
+                }
                 SnapshotDiff::CannotCompare => {
-                    Ok(DhtSnapshotNextAction::CannotCompare)
+                    Ok((DhtSnapshotNextAction::CannotCompare, 0))
                 }
-                SnapshotDiff::DiscMismatch => {
-                    Ok(DhtSnapshotNextAction::NewSnapshot(
+                SnapshotDiff::DiscMismatch => Ok((
+                    DhtSnapshotNextAction::NewSnapshot(
                         self.snapshot_disc_sectors(&arc_set).await?,
-                    ))
-                }
-                SnapshotDiff::DiscSectorMismatches(mismatched_sectors) => {
-                    Ok(DhtSnapshotNextAction::NewSnapshot(
+                    ),
+                    0,
+                )),
+                SnapshotDiff::DiscSectorMismatches(mismatched_sectors) => Ok((
+                    DhtSnapshotNextAction::NewSnapshot(
                         self.snapshot_disc_sector_details(
                             mismatched_sectors,
                             &arc_set,
                             self.store.clone(),
                         )
                         .await?,
-                    ))
-                }
+                    ),
+                    0,
+                )),
                 SnapshotDiff::DiscSectorSliceMismatches(
                     mismatched_slice_indices,
                 ) => {
                     let mut out = Vec::new();
+                    let mut used_bytes = 0;
                     for (sector_index, missing_slices) in
                         mismatched_slice_indices
                     {
@@ -369,36 +376,46 @@ impl DhtApi for Dht {
                                 continue;
                             };
 
-                            out.extend(
-                                self.store
-                                    .retrieve_op_hashes_in_time_slice(
-                                        arc, start, end,
-                                    )
-                                    .await?,
-                            );
+                            let (op_ids, ub) = self
+                                .store
+                                .retrieve_op_hashes_in_time_slice(
+                                    arc,
+                                    start,
+                                    end,
+                                    Some(max_op_data_bytes - used_bytes),
+                                )
+                                .await?;
+                            out.extend(op_ids);
+
+                            used_bytes += ub;
                         }
                     }
 
                     Ok(if is_final {
-                        DhtSnapshotNextAction::HashList(out)
+                        (DhtSnapshotNextAction::HashList(out), used_bytes)
                     } else {
-                        DhtSnapshotNextAction::NewSnapshotAndHashList(
-                            our_snapshot,
-                            out,
+                        (
+                            DhtSnapshotNextAction::NewSnapshotAndHashList(
+                                our_snapshot,
+                                out,
+                            ),
+                            used_bytes,
                         )
                     })
                 }
-                SnapshotDiff::RingMismatches(mismatched_rings) => {
-                    Ok(DhtSnapshotNextAction::NewSnapshot(
+                SnapshotDiff::RingMismatches(mismatched_rings) => Ok((
+                    DhtSnapshotNextAction::NewSnapshot(
                         self.snapshot_ring_sector_details(
                             mismatched_rings,
                             &arc_set,
                         )?,
-                    ))
-                }
+                    ),
+                    0,
+                )),
                 SnapshotDiff::RingSectorMismatches(mismatched_sectors) => {
                     let mut out = Vec::new();
 
+                    let mut used_bytes = 0;
                     for (ring_index, missing_sectors) in mismatched_sectors {
                         for sector_index in missing_sectors {
                             let Ok(arc) = self
@@ -425,22 +442,30 @@ impl DhtApi for Dht {
                                 continue;
                             };
 
-                            out.extend(
-                                self.store
-                                    .retrieve_op_hashes_in_time_slice(
-                                        arc, start, end,
-                                    )
-                                    .await?,
-                            );
+                            let (op_ids, ub) = self
+                                .store
+                                .retrieve_op_hashes_in_time_slice(
+                                    arc,
+                                    start,
+                                    end,
+                                    Some(max_op_data_bytes - used_bytes),
+                                )
+                                .await?;
+                            out.extend(op_ids);
+
+                            used_bytes += ub;
                         }
                     }
 
                     Ok(if is_final {
-                        DhtSnapshotNextAction::HashList(out)
+                        (DhtSnapshotNextAction::HashList(out), used_bytes)
                     } else {
-                        DhtSnapshotNextAction::NewSnapshotAndHashList(
-                            our_snapshot,
-                            out,
+                        (
+                            DhtSnapshotNextAction::NewSnapshotAndHashList(
+                                our_snapshot,
+                                out,
+                            ),
+                            used_bytes,
                         )
                     })
                 }

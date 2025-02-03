@@ -520,8 +520,10 @@ impl TimePartition {
                     self.sector_constraint,
                     full_slices_end_timestamp,
                     full_slices_end_timestamp + self.full_slice_duration,
+                    None,
                 )
-                .await?;
+                .await?
+                .0;
 
             let hash = combine::combine_op_hashes(op_hashes);
 
@@ -625,8 +627,10 @@ impl TimePartition {
                                 self.sector_constraint,
                                 start,
                                 end,
+                                None,
                             )
-                            .await?,
+                            .await?
+                            .0,
                     )
                 }
             };
