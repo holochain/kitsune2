@@ -17,7 +17,7 @@ impl K2Gossip {
         from_peer: Url,
         response: K2GossipDiscSectorDetailsDiffResponseMessage,
     ) -> K2Result<Option<GossipMessage>> {
-        let (_state, disc_sector_details) = self
+        let (mut state, disc_sector_details) = self
             .check_disc_sectors_diff_response_state(
                 from_peer.clone(),
                 &response,
@@ -35,7 +35,7 @@ impl K2Gossip {
             )
             .try_into()?;
 
-        let next_action = self
+        let (next_action, used_bytes) = self
             .dht
             .read()
             .await
@@ -43,8 +43,11 @@ impl K2Gossip {
                 their_snapshot,
                 Some(disc_sector_details.snapshot.clone()),
                 disc_sector_details.common_arc_set,
+                state.peer_max_op_data_bytes,
             )
             .await?;
+
+        state.peer_max_op_data_bytes -= used_bytes;
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare

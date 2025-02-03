@@ -111,8 +111,9 @@ impl DhtSyncHarness {
             self.dht.snapshot_minimal(arc_set.clone()).await?;
         match other
             .dht
-            .handle_snapshot(initial_snapshot, None, arc_set.clone())
+            .handle_snapshot(initial_snapshot, None, arc_set.clone(), 1_000)
             .await?
+            .0
         {
             DhtSnapshotNextAction::Identical => Ok(true),
             _ => Ok(false),
@@ -134,8 +135,9 @@ impl DhtSyncHarness {
         // Send it to the other agent and have them diff against it
         let outcome = other
             .dht
-            .handle_snapshot(initial_snapshot, None, arc_set.clone())
-            .await?;
+            .handle_snapshot(initial_snapshot, None, arc_set.clone(), 1_000)
+            .await?
+            .0;
 
         match outcome {
             DhtSnapshotNextAction::Identical => {
@@ -192,8 +194,9 @@ impl DhtSyncHarness {
         // coming back to us
         let outcome = self
             .dht
-            .handle_snapshot(snapshot, None, arc_set.clone())
-            .await?;
+            .handle_snapshot(snapshot, None, arc_set.clone(), 1_000)
+            .await?
+            .0;
 
         let our_details_snapshot = match outcome {
             DhtSnapshotNextAction::NewSnapshot(new_snapshot) => new_snapshot,
@@ -225,8 +228,10 @@ impl DhtSyncHarness {
                 our_details_snapshot.clone(),
                 None,
                 arc_set.clone(),
+                1_000,
             )
-            .await?;
+            .await?
+            .0;
 
         let (snapshot, hash_list_from_other) = match outcome {
             DhtSnapshotNextAction::NewSnapshotAndHashList(
@@ -260,8 +265,10 @@ impl DhtSyncHarness {
                 snapshot,
                 Some(our_details_snapshot),
                 arc_set.clone(),
+                1000,
             )
-            .await?;
+            .await?
+            .0;
 
         let hash_list_from_self = match outcome {
             DhtSnapshotNextAction::HashList(hash_list) => hash_list,
@@ -316,8 +323,10 @@ impl DhtSyncHarness {
                 other_details_snapshot.clone(),
                 None,
                 arc_set.clone(),
+                1_000,
             )
-            .await?;
+            .await?
+            .0;
 
         let (snapshot, hash_list_from_self) = match outcome {
             DhtSnapshotNextAction::Identical => {
@@ -349,8 +358,10 @@ impl DhtSyncHarness {
                 snapshot,
                 Some(other_details_snapshot),
                 arc_set.clone(),
+                1_000,
             )
-            .await?;
+            .await?
+            .0;
 
         let hash_list_from_other = match outcome {
             DhtSnapshotNextAction::Identical => {

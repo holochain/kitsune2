@@ -32,7 +32,12 @@ impl K2Gossip {
             )
             .try_into()?;
 
-        let next_action = self
+        let peer_max_op_data_bytes = state
+            .as_ref()
+            .map(|s| s.peer_max_op_data_bytes)
+            .unwrap_or(0);
+
+        let (next_action, used_bytes) = self
             .dht
             .read()
             .await
@@ -40,8 +45,13 @@ impl K2Gossip {
                 their_snapshot,
                 None,
                 disc_sector_details.common_arc_set.clone(),
+                peer_max_op_data_bytes,
             )
             .await?;
+
+        if let Some(state) = state.as_mut() {
+            state.peer_max_op_data_bytes -= used_bytes;
+        }
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare

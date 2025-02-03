@@ -40,7 +40,7 @@ impl K2Gossip {
             )
             .try_into()?;
 
-        let next_action = self
+        let (next_action, used_bytes) = self
             .dht
             .read()
             .await
@@ -48,8 +48,11 @@ impl K2Gossip {
                 their_snapshot,
                 None,
                 accepted.common_arc_set.clone(),
+                state.peer_max_op_data_bytes,
             )
             .await?;
+
+        state.peer_max_op_data_bytes -= used_bytes;
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare

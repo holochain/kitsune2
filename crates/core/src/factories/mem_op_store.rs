@@ -201,20 +201,44 @@ impl OpStore for Kitsune2MemoryOpStore {
         arc: DhtArc,
         start: Timestamp,
         end: Timestamp,
-    ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
+        limit_bytes: Option<u32>,
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32)>> {
         Box::pin(async move {
             let self_lock = self.read().await;
-            Ok(self_lock
-                .op_list
-                .iter()
-                .filter(|(_, op)| {
-                    let loc = op.op_id.loc();
-                    op.created_at >= start
-                        && op.created_at < end
-                        && arc.contains(loc)
-                })
-                .map(|(op_id, _)| op_id.clone())
-                .collect())
+
+            let mut used_bytes = 0;
+            Ok((
+                self_lock
+                    .op_list
+                    .iter()
+                    .filter(|(_, op)| {
+                        let loc = op.op_id.loc();
+                        op.created_at >= start
+                            && op.created_at < end
+                            && arc.contains(loc)
+                    })
+                    .take_while(|(_, op)| {
+                        let data_len = op.op_data.len() as u32;
+                        match limit_bytes {
+                            Some(limit_bytes) => {
+                                if used_bytes + data_len <= limit_bytes {
+                                    used_bytes += data_len;
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            None => {
+                                // Return an accurate count even if we're not limiting
+                                used_bytes += data_len;
+                                true
+                            }
+                        }
+                    })
+                    .map(|(op_id, _)| op_id.clone())
+                    .collect(),
+                used_bytes,
+            ))
         })
     }
 
@@ -244,8 +268,8 @@ impl OpStore for Kitsune2MemoryOpStore {
         &self,
         arc: DhtArc,
         start: Timestamp,
-        limit_bytes: usize,
-    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, usize, Timestamp)>> {
+        limit_bytes: u32,
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32, Timestamp)>> {
         Box::pin(async move {
             let new_start = Timestamp::now();
 
@@ -269,8 +293,9 @@ impl OpStore for Kitsune2MemoryOpStore {
             let op_ids = candidate_ops
                 .into_iter()
                 .take_while(|op| {
-                    if total_bytes + op.op_data.len() <= limit_bytes {
-                        total_bytes += op.op_data.len();
+                    let data_len = op.op_data.len() as u32;
+                    if total_bytes + data_len <= limit_bytes {
+                        total_bytes += data_len;
                         true
                     } else {
                         last_op_timestamp = Some(op.stored_at);

@@ -9,7 +9,7 @@ use kitsune2_api::id::decode_ids;
 use kitsune2_api::{AgentId, K2Error, K2Result, OpId, Timestamp, Url};
 use kitsune2_dht::ArcSet;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 mod accept;
 mod agents;
@@ -106,29 +106,33 @@ impl K2Gossip {
         initiate: &K2GossipInitiateMessage,
         our_agents: Vec<AgentId>,
         common_arc_set: ArcSet,
-    ) -> K2Result<()> {
+    ) -> K2Result<OwnedMutexGuard<GossipRoundState>> {
         let mut accepted_states = self.accepted_round_states.write().await;
         let accepted_entry = accepted_states.entry(from_peer.clone());
         match accepted_entry {
             std::collections::hash_map::Entry::Occupied(_) => {
-                return Err(K2Error::other(format!(
+                Err(K2Error::other(format!(
                     "peer {:?} already accepted",
                     from_peer
-                )));
+                )))
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Arc::new(Mutex::new(
-                    GossipRoundState::new_accepted(
+                let state =
+                    Arc::new(Mutex::new(GossipRoundState::new_accepted(
                         from_peer.clone(),
                         initiate.session_id.clone(),
+                        initiate.max_op_data_bytes,
                         our_agents,
                         common_arc_set,
-                    ),
-                )));
+                    )));
+
+                let lock = state.clone().lock_owned().await;
+
+                entry.insert(state);
+
+                Ok(lock)
             }
         }
-
-        Ok(())
     }
 
     pub(crate) async fn handle_accept_response(
@@ -279,8 +283,8 @@ impl K2Gossip {
         &self,
         common_arc_set: &ArcSet,
         new_since: Timestamp,
-        max_new_bytes: usize,
-    ) -> K2Result<(Vec<OpId>, Timestamp)> {
+        max_new_bytes: u32,
+    ) -> K2Result<(Vec<OpId>, u32, Timestamp)> {
         let mut used_bytes = 0;
         let mut send_new_ops = Vec::new();
         let mut send_new_bookmark = Timestamp::now();
@@ -302,6 +306,6 @@ impl K2Gossip {
             }
         }
 
-        Ok((send_new_ops, send_new_bookmark))
+        Ok((send_new_ops, used_bytes, send_new_bookmark))
     }
 }

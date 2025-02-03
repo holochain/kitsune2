@@ -80,6 +80,7 @@ async fn cannot_handle_snapshot_with_empty_arc_set() {
             snapshot,
             None,
             ArcSet::new(vec![DhtArc::Empty]).unwrap(),
+            1_000,
         )
         .await
         .unwrap_err();

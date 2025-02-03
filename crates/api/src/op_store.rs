@@ -77,12 +77,19 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// This must be the timestamp of the op, not the time that we saw the op or chose to store it.
     /// The returned ops must be ordered by timestamp, ascending.
+    ///
+    /// # Returns
+    ///
+    /// - As many op ids as can be returned within the `limit_bytes` limit, within the arc and time
+    ///   bounds.
+    /// - The total size of the op data that is pointed to by the returned op ids.
     fn retrieve_op_hashes_in_time_slice(
         &self,
         arc: DhtArc,
         start: Timestamp,
         end: Timestamp,
-    ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
+        limit_bytes: Option<u32>,
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32)>>;
 
     /// Retrieve a list of ops by their op ids.
     ///
@@ -112,13 +119,13 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// - As many op ids as can be returned within the `limit_bytes` limit.
     /// - The total size of the op data that is pointed to by the returned op ids.
-    /// - A new timestamp to be used for the next query..
+    /// - A new timestamp to be used for the next query.
     fn retrieve_op_ids_bounded(
         &self,
         arc: DhtArc,
         start: Timestamp,
-        limit_bytes: usize,
-    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, usize, Timestamp)>>;
+        limit_bytes: u32,
+    ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32, Timestamp)>>;
 
     /// Store the combined hash of a time slice.
     fn store_slice_hash(

@@ -45,8 +45,11 @@ impl K2Gossip {
                 their_snapshot,
                 None,
                 accepted.common_arc_set.clone(),
+                // Zero because this cannot return op ids
+                0,
             )
-            .await?;
+            .await?
+            .0;
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare

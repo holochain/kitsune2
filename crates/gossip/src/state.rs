@@ -20,6 +20,12 @@ pub(crate) struct GossipRoundState {
     /// Must be randomly chosen and unique for each initiated round.
     pub session_id: Bytes,
 
+    /// The maximum number of bytes of [kitsune2_api::Op]s the peer is willing to accept.
+    ///
+    /// Note that it's actually [kitsune2_api::OpId]s that are exchanged. So this is a hint in
+    /// terms of op data about how many op ids we should send back to the other peer.
+    pub peer_max_op_data_bytes: u32,
+
     /// The current stage of the round.
     ///
     /// Store the current stage, so that the next stage can be validated.
@@ -40,6 +46,8 @@ impl GossipRoundState {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id: session_id.freeze(),
+            // Initial value, to be updated when the round is accepted.
+            peer_max_op_data_bytes: 0,
             stage: RoundStage::Initiated(RoundStageInitiated {
                 our_agents,
                 our_arc_set,
@@ -50,6 +58,7 @@ impl GossipRoundState {
     pub(crate) fn new_accepted(
         session_with_peer: Url,
         session_id: Bytes,
+        peer_max_op_data_bytes: u32,
         our_agents: Vec<AgentId>,
         common_arc_set: ArcSet,
     ) -> Self {
@@ -57,6 +66,7 @@ impl GossipRoundState {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id,
+            peer_max_op_data_bytes,
             stage: RoundStage::Accepted(RoundStageAccepted {
                 our_agents,
                 common_arc_set,
