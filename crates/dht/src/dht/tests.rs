@@ -316,7 +316,7 @@ async fn ring_sync_with_matching_disc() {
     // Put recent data in the first ring of both DHTs
     dht1.inject_ops(vec![MemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
-        vec![7; 4],
+        vec![17; 4],
     )])
     .await
     .unwrap();
