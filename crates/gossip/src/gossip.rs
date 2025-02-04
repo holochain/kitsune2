@@ -503,7 +503,7 @@ mod test {
                 }
             })
             .await
-            .unwrap()
+            .expect("Timed out waiting for ops")
         }
     }
 
@@ -516,6 +516,7 @@ mod test {
         pub async fn create(
             space: SpaceId,
             bootstrap: bool,
+            config: Option<K2GossipConfig>,
         ) -> TestGossipFactory {
             let mut builder =
                 default_test_builder().with_default_config().unwrap();
@@ -529,13 +530,18 @@ mod test {
             builder
                 .config
                 .set_module_config(&K2GossipModConfig {
-                    k2_gossip: K2GossipConfig {
-                        initiate_interval_ms: 10,
-                        min_initiate_interval_ms: 10,
-                        ..Default::default()
+                    k2_gossip: if let Some(config) = config {
+                        config
+                    } else {
+                        K2GossipConfig {
+                            initiate_interval_ms: 10,
+                            min_initiate_interval_ms: 10,
+                            ..Default::default()
+                        }
                     },
                 })
                 .unwrap();
+
             let builder = Arc::new(builder);
 
             TestGossipFactory {
@@ -591,7 +597,8 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(space.clone(), false).await;
+        let factory =
+            TestGossipFactory::create(space.clone(), false, None).await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
@@ -635,7 +642,8 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(space.clone(), true).await;
+        let factory =
+            TestGossipFactory::create(space.clone(), true, None).await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
@@ -670,7 +678,8 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(space.clone(), false).await;
+        let factory =
+            TestGossipFactory::create(space.clone(), false, None).await;
 
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
@@ -742,7 +751,8 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(space.clone(), false).await;
+        let factory =
+            TestGossipFactory::create(space.clone(), false, None).await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(
@@ -812,5 +822,254 @@ mod test {
         let received_ops = harness_2.wait_for_ops(vec![op_id_1]).await;
         assert_eq!(1, received_ops.len());
         assert_eq!(op_1, received_ops[0]);
+    }
+
+    #[tokio::test]
+    async fn respect_size_limit_for_new_ops() {
+        enable_tracing();
+
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(
+            space.clone(),
+            true,
+            Some(K2GossipConfig {
+                max_gossip_op_bytes: 3 * 128,
+                // Set the initiate interval low so that gossip will start quickly after
+                // bootstrapping but leave the min initiate interval high so that we can
+                // run a single gossip round during the test.
+                initiate_interval_ms: 10,
+                ..Default::default()
+            }),
+        )
+        .await;
+        let harness_1 = factory.new_instance().await;
+        harness_1.join_local_agent(DhtArc::FULL).await;
+
+        let mut ops = Vec::new();
+
+        for i in 0u8..5 {
+            let op = MemoryOp::new(Timestamp::now(), vec![i; 128]);
+            ops.push(op);
+        }
+
+        harness_1
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness_1
+            .space
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let harness_2 = factory.new_instance().await;
+        harness_2.join_local_agent(DhtArc::FULL).await;
+
+        // Just the first 3 ops should be received, the limit should prevent the next two from
+        // being sent.
+        harness_2
+            .wait_for_ops(
+                ops.iter().take(3).map(|op| op.compute_op_id()).collect(),
+            )
+            .await;
+
+        // We received the ones we wanted above, make sure it's just those 3.
+        let all_ops = harness_2
+            .op_store
+            .retrieve_ops(ops.iter().map(|op| op.compute_op_id()).collect())
+            .await
+            .unwrap();
+        assert_eq!(3, all_ops.len());
+    }
+
+    #[tokio::test]
+    async fn respect_size_limit_for_new_ops_and_dht_disc_diff() {
+        enable_tracing();
+
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(
+            space.clone(),
+            true,
+            Some(K2GossipConfig {
+                max_gossip_op_bytes: 7 * 128,
+                // Set the initiate interval low so that gossip will start quickly after
+                // bootstrapping but leave the min initiate interval high so that we can
+                // run a single gossip round during the test.
+                initiate_interval_ms: 10,
+                ..Default::default()
+            }),
+        )
+        .await;
+        let harness_1 = factory.new_instance().await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+
+        let mut ops = Vec::new();
+
+        for i in 0u8..5 {
+            let op = MemoryOp::new(
+                Timestamp::from_micros(100 + i as i64),
+                vec![i; 128],
+            );
+            ops.push(op);
+        }
+        harness_1
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let bookmark = Timestamp::now();
+
+        for i in 0u8..5 {
+            let op = MemoryOp::new(Timestamp::now(), vec![100 + i; 128]);
+            ops.push(op);
+        }
+
+        harness_1
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().skip(5).map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness_1
+            .space
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let harness_2 = factory.new_instance().await;
+
+        // Set a bookmark so that the first 5 ops are behind the bookmark and need a disc sync and
+        // the next 5 ops are ahead of the bookmark and a new ops sync
+        harness_2
+            .peer_meta_store
+            .set_new_ops_bookmark(agent_info_1.url.clone().unwrap(), bookmark)
+            .await
+            .unwrap();
+
+        // Now join an agent to the second harness so that we can send ops to it.
+        harness_2.join_local_agent(DhtArc::FULL).await;
+
+        // Just 2 historical and all 5 new ops should be sent.
+        harness_2
+            .wait_for_ops(
+                ops.iter()
+                    .take(2)
+                    .chain(ops.iter().skip(5))
+                    .map(|op| op.compute_op_id())
+                    .collect(),
+            )
+            .await;
+
+        // We received the ones we wanted above, make sure it's just those 7.
+        let all_ops = harness_2
+            .op_store
+            .retrieve_ops(ops.iter().map(|op| op.compute_op_id()).collect())
+            .await
+            .unwrap();
+        assert_eq!(7, all_ops.len());
+    }
+
+    #[tokio::test]
+    async fn respect_size_limit_for_new_ops_and_dht_ring_diff() {
+        enable_tracing();
+
+        let space = TEST_SPACE_ID;
+        let factory = TestGossipFactory::create(
+            space.clone(),
+            true,
+            Some(K2GossipConfig {
+                max_gossip_op_bytes: 7 * 128,
+                // Set the initiate interval low so that gossip will start quickly after
+                // bootstrapping but leave the min initiate interval high so that we can
+                // run a single gossip round during the test.
+                initiate_interval_ms: 10,
+                ..Default::default()
+            }),
+        )
+        .await;
+        let harness_1 = factory.new_instance().await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+
+        let mut ops = Vec::new();
+
+        for i in 0u8..5 {
+            let op = MemoryOp::new(
+                (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
+                vec![i; 128],
+            );
+            ops.push(op);
+        }
+        harness_1
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let bookmark = Timestamp::now();
+
+        for i in 0u8..5 {
+            let op = MemoryOp::new(Timestamp::now(), vec![100 + i; 128]);
+            ops.push(op);
+        }
+
+        harness_1
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().skip(5).map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness_1
+            .space
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let harness_2 = factory.new_instance().await;
+
+        // Set a bookmark so that the first 5 ops are behind the bookmark and need a disc sync and
+        // the next 5 ops are ahead of the bookmark and a new ops sync
+        harness_2
+            .peer_meta_store
+            .set_new_ops_bookmark(agent_info_1.url.clone().unwrap(), bookmark)
+            .await
+            .unwrap();
+
+        // Now join an agent to the second harness so that we can send ops to it.
+        harness_2.join_local_agent(DhtArc::FULL).await;
+
+        // Just 2 historical and all 5 new ops should be sent.
+        harness_2
+            .wait_for_ops(
+                ops.iter()
+                    .take(2)
+                    .chain(ops.iter().skip(5))
+                    .map(|op| op.compute_op_id())
+                    .collect(),
+            )
+            .await;
+
+        // We received the ones we wanted above, make sure it's just those 7.
+        let all_ops = harness_2
+            .op_store
+            .retrieve_ops(ops.iter().map(|op| op.compute_op_id()).collect())
+            .await
+            .unwrap();
+        assert_eq!(7, all_ops.len());
     }
 }
