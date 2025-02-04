@@ -74,8 +74,10 @@ impl K2Gossip {
         if let Some(state) = lock.as_mut() {
             // Note that this value will have been initialised to 0 here when we created the
             // initial state. So we need to initialise and subtract here.
-            state.peer_max_op_data_bytes =
-                accept.max_op_data_bytes - used_bytes;
+            state.peer_max_op_data_bytes = std::cmp::min(
+                self.config.max_request_gossip_op_bytes,
+                accept.max_op_data_bytes,
+            ) - used_bytes;
         }
 
         // The common part

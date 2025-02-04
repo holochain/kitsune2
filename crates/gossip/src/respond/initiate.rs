@@ -50,6 +50,7 @@ impl K2Gossip {
         // have initiated and that we plan to accept.
         let mut state = self
             .create_accept_state(
+                self.config.clone(),
                 &from_peer,
                 &initiate,
                 our_agents.clone(),

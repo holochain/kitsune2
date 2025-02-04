@@ -3,6 +3,7 @@ use crate::protocol::{
     AcceptResponseMessage, GossipMessage, K2GossipInitiateMessage,
 };
 use crate::state::GossipRoundState;
+use crate::K2GossipConfig;
 use bytes::Bytes;
 use kitsune2_api::agent::AgentInfoSigned;
 use kitsune2_api::id::decode_ids;
@@ -102,6 +103,7 @@ impl K2Gossip {
 
     pub(crate) async fn create_accept_state(
         &self,
+        config: Arc<K2GossipConfig>,
         from_peer: &Url,
         initiate: &K2GossipInitiateMessage,
         our_agents: Vec<AgentId>,
@@ -121,7 +123,10 @@ impl K2Gossip {
                     Arc::new(Mutex::new(GossipRoundState::new_accepted(
                         from_peer.clone(),
                         initiate.session_id.clone(),
-                        initiate.max_op_data_bytes,
+                        std::cmp::min(
+                            config.max_request_gossip_op_bytes,
+                            initiate.max_op_data_bytes,
+                        ),
                         our_agents,
                         common_arc_set,
                     )));

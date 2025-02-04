@@ -18,6 +18,17 @@ pub struct K2GossipConfig {
     /// Default: 100MB
     pub max_gossip_op_bytes: u32,
 
+    /// The maximum value that this instance will accept for the `max_gossip_op_bytes` parameter
+    /// from a remote peer.
+    ///
+    /// This prevents the remote peer from setting a high value for `max_gossip_op_bytes` and
+    /// requesting all their op data from us in one batch. With this value set, we can limit how
+    /// fast they'll be able to discover ops from us because it'll require multiple rounds to
+    /// discover all the op ids they'd need to request from us.
+    ///
+    /// Default: 250MB
+    pub max_request_gossip_op_bytes: u32,
+
     /// The interval in seconds between initiating gossip rounds.
     ///
     /// This controls how often Kitsune will attempt to find a peer to gossip with.
@@ -71,6 +82,7 @@ impl Default for K2GossipConfig {
     fn default() -> Self {
         Self {
             max_gossip_op_bytes: 100 * 1024 * 1024,
+            max_request_gossip_op_bytes: 250 * 1024 * 1024,
             initiate_interval_ms: 120_000,
             min_initiate_interval_ms: 300_000,
             round_timeout_ms: 60_000,
