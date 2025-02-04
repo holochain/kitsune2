@@ -26,7 +26,7 @@ pub struct K2GossipConfig {
     /// fast they'll be able to discover ops from us because it'll require multiple rounds to
     /// discover all the op ids they'd need to request from us.
     ///
-    /// Default: 250MB
+    /// Default: 100MB
     pub max_request_gossip_op_bytes: u32,
 
     /// The interval in seconds between initiating gossip rounds.
@@ -82,7 +82,7 @@ impl Default for K2GossipConfig {
     fn default() -> Self {
         Self {
             max_gossip_op_bytes: 100 * 1024 * 1024,
-            max_request_gossip_op_bytes: 250 * 1024 * 1024,
+            max_request_gossip_op_bytes: 100 * 1024 * 1024,
             initiate_interval_ms: 120_000,
             min_initiate_interval_ms: 300_000,
             round_timeout_ms: 60_000,
