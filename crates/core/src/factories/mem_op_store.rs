@@ -189,9 +189,17 @@ impl OpStore for Kitsune2MemoryOpStore {
                 K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
             })?;
 
-            let op_ids =
-                ops_to_add.iter().map(|(op_id, _)| op_id.clone()).collect();
-            self.write().await.op_list.extend(ops_to_add);
+            let mut op_ids = Vec::with_capacity(ops_to_add.len());
+            let mut lock = self.write().await;
+            for (op_id, record) in ops_to_add {
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    lock.op_list.entry(op_id.clone())
+                {
+                    entry.insert(record);
+                    op_ids.push(op_id);
+                }
+            }
+
             Ok(op_ids)
         })
     }
