@@ -215,16 +215,21 @@ impl OpStore for Kitsune2MemoryOpStore {
             let self_lock = self.read().await;
 
             let mut used_bytes = 0;
+            let mut candidate_ops = self_lock
+                .op_list
+                .iter()
+                .filter(|(_, op)| {
+                    let loc = op.op_id.loc();
+                    op.created_at >= start
+                        && op.created_at < end
+                        && arc.contains(loc)
+                })
+                .collect::<Vec<_>>();
+            candidate_ops.sort_by_key(|a| a.1.created_at);
+
             Ok((
-                self_lock
-                    .op_list
+                candidate_ops
                     .iter()
-                    .filter(|(_, op)| {
-                        let loc = op.op_id.loc();
-                        op.created_at >= start
-                            && op.created_at < end
-                            && arc.contains(loc)
-                    })
                     .take_while(|(_, op)| {
                         let data_len = op.op_data.len() as u32;
                         match limit_bytes {
@@ -243,7 +248,7 @@ impl OpStore for Kitsune2MemoryOpStore {
                             }
                         }
                     })
-                    .map(|(op_id, _)| op_id.clone())
+                    .map(|(op_id, _)| (*op_id).clone())
                     .collect(),
                 used_bytes,
             ))
