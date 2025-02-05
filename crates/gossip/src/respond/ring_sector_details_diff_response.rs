@@ -42,9 +42,9 @@ impl K2Gossip {
             .read()
             .await
             .handle_snapshot(
-                their_snapshot,
+                their_snapshot.clone(),
                 Some(ring_sector_details.snapshot.clone()),
-                ring_sector_details.common_arc_set,
+                ring_sector_details.common_arc_set.clone(),
                 peer_max_op_data_bytes,
             )
             .await?;
@@ -52,6 +52,13 @@ impl K2Gossip {
         if let Some(state) = state.as_mut() {
             state.peer_max_op_data_bytes -= used_bytes as i32;
         }
+
+        self.update_storage_arcs(
+            &next_action,
+            &their_snapshot,
+            ring_sector_details.common_arc_set,
+        )
+        .await?;
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare

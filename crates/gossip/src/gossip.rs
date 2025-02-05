@@ -5,6 +5,7 @@ use crate::protocol::{
     ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
 };
 use crate::state::GossipRoundState;
+use crate::storage_arc::update_storage_arcs;
 use crate::timeout::spawn_timeout_task;
 use crate::update::spawn_dht_update_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -286,6 +287,29 @@ impl K2Gossip {
         *initiated_lock = Some(round_state);
 
         Ok(true)
+    }
+
+    pub(crate) async fn update_storage_arcs(
+        &self,
+        next_action: &kitsune2_dht::DhtSnapshotNextAction,
+        their_snapshot: &kitsune2_dht::snapshot::DhtSnapshot,
+        common_arc_set: kitsune2_dht::ArcSet,
+    ) -> K2Result<()> {
+        if !matches!(
+            next_action,
+            kitsune2_dht::DhtSnapshotNextAction::CannotCompare
+        ) {
+            // As long as the comparison was successful, use this diff to update storage arcs.
+            if let Err(e) = update_storage_arcs(
+                their_snapshot,
+                self.local_agent_store.get_all().await?,
+                common_arc_set.clone(),
+            ) {
+                tracing::error!("Error updating storage arcs: {:?}", e);
+            }
+        }
+
+        Ok(())
     }
 
     /// Handle an incoming gossip message.

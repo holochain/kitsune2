@@ -9,6 +9,7 @@ use crate::state::{
     RoundStageRingSectorDetailsDiff,
 };
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
+use kitsune2_dht::snapshot::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
 
@@ -33,7 +34,7 @@ impl K2Gossip {
         )
         .await?;
 
-        let their_snapshot = ring_sector_details_diff
+        let their_snapshot: DhtSnapshot = ring_sector_details_diff
             .snapshot
             .expect(
                 "Snapshot present checked by validate_ring_sector_details_diff",
@@ -45,7 +46,7 @@ impl K2Gossip {
             .read()
             .await
             .handle_snapshot(
-                their_snapshot,
+                their_snapshot.clone(),
                 None,
                 accepted.common_arc_set.clone(),
                 state.peer_max_op_data_bytes,
@@ -53,6 +54,13 @@ impl K2Gossip {
             .await?;
 
         state.peer_max_op_data_bytes -= used_bytes as i32;
+
+        self.update_storage_arcs(
+            &next_action,
+            &their_snapshot,
+            accepted.common_arc_set.clone(),
+        )
+        .await?;
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare
