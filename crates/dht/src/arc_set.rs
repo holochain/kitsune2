@@ -201,6 +201,23 @@ impl ArcSet {
     }
 }
 
+impl IntoIterator for ArcSet {
+    type Item = u32;
+    type IntoIter = std::collections::hash_set::IntoIter<u32>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl FromIterator<u32> for ArcSet {
+    fn from_iter<T: IntoIterator<Item = u32>>(iter: T) -> Self {
+        ArcSet {
+            inner: iter.into_iter().collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

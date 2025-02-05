@@ -57,6 +57,8 @@ pub enum DhtSnapshot {
     /// hashes.
     RingSectorDetails {
         /// Similar to the `ring_top_hashes` except the sector hashes are not combined.
+        ///
+        /// Organized by ring index in the first HashMap, then sector index in the second HashMap.
         ring_sector_hashes: HashMap<u32, HashMap<u32, bytes::Bytes>>,
         /// The end timestamp of the most recent full time slice.
         disc_boundary: Timestamp,
