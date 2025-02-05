@@ -88,7 +88,6 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         arc: DhtArc,
         start: Timestamp,
         end: Timestamp,
-        limit_bytes: Option<u32>,
     ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32)>>;
 
     /// Retrieve a list of ops by their op ids.
