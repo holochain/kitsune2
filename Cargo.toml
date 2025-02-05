@@ -6,6 +6,7 @@ members = [
   "crates/dht",
   "crates/gossip",
   "crates/kitsune2",
+  "crates/kitsune2_showcase",
   "crates/test_utils",
   "crates/tool_proto_build",
   "crates/transport_tx5",
@@ -16,6 +17,7 @@ resolver = "2"
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.
+kitsune2 = { version = "0.0.1-alpha", path = "crates/kitsune2" }
 kitsune2_api = { version = "0.0.1-alpha", path = "crates/api" }
 kitsune2_dht = { version = "0.0.1-alpha", path = "crates/dht" }
 kitsune2_gossip = { version = "0.0.1-alpha", path = "crates/gossip" }
