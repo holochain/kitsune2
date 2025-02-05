@@ -50,6 +50,11 @@ impl K2Gossip {
             .await?;
 
         if let Some(state) = state.as_mut() {
+            tracing::debug!(
+                "Used {}/{} op budget to send disc ops",
+                used_bytes,
+                state.peer_max_op_data_bytes,
+            );
             state.peer_max_op_data_bytes -= used_bytes;
         }
 

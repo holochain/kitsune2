@@ -72,6 +72,13 @@ impl K2Gossip {
         // Update the peer's max op data bytes to reflect the amount of data we're sending ids for.
         // The remaining limit will be used for the DHT diff as required.
         if let Some(state) = lock.as_mut() {
+            tracing::debug!(
+                "Used {}/{} op budget to send {} op ids",
+                used_bytes,
+                accept.max_op_data_bytes,
+                send_new_ops.len()
+            );
+
             // Note that this value will have been initialised to 0 here when we created the
             // initial state. So we need to initialise and subtract here.
             state.peer_max_op_data_bytes = std::cmp::min(

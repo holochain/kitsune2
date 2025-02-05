@@ -99,6 +99,12 @@ impl K2Gossip {
 
         // Update the peer's max op data bytes to reflect the amount of data we're sending ids for.
         // The remaining limit will be used for the DHT diff as required.
+        tracing::debug!(
+            "Used {}/{} op budget to send {} op ids",
+            used_bytes,
+            initiate.max_op_data_bytes,
+            new_ops.len()
+        );
         state.peer_max_op_data_bytes -= used_bytes;
 
         Ok(Some(GossipMessage::Accept(K2GossipAcceptMessage {
