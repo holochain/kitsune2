@@ -28,27 +28,24 @@ pub(crate) fn update_storage_arcs(
         DhtSnapshot::Minimal { .. } => HashSet::with_capacity(0),
         DhtSnapshot::RingSectorDetails {
             ring_sector_hashes, ..
-        } => ring_sector_hashes
-            .values()
-            .flat_map(|v| v.keys())
-            .copied()
-            .collect::<HashSet<_>>(),
+        } => {
+            // These sectors didn't match, so we can't include them in our storage arc.
+            ring_sector_hashes
+                .values()
+                .flat_map(|v| v.keys())
+                .copied()
+                .collect::<HashSet<_>>()
+        }
         _ => {
             tracing::info!("Unable to update storage arc with a non-ring sector details snapshot");
             return Ok(());
         }
     };
 
-    // These sectors didn't match, so we can't include them in our storage arc.
-
-    let common_sectors = common_arc_set.into_iter().collect::<HashSet<_>>();
-
     // The difference between the common arc set used to construct the DhtSnapshot and the
     // mismatched sectors is the set of sectors that we can use to update our storage arc.
-    let synced_arcs = common_sectors
-        .difference(&mismatched_sectors)
-        .copied()
-        .collect::<ArcSet>()
+    let synced_arcs = common_arc_set
+        .without_sector_indices(mismatched_sectors)
         .as_arcs();
 
     for local_agent in local_agents {
