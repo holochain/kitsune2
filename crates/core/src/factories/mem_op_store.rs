@@ -209,7 +209,6 @@ impl OpStore for Kitsune2MemoryOpStore {
         arc: DhtArc,
         start: Timestamp,
         end: Timestamp,
-        limit_bytes: Option<u32>,
     ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32)>> {
         Box::pin(async move {
             let self_lock = self.read().await;
@@ -230,25 +229,10 @@ impl OpStore for Kitsune2MemoryOpStore {
             Ok((
                 candidate_ops
                     .iter()
-                    .take_while(|(_, op)| {
-                        let data_len = op.op_data.len() as u32;
-                        match limit_bytes {
-                            Some(limit_bytes) => {
-                                if used_bytes + data_len <= limit_bytes {
-                                    used_bytes += data_len;
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
-                            None => {
-                                // Return an accurate count even if we're not limiting
-                                used_bytes += data_len;
-                                true
-                            }
-                        }
+                    .map(|(op_id, record)| {
+                        used_bytes += record.op_data.len() as u32;
+                        (*op_id).clone()
                     })
-                    .map(|(op_id, _)| (*op_id).clone())
                     .collect(),
                 used_bytes,
             ))
