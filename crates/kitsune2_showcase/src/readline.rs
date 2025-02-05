@@ -75,12 +75,13 @@ pub fn readline(
             Ok(reedline::Signal::Success(buffer)) => {
                 if buffer.starts_with("/help") {
                     help(command_list);
+                    continue;
                 } else if buffer.starts_with("/exit") {
                     break;
-                } else {
-                    if lines.blocking_send(buffer).is_err() {
-                        break;
-                    }
+                }
+
+                if lines.blocking_send(buffer).is_err() {
+                    break;
                 }
             }
             Ok(reedline::Signal::CtrlD) | Ok(reedline::Signal::CtrlC) => {
