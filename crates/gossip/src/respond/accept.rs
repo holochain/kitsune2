@@ -96,12 +96,13 @@ impl K2Gossip {
 
         match accept.snapshot {
             Some(their_snapshot) => {
+                let their_snapshot: DhtSnapshot = their_snapshot.into();
                 let (next_action, _) = self
                     .dht
                     .read()
                     .await
                     .handle_snapshot(
-                        their_snapshot.into(),
+                        their_snapshot.clone(),
                         None,
                         common_arc_set.clone(),
                         // Zero because this cannot return op ids
@@ -115,6 +116,13 @@ impl K2Gossip {
                         if let Some(state) = lock.as_mut() {
                             state.stage = RoundStage::NoDiff;
                         }
+
+                        self.update_storage_arcs(
+                            &next_action,
+                            &their_snapshot,
+                            common_arc_set.clone(),
+                        )
+                        .await?;
 
                         Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
                             session_id: accept.session_id,

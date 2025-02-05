@@ -6,6 +6,11 @@ use std::collections::HashSet;
 
 /// Update the storage arcs of local agents based on a DhtSnapshot.
 ///
+/// The snapshot may either be a [DhtSnapshot::RingSectorDetails] or a [DhtSnapshot::Minimal].
+/// A minimal snapshot may only be provided when the snapshot has already been checked to be
+/// identical to our own minimal snapshot. In that case we know that the entire common arc set
+/// was in sync.
+///
 /// Note that the DHT model prioritises syncing the disc. So if we've reached a ring diff then we
 /// can assume that the disc was synced at the point this diff was produced. This function requires
 /// the input [DhtSnapshot] to be a [DhtSnapshot::RingSectorDetails] variant.
@@ -15,24 +20,27 @@ use std::collections::HashSet;
 /// start or end of the current storage arc for a local agent, it will do so. Any synced sectors
 /// that cannot be added to the storage arc to produce a larger continuous arc are ignored.
 pub(crate) fn update_storage_arcs(
-    ring_details: &DhtSnapshot,
+    snapshot: &DhtSnapshot,
     local_agents: Vec<DynLocalAgent>,
     common_arc_set: ArcSet,
 ) -> K2Result<()> {
-    let DhtSnapshot::RingSectorDetails {
-        ring_sector_hashes, ..
-    } = ring_details
-    else {
-        tracing::info!("Unable to update storage arc with a non-ring sector details snapshot");
-        return Ok(());
+    let mismatched_sectors = match snapshot {
+        DhtSnapshot::Minimal { .. } => HashSet::with_capacity(0),
+        DhtSnapshot::RingSectorDetails {
+            ring_sector_hashes, ..
+        } => ring_sector_hashes
+            .values()
+            .flat_map(|v| v.keys())
+            .copied()
+            .collect::<HashSet<_>>(),
+        _ => {
+            tracing::info!("Unable to update storage arc with a non-ring sector details snapshot");
+            return Ok(());
+        }
     };
 
     // These sectors didn't match, so we can't include them in our storage arc.
-    let mismatched_sectors = ring_sector_hashes
-        .values()
-        .flat_map(|v| v.keys())
-        .copied()
-        .collect::<HashSet<_>>();
+
     let common_sectors = common_arc_set.into_iter().collect::<HashSet<_>>();
 
     // The difference between the common arc set used to construct the DhtSnapshot and the
