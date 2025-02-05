@@ -390,7 +390,7 @@ mod test {
     use kitsune2_api::{AgentId, DhtArc, OpId};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
-    use kitsune2_dht::UNIT_TIME;
+    use kitsune2_dht::{SECTOR_SIZE, UNIT_TIME};
     use kitsune2_test_utils::enable_tracing;
     use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
     use kitsune2_test_utils::space::TEST_SPACE_ID;
@@ -911,10 +911,11 @@ mod test {
         let mut ops = Vec::new();
 
         for i in 0u8..5 {
-            let op = MemoryOp::new(
-                Timestamp::from_micros(100 + i as i64),
-                vec![i; 128],
-            );
+            let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
+            op_data.resize(128, 0);
+
+            let op =
+                MemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
             ops.push(op);
         }
         harness_1
@@ -1004,9 +1005,12 @@ mod test {
         let mut ops = Vec::new();
 
         for i in 0u8..5 {
+            let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
+            op_data.resize(128, 0);
+
             let op = MemoryOp::new(
                 (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
-                vec![i; 128],
+                op_data,
             );
             ops.push(op);
         }

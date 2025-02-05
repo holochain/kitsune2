@@ -52,7 +52,7 @@ impl K2Gossip {
             used_bytes,
             state.peer_max_op_data_bytes,
         );
-        state.peer_max_op_data_bytes -= used_bytes;
+        state.peer_max_op_data_bytes -= used_bytes as i32;
 
         match next_action {
             DhtSnapshotNextAction::CannotCompare

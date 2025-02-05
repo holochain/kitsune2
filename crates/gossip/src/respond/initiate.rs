@@ -105,7 +105,7 @@ impl K2Gossip {
             initiate.max_op_data_bytes,
             new_ops.len()
         );
-        state.peer_max_op_data_bytes -= used_bytes;
+        state.peer_max_op_data_bytes -= used_bytes as i32;
 
         Ok(Some(GossipMessage::Accept(K2GossipAcceptMessage {
             session_id: initiate.session_id,

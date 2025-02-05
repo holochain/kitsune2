@@ -24,7 +24,10 @@ pub(crate) struct GossipRoundState {
     ///
     /// Note that it's actually [kitsune2_api::OpId]s that are exchanged. So this is a hint in
     /// terms of op data about how many op ids we should send back to the other peer.
-    pub peer_max_op_data_bytes: u32,
+    ///
+    /// The value is an `i32` because it's a soft limit and in order to send complete slices,
+    /// gossip may exceed the limit. That is recorded here as a negative number.
+    pub peer_max_op_data_bytes: i32,
 
     /// The current stage of the round.
     ///
@@ -66,7 +69,7 @@ impl GossipRoundState {
             session_with_peer,
             started_at: tokio::time::Instant::now(),
             session_id,
-            peer_max_op_data_bytes,
+            peer_max_op_data_bytes: peer_max_op_data_bytes as i32,
             stage: RoundStage::Accepted(RoundStageAccepted {
                 our_agents,
                 common_arc_set,
