@@ -159,9 +159,9 @@ impl DhtArc {
             DhtArc::Empty => 0,
             DhtArc::Arc(start, end) => {
                 if start > end {
-                    u32::MAX - start + end + 1
+                    u32::MAX - start + end
                 } else {
-                    end - start + 1
+                    end - start
                 }
             }
         }
