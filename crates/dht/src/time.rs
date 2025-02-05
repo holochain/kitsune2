@@ -520,7 +520,6 @@ impl TimePartition {
                     self.sector_constraint,
                     full_slices_end_timestamp,
                     full_slices_end_timestamp + self.full_slice_duration,
-                    None,
                 )
                 .await?
                 .0;
@@ -627,7 +626,6 @@ impl TimePartition {
                                 self.sector_constraint,
                                 start,
                                 end,
-                                None,
                             )
                             .await?
                             .0,

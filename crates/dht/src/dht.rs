@@ -98,7 +98,7 @@ pub trait DhtApi: 'static + Send + Sync + std::fmt::Debug {
         their_snapshot: DhtSnapshot,
         our_previous_snapshot: Option<DhtSnapshot>,
         arc_set: ArcSet,
-        max_op_data_bytes: u32,
+        max_op_data_bytes: i32,
     ) -> BoxFut<'_, K2Result<(DhtSnapshotNextAction, u32)>>;
 }
 
@@ -222,7 +222,7 @@ impl DhtApi for Dht {
         their_snapshot: DhtSnapshot,
         our_previous_snapshot: Option<DhtSnapshot>,
         arc_set: ArcSet,
-        max_op_data_bytes: u32,
+        max_op_data_bytes: i32,
     ) -> BoxFut<'_, K2Result<(DhtSnapshotNextAction, u32)>> {
         Box::pin(async move {
             if arc_set.covered_sector_count() == 0 {
@@ -346,9 +346,16 @@ impl DhtApi for Dht {
                 SnapshotDiff::DiscSectorSliceMismatches(
                     mismatched_slice_indices,
                 ) => {
+                    // Need to fetch in order by sector index
+                    let mut mismatched_slice_indices = mismatched_slice_indices
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    mismatched_slice_indices
+                        .sort_by_key(|(sector_index, _)| *sector_index);
+
                     let mut out = Vec::new();
                     let mut used_bytes = 0;
-                    for (sector_index, missing_slices) in
+                    for (sector_index, mut missing_slices) in
                         mismatched_slice_indices
                     {
                         let Ok(arc) = self
@@ -361,6 +368,9 @@ impl DhtApi for Dht {
                             );
                             continue;
                         };
+
+                        // Need to fetch in order by slice index
+                        missing_slices.sort();
 
                         for missing_slice in missing_slices {
                             let Ok((start, end)) = self
@@ -379,15 +389,14 @@ impl DhtApi for Dht {
                             let (op_ids, ub) = self
                                 .store
                                 .retrieve_op_hashes_in_time_slice(
-                                    arc,
-                                    start,
-                                    end,
-                                    Some(max_op_data_bytes - used_bytes),
+                                    arc, start, end,
                                 )
                                 .await?;
-                            out.extend(op_ids);
 
-                            used_bytes += ub;
+                            if (used_bytes + ub) as i32 <= max_op_data_bytes {
+                                out.extend(op_ids);
+                                used_bytes += ub;
+                            }
                         }
                     }
 
@@ -413,10 +422,20 @@ impl DhtApi for Dht {
                     0,
                 )),
                 SnapshotDiff::RingSectorMismatches(mismatched_sectors) => {
+                    // Need to fetch in order by ring index
+                    let mut mismatched_sectors =
+                        mismatched_sectors.into_iter().collect::<Vec<_>>();
+                    mismatched_sectors
+                        .sort_by_key(|(ring_index, _)| *ring_index);
+
                     let mut out = Vec::new();
 
                     let mut used_bytes = 0;
-                    for (ring_index, missing_sectors) in mismatched_sectors {
+                    for (ring_index, mut missing_sectors) in mismatched_sectors
+                    {
+                        // Need to fetch in order by sector index
+                        missing_sectors.sort();
+
                         for sector_index in missing_sectors {
                             let Ok(arc) = self
                                 .partition
@@ -445,15 +464,17 @@ impl DhtApi for Dht {
                             let (op_ids, ub) = self
                                 .store
                                 .retrieve_op_hashes_in_time_slice(
-                                    arc,
-                                    start,
-                                    end,
-                                    Some(max_op_data_bytes - used_bytes),
+                                    arc, start, end,
                                 )
                                 .await?;
-                            out.extend(op_ids);
 
-                            used_bytes += ub;
+                            if (used_bytes + ub) as i32 <= max_op_data_bytes {
+                                tracing::info!("Accepting op batch in sector: {}, ring: {}", sector_index, ring_index);
+                                out.extend(op_ids);
+                                used_bytes += ub;
+                            } else {
+                                tracing::info!("No space for batch of ops from sector {}, needs {} bytes", sector_index, ub);
+                            }
                         }
                     }
 
