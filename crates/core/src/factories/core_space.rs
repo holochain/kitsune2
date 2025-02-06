@@ -308,7 +308,6 @@ impl Space for CoreSpace {
             // update our local map
             self.local_agent_store.add(local_agent.clone()).await?;
 
-            // TODO - inform gossip module of new join
             // TODO - inform sharding module of new join
 
             let inner = self.inner.clone();
@@ -323,7 +322,6 @@ impl Space for CoreSpace {
                 let peer_store = peer_store.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    // TODO - call an update function on the gossip module.
                     // TODO - call an update function on the sharding module.
 
                     let url = inner.lock().unwrap().current_url.clone();
@@ -384,7 +382,6 @@ impl Space for CoreSpace {
 
     fn local_agent_leave(&self, local_agent: id::AgentId) -> BoxFut<'_, ()> {
         Box::pin(async move {
-            // TODO - inform gossip module of leave
             // TODO - inform sharding module of leave
 
             let local_agent = self.local_agent_store.remove(local_agent).await;

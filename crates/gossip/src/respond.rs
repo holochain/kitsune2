@@ -228,7 +228,6 @@ impl K2Gossip {
             return Ok(());
         }
 
-        // TODO check that the incoming agents are the one we requested
         let mut agents = Vec::with_capacity(provided_agents.len());
         for agent in provided_agents {
             let agent_info =

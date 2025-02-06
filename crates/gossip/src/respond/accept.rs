@@ -175,7 +175,7 @@ impl K2Gossip {
                             _ => {
                                 // TODO while this would require a local inconsistency between
                                 //      the DHT and the gossip crates, we should probably still
-                                //      handle this wihtout a panic.
+                                //      handle this without a panic.
                                 unreachable!("unexpected snapshot type")
                             }
                         }
