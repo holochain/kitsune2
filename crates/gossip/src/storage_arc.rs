@@ -70,9 +70,12 @@ pub(crate) fn update_storage_arcs(
             .intersection(&target_set)
             .as_arcs();
 
+        #[cfg(feature = "sharding")]
         if current_storage_arc == DhtArc::Empty {
             // When our current storage arc is empty, we're free to pick a new one that is
             // contained within the target arc. Pick the largest one.
+            // TODO we might want to revisit this logic so that we pick an arc that starts from the
+            //      agent's location.
             if let Some(new_arc) =
                 new_arcs.into_iter().max_by_key(|arc| arc.len())
             {
@@ -88,6 +91,10 @@ pub(crate) fn update_storage_arcs(
             }) {
                 local_agent.set_cur_storage_arc(new_arc);
             }
+        }
+        #[cfg(not(feature = "sharding"))]
+        if new_arcs.into_iter().any(|arc| arc == DhtArc::FULL) {
+            local_agent.set_cur_storage_arc(DhtArc::FULL);
         }
     }
 
@@ -137,6 +144,7 @@ mod tests {
         assert_eq!(arc, local_agent.get_cur_storage_arc());
     }
 
+    #[cfg(feature = "sharding")]
     #[test]
     fn no_mismatched_sectors_from_empty() {
         let local_agent = Arc::new(Ed25519LocalAgent::default());
@@ -164,6 +172,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "sharding")]
     #[test]
     fn some_mismatched_sectors_from_empty() {
         let local_agent = Arc::new(Ed25519LocalAgent::default());
@@ -215,6 +224,7 @@ mod tests {
         assert_eq!(arc, local_agent.get_cur_storage_arc());
     }
 
+    #[cfg(feature = "sharding")]
     #[test]
     fn expand_towards_target_arc() {
         let local_agent = Arc::new(Ed25519LocalAgent::default());
@@ -242,6 +252,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "sharding")]
     #[test]
     fn update_multiple_agents() {
         let local_agent_1 = Arc::new(Ed25519LocalAgent::default());
@@ -286,6 +297,43 @@ mod tests {
 
         // Storage arc 3 restricted by mismatched sectors
         assert_eq!(arc_3, local_agent_3.get_cur_storage_arc());
+    }
+
+    #[cfg(not(feature = "sharding"))]
+    #[test]
+    fn expand_to_full_from_empty() {
+        let local_agent = Arc::new(Ed25519LocalAgent::default());
+        local_agent.set_cur_storage_arc(DhtArc::Empty);
+        local_agent.set_tgt_storage_arc_hint(DhtArc::FULL);
+
+        update_storage_arcs(
+            &test_snapshot_with_mismatched_sectors(&[]),
+            vec![local_agent.clone()],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        )
+        .unwrap();
+
+        // Storage arc expands to full
+        assert_eq!(DhtArc::FULL, local_agent.get_cur_storage_arc());
+    }
+
+    #[cfg(not(feature = "sharding"))]
+    #[test]
+    fn no_expand_when_any_sector_mismatches() {
+        let local_agent = Arc::new(Ed25519LocalAgent::default());
+        local_agent.set_cur_storage_arc(DhtArc::Empty);
+        local_agent.set_tgt_storage_arc_hint(DhtArc::FULL);
+
+        update_storage_arcs(
+            // Single mismatch
+            &test_snapshot_with_mismatched_sectors(&[40]),
+            vec![local_agent.clone()],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        )
+        .unwrap();
+
+        // Storage arc expands to full
+        assert_eq!(DhtArc::Empty, local_agent.get_cur_storage_arc());
     }
 
     /// Note that this would be a mistake by the host implementation or some sharding logic.

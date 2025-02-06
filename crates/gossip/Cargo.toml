@@ -30,3 +30,6 @@ kitsune2_dht = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 
 tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+sharding = []
