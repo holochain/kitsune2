@@ -358,6 +358,10 @@ impl DhtApi for Dht {
                     for (sector_index, mut missing_slices) in
                         mismatched_slice_indices
                     {
+                        if used_bytes as i32 >= max_op_data_bytes {
+                            break;
+                        }
+
                         let Ok(arc) = self
                             .partition
                             .dht_arc_for_sector_index(sector_index)
@@ -431,12 +435,17 @@ impl DhtApi for Dht {
                     let mut out = Vec::new();
 
                     let mut used_bytes = 0;
-                    for (ring_index, mut missing_sectors) in mismatched_sectors
+                    'outer: for (ring_index, mut missing_sectors) in
+                        mismatched_sectors
                     {
                         // Need to fetch in order by sector index
                         missing_sectors.sort();
 
                         for sector_index in missing_sectors {
+                            if used_bytes as i32 >= max_op_data_bytes {
+                                break 'outer;
+                            }
+
                             let Ok(arc) = self
                                 .partition
                                 .dht_arc_for_sector_index(sector_index)
