@@ -292,7 +292,7 @@ impl K2Gossip {
     pub(crate) async fn update_storage_arcs(
         &self,
         next_action: &kitsune2_dht::DhtSnapshotNextAction,
-        their_snapshot: &kitsune2_dht::snapshot::DhtSnapshot,
+        their_snapshot: &kitsune2_dht::DhtSnapshot,
         common_arc_set: kitsune2_dht::ArcSet,
     ) -> K2Result<()> {
         if !matches!(

@@ -1,7 +1,7 @@
-use kitsune2_api::agent::{DynLocalAgent, LocalAgent};
 use kitsune2_api::{DhtArc, K2Result};
-use kitsune2_dht::snapshot::DhtSnapshot;
+use kitsune2_api::{DynLocalAgent, LocalAgent};
 use kitsune2_dht::ArcSet;
+use kitsune2_dht::DhtSnapshot;
 use std::collections::HashSet;
 
 /// Update the storage arcs of local agents based on a DhtSnapshot.
