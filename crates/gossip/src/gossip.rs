@@ -9,15 +9,7 @@ use crate::timeout::spawn_timeout_task;
 use crate::update::spawn_dht_update_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
 use bytes::Bytes;
-use kitsune2_api::agent::DynVerifier;
-use kitsune2_api::fetch::DynFetch;
-use kitsune2_api::peer_store::DynPeerStore;
-use kitsune2_api::transport::{DynTransport, TxBaseHandler, TxModuleHandler};
-use kitsune2_api::{
-    BoxFut, DynGossip, DynGossipFactory, DynLocalAgentStore, DynOpStore,
-    DynPeerMetaStore, Gossip, GossipFactory, K2Error, K2Result, SpaceId,
-    StoredOp, Timestamp, Url, UNIX_TIMESTAMP,
-};
+use kitsune2_api::*;
 use kitsune2_dht::{Dht, DhtApi};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,23 +29,17 @@ impl K2GossipFactory {
 }
 
 impl GossipFactory for K2GossipFactory {
-    fn default_config(
-        &self,
-        config: &mut kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn default_config(&self, config: &mut Config) -> K2Result<()> {
         config.set_module_config(&K2GossipModConfig::default())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<kitsune2_api::builder::Builder>,
+        builder: Arc<Builder>,
         space_id: SpaceId,
         peer_store: DynPeerStore,
         local_agent_store: DynLocalAgentStore,
@@ -61,7 +47,7 @@ impl GossipFactory for K2GossipFactory {
         op_store: DynOpStore,
         transport: DynTransport,
         fetch: DynFetch,
-    ) -> kitsune2_api::BoxFut<'static, K2Result<DynGossip>> {
+    ) -> BoxFut<'static, K2Result<DynGossip>> {
         Box::pin(async move {
             let config =
                 builder.config.get_module_config::<K2GossipModConfig>()?;
@@ -383,11 +369,6 @@ pub(crate) fn send_gossip_message(
 #[cfg(test)]
 mod test {
     use super::*;
-    use kitsune2_api::agent::{AgentInfoSigned, LocalAgent};
-    use kitsune2_api::builder::Builder;
-    use kitsune2_api::space::{DynSpace, SpaceHandler};
-    use kitsune2_api::transport::{TxHandler, TxSpaceHandler};
-    use kitsune2_api::{AgentId, DhtArc, OpId};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_dht::{SECTOR_SIZE, UNIT_TIME};

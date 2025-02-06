@@ -10,6 +10,12 @@ use mockall::automock;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+pub(crate) mod proto {
+    include!("../proto/gen/kitsune2.op_store.rs");
+}
+
+pub use proto::Op;
+
 /// An op with metadata.
 ///
 /// This is the basic unit of data in the kitsune2 system.
@@ -21,8 +27,6 @@ pub struct MetaOp {
     /// The actual op data.
     pub op_data: Bytes,
 }
-
-include!("../proto/gen/kitsune2.op_store.rs");
 
 impl From<Bytes> for Op {
     fn from(value: Bytes) -> Self {

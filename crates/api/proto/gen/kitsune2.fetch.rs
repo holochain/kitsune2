@@ -26,6 +26,9 @@ pub struct K2FetchMessage {
 /// Nested message and enum types in `K2FetchMessage`.
 pub mod k2_fetch_message {
     /// Fetch message type.
+    ///
+    /// This enum is used to indicate the content of `data`.
+    /// So, REQUEST -> FetchRequest and RESPONSE -> FetchResponse.
     #[derive(
         Clone,
         Copy,

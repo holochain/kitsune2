@@ -126,8 +126,6 @@ impl DhtSnapshot {
                 },
             ) => {
                 if our_disc_boundary != other_disc_boundary {
-                    // TODO Don't expect the boundary to move during a comparison so treat this as
-                    //      an error at this point? We should have stopped before now.
                     return SnapshotDiff::CannotCompare;
                 }
 
@@ -167,8 +165,6 @@ impl DhtSnapshot {
                 },
             ) => {
                 if our_disc_boundary != other_disc_boundary {
-                    // TODO Don't expect the boundary to move during a comparison so treat this as
-                    //      an error at this point? We should have stopped before now.
                     return SnapshotDiff::CannotCompare;
                 }
 
@@ -250,8 +246,6 @@ impl DhtSnapshot {
                 },
             ) => {
                 if our_disc_boundary != other_disc_boundary {
-                    // TODO Don't expect the boundary to move during a comparison so treat this as
-                    //      an error at this point? We should have stopped before now.
                     return SnapshotDiff::CannotCompare;
                 }
 

@@ -1,10 +1,10 @@
 //! The mem bootstrap implementation provided by Kitsune2.
 
-use kitsune2_api::{bootstrap::*, config::*, *};
+use kitsune2_api::*;
 use std::sync::{Arc, Mutex};
 
 /// MemBootstrap configuration types.
-pub mod config {
+mod config {
     /// Configuration parameters for [MemBootstrapFactory](super::MemBootstrapFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ pub mod config {
     }
 }
 
-use config::*;
+pub use config::*;
 
 /// The mem bootstrap implementation provided by Kitsune2.
 #[derive(Debug)]
@@ -65,17 +65,14 @@ impl BootstrapFactory for MemBootstrapFactory {
         config.set_module_config(&MemBootstrapModConfig::default())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
-        peer_store: peer_store::DynPeerStore,
+        builder: Arc<Builder>,
+        peer_store: DynPeerStore,
         _space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
@@ -101,10 +98,7 @@ impl Drop for MemBootstrap {
 }
 
 impl MemBootstrap {
-    pub fn new(
-        config: MemBootstrapConfig,
-        peer_store: peer_store::DynPeerStore,
-    ) -> Self {
+    pub fn new(config: MemBootstrapConfig, peer_store: DynPeerStore) -> Self {
         let test_id: Arc<str> = config.test_id.into_boxed_str().into();
         let test_id2 = test_id.clone();
         let poll_freq =
@@ -124,20 +118,20 @@ impl MemBootstrap {
 }
 
 impl Bootstrap for MemBootstrap {
-    fn put(&self, info: Arc<agent::AgentInfoSigned>) {
+    fn put(&self, info: Arc<AgentInfoSigned>) {
         let _ = stat_process(self.test_id.clone(), Some(info));
     }
 }
 
 static NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
-type Store = Vec<Arc<agent::AgentInfoSigned>>;
+type Store = Vec<Arc<AgentInfoSigned>>;
 type Map = std::collections::HashMap<Arc<str>, Store>;
 static STAT: std::sync::OnceLock<Mutex<Map>> = std::sync::OnceLock::new();
 fn stat_process(
     id: Arc<str>,
-    info: Option<Arc<agent::AgentInfoSigned>>,
-) -> Vec<Arc<agent::AgentInfoSigned>> {
+    info: Option<Arc<AgentInfoSigned>>,
+) -> Vec<Arc<AgentInfoSigned>> {
     let mut lock = STAT.get_or_init(Default::default).lock().unwrap();
     let store = lock.entry(id).or_default();
     let now = Timestamp::now();

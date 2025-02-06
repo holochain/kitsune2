@@ -26,7 +26,8 @@ use kitsune2_api::{
 use snapshot::{DhtSnapshot, SnapshotDiff};
 use std::fmt::Formatter;
 
-pub mod snapshot;
+pub(crate) mod snapshot;
+
 #[cfg(test)]
 mod tests;
 

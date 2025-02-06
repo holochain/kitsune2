@@ -1,6 +1,6 @@
 //! Partition of the hash space.
 //!
-//! The set of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::id::Id::loc)
+//! The set of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::Id::loc)
 //! for more information about this. Each agent is responsible for storing and serving some part of
 //! the hash space. This module provides a structure that partitions the hash space into 512
 //! equally-sized DHT sectors.

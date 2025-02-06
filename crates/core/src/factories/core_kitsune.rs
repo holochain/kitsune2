@@ -1,6 +1,6 @@
 //! The core kitsune implementation provided by Kitsune2.
 
-use kitsune2_api::{config::*, kitsune::*, *};
+use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -23,13 +23,13 @@ impl KitsuneFactory for CoreKitsuneFactory {
         Ok(())
     }
 
-    fn validate_config(&self, _config: &config::Config) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
         handler: DynKitsuneHandler,
     ) -> BoxFut<'static, K2Result<DynKitsune>> {
         Box::pin(async move {
@@ -50,7 +50,7 @@ impl KitsuneFactory for CoreKitsuneFactory {
 #[derive(Debug)]
 struct TxHandlerTranslator(DynKitsuneHandler);
 
-impl transport::TxBaseHandler for TxHandlerTranslator {
+impl TxBaseHandler for TxHandlerTranslator {
     fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         self.0.new_listening_address(this_url)
     }
@@ -60,7 +60,7 @@ impl transport::TxBaseHandler for TxHandlerTranslator {
     }
 }
 
-impl transport::TxHandler for TxHandlerTranslator {
+impl TxHandler for TxHandlerTranslator {
     fn preflight_gather_outgoing(
         &self,
         peer_url: Url,
@@ -77,23 +77,22 @@ impl transport::TxHandler for TxHandlerTranslator {
     }
 }
 
-type SpaceFut =
-    futures::future::Shared<BoxFut<'static, K2Result<space::DynSpace>>>;
+type SpaceFut = futures::future::Shared<BoxFut<'static, K2Result<DynSpace>>>;
 type Map = HashMap<SpaceId, SpaceFut>;
 
 #[derive(Debug)]
 struct CoreKitsune {
-    builder: Arc<builder::Builder>,
+    builder: Arc<Builder>,
     handler: DynKitsuneHandler,
     map: std::sync::Mutex<Map>,
-    tx: transport::DynTransport,
+    tx: DynTransport,
 }
 
 impl CoreKitsune {
     pub fn new(
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
         handler: DynKitsuneHandler,
-        tx: transport::DynTransport,
+        tx: DynTransport,
     ) -> Self {
         Self {
             builder,
@@ -105,7 +104,7 @@ impl CoreKitsune {
 }
 
 impl Kitsune for CoreKitsune {
-    fn space(&self, space: SpaceId) -> BoxFut<'_, K2Result<space::DynSpace>> {
+    fn space(&self, space: SpaceId) -> BoxFut<'_, K2Result<DynSpace>> {
         Box::pin(async move {
             use std::collections::hash_map::Entry;
 
@@ -144,7 +143,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn happy_space_construct() {
-        use kitsune2_api::{kitsune::*, space::*, *};
+        use kitsune2_api::*;
         use std::sync::Arc;
 
         #[derive(Debug)]
@@ -171,7 +170,7 @@ mod test {
             fn create_space(
                 &self,
                 _space: SpaceId,
-            ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+            ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
                 Box::pin(async move {
                     let s: DynSpaceHandler = Arc::new(S);
                     Ok(s)

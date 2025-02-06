@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use kitsune2_api::{AgentId, Url};
-use kitsune2_dht::snapshot::DhtSnapshot;
 use kitsune2_dht::ArcSet;
+use kitsune2_dht::DhtSnapshot;
 use rand::RngCore;
 
 /// The state of a gossip round.

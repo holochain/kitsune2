@@ -2,7 +2,11 @@
 
 use crate::*;
 
-include!("../proto/gen/kitsune2.wire.rs");
+pub(crate) mod proto {
+    include!("../proto/gen/kitsune2.wire.rs");
+}
+
+pub use proto::{k2_proto::K2WireType, K2Proto};
 
 impl K2Proto {
     /// Decode this message from a byte array.
@@ -33,7 +37,7 @@ mod test {
         use prost::Message;
 
         let m = K2Proto {
-            ty: k2_proto::Ty::Module as i32,
+            ty: K2WireType::Module as i32,
             data: bytes::Bytes::from_static(b"a"),
             space: Some(bytes::Bytes::from_static(b"b")),
             module: Some("c".into()),
@@ -42,7 +46,7 @@ mod test {
         let m_enc = m.encode_to_vec();
 
         let d = K2Proto {
-            ty: k2_proto::Ty::Disconnect as i32,
+            ty: K2WireType::Disconnect as i32,
             data: bytes::Bytes::from_static(b"d"),
             space: None,
             module: None,

@@ -1,8 +1,7 @@
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::K2GossipConfig;
-use kitsune2_api::agent::{AgentInfoSigned, LocalAgent};
-use kitsune2_api::peer_store::DynPeerStore;
+use kitsune2_api::*;
 use kitsune2_api::{AgentId, DynLocalAgentStore, K2Result, Timestamp, Url};
 use rand::prelude::SliceRandom;
 use std::collections::HashSet;
@@ -211,9 +210,6 @@ async fn filter_by_recently_gossiped(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kitsune2_api::agent::{AgentInfoSigned, DynLocalAgent};
-    use kitsune2_api::peer_store::DynPeerStore;
-    use kitsune2_api::{DhtArc, DynLocalAgentStore};
     use kitsune2_core::default_test_builder;
     use kitsune2_dht::SECTOR_SIZE;
     use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};

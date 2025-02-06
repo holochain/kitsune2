@@ -58,17 +58,7 @@
 //! - If persisting fails, the op is not removed from the set.
 
 use back_off::BackOffList;
-#[cfg(test)]
-use kitsune2_api::transport::DynTxModuleHandler;
-use kitsune2_api::{
-    builder,
-    fetch::{
-        serialize_request_message, serialize_response_message, DynFetch,
-        DynFetchFactory, Fetch, FetchFactory,
-    },
-    transport::DynTransport,
-    BoxFut, DynOpStore, K2Result, Op, OpId, SpaceId, Url,
-};
+use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::{
     collections::HashSet,
@@ -90,7 +80,7 @@ mod test;
 pub const MOD_NAME: &str = "Fetch";
 
 /// CoreFetch configuration types.
-pub mod config {
+mod config {
     /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -130,7 +120,7 @@ pub mod config {
     }
 }
 
-use config::*;
+pub use config::*;
 
 /// A production-ready fetch module.
 #[derive(Debug)]
@@ -144,24 +134,18 @@ impl CoreFetchFactory {
 }
 
 impl FetchFactory for CoreFetchFactory {
-    fn default_config(
-        &self,
-        config: &mut kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn default_config(&self, config: &mut Config) -> K2Result<()> {
         config.set_module_config(&CoreFetchModConfig::default())?;
         Ok(())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
         space_id: SpaceId,
         op_store: DynOpStore,
         transport: DynTransport,

@@ -3,8 +3,7 @@
 use crate::factories::mem_op_store::time_slice_hash_store::TimeSliceHashStore;
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use kitsune2_api::builder::Builder;
-use kitsune2_api::config::Config;
+use kitsune2_api::*;
 use kitsune2_api::{
     BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, K2Error, K2Result, MetaOp,
     Op, OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
@@ -36,10 +35,7 @@ impl OpStoreFactory for MemOpStoreFactory {
         Ok(())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
@@ -87,14 +83,14 @@ impl MemoryOp {
     }
 }
 
-impl From<bytes::Bytes> for MemoryOp {
-    fn from(value: bytes::Bytes) -> Self {
+impl From<Bytes> for MemoryOp {
+    fn from(value: Bytes) -> Self {
         serde_json::from_slice(&value)
             .expect("failed to deserialize MemoryOp from bytes")
     }
 }
 
-impl From<MemoryOp> for bytes::Bytes {
+impl From<MemoryOp> for Bytes {
     fn from(value: MemoryOp) -> Self {
         serde_json::to_vec(&value)
             .expect("failed to serialize MemoryOp to bytes")
@@ -117,8 +113,8 @@ struct MemoryOpRecord {
     pub op_data: Vec<u8>,
 }
 
-impl From<bytes::Bytes> for MemoryOpRecord {
-    fn from(value: bytes::Bytes) -> Self {
+impl From<Bytes> for MemoryOpRecord {
+    fn from(value: Bytes) -> Self {
         let inner: MemoryOp = value.into();
         Self {
             op_id: inner.compute_op_id(),

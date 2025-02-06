@@ -6,9 +6,9 @@ use crate::protocol::{
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageRingSectorDetailsDiff,
 };
-use kitsune2_api::id::decode_ids;
+use kitsune2_api::decode_ids;
 use kitsune2_api::{K2Error, K2Result, Url};
-use kitsune2_dht::snapshot::DhtSnapshot;
+use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::MutexGuard;
 

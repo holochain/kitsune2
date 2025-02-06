@@ -1,15 +1,21 @@
 //! Kitsune2 fetch types.
 
+use crate::op_store;
 use crate::{
     builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
     OpId, SpaceId, Url,
 };
 use bytes::{Bytes, BytesMut};
-use k2_fetch_message::FetchMessageType;
 use prost::Message;
 use std::sync::Arc;
 
-include!("../proto/gen/kitsune2.fetch.rs");
+pub(crate) mod proto {
+    include!("../proto/gen/kitsune2.fetch.rs");
+}
+
+pub use proto::{
+    k2_fetch_message::*, FetchRequest, FetchResponse, K2FetchMessage,
+};
 
 impl From<Vec<OpId>> for FetchRequest {
     fn from(value: Vec<OpId>) -> Self {
@@ -122,8 +128,8 @@ mod test {
 
     #[test]
     fn happy_request_encode_decode() {
-        let op_id_1 = OpId::from(bytes::Bytes::from_static(b"some_op_id"));
-        let op_id_2 = OpId::from(bytes::Bytes::from_static(b"another_op_id"));
+        let op_id_1 = OpId::from(Bytes::from_static(b"some_op_id"));
+        let op_id_2 = OpId::from(Bytes::from_static(b"another_op_id"));
         let op_id_vec = vec![op_id_1, op_id_2];
         let op_ids = FetchRequest::from(op_id_vec.clone());
 

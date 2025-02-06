@@ -1,8 +1,7 @@
 //! Test helpers
 
 use bytes::Bytes;
-use kitsune2_api::agent::{AgentInfo, Verifier};
-use kitsune2_api::{builder, DynOpStore, SpaceId};
+use kitsune2_api::*;
 use kitsune2_core::default_test_builder;
 use kitsune2_core::factories::{CoreBootstrapFactory, MemOpStoreFactory};
 use std::sync::Arc;
@@ -21,7 +20,7 @@ impl Verifier for DummyVerifier {
 }
 
 pub async fn test_store() -> DynOpStore {
-    let builder = builder::Builder {
+    let builder = Builder {
         verifier: Arc::new(DummyVerifier),
         bootstrap: CoreBootstrapFactory::create(),
         ..default_test_builder()

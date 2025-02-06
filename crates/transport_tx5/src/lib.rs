@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! kitsune2 tx5 transport module.
 
-use kitsune2_api::{config::*, transport::*, *};
+use kitsune2_api::*;
 use std::sync::Arc;
 
 trait PeerUrlExt {
@@ -90,10 +90,7 @@ impl TransportFactory for Tx5TransportFactory {
         config.set_module_config(&Tx5TransportModConfig::default())
     }
 
-    fn validate_config(
-        &self,
-        config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, config: &Config) -> K2Result<()> {
         let config: Tx5TransportModConfig = config.get_module_config()?;
 
         // make sure our signal server url is parse-able.
@@ -104,7 +101,7 @@ impl TransportFactory for Tx5TransportFactory {
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
         handler: DynTxHandler,
     ) -> BoxFut<'static, K2Result<DynTransport>> {
         Box::pin(async move {

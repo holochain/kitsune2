@@ -1,14 +1,14 @@
-use kitsune2_api::{id::*, *};
+use kitsune2_api::*;
 use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
 use std::sync::Arc;
 
 #[derive(Debug)]
 struct TestCrypto;
 
-impl agent::Signer for TestCrypto {
+impl Signer for TestCrypto {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
-        agent_info: &'b agent::AgentInfo,
+        agent_info: &'b AgentInfo,
         encoded: &'c [u8],
     ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         use ed25519_dalek::*;
@@ -28,10 +28,10 @@ impl agent::Signer for TestCrypto {
     }
 }
 
-impl agent::Verifier for TestCrypto {
+impl Verifier for TestCrypto {
     fn verify(
         &self,
-        agent_info: &agent::AgentInfo,
+        agent_info: &AgentInfo,
         message: &[u8],
         signature: &[u8],
     ) -> bool {
@@ -42,13 +42,13 @@ impl agent::Verifier for TestCrypto {
 const S1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space-1")));
 
 struct Test {
-    peer_store: peer_store::DynPeerStore,
-    boot: bootstrap::DynBootstrap,
+    peer_store: DynPeerStore,
+    boot: DynBootstrap,
 }
 
 impl Test {
     pub async fn new(server: &str) -> Self {
-        let builder = builder::Builder {
+        let builder = Builder {
             verifier: Arc::new(TestCrypto),
             bootstrap: super::CoreBootstrapFactory::create(),
             ..crate::default_test_builder()
@@ -95,9 +95,9 @@ impl Test {
             Some(Url::from_str(format!("ws://test.com:80/{secret}")).unwrap());
         let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
 
-        let info = agent::AgentInfoSigned::sign(
+        let info = AgentInfoSigned::sign(
             &TestCrypto,
-            agent::AgentInfo {
+            AgentInfo {
                 agent: agent.clone(),
                 space: S1.clone(),
                 created_at: Timestamp::now(),
@@ -132,7 +132,7 @@ impl Test {
 
 #[test]
 fn validate_bad_server_url() {
-    let builder = kitsune2_api::builder::Builder {
+    let builder = Builder {
         bootstrap: super::CoreBootstrapFactory::create(),
         ..crate::default_test_builder()
     };

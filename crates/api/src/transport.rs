@@ -51,7 +51,7 @@ impl TxImpHnd {
         self.handler.peer_connect(peer.clone())?;
         let preflight = self.handler.preflight_gather_outgoing(peer)?;
         let enc = (K2Proto {
-            ty: k2_proto::Ty::Preflight as i32,
+            ty: K2WireType::Preflight as i32,
             data: preflight,
             space: None,
             module: None,
@@ -83,11 +83,11 @@ impl TxImpHnd {
         } = data;
 
         match ty {
-            k2_proto::Ty::Unspecified => Ok(()),
-            k2_proto::Ty::Preflight => {
+            K2WireType::Unspecified => Ok(()),
+            K2WireType::Preflight => {
                 self.handler.preflight_validate_incoming(peer, data)
             }
-            k2_proto::Ty::Notify => {
+            K2WireType::Notify => {
                 if let Some(space) = space {
                     let space = SpaceId::from(space);
                     if let Some(h) = self.space_map.lock().unwrap().get(&space)
@@ -97,7 +97,7 @@ impl TxImpHnd {
                 }
                 Ok(())
             }
-            k2_proto::Ty::Module => {
+            K2WireType::Module => {
                 if let (Some(space), Some(module)) = (space, module) {
                     let space = SpaceId::from(space);
                     if let Some(h) = self
@@ -111,7 +111,7 @@ impl TxImpHnd {
                 }
                 Ok(())
             }
-            k2_proto::Ty::Disconnect => {
+            K2WireType::Disconnect => {
                 let reason = String::from_utf8_lossy(&data).to_string();
                 Err(K2Error::other(format!("Remote Disconnect: {reason}")))
             }
@@ -263,7 +263,7 @@ impl Transport for DefaultTransport {
             let payload = match reason {
                 None => None,
                 Some(reason) => match (K2Proto {
-                    ty: k2_proto::Ty::Disconnect as i32,
+                    ty: K2WireType::Disconnect as i32,
                     data: bytes::Bytes::copy_from_slice(reason.as_bytes()),
                     space: None,
                     module: None,
@@ -287,7 +287,7 @@ impl Transport for DefaultTransport {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let enc = (K2Proto {
-                ty: k2_proto::Ty::Notify as i32,
+                ty: K2WireType::Notify as i32,
                 data,
                 space: Some(space.into()),
                 module: None,
@@ -306,7 +306,7 @@ impl Transport for DefaultTransport {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let enc = (K2Proto {
-                ty: k2_proto::Ty::Module as i32,
+                ty: K2WireType::Module as i32,
                 data,
                 space: Some(space.into()),
                 module: Some(module),
