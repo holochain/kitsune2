@@ -79,8 +79,8 @@ pub(crate) fn update_storage_arcs(
                 local_agent.set_cur_storage_arc(new_arc);
             }
         } else {
-            // At this point, we have added any synced sectors to our current storage arc and ignored
-            // and synced sectors that aren't in our target arc. We can find the largest overlapping
+            // At this point, we have added any synced sectors to our current storage arc and
+            // ignored sectors that aren't in our target arc. We can find the largest overlapping
             // arc and that will contain our old storage arc with any new sectors added.
             if let Some(new_arc) = new_arcs.into_iter().find(|arc| {
                 arc.len() > current_storage_arc.len()
@@ -286,5 +286,33 @@ mod tests {
 
         // Storage arc 3 restricted by mismatched sectors
         assert_eq!(arc_3, local_agent_3.get_cur_storage_arc());
+    }
+
+    /// Note that this would be a mistake by the host implementation or some sharding logic.
+    /// If the target arc is being reduced then the storage arc should be reduced too. It is
+    /// not the job of this function to correct such mistakes. This test just checks that we
+    /// don't do anything unexpected when the arcs are mixed up.
+    #[test]
+    fn storage_arc_larger_than_target() {
+        let local_agent = Arc::new(Ed25519LocalAgent::default());
+
+        // Start with some storage arc
+        let arc = DhtArc::Arc(0, 50 * SECTOR_SIZE - 1);
+        local_agent.set_cur_storage_arc(arc);
+
+        // but a target arc that is smaller than the storage arc
+        local_agent
+            .set_tgt_storage_arc_hint(DhtArc::Arc(0, 10 * SECTOR_SIZE - 1));
+
+        update_storage_arcs(
+            // one mismatched sector, in the middle of the target arc
+            &test_snapshot_with_mismatched_sectors(&[3]),
+            vec![local_agent.clone()],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        )
+        .unwrap();
+
+        // Then the storage arc is not updated
+        assert_eq!(arc, local_agent.get_cur_storage_arc());
     }
 }
