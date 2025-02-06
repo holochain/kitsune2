@@ -159,7 +159,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFuture<'_, K2Result<Vec<(u64, Bytes)>>>;
 }
 
-/// Trait-object version of kitsune2 op store.
+/// Trait-object [OpStore].
 pub type DynOpStore = Arc<dyn OpStore>;
 
 /// A factory for constructing [OpStore] instances.
@@ -179,7 +179,7 @@ pub trait OpStoreFactory: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'static, K2Result<DynOpStore>>;
 }
 
-/// Trait-object [crate::bootstrap::BootstrapFactory].
+/// Trait-object [OpStoreFactory].
 pub type DynOpStoreFactory = Arc<dyn OpStoreFactory>;
 
 #[cfg(test)]
