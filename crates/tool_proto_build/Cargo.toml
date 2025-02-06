@@ -1,7 +1,8 @@
 [package]
 name = "tool_proto_build"
-version = "0.0.0+nopublish"
-edition = "2021"
+version = "0.0.0-nopublish"
+publish = false
+edition.workspace = true
 
 [dependencies]
 prost-build = { workspace = true }
