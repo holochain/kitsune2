@@ -1,4 +1,4 @@
-use kitsune2_api::{id::*, *};
+use kitsune2_api::*;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -6,20 +6,20 @@ struct TestCrypto;
 
 const SIG: bytes::Bytes = bytes::Bytes::from_static(b"TEST-SIGNATURE");
 
-impl agent::Signer for TestCrypto {
+impl Signer for TestCrypto {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
-        _agent_info: &'b agent::AgentInfo,
+        _agent_info: &'b AgentInfo,
         _encoded: &'c [u8],
     ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         Box::pin(async move { Ok(SIG.clone()) })
     }
 }
 
-impl agent::Verifier for TestCrypto {
+impl Verifier for TestCrypto {
     fn verify(
         &self,
-        _agent_info: &agent::AgentInfo,
+        _agent_info: &AgentInfo,
         _message: &[u8],
         signature: &[u8],
     ) -> bool {
@@ -30,14 +30,14 @@ impl agent::Verifier for TestCrypto {
 const S1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space-1")));
 
 struct Test {
-    peer_store: peer_store::DynPeerStore,
-    boot: bootstrap::DynBootstrap,
+    peer_store: DynPeerStore,
+    boot: DynBootstrap,
 }
 
 impl Test {
     pub async fn new() -> Self {
         let builder = Arc::new(
-            builder::Builder {
+            Builder {
                 verifier: Arc::new(TestCrypto),
                 ..crate::default_test_builder()
             }
@@ -69,9 +69,9 @@ impl Test {
         let url = None;
         let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
 
-        let info = agent::AgentInfoSigned::sign(
+        let info = AgentInfoSigned::sign(
             &TestCrypto,
-            agent::AgentInfo {
+            AgentInfo {
                 agent: agent.clone(),
                 space: S1.clone(),
                 created_at: Timestamp::now(),

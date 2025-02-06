@@ -10,49 +10,49 @@ use std::sync::Arc;
 pub struct Builder {
     /// The module configuration to be used when building modules.
     /// This can be loaded from disk or modified before freezing the builder.
-    pub config: crate::config::Config,
+    pub config: Config,
 
-    /// The [agent::Verifier] to use for this Kitsune2 instance.
-    pub verifier: agent::DynVerifier,
+    /// The [Verifier] to use for this Kitsune2 instance.
+    pub verifier: DynVerifier,
 
-    /// The [kitsune::KitsuneFactory] to be used for creating
-    /// [kitsune::Kitsune] module instances.
-    pub kitsune: kitsune::DynKitsuneFactory,
+    /// The [KitsuneFactory] to be used for creating
+    /// [Kitsune] module instances.
+    pub kitsune: DynKitsuneFactory,
 
-    /// The [space::SpaceFactory] to be used for creating
-    /// [space::Space] instances.
-    pub space: space::DynSpaceFactory,
+    /// The [SpaceFactory] to be used for creating
+    /// [Space] instances.
+    pub space: DynSpaceFactory,
 
-    /// The [peer_store::PeerStoreFactory] to be used for creating
-    /// [peer_store::PeerStore] instances.
-    pub peer_store: peer_store::DynPeerStoreFactory,
+    /// The [PeerStoreFactory] to be used for creating
+    /// [PeerStore] instances.
+    pub peer_store: DynPeerStoreFactory,
 
-    /// The [bootstrap::BootstrapFactory] to be used for creating
-    /// [bootstrap::Bootstrap] instances for initial WAN discovery.
-    pub bootstrap: bootstrap::DynBootstrapFactory,
+    /// The [BootstrapFactory] to be used for creating
+    /// [Bootstrap] instances for initial WAN discovery.
+    pub bootstrap: DynBootstrapFactory,
 
-    /// The [fetch::FetchFactory] to be used for creating
-    /// [fetch::Fetch] instances.
-    pub fetch: fetch::DynFetchFactory,
+    /// The [FetchFactory] to be used for creating
+    /// [Fetch] instances.
+    pub fetch: DynFetchFactory,
 
-    /// The [transport::TransportFactory] to be used for creating
-    /// [transport::Transport] instances.
-    pub transport: transport::DynTransportFactory,
+    /// The [TransportFactory] to be used for creating
+    /// [Transport] instances.
+    pub transport: DynTransportFactory,
 
-    /// The [op_store::OpStoreFactory] to be used for creating
-    /// [op_store::OpStore] instances.
-    pub op_store: op_store::DynOpStoreFactory,
+    /// The [OpStoreFactory] to be used for creating
+    /// [OpStore] instances.
+    pub op_store: DynOpStoreFactory,
 
-    /// The [peer_meta_store::PeerMetaStoreFactory] to be used for creating
-    /// [peer_meta_store::PeerMetaStore] instances.
-    pub peer_meta_store: peer_meta_store::DynPeerMetaStoreFactory,
+    /// The [PeerMetaStoreFactory] to be used for creating
+    /// [PeerMetaStore] instances.
+    pub peer_meta_store: DynPeerMetaStoreFactory,
 
-    /// The [gossip::GossipFactory] to be used for creating
-    /// [gossip::Gossip] instances.
-    pub gossip: gossip::DynGossipFactory,
+    /// The [GossipFactory] to be used for creating
+    /// [Gossip] instances.
+    pub gossip: DynGossipFactory,
 
-    /// The [local_agent_store::LocalAgentStoreFactory] to be used for creating
-    /// [local_agent_store::LocalAgentStore] instances.
+    /// The [LocalAgentStoreFactory] to be used for creating
+    /// [LocalAgentStore] instances.
     pub local_agent_store: Arc<dyn LocalAgentStoreFactory>,
 }
 
@@ -117,8 +117,8 @@ impl Builder {
     /// if that has not already explicitly been done.
     pub async fn build(
         self,
-        handler: kitsune::DynKitsuneHandler,
-    ) -> K2Result<kitsune::DynKitsune> {
+        handler: DynKitsuneHandler,
+    ) -> K2Result<DynKitsune> {
         if !self.config.mark_validated() {
             self.validate_config()?;
         }

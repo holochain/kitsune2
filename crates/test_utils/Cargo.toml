@@ -2,7 +2,8 @@
 name = "kitsune2_test_utils"
 description = "Test utilities for kitsune2"
 version = "0.1.0-nopublish"
-edition = "2021"
+publish = false
+edition.workspace = true
 
 [dependencies]
 axum = { workspace = true, default-features = false, features = [

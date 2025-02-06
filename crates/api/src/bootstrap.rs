@@ -11,12 +11,12 @@ use std::sync::Arc;
 pub trait Bootstrap: 'static + Send + Sync + std::fmt::Debug {
     /// Put an agent info onto a bootstrap server.
     ///
-    /// This method takes responsibility for retrying the send in the case
+    /// This method takes responsibility for retrying the send operation in the case
     /// of server error until such time as:
     /// - the Put succeeds
     /// - we receive a new info that supersedes the previous
     /// - or the info expires
-    fn put(&self, info: Arc<agent::AgentInfoSigned>);
+    fn put(&self, info: Arc<AgentInfoSigned>);
 }
 
 /// Trait-object [Bootstrap].
@@ -26,16 +26,16 @@ pub type DynBootstrap = Arc<dyn Bootstrap>;
 pub trait BootstrapFactory: 'static + Send + Sync + std::fmt::Debug {
     /// Help the builder construct a default config from the chosen
     /// module factories.
-    fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
+    fn default_config(&self, config: &mut Config) -> K2Result<()>;
 
     /// Validate configuration.
-    fn validate_config(&self, config: &config::Config) -> K2Result<()>;
+    fn validate_config(&self, config: &Config) -> K2Result<()>;
 
     /// Construct a bootstrap instance.
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
-        peer_store: peer_store::DynPeerStore,
+        builder: Arc<Builder>,
+        peer_store: DynPeerStore,
         space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>>;
 }

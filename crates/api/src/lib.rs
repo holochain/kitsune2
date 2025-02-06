@@ -35,29 +35,44 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
-pub mod agent;
+mod agent;
+pub use agent::*;
 
-pub mod arc;
+mod arc;
 pub use arc::*;
 
-pub mod bootstrap;
-pub mod builder;
-pub mod config;
-pub mod kitsune;
-pub mod peer_store;
-pub mod space;
-pub mod transport;
+mod bootstrap;
+pub use bootstrap::*;
+
+mod builder;
+pub use builder::*;
+
+mod config;
+pub use config::*;
+
+mod kitsune;
+pub use kitsune::*;
+
+mod peer_store;
+pub use peer_store::*;
+
+mod space;
+pub use space::*;
+
+mod transport;
+pub use transport::*;
 
 mod error;
 pub use error::*;
 
-pub mod id;
-pub use id::{AgentId, OpId, SpaceId};
+mod id;
+pub use id::*;
 
 mod timestamp;
 pub use timestamp::*;
 
-pub mod fetch;
+mod fetch;
+pub use fetch::*;
 
 mod peer_meta_store;
 pub use peer_meta_store::*;
@@ -71,7 +86,8 @@ pub use local_agent_store::*;
 mod op_store;
 pub use op_store::*;
 
-pub mod protocol;
+mod protocol;
+pub use protocol::*;
 
 mod url;
 pub use url::*;

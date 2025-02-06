@@ -1,7 +1,6 @@
-use kitsune2_api::{transport::*, *};
+use kitsune2_api::*;
+use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::sync::{Arc, Mutex};
-
-const S1: SpaceId = SpaceId(id::Id(bytes::Bytes::from_static(b"space-1")));
 
 #[derive(Debug)]
 enum Track {
@@ -213,17 +212,17 @@ async fn gen_tx(hnd: DynTxHandler) -> DynTransport {
 async fn transport_notify() {
     let h1 = TrackHnd::new();
     let t1 = gen_tx(h1.clone()).await;
-    t1.register_space_handler(S1.clone(), h1.clone());
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
     let u1 = h1.url();
 
     let h2 = TrackHnd::new();
     let t2 = gen_tx(h2.clone()).await;
-    t2.register_space_handler(S1.clone(), h2.clone());
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
     let u2 = h2.url();
 
     t1.send_space_notify(
         u2.clone(),
-        S1.clone(),
+        TEST_SPACE_ID,
         bytes::Bytes::from_static(b"hello"),
     )
     .await
@@ -231,7 +230,7 @@ async fn transport_notify() {
 
     t2.send_space_notify(
         u1.clone(),
-        S1.clone(),
+        TEST_SPACE_ID,
         bytes::Bytes::from_static(b"world"),
     )
     .await
@@ -239,25 +238,25 @@ async fn transport_notify() {
 
     h1.check_connect(&u2).unwrap();
     h2.check_connect(&u1).unwrap();
-    h1.check_notify(&u2, &S1, b"world").unwrap();
-    h2.check_notify(&u1, &S1, b"hello").unwrap();
+    h1.check_notify(&u2, &TEST_SPACE_ID, b"world").unwrap();
+    h2.check_notify(&u1, &TEST_SPACE_ID, b"hello").unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn transport_module() {
     let h1 = TrackHnd::new();
     let t1 = gen_tx(h1.clone()).await;
-    t1.register_module_handler(S1.clone(), "test".into(), h1.clone());
+    t1.register_module_handler(TEST_SPACE_ID, "test".into(), h1.clone());
     let u1 = h1.url();
 
     let h2 = TrackHnd::new();
     let t2 = gen_tx(h2.clone()).await;
-    t2.register_module_handler(S1.clone(), "test".into(), h2.clone());
+    t2.register_module_handler(TEST_SPACE_ID, "test".into(), h2.clone());
     let u2 = h2.url();
 
     t1.send_module(
         u2.clone(),
-        S1.clone(),
+        TEST_SPACE_ID,
         "test".into(),
         bytes::Bytes::from_static(b"hello"),
     )
@@ -266,7 +265,7 @@ async fn transport_module() {
 
     t2.send_module(
         u1.clone(),
-        S1.clone(),
+        TEST_SPACE_ID,
         "test".into(),
         bytes::Bytes::from_static(b"world"),
     )
@@ -275,25 +274,25 @@ async fn transport_module() {
 
     h1.check_connect(&u2).unwrap();
     h2.check_connect(&u1).unwrap();
-    h1.check_mod(&u2, &S1, "test", b"world").unwrap();
-    h2.check_mod(&u1, &S1, "test", b"hello").unwrap();
+    h1.check_mod(&u2, &TEST_SPACE_ID, "test", b"world").unwrap();
+    h2.check_mod(&u1, &TEST_SPACE_ID, "test", b"hello").unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn transport_disconnect() {
     let h1 = TrackHnd::new();
     let t1 = gen_tx(h1.clone()).await;
-    t1.register_space_handler(S1.clone(), h1.clone());
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
     let u1 = h1.url();
 
     let h2 = TrackHnd::new();
     let t2 = gen_tx(h2.clone()).await;
-    t2.register_space_handler(S1.clone(), h2.clone());
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
     let u2 = h2.url();
 
     t1.send_space_notify(
         u2.clone(),
-        S1.clone(),
+        TEST_SPACE_ID,
         bytes::Bytes::from_static(b"hello"),
     )
     .await
@@ -327,7 +326,7 @@ async fn transport_preflight_happy() {
 
     let t2 = gen_tx(h.clone()).await;
 
-    t2.send_space_notify(u, S1.clone(), bytes::Bytes::from_static(b"hello"))
+    t2.send_space_notify(u, TEST_SPACE_ID, bytes::Bytes::from_static(b"hello"))
         .await
         .unwrap();
 
@@ -359,9 +358,13 @@ async fn transport_preflight_reject() {
     let _t2 = gen_tx(h2.clone()).await;
     let u2 = h2.url();
 
-    t1.send_space_notify(u2, S1.clone(), bytes::Bytes::from_static(b"hello"))
-        .await
-        .unwrap();
+    t1.send_space_notify(
+        u2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
 
     // ... this is lame, but whatever
     for _ in 0..5 {

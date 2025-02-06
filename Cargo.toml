@@ -14,6 +14,15 @@ members = [
 
 resolver = "2"
 
+[workspace.package]
+version = "0.0.1-alpha"
+authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
+homepage = "https://github.com/holochain/kitsune2"
+keywords = ["holochain", "holo", "p2p", "dht", "networking"]
+categories = ["network-programming"]
+license = "Apache-2.0"
+edition = "2021"
+
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.

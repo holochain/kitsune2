@@ -17,7 +17,7 @@ use std::sync::Mutex;
 struct Test {
     pub srv: Option<sbd_server::SbdServer>,
     pub port: u16,
-    pub builder: Arc<kitsune2_api::builder::Builder>,
+    pub builder: Arc<Builder>,
 }
 
 impl Test {
@@ -32,7 +32,7 @@ impl Test {
         // This restart function will set the port to the actual value.
         this.restart().await;
 
-        let builder = kitsune2_api::builder::Builder {
+        let builder = Builder {
             transport: Tx5TransportFactory::create(),
             ..kitsune2_core::default_test_builder()
         };
@@ -198,15 +198,15 @@ impl TxModuleHandler for CbHandler {
 
 #[test]
 fn validate_bad_server_url() {
-    let builder = kitsune2_api::builder::Builder {
+    let builder = Builder {
         transport: Tx5TransportFactory::create(),
         ..kitsune2_core::default_test_builder()
     };
 
     builder
         .config
-        .set_module_config(&config::Tx5TransportModConfig {
-            tx5_transport: config::Tx5TransportConfig {
+        .set_module_config(&Tx5TransportModConfig {
+            tx5_transport: Tx5TransportConfig {
                 signal_allow_plain_text: true,
                 server_url: "<bad-url>".into(),
             },

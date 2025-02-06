@@ -19,6 +19,9 @@ message FetchResponse {
 // Fetch message.
 message K2FetchMessage {
   // Fetch message type.
+  //
+  // This enum is used to indicate the content of `data`.
+  // So, REQUEST -> FetchRequest and RESPONSE -> FetchResponse.
   enum FetchMessageType {
     // Default value.
     UNSPECIFIED = 0;

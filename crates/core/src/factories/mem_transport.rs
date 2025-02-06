@@ -1,6 +1,6 @@
 //! The core stub transport implementation provided by Kitsune2.
 
-use kitsune2_api::{config::*, transport::*, *};
+use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -23,16 +23,13 @@ impl TransportFactory for MemTransportFactory {
         Ok(())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        _builder: Arc<builder::Builder>,
+        _builder: Arc<Builder>,
         handler: DynTxHandler,
     ) -> BoxFut<'static, K2Result<DynTransport>> {
         Box::pin(async move {

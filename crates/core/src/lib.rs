@@ -1,17 +1,17 @@
 #![deny(missing_docs)]
 //! Kitsune2 p2p / dht communication framework.
 
-use kitsune2_api::{builder::Builder, config::Config, *};
+use kitsune2_api::*;
 use std::sync::{Arc, Mutex};
 
-/// A default [kitsune2_api::agent::Verifier] based on ed25519.
+/// A default [Verifier] based on ed25519.
 #[derive(Debug)]
 pub struct Ed25519Verifier;
 
-impl agent::Verifier for Ed25519Verifier {
+impl Verifier for Ed25519Verifier {
     fn verify(
         &self,
-        agent_info: &agent::AgentInfo,
+        agent_info: &AgentInfo,
         message: &[u8],
         signature: &[u8],
     ) -> bool {
@@ -44,7 +44,7 @@ struct Ed25519LocalAgentInner {
     tgt: DhtArc,
 }
 
-/// A default in-memory [kitsune2_api::agent::LocalAgent] based on ed25519.
+/// A default in-memory [LocalAgent] based on ed25519.
 pub struct Ed25519LocalAgent {
     pk: ed25519_dalek::SigningKey,
     id: AgentId,
@@ -93,17 +93,17 @@ impl Ed25519LocalAgent {
     }
 }
 
-impl agent::Signer for Ed25519LocalAgent {
+impl Signer for Ed25519LocalAgent {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
-        _agent_info: &'b agent::AgentInfo,
+        _agent_info: &'b AgentInfo,
         message: &'c [u8],
     ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         Box::pin(async move { Ok(self.sign(message)) })
     }
 }
 
-impl agent::LocalAgent for Ed25519LocalAgent {
+impl LocalAgent for Ed25519LocalAgent {
     fn agent(&self) -> &AgentId {
         &self.id
     }
@@ -153,7 +153,7 @@ impl agent::LocalAgent for Ed25519LocalAgent {
 pub fn default_test_builder() -> Builder {
     Builder {
         config: Config::default(),
-        verifier: std::sync::Arc::new(Ed25519Verifier),
+        verifier: Arc::new(Ed25519Verifier),
         kitsune: factories::CoreKitsuneFactory::create(),
         space: factories::CoreSpaceFactory::create(),
         peer_store: factories::MemPeerStoreFactory::create(),
@@ -175,7 +175,7 @@ mod test {
 
     #[test]
     fn ed25519_sanity() {
-        use kitsune2_api::agent::*;
+        use kitsune2_api::*;
         use kitsune2_test_utils::agent::*;
 
         let i1 = AgentBuilder::default().build(Ed25519LocalAgent::default());

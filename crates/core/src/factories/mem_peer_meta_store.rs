@@ -1,8 +1,5 @@
 use futures::future::BoxFuture;
-use kitsune2_api::{
-    DynPeerMetaStore, DynPeerMetaStoreFactory, K2Result, PeerMetaStore,
-    PeerMetaStoreFactory, SpaceId, Timestamp, Url,
-};
+use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -90,23 +87,17 @@ impl MemPeerMetaStoreFactory {
 }
 
 impl PeerMetaStoreFactory for MemPeerMetaStoreFactory {
-    fn default_config(
-        &self,
-        _config: &mut crate::config::Config,
-    ) -> K2Result<()> {
+    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
         Ok(())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        _builder: Arc<crate::builder::Builder>,
+        _builder: Arc<Builder>,
     ) -> BoxFuture<'static, K2Result<DynPeerMetaStore>> {
         Box::pin(async move { Ok(MemPeerMetaStore::create()) })
     }

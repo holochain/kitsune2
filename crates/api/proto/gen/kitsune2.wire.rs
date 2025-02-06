@@ -8,7 +8,7 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2Proto {
     /// The type of this message.
-    #[prost(enumeration = "k2_proto::Ty", tag = "1")]
+    #[prost(enumeration = "k2_proto::K2WireType", tag = "1")]
     pub ty: i32,
     /// The payload or content of this message.
     #[prost(bytes = "bytes", tag = "2")]
@@ -47,7 +47,7 @@ pub mod k2_proto {
         ::prost::Enumeration
     )]
     #[repr(i32)]
-    pub enum Ty {
+    pub enum K2WireType {
         /// The "UNSPECIFIED" type for future message types.
         ///
         /// In general, peers should ignore unspecified messages, but
@@ -79,28 +79,28 @@ pub mod k2_proto {
         /// We may add additional specific disconnect codes in the future.
         Disconnect = 15,
     }
-    impl Ty {
+    impl K2WireType {
         /// String value of the enum field names used in the ProtoBuf definition.
         ///
         /// The values are not transformed in any way and thus are considered stable
         /// (if the ProtoBuf definition does not change) and safe for programmatic use.
         pub fn as_str_name(&self) -> &'static str {
             match self {
-                Self::Unspecified => "TY_UNSPECIFIED",
-                Self::Preflight => "TY_PREFLIGHT",
-                Self::Notify => "TY_NOTIFY",
-                Self::Module => "TY_MODULE",
-                Self::Disconnect => "TY_DISCONNECT",
+                Self::Unspecified => "UNSPECIFIED",
+                Self::Preflight => "PREFLIGHT",
+                Self::Notify => "NOTIFY",
+                Self::Module => "MODULE",
+                Self::Disconnect => "DISCONNECT",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
         pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
             match value {
-                "TY_UNSPECIFIED" => Some(Self::Unspecified),
-                "TY_PREFLIGHT" => Some(Self::Preflight),
-                "TY_NOTIFY" => Some(Self::Notify),
-                "TY_MODULE" => Some(Self::Module),
-                "TY_DISCONNECT" => Some(Self::Disconnect),
+                "UNSPECIFIED" => Some(Self::Unspecified),
+                "PREFLIGHT" => Some(Self::Preflight),
+                "NOTIFY" => Some(Self::Notify),
+                "MODULE" => Some(Self::Module),
+                "DISCONNECT" => Some(Self::Disconnect),
                 _ => None,
             }
         }

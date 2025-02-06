@@ -1,12 +1,12 @@
 //! The core space implementation provided by Kitsune2.
 
-use kitsune2_api::{config::*, fetch::DynFetch, space::*, *};
+use kitsune2_api::*;
 use std::sync::{Arc, Mutex, Weak};
 
 mod protocol;
 
 /// CoreSpace configuration types.
-pub mod config {
+mod config {
     /// Configuration parameters for [CoreSpaceFactory](super::CoreSpaceFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -54,8 +54,7 @@ pub mod config {
     }
 }
 
-use config::*;
-use kitsune2_api::agent::DynLocalAgent;
+pub use config::*;
 
 /// The core space implementation provided by Kitsune2.
 /// You probably will have no reason to use something other than this.
@@ -76,19 +75,16 @@ impl SpaceFactory for CoreSpaceFactory {
         config.set_module_config(&CoreSpaceModConfig::default())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
         handler: DynSpaceHandler,
         space: SpaceId,
-        tx: transport::DynTransport,
+        tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
             let config: CoreSpaceModConfig =
@@ -163,7 +159,7 @@ impl std::fmt::Debug for TxHandlerTranslator {
     }
 }
 
-impl transport::TxBaseHandler for TxHandlerTranslator {
+impl TxBaseHandler for TxHandlerTranslator {
     fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         let space = self.1.upgrade();
         Box::pin(async move {
@@ -174,7 +170,7 @@ impl transport::TxBaseHandler for TxHandlerTranslator {
     }
 }
 
-impl transport::TxSpaceHandler for TxHandlerTranslator {
+impl TxSpaceHandler for TxHandlerTranslator {
     fn recv_space_notify(
         &self,
         _peer: Url,
@@ -197,9 +193,9 @@ struct InnerData {
 
 struct CoreSpace {
     space: SpaceId,
-    tx: transport::DynTransport,
-    peer_store: peer_store::DynPeerStore,
-    bootstrap: bootstrap::DynBootstrap,
+    tx: DynTransport,
+    peer_store: DynPeerStore,
+    bootstrap: DynBootstrap,
     local_agent_store: DynLocalAgentStore,
     peer_meta_store: DynPeerMetaStore,
     op_store: DynOpStore,
@@ -228,9 +224,9 @@ impl CoreSpace {
     pub fn new(
         config: CoreSpaceConfig,
         space: SpaceId,
-        tx: transport::DynTransport,
-        peer_store: peer_store::DynPeerStore,
-        bootstrap: bootstrap::DynBootstrap,
+        tx: DynTransport,
+        peer_store: DynPeerStore,
+        bootstrap: DynBootstrap,
         local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
         inner: Arc<Mutex<InnerData>>,
@@ -273,7 +269,7 @@ impl CoreSpace {
 }
 
 impl Space for CoreSpace {
-    fn peer_store(&self) -> &peer_store::DynPeerStore {
+    fn peer_store(&self) -> &DynPeerStore {
         &self.peer_store
     }
 
@@ -299,7 +295,7 @@ impl Space for CoreSpace {
 
     fn local_agent_join(
         &self,
-        local_agent: agent::DynLocalAgent,
+        local_agent: DynLocalAgent,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // set some starting values
@@ -308,7 +304,6 @@ impl Space for CoreSpace {
             // update our local map
             self.local_agent_store.add(local_agent.clone()).await?;
 
-            // TODO - inform gossip module of new join
             // TODO - inform sharding module of new join
 
             let inner = self.inner.clone();
@@ -323,7 +318,6 @@ impl Space for CoreSpace {
                 let peer_store = peer_store.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    // TODO - call an update function on the gossip module.
                     // TODO - call an update function on the sharding module.
 
                     let url = inner.lock().unwrap().current_url.clone();
@@ -333,7 +327,7 @@ impl Space for CoreSpace {
                         let created_at = Timestamp::now();
                         let expires_at = created_at
                             + std::time::Duration::from_secs(60 * 20);
-                        let info = agent::AgentInfo {
+                        let info = AgentInfo {
                             agent: local_agent2.agent().clone(),
                             space,
                             created_at,
@@ -343,21 +337,19 @@ impl Space for CoreSpace {
                             storage_arc: local_agent2.get_cur_storage_arc(),
                         };
 
-                        let info = match agent::AgentInfoSigned::sign(
-                            &local_agent2,
-                            info,
-                        )
-                        .await
-                        {
-                            Err(err) => {
-                                tracing::warn!(
-                                    ?err,
-                                    "failed to sign agent info",
-                                );
-                                return;
-                            }
-                            Ok(info) => info,
-                        };
+                        let info =
+                            match AgentInfoSigned::sign(&local_agent2, info)
+                                .await
+                            {
+                                Err(err) => {
+                                    tracing::warn!(
+                                        ?err,
+                                        "failed to sign agent info",
+                                    );
+                                    return;
+                                }
+                                Ok(info) => info,
+                            };
 
                         // add it to the peer_store.
                         if let Err(err) =
@@ -382,9 +374,8 @@ impl Space for CoreSpace {
         })
     }
 
-    fn local_agent_leave(&self, local_agent: id::AgentId) -> BoxFut<'_, ()> {
+    fn local_agent_leave(&self, local_agent: AgentId) -> BoxFut<'_, ()> {
         Box::pin(async move {
-            // TODO - inform gossip module of leave
             // TODO - inform sharding module of leave
 
             let local_agent = self.local_agent_store.remove(local_agent).await;
@@ -397,7 +388,7 @@ impl Space for CoreSpace {
                 let created_at = Timestamp::now();
                 let expires_at =
                     created_at + std::time::Duration::from_secs(60 * 20);
-                let info = agent::AgentInfo {
+                let info = AgentInfo {
                     agent: local_agent.agent().clone(),
                     space: self.space.clone(),
                     created_at,
@@ -407,11 +398,7 @@ impl Space for CoreSpace {
                     storage_arc: DhtArc::Empty,
                 };
 
-                let info = match agent::AgentInfoSigned::sign(
-                    &local_agent,
-                    info,
-                )
-                .await
+                let info = match AgentInfoSigned::sign(&local_agent, info).await
                 {
                     Err(err) => {
                         tracing::warn!(?err, "failed to sign agent info");
@@ -488,7 +475,7 @@ impl Space for CoreSpace {
 
 async fn check_agent_infos(
     config: CoreSpaceConfig,
-    peer_store: peer_store::DynPeerStore,
+    peer_store: DynPeerStore,
     local_agent_store: DynLocalAgentStore,
 ) {
     loop {

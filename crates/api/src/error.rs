@@ -83,7 +83,7 @@ impl K2Error {
 }
 
 /// The core kitsune2 result type.
-pub type K2Result<T> = std::result::Result<T, K2Error>;
+pub type K2Result<T> = Result<T, K2Error>;
 
 #[cfg(test)]
 mod test {

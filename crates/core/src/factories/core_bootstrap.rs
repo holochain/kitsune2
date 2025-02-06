@@ -1,6 +1,6 @@
 //! The core bootstrap implementation provided by Kitsune2.
 
-use kitsune2_api::{bootstrap::*, config::*, *};
+use kitsune2_api::*;
 use std::sync::Arc;
 
 /// CoreBootstrap configuration types.
@@ -71,10 +71,7 @@ impl BootstrapFactory for CoreBootstrapFactory {
         config.set_module_config(&CoreBootstrapModConfig::default())
     }
 
-    fn validate_config(
-        &self,
-        config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, config: &Config) -> K2Result<()> {
         const ERR: &str = "invalid bootstrap server_url";
 
         let config: CoreBootstrapModConfig = config.get_module_config()?;
@@ -94,8 +91,8 @@ impl BootstrapFactory for CoreBootstrapFactory {
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
-        peer_store: peer_store::DynPeerStore,
+        builder: Arc<Builder>,
+        peer_store: DynPeerStore,
         space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
@@ -112,8 +109,8 @@ impl BootstrapFactory for CoreBootstrapFactory {
     }
 }
 
-type PushSend = tokio::sync::mpsc::Sender<Arc<agent::AgentInfoSigned>>;
-type PushRecv = tokio::sync::mpsc::Receiver<Arc<agent::AgentInfoSigned>>;
+type PushSend = tokio::sync::mpsc::Sender<Arc<AgentInfoSigned>>;
+type PushRecv = tokio::sync::mpsc::Receiver<Arc<AgentInfoSigned>>;
 
 #[derive(Debug)]
 struct CoreBootstrap {
@@ -132,9 +129,9 @@ impl Drop for CoreBootstrap {
 
 impl CoreBootstrap {
     pub fn new(
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
         config: CoreBootstrapConfig,
-        peer_store: peer_store::DynPeerStore,
+        peer_store: DynPeerStore,
         space: SpaceId,
     ) -> Self {
         let server_url: Arc<str> =
@@ -167,7 +164,7 @@ impl CoreBootstrap {
 }
 
 impl Bootstrap for CoreBootstrap {
-    fn put(&self, info: Arc<agent::AgentInfoSigned>) {
+    fn put(&self, info: Arc<AgentInfoSigned>) {
         // ignore puts outside our space.
         if info.space != self.space {
             tracing::error!(
@@ -242,11 +239,11 @@ async fn push_task(
 }
 
 async fn poll_task(
-    builder: Arc<builder::Builder>,
+    builder: Arc<Builder>,
     config: CoreBootstrapConfig,
     server_url: Arc<str>,
     space: SpaceId,
-    peer_store: peer_store::DynPeerStore,
+    peer_store: DynPeerStore,
 ) {
     let mut wait = config.backoff_min();
 
@@ -266,7 +263,7 @@ async fn poll_task(
                 tracing::debug!(?err, "failure contacting bootstrap server");
             }
             Ok(Ok(data)) => {
-                match agent::AgentInfoSigned::decode_list(
+                match AgentInfoSigned::decode_list(
                     &builder.verifier,
                     data.as_bytes(),
                 ) {

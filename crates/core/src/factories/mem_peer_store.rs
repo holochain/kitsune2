@@ -1,11 +1,11 @@
 //! A production-ready memory-based peer store.
 
-use kitsune2_api::{agent::*, config::*, peer_store::*, *};
+use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// MemPeerStore configuration types.
-pub mod config {
+mod config {
     /// Configuration parameters for [MemPeerStoreFactory](super::MemPeerStoreFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -39,11 +39,11 @@ pub mod config {
     }
 }
 
-use config::*;
+pub use config::*;
 
 /// A production-ready memory-based peer store factory.
 ///
-/// This stores peer info in an in-memory hash map by [kitsune2_api::AgentId].
+/// This stores peer info in an in-memory hash map by [AgentId].
 /// The more complex `get_*` functions do aditional filtering at call time.
 //
 // Legacy Holochain/Kitsune stored peer info in a database, but the frequency
@@ -67,16 +67,13 @@ impl PeerStoreFactory for MemPeerStoreFactory {
         config.set_module_config(&MemPeerStoreModConfig::default())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
     ) -> BoxFut<'static, K2Result<DynPeerStore>> {
         Box::pin(async move {
             let config: MemPeerStoreModConfig =
@@ -102,7 +99,7 @@ impl MemPeerStore {
     }
 }
 
-impl peer_store::PeerStore for MemPeerStore {
+impl PeerStore for MemPeerStore {
     fn insert(
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,

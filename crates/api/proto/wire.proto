@@ -13,12 +13,12 @@ message K2Proto {
   //
   // We are using this enum field to distinguish between top-level messages,
   // rather than protobuf's oneof because of the downsides of upgrading oneofs.
-  enum Ty {
+  enum K2WireType {
     // The "UNSPECIFIED" type for future message types.
     //
     // In general, peers should ignore unspecified messages, but
     // should still count them toward any ratelimiting metrics.
-    TY_UNSPECIFIED = 0;
+    UNSPECIFIED = 0;
 
     // This message is preflight data.
     //
@@ -27,12 +27,12 @@ message K2Proto {
     // For example, if peers are required to include the "dht_v1" module
     // to communicate with each other, they should reject preflight to
     // peers that do not include that module.
-    TY_PREFLIGHT = 1;
+    PREFLIGHT = 1;
 
     // This is a notification or fire-and-forget message from a peer.
     //
     // This type requires that a "space" be specified.
-    TY_NOTIFY = 2;
+    NOTIFY = 2;
 
     // This is a module communication.
     //
@@ -41,17 +41,17 @@ message K2Proto {
     //
     // This type requires that a "space" be specified.
     // This type requires that a "module" be specified.
-    TY_MODULE = 3;
+    MODULE = 3;
 
     // This message indicates a general disconnect, with the reason
     // or context specified in the data payload.
     //
     // We may add additional specific disconnect codes in the future.
-    TY_DISCONNECT = 15;
+    DISCONNECT = 15;
   }
 
   // The type of this message.
-  Ty ty = 1;
+  K2WireType ty = 1;
 
   // The payload or content of this message.
   bytes data = 2;

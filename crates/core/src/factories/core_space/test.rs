@@ -1,4 +1,4 @@
-use kitsune2_api::{kitsune::*, space::*, *};
+use kitsune2_api::*;
 use kitsune2_test_utils::{agent::*, iter_check, space::TEST_SPACE_ID};
 use std::sync::{Arc, Mutex};
 
@@ -16,7 +16,7 @@ async fn space_local_agent_join_leave() {
         fn create_space(
             &self,
             _space: SpaceId,
-        ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S);
                 Ok(s)
@@ -25,7 +25,7 @@ async fn space_local_agent_join_leave() {
     }
 
     let k: DynKitsuneHandler = Arc::new(K);
-    let k1 = builder::Builder {
+    let k1 = Builder {
         verifier: Arc::new(TestVerifier),
         ..crate::default_test_builder()
     }
@@ -35,8 +35,8 @@ async fn space_local_agent_join_leave() {
     .await
     .unwrap();
 
-    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
-    let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
+    let ned = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
 
     let s1 = k1.space(TEST_SPACE_ID).await.unwrap();
 
@@ -119,7 +119,7 @@ async fn space_notify_send_recv() {
         fn create_space(
             &self,
             _space: SpaceId,
-        ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S(self.0.clone()));
                 Ok(s)
@@ -128,7 +128,7 @@ async fn space_notify_send_recv() {
     }
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
-    let k1 = builder::Builder {
+    let k1 = Builder {
         verifier: Arc::new(TestVerifier),
         ..crate::default_test_builder()
     }
@@ -141,7 +141,7 @@ async fn space_notify_send_recv() {
     let u1 = u_r.recv().await.unwrap();
 
     let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
-    let k2 = builder::Builder {
+    let k2 = Builder {
         verifier: Arc::new(TestVerifier),
         ..crate::default_test_builder()
     }
@@ -155,13 +155,13 @@ async fn space_notify_send_recv() {
 
     println!("url: {u1}, {u2}");
 
-    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
     let bob_info = AgentBuilder {
         url: Some(Some(u2)),
         ..Default::default()
     }
     .build(bob.clone());
-    let ned = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let ned = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
     let ned_info = AgentBuilder {
         url: Some(Some(u1)),
         ..Default::default()
@@ -205,10 +205,10 @@ async fn space_notify_send_recv() {
 #[tokio::test(flavor = "multi_thread")]
 async fn space_local_agent_periodic_re_sign_and_bootstrap() {
     #[derive(Debug)]
-    struct B(pub Mutex<Vec<Arc<agent::AgentInfoSigned>>>);
+    struct B(pub Mutex<Vec<Arc<AgentInfoSigned>>>);
 
-    impl bootstrap::Bootstrap for B {
-        fn put(&self, info: Arc<agent::AgentInfoSigned>) {
+    impl Bootstrap for B {
+        fn put(&self, info: Arc<AgentInfoSigned>) {
             self.0.lock().unwrap().push(info);
         }
     }
@@ -216,25 +216,22 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
     #[derive(Debug)]
     struct BF(pub Arc<B>);
 
-    impl bootstrap::BootstrapFactory for BF {
-        fn default_config(&self, _config: &mut config::Config) -> K2Result<()> {
+    impl BootstrapFactory for BF {
+        fn default_config(&self, _config: &mut Config) -> K2Result<()> {
             Ok(())
         }
 
-        fn validate_config(
-            &self,
-            _config: &kitsune2_api::config::Config,
-        ) -> K2Result<()> {
+        fn validate_config(&self, _config: &Config) -> K2Result<()> {
             Ok(())
         }
 
         fn create(
             &self,
-            _builder: Arc<builder::Builder>,
-            _peer_store: peer_store::DynPeerStore,
+            _builder: Arc<Builder>,
+            _peer_store: DynPeerStore,
             _space: SpaceId,
-        ) -> BoxFut<'static, K2Result<bootstrap::DynBootstrap>> {
-            let out: bootstrap::DynBootstrap = self.0.clone();
+        ) -> BoxFut<'static, K2Result<DynBootstrap>> {
+            let out: DynBootstrap = self.0.clone();
             Box::pin(async move { Ok(out) })
         }
     }
@@ -251,7 +248,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
         fn create_space(
             &self,
             _space: SpaceId,
-        ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>> {
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S);
                 Ok(s)
@@ -261,7 +258,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
 
     let b = Arc::new(B(Mutex::new(Vec::new())));
 
-    let builder = builder::Builder {
+    let builder = Builder {
         verifier: Arc::new(TestVerifier),
         bootstrap: Arc::new(BF(b.clone())),
         ..crate::default_test_builder()
@@ -286,7 +283,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
     let k: DynKitsuneHandler = Arc::new(K);
     let k1 = builder.build(k).await.unwrap();
 
-    let bob = Arc::new(TestLocalAgent::default()) as agent::DynLocalAgent;
+    let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
 
     let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
 

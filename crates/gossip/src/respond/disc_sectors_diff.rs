@@ -8,7 +8,7 @@ use crate::state::{
     RoundStageDiscSectorDetailsDiff,
 };
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
-use kitsune2_dht::snapshot::DhtSnapshot;
+use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
 

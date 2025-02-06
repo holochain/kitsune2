@@ -1,6 +1,6 @@
 use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipHashesMessage};
-use kitsune2_api::id::decode_ids;
+use kitsune2_api::decode_ids;
 use kitsune2_api::{K2Error, K2Result, Url};
 
 impl K2Gossip {

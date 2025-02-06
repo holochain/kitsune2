@@ -250,8 +250,7 @@ impl OpId {
 ///
 /// ```
 /// use bytes::Bytes;
-/// use kitsune2_api::AgentId;
-/// use kitsune2_api::id::encode_ids;
+/// use kitsune2_api::{AgentId, encode_ids};
 ///
 /// let agents = vec![
 ///     AgentId::from(Bytes::from_static(b"agent1")),
@@ -274,8 +273,7 @@ pub fn encode_ids(
 ///
 /// ```
 /// use bytes::Bytes;
-/// use kitsune2_api::AgentId;
-/// use kitsune2_api::id::decode_ids;
+/// use kitsune2_api::{AgentId, decode_ids};
 ///
 /// let agents = vec![
 ///     Bytes::from_static(b"agent1"),

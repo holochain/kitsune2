@@ -8,9 +8,8 @@ use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorsDiff,
     RoundStageInitiated, RoundStageRingSectorDetailsDiff,
 };
-use kitsune2_api::id::decode_ids;
-use kitsune2_api::{AgentId, K2Error, K2Result, Timestamp, Url};
-use kitsune2_dht::snapshot::DhtSnapshot;
+use kitsune2_api::*;
+use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::{ArcSet, DhtSnapshotNextAction};
 use tokio::sync::MutexGuard;
 
@@ -175,7 +174,7 @@ impl K2Gossip {
                             _ => {
                                 // TODO while this would require a local inconsistency between
                                 //      the DHT and the gossip crates, we should probably still
-                                //      handle this wihtout a panic.
+                                //      handle this without a panic.
                                 unreachable!("unexpected snapshot type")
                             }
                         }

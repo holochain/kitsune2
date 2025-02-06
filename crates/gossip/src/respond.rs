@@ -5,9 +5,7 @@ use crate::protocol::{
 use crate::state::GossipRoundState;
 use crate::K2GossipConfig;
 use bytes::Bytes;
-use kitsune2_api::agent::AgentInfoSigned;
-use kitsune2_api::id::decode_ids;
-use kitsune2_api::{AgentId, K2Error, K2Result, OpId, Timestamp, Url};
+use kitsune2_api::*;
 use kitsune2_dht::ArcSet;
 use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -228,7 +226,6 @@ impl K2Gossip {
             return Ok(());
         }
 
-        // TODO check that the incoming agents are the one we requested
         let mut agents = Vec::with_capacity(provided_agents.len());
         for agent in provided_agents {
             let agent_info =

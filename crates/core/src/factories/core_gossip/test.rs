@@ -1,6 +1,6 @@
 use super::*;
 use crate::default_test_builder;
-use kitsune2_api::transport::{TxBaseHandler, TxHandler};
+use kitsune2_api::{TxBaseHandler, TxHandler};
 use std::sync::Arc;
 
 #[derive(Debug)]

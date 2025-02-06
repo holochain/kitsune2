@@ -1,7 +1,4 @@
-use kitsune2_api::agent::DynLocalAgent;
-use kitsune2_api::{
-    AgentId, BoxFut, K2Result, LocalAgentStore, LocalAgentStoreFactory,
-};
+use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -58,23 +55,17 @@ impl CoreLocalAgentStoreFactory {
 }
 
 impl LocalAgentStoreFactory for CoreLocalAgentStoreFactory {
-    fn default_config(
-        &self,
-        _config: &mut kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
         Ok(())
     }
 
-    fn validate_config(
-        &self,
-        _config: &kitsune2_api::config::Config,
-    ) -> K2Result<()> {
+    fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
 
     fn create(
         &self,
-        _builder: Arc<crate::builder::Builder>,
+        _builder: Arc<Builder>,
     ) -> BoxFut<'static, K2Result<Arc<dyn LocalAgentStore>>> {
         Box::pin(async { Ok(CoreLocalAgentStore::create()) })
     }

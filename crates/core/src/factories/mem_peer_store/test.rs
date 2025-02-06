@@ -11,8 +11,8 @@ fn create() -> Inner {
     )
 }
 
-const AGENT_1: AgentId = AgentId(id::Id(bytes::Bytes::from_static(b"agent1")));
-const AGENT_2: AgentId = AgentId(id::Id(bytes::Bytes::from_static(b"agent2")));
+const AGENT_1: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent1")));
+const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
 
 /// Sneak some test-data into the url field (as the peer id)
 /// this will let us validate store actions when we extract

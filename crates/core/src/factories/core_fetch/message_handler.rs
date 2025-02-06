@@ -1,12 +1,5 @@
 use super::{IncomingRequest, IncomingResponse};
-use kitsune2_api::{
-    fetch::{
-        k2_fetch_message::FetchMessageType, FetchRequest, FetchResponse,
-        K2FetchMessage,
-    },
-    transport::{TxBaseHandler, TxModuleHandler},
-    K2Error, K2Result, SpaceId, Url,
-};
+use kitsune2_api::*;
 use prost::Message;
 use tokio::sync::mpsc::Sender;
 
@@ -80,21 +73,11 @@ mod test {
     use super::FetchMessageHandler;
     use crate::factories::core_fetch::test::test_utils::make_op;
     use bytes::Bytes;
-    use kitsune2_api::{
-        fetch::{
-            serialize_request_message, serialize_response_message,
-            K2FetchMessage,
-        },
-        id,
-        transport::TxModuleHandler,
-        SpaceId, Url,
-    };
+    use kitsune2_api::*;
     use kitsune2_test_utils::id::random_op_id;
+    use kitsune2_test_utils::space::TEST_SPACE_ID;
     use prost::Message;
     use std::time::Duration;
-
-    const SPACE_ID: SpaceId =
-        SpaceId(id::Id(bytes::Bytes::from_static(b"space1")));
 
     #[test]
     fn decoding_error() {
@@ -105,12 +88,11 @@ mod test {
             incoming_response_tx,
         };
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
-        let wrong_message =
-            bytes::Bytes::from_static(b"this is not a fetch message");
+        let wrong_message = Bytes::from_static(b"this is not a fetch message");
         message_handler
             .recv_module_msg(
                 peer,
-                SPACE_ID,
+                TEST_SPACE_ID,
                 crate::factories::core_fetch::MOD_NAME.to_string(),
                 wrong_message,
             )
@@ -136,7 +118,7 @@ mod test {
         message_handler
             .recv_module_msg(
                 peer,
-                SPACE_ID,
+                TEST_SPACE_ID,
                 crate::factories::core_fetch::MOD_NAME.to_string(),
                 request_message,
             )
@@ -169,7 +151,7 @@ mod test {
         message_handler
             .recv_module_msg(
                 peer,
-                SPACE_ID,
+                TEST_SPACE_ID,
                 crate::factories::core_fetch::MOD_NAME.to_string(),
                 request_message,
             )
@@ -211,7 +193,7 @@ mod test {
         message_handler
             .recv_module_msg(
                 peer,
-                SPACE_ID,
+                TEST_SPACE_ID,
                 crate::factories::core_fetch::MOD_NAME.to_string(),
                 request_message,
             )

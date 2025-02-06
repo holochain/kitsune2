@@ -10,6 +10,12 @@ use mockall::automock;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+pub(crate) mod proto {
+    include!("../proto/gen/kitsune2.op_store.rs");
+}
+
+pub use proto::Op;
+
 /// An op with metadata.
 ///
 /// This is the basic unit of data in the kitsune2 system.
@@ -21,8 +27,6 @@ pub struct MetaOp {
     /// The actual op data.
     pub op_data: Bytes,
 }
-
-include!("../proto/gen/kitsune2.op_store.rs");
 
 impl From<Bytes> for Op {
     fn from(value: Bytes) -> Self {
@@ -155,7 +159,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFuture<'_, K2Result<Vec<(u64, Bytes)>>>;
 }
 
-/// Trait-object version of kitsune2 op store.
+/// Trait-object [OpStore].
 pub type DynOpStore = Arc<dyn OpStore>;
 
 /// A factory for constructing [OpStore] instances.
@@ -175,7 +179,7 @@ pub trait OpStoreFactory: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'static, K2Result<DynOpStore>>;
 }
 
-/// Trait-object [crate::bootstrap::BootstrapFactory].
+/// Trait-object [OpStoreFactory].
 pub type DynOpStoreFactory = Arc<dyn OpStoreFactory>;
 
 #[cfg(test)]

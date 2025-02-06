@@ -13,10 +13,10 @@ pub const TEST_SIG: &[u8] = b"test-signature";
 #[derive(Debug)]
 pub struct TestVerifier;
 
-impl agent::Verifier for TestVerifier {
+impl Verifier for TestVerifier {
     fn verify(
         &self,
-        _agent_info: &agent::AgentInfo,
+        _agent_info: &AgentInfo,
         _message: &[u8],
         signature: &[u8],
     ) -> bool {
@@ -67,17 +67,17 @@ impl Default for TestLocalAgent {
     }
 }
 
-impl agent::Signer for TestLocalAgent {
+impl Signer for TestLocalAgent {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
-        _agent_info: &'b agent::AgentInfo,
+        _agent_info: &'b AgentInfo,
         _message: &'c [u8],
     ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
         Box::pin(async move { Ok(bytes::Bytes::from_static(TEST_SIG)) })
     }
 }
 
-impl agent::LocalAgent for TestLocalAgent {
+impl LocalAgent for TestLocalAgent {
     fn agent(&self) -> &AgentId {
         &self.id
     }
@@ -144,10 +144,7 @@ impl AgentBuilder {
     }
 
     /// Build an agent from given values or defaults.
-    pub fn build<A: agent::LocalAgent>(
-        self,
-        a: A,
-    ) -> Arc<agent::AgentInfoSigned> {
+    pub fn build<A: LocalAgent>(self, a: A) -> Arc<AgentInfoSigned> {
         let agent = self.agent.unwrap_or_else(|| a.agent().clone());
         let space = self.space.unwrap_or_else(|| TEST_SPACE_ID.clone());
         let created_at = self.created_at.unwrap_or_else(Timestamp::now);
@@ -157,7 +154,7 @@ impl AgentBuilder {
         let is_tombstone = self.is_tombstone.unwrap_or(false);
         let url = self.url.unwrap_or(None);
         let storage_arc = self.storage_arc.unwrap_or_default();
-        let agent_info = agent::AgentInfo {
+        let agent_info = AgentInfo {
             agent,
             space,
             created_at,
@@ -166,9 +163,7 @@ impl AgentBuilder {
             url,
             storage_arc,
         };
-        futures::executor::block_on(agent::AgentInfoSigned::sign(
-            &a, agent_info,
-        ))
-        .unwrap()
+        futures::executor::block_on(AgentInfoSigned::sign(&a, agent_info))
+            .unwrap()
     }
 }
