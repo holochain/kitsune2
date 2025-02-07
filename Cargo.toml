@@ -96,7 +96,7 @@ prost-build = "0.13.3"
 # above this section.
 # --- dev-dependencies ---
 kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
-kitsune2_core = { path = "crates/core" }
+kitsune2_core = { version = "0.0.1-alpha", path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
 # used to hash op data
