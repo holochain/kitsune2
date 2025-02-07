@@ -260,6 +260,8 @@ impl K2Gossip {
             .map(|previous_bookmark| previous_bookmark <= updated_bookmark)
             .unwrap_or(true)
         {
+            // TODO Ideally we'd reset this if their arc set changes, to avoid missing ops in new
+            //      sectors.
             self.peer_meta_store
                 .set_new_ops_bookmark(from_peer.clone(), updated_bookmark)
                 .await?;
