@@ -1,3 +1,6 @@
+use bytes::Bytes;
+
+mod app;
 mod readline;
 
 /// Kitsune2 Showcase chat and file sharing app.
@@ -36,7 +39,7 @@ fn main() {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(async_main(print2, line_recv));
+            .block_on(async_main(print2, args, line_recv));
     });
 
     // readline on the main thread
@@ -45,30 +48,20 @@ fn main() {
 
 async fn async_main(
     print: readline::Print,
+    args: Args,
     mut line_recv: tokio::sync::mpsc::Receiver<String>,
 ) {
-    // this just shows that we can print things from other threads while
-    // reading lines
-    let print2 = print.clone();
-    tokio::task::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    // create the kitsune connection
+    let app = app::App::new(print.clone(), args).await.unwrap();
 
-            if print2.print_line("tick".into()).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    // this is the real loop where we'd send messages to peers
-    // or deal with the files on the dht
+    // loop over cli input lines either executing commands or sending chats
     while let Some(line) = line_recv.recv().await {
-        if print
-            .print_line(format!("got: {line} - NOT IMPLEMENTED"))
-            .await
-            .is_err()
-        {
-            break;
+        if line.starts_with("/") {
+            print.print_line("NOT IMPLEMENTED".into()).await;
+        } else {
+            app.chat(Bytes::copy_from_slice(line.as_bytes()))
+                .await
+                .unwrap();
         }
     }
 }

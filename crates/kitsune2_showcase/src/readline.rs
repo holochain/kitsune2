@@ -1,14 +1,15 @@
 /// Ability to print to stdout while readline is happening.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Print(reedline::ExternalPrinter<String>);
 
 impl Print {
     /// Print out a line.
-    pub async fn print_line(&self, line: String) -> Result<(), ()> {
+    pub async fn print_line(&self, line: String) {
         let p = self.0.clone();
         tokio::task::spawn_blocking(move || p.print(line).map_err(|_| ()))
             .await
-            .map_err(|_| ())?
+            .expect("failed to print output")
+            .expect("failed to print output");
     }
 }
 

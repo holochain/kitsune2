@@ -23,6 +23,12 @@ categories = ["network-programming"]
 license = "Apache-2.0"
 edition = "2021"
 
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.

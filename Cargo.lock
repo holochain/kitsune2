@@ -1502,8 +1502,12 @@ dependencies = [
 name = "kitsune2_showcase"
 version = "0.0.1-alpha"
 dependencies = [
+ "bytes",
  "clap",
  "kitsune2",
+ "kitsune2_api",
+ "kitsune2_core",
+ "kitsune2_transport_tx5",
  "nu-ansi-term 0.50.1",
  "reedline",
  "tokio",

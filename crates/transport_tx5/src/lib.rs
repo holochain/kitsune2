@@ -71,7 +71,7 @@ pub mod config {
     }
 }
 
-use config::*;
+pub use config::*;
 
 /// Provides a Kitsune2 transport module based on the Tx5 crate.
 #[derive(Debug)]
