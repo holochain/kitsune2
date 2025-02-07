@@ -4,7 +4,7 @@ use crate::protocol::{
     encode_agent_ids, encode_op_ids, ArcSetMessage, GossipMessage,
     K2GossipAcceptMessage, K2GossipBusyMessage, K2GossipInitiateMessage,
 };
-use kitsune2_api::{K2Error, K2Result, Timestamp, Url, UNIX_TIMESTAMP};
+use kitsune2_api::{K2Error, K2Result, Timestamp, Url};
 use kitsune2_dht::ArcSet;
 
 impl K2Gossip {
@@ -83,11 +83,7 @@ impl K2Gossip {
             .filter_known_agents(&initiate.participating_agents)
             .await?;
 
-        let new_since = self
-            .peer_meta_store
-            .new_ops_bookmark(from_peer.clone())
-            .await?
-            .unwrap_or(UNIX_TIMESTAMP);
+        let new_since = self.get_request_new_since(from_peer.clone()).await?;
 
         let (new_ops, used_bytes, new_bookmark) = self
             .retrieve_new_op_ids(

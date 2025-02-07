@@ -50,16 +50,6 @@ impl K2Gossip {
             .request_ops(decode_ids(accept.new_ops), from_peer.clone())
             .await?;
 
-        // TODO Ideally we'd reset this if their arc set changes, to avoid missing ops in new
-        //      sectors. Do this by updating bookmark to `Timestamp::now() - UNIT_TIME` when
-        //      receiving or creating an agent id which has a peer URL in the meta store.
-        self.peer_meta_store
-            .set_new_ops_bookmark(
-                from_peer.clone(),
-                Timestamp::from_micros(accept.updated_new_since),
-            )
-            .await?;
-
         let (send_new_ops, used_bytes, send_new_bookmark) = self
             .retrieve_new_op_ids(
                 &common_arc_set,

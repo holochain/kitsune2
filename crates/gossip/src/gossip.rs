@@ -237,11 +237,8 @@ impl K2Gossip {
 
         let (our_agents, our_arc_set) = self.local_agent_state().await?;
 
-        let new_since = self
-            .peer_meta_store
-            .new_ops_bookmark(target_peer_url.clone())
-            .await?
-            .unwrap_or(UNIX_TIMESTAMP);
+        let new_since =
+            self.get_request_new_since(target_peer_url.clone()).await?;
 
         let round_state = GossipRoundState::new(
             target_peer_url.clone(),
