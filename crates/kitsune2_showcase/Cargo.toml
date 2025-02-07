@@ -17,6 +17,5 @@ kitsune2 = { workspace = true }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_transport_tx5 = { workspace = true }
-nu-ansi-term = "0.50.0"
-reedline = { version = "0.38.0", features = ["external_printer"] }
+rustyline = { version = "15.0.0", features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }

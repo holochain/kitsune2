@@ -57,7 +57,7 @@ async fn async_main(
     // loop over cli input lines either executing commands or sending chats
     while let Some(line) = line_recv.recv().await {
         if line.starts_with("/") {
-            print.print_line("NOT IMPLEMENTED".into()).await;
+            print.print_line("NOT IMPLEMENTED".into());
         } else {
             app.chat(Bytes::copy_from_slice(line.as_bytes()))
                 .await

@@ -31,9 +31,7 @@ impl App {
             ) -> K2Result<()> {
                 let print = self.0.clone();
                 tokio::task::spawn(async move {
-                    print
-                        .print_line(String::from_utf8_lossy(&data).into())
-                        .await;
+                    print.print_line(String::from_utf8_lossy(&data).into());
                 });
                 Ok(())
             }
@@ -59,7 +57,7 @@ impl App {
             ) -> BoxFut<'static, ()> {
                 let print = self.0.clone();
                 Box::pin(async move {
-                    print.print_line(format!("Online at: {this_url}")).await;
+                    print.print_line(format!("Online at: {this_url}"));
                 })
             }
         }
@@ -104,8 +102,7 @@ impl App {
         // this is a very naive chat impl, just sending to peers we know about
 
         self.p
-            .print_line("checking for peers to chat with...".into())
-            .await;
+            .print_line("checking for peers to chat with...".into());
         let peers = self
             .s
             .peer_store()
@@ -114,14 +111,11 @@ impl App {
             .into_iter()
             .filter(|p| &p.agent != self.a.agent())
             .collect::<Vec<_>>();
-        self.p
-            .print_line(format!("found {} peers", peers.len()))
-            .await;
+        self.p.print_line(format!("found {} peers", peers.len()));
 
         for peer in peers {
             self.p
-                .print_line(format!("sending chat to {}", &peer.agent))
-                .await;
+                .print_line(format!("sending chat to {}", &peer.agent));
             self.s
                 .send_notify(
                     peer.agent.clone(),
@@ -131,7 +125,7 @@ impl App {
                 .await?;
         }
 
-        self.p.print_line("chat complete".into()).await;
+        self.p.print_line("chat complete".into());
 
         Ok(())
     }
