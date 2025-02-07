@@ -5,24 +5,16 @@ use std::time::Duration;
 
 struct TestPeerMetaStore {
     inner: DynPeerMetaStore,
-    space: SpaceId,
 }
 
 impl TestPeerMetaStore {
-    async fn new(inner: DynPeerMetaStore, space: &str) -> K2Result<Self> {
-        let space: SpaceId =
-            bytes::Bytes::from(space.as_bytes().to_vec()).into();
-
-        Ok(Self { inner, space })
+    async fn new(inner: DynPeerMetaStore) -> K2Result<Self> {
+        Ok(Self { inner })
     }
 
     async fn last_gossip_timestamp(&self, peer: Url) -> Option<Timestamp> {
         self.inner
-            .get(
-                self.space.clone(),
-                peer,
-                "gossip:last_timestamp".to_string(),
-            )
+            .get(peer, "gossip:last_timestamp".to_string())
             .await
             .unwrap()
             .map(|v| {
@@ -42,13 +34,7 @@ impl TestPeerMetaStore {
         );
 
         self.inner
-            .put(
-                self.space.clone(),
-                peer,
-                "gossip:last_timestamp".to_string(),
-                value,
-                None,
-            )
+            .put(peer, "gossip:last_timestamp".to_string(), value, None)
             .await?;
 
         Ok(())
@@ -66,9 +52,7 @@ async fn mem_meta_store() {
         .unwrap();
 
     let peer = Url::from_str("ws://test-host:80/1").unwrap();
-    let mut agent_store = TestPeerMetaStore::new(store.clone(), "space")
-        .await
-        .unwrap();
+    let mut agent_store = TestPeerMetaStore::new(store.clone()).await.unwrap();
 
     assert_eq!(agent_store.last_gossip_timestamp(peer.clone()).await, None);
 
@@ -96,9 +80,7 @@ async fn store_with_multiple_agents() {
 
     let peer_1 = Url::from_str("ws://test-host:80/1").unwrap();
     let peer_2 = Url::from_str("ws://test-host:80/2").unwrap();
-    let mut agent_store = TestPeerMetaStore::new(store.clone(), "space")
-        .await
-        .unwrap();
+    let mut agent_store = TestPeerMetaStore::new(store.clone()).await.unwrap();
 
     let timestamp_1 = Timestamp::now();
     let timestamp_2 = timestamp_1 + Duration::from_secs(1);
