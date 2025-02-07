@@ -1,4 +1,4 @@
-use crate::{builder, config, BoxFut, K2Result, SpaceId, Timestamp, Url};
+use crate::{builder, config, BoxFut, K2Result, Timestamp, Url};
 use futures::future::BoxFuture;
 use std::sync::Arc;
 
@@ -9,7 +9,6 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
     /// Store a key-value pair for a given space and peer.
     fn put(
         &self,
-        space: SpaceId,
         peer: Url,
         key: String,
         value: bytes::Bytes,
@@ -19,18 +18,12 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
     /// Get a value by key for a given space and peer.
     fn get(
         &self,
-        space: SpaceId,
         peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
 
     /// Delete a key-value pair for a given space and peer.
-    fn delete(
-        &self,
-        space: SpaceId,
-        peer: Url,
-        key: String,
-    ) -> BoxFuture<'_, K2Result<()>>;
+    fn delete(&self, peer: Url, key: String) -> BoxFuture<'_, K2Result<()>>;
 }
 
 /// Trait-object version of kitsune2 [PeerMetaStore].
