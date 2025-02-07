@@ -177,10 +177,7 @@ impl K2Gossip {
             space_id: space_id.clone(),
             peer_store,
             local_agent_store,
-            peer_meta_store: Arc::new(K2PeerMetaStore::new(
-                peer_meta_store,
-                space_id.clone(),
-            )),
+            peer_meta_store: Arc::new(K2PeerMetaStore::new(peer_meta_store)),
             op_store,
             fetch,
             agent_verifier,
@@ -582,10 +579,8 @@ mod test {
                 .await
                 .unwrap();
 
-            let peer_meta_store = K2PeerMetaStore::new(
-                space.peer_meta_store().clone(),
-                self.space_id.clone(),
-            );
+            let peer_meta_store =
+                K2PeerMetaStore::new(space.peer_meta_store().clone());
 
             GossipTestHarness {
                 _gossip: space.gossip().clone(),

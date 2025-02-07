@@ -1,18 +1,15 @@
-use kitsune2_api::{
-    DynPeerMetaStore, K2Error, K2Result, SpaceId, Timestamp, Url,
-};
+use kitsune2_api::{DynPeerMetaStore, K2Error, K2Result, Timestamp, Url};
 use std::time::Duration;
 
 #[derive(Debug)]
 pub(crate) struct K2PeerMetaStore {
     inner: DynPeerMetaStore,
-    space: SpaceId,
 }
 
 impl K2PeerMetaStore {
-    /// Create a new peer meta store for the given space.
-    pub(crate) fn new(inner: DynPeerMetaStore, space: SpaceId) -> Self {
-        Self { inner, space }
+    /// Create a new peer meta store.
+    pub(crate) fn new(inner: DynPeerMetaStore) -> Self {
+        Self { inner }
     }
 
     /// When did we last gossip with the given peer?
@@ -76,7 +73,7 @@ impl K2PeerMetaStore {
         name: &str,
     ) -> Result<Option<T>, K2Error> {
         self.inner
-            .get(self.space.clone(), peer, name.to_string())
+            .get(peer, name.to_string())
             .await?
             .map(|v| {
                 serde_json::from_slice::<T>(&v).map_err(|e| {
@@ -104,13 +101,7 @@ impl K2PeerMetaStore {
         })?;
 
         self.inner
-            .put(
-                self.space.clone(),
-                peer,
-                name.to_string(),
-                value.into(),
-                expiry,
-            )
+            .put(peer, name.to_string(), value.into(), expiry)
             .await?;
 
         Ok(())
@@ -120,20 +111,18 @@ impl K2PeerMetaStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::Bytes;
     use kitsune2_core::default_test_builder;
     use kitsune2_core::factories::MemPeerMetaStoreFactory;
     use std::sync::Arc;
 
     async fn test_store() -> K2PeerMetaStore {
-        let space = SpaceId::from(Bytes::from_static(b"test"));
         let builder =
             Arc::new(default_test_builder().with_default_config().unwrap());
         let inner = MemPeerMetaStoreFactory::create()
             .create(builder)
             .await
             .unwrap();
-        K2PeerMetaStore::new(inner, space)
+        K2PeerMetaStore::new(inner)
     }
 
     #[tokio::test]

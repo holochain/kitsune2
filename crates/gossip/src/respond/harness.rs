@@ -72,7 +72,6 @@ impl RespondTestHarness {
                         .create(builder.clone())
                         .await
                         .unwrap(),
-                    TEST_SPACE_ID,
                 )),
                 op_store: op_store.clone(),
                 fetch: builder
