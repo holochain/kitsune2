@@ -54,21 +54,13 @@ async fn async_main(
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-            if print2.print_line("tick".into()).await.is_err() {
-                break;
-            }
+            print2.print_line("tick".into());
         }
     });
 
     // this is the real loop where we'd send messages to peers
     // or deal with the files on the dht
     while let Some(line) = line_recv.recv().await {
-        if print
-            .print_line(format!("got: {line} - NOT IMPLEMENTED"))
-            .await
-            .is_err()
-        {
-            break;
-        }
+        print.print_line(format!("got: {line} - NOT IMPLEMENTED"));
     }
 }
