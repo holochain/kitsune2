@@ -1,14 +1,15 @@
 use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipHashesMessage};
 use kitsune2_api::decode_ids;
-use kitsune2_api::{K2Error, K2Result, Url};
+use kitsune2_api::{K2Error, Url};
+use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_hashes(
         &self,
         from_peer: Url,
         hashes: K2GossipHashesMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         // This could be received from either the initiator or the acceptor.
         // So we have to check in both places!
 
@@ -70,7 +71,7 @@ impl K2Gossip {
         };
 
         if !handled_as_initiator && !handled_as_acceptor {
-            return Err(K2Error::other("Unsolicited Hashes message"));
+            return Err(K2Error::other("Unsolicited Hashes message").into());
         }
 
         Ok(None)

@@ -9,6 +9,7 @@ use kitsune2_api::*;
 use kitsune2_dht::{ArcSet, UNIT_TIME};
 use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard};
+use crate::error::K2GossipResult;
 
 mod accept;
 mod agents;
@@ -30,7 +31,7 @@ impl K2Gossip {
         &self,
         from_peer: Url,
         msg: GossipMessage,
-    ) -> K2Result<()> {
+    ) -> K2GossipResult<()> {
         let res = match msg {
             GossipMessage::Initiate(initiate) => {
                 self.respond_to_initiate(from_peer.clone(), initiate).await

@@ -17,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
+use crate::error::K2GossipError;
 
 /// A factory for creating K2Gossip instances.
 #[derive(Debug)]
@@ -319,8 +320,15 @@ impl K2Gossip {
 
         let this = self.clone();
         tokio::task::spawn(async move {
-            if let Err(e) = this.respond_to_msg(from_peer, msg).await {
-                tracing::error!("could not respond to gossip message: {:?}", e);
+            match this.respond_to_msg(from_peer, msg).await {
+                Ok(_) => {},
+                Err(e @ K2GossipError::PeerBehaviorError { .. }) => {
+                    // TODO record in peer meta store
+                    tracing::error!("Peer behavior error: {:?}", e);
+                }
+                Err(e) => {
+                    tracing::error!("could not respond to gossip message: {:?}", e);
+                }
             }
         });
 

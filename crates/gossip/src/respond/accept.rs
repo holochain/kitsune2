@@ -12,13 +12,14 @@ use kitsune2_api::*;
 use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::{ArcSet, DhtSnapshotNextAction};
 use tokio::sync::MutexGuard;
+use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_accept(
         &self,
         from_peer: Url,
         accept: K2GossipAcceptMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         // Validate the incoming accept against our own state.
         let (mut lock, initiated) =
             self.check_accept_state(&from_peer, &accept).await?;

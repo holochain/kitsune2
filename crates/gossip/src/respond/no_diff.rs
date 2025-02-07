@@ -5,13 +5,14 @@ use crate::protocol::{
 };
 use crate::state::{GossipRoundState, RoundStage, RoundStageAccepted};
 use kitsune2_api::{AgentId, K2Error, K2Result, Url};
+use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_no_diff(
         &self,
         from_peer: Url,
         no_diff: K2GossipNoDiffMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         self.check_no_diff_state_and_remove(from_peer.clone(), &no_diff)
             .await?;
 

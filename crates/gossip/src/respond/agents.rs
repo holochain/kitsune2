@@ -2,13 +2,14 @@ use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipAgentsMessage};
 use crate::state::{GossipRoundState, RoundStage};
 use kitsune2_api::{K2Error, K2Result, Url};
+use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_agents(
         &self,
         from_peer: Url,
         agents: K2GossipAgentsMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         // Validate the incoming agents message against our own state.
         let mut initiated_lock = self.initiated_round_state.lock().await;
         match initiated_lock.as_ref() {
@@ -18,7 +19,7 @@ impl K2Gossip {
                 initiated_lock.take();
             }
             None => {
-                return Err(K2Error::other("Unsolicited Agents message"));
+                return Err(K2Error::other("Unsolicited Agents message").into());
             }
         }
 

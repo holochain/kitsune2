@@ -4,15 +4,16 @@ use crate::protocol::{
     encode_agent_ids, encode_op_ids, ArcSetMessage, GossipMessage,
     K2GossipAcceptMessage, K2GossipBusyMessage, K2GossipInitiateMessage,
 };
-use kitsune2_api::{K2Error, K2Result, Timestamp, Url};
+use kitsune2_api::{K2Error, Timestamp, Url};
 use kitsune2_dht::ArcSet;
+use crate::error::{K2GossipError, K2GossipResult};
 
 impl K2Gossip {
     pub(super) async fn respond_to_initiate(
         &self,
         from_peer: Url,
         initiate: K2GossipInitiateMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         // Rate limit incoming gossip messages by peer
         self.check_peer_initiate_rate(from_peer.clone()).await?;
 
@@ -38,7 +39,7 @@ impl K2Gossip {
         let other_arc_set = match &initiate.arc_set {
             Some(message) => ArcSet::decode(&message.value)?,
             None => {
-                return Err(K2Error::other("no arc set in initiate message"));
+                return Err(K2Error::other("no arc set in initiate message").into());
             }
         };
 
@@ -118,7 +119,7 @@ impl K2Gossip {
         })))
     }
 
-    async fn check_peer_initiate_rate(&self, from_peer: Url) -> K2Result<()> {
+    async fn check_peer_initiate_rate(&self, from_peer: Url) -> K2GossipResult<()> {
         if let Some(timestamp) = self
             .peer_meta_store
             .last_gossip_timestamp(from_peer.clone())
@@ -135,7 +136,7 @@ impl K2Gossip {
                     elapsed,
                     self.config.min_initiate_interval()
                 );
-                return Err(K2Error::other("initiate too soon"));
+                return Err(K2GossipError::peer_behavior("initiate too soon"));
             }
         }
 

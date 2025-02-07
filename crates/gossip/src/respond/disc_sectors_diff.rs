@@ -11,13 +11,14 @@ use kitsune2_api::{AgentId, K2Error, K2Result, Url};
 use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
+use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_disc_sectors_diff(
         &self,
         from_peer: Url,
         disc_sectors_diff: K2GossipDiscSectorsDiffMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         let (mut state, accepted) = self
             .check_disc_sectors_diff_state(
                 from_peer.clone(),

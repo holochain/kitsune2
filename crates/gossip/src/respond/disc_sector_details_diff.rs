@@ -10,13 +10,14 @@ use crate::state::{
 use kitsune2_api::{K2Error, K2Result, Url};
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::MutexGuard;
+use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_disc_sector_details_diff(
         &self,
         from_peer: Url,
         disc_sector_details_diff: K2GossipDiscSectorDetailsDiffMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         // Validate the incoming disc sector details diff against our own state.
         let (mut state, disc_sector_details) = self
             .check_disc_sector_details_diff_state(
