@@ -1,3 +1,4 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 use crate::protocol::{
@@ -6,7 +7,6 @@ use crate::protocol::{
 };
 use kitsune2_api::{K2Error, Timestamp, Url};
 use kitsune2_dht::ArcSet;
-use crate::error::{K2GossipError, K2GossipResult};
 
 impl K2Gossip {
     pub(super) async fn respond_to_initiate(
@@ -39,7 +39,9 @@ impl K2Gossip {
         let other_arc_set = match &initiate.arc_set {
             Some(message) => ArcSet::decode(&message.value)?,
             None => {
-                return Err(K2Error::other("no arc set in initiate message").into());
+                return Err(
+                    K2Error::other("no arc set in initiate message").into()
+                );
             }
         };
 
@@ -119,7 +121,10 @@ impl K2Gossip {
         })))
     }
 
-    async fn check_peer_initiate_rate(&self, from_peer: Url) -> K2GossipResult<()> {
+    async fn check_peer_initiate_rate(
+        &self,
+        from_peer: Url,
+    ) -> K2GossipResult<()> {
         if let Some(timestamp) = self
             .peer_meta_store
             .last_gossip_timestamp(from_peer.clone())

@@ -1,3 +1,4 @@
+use crate::error::K2GossipError;
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
@@ -17,7 +18,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
-use crate::error::K2GossipError;
 
 /// A factory for creating K2Gossip instances.
 #[derive(Debug)]
@@ -320,14 +320,33 @@ impl K2Gossip {
 
         let this = self.clone();
         tokio::task::spawn(async move {
-            match this.respond_to_msg(from_peer, msg).await {
-                Ok(_) => {},
+            match this.respond_to_msg(from_peer.clone(), msg).await {
+                Ok(_) => {}
                 Err(e @ K2GossipError::PeerBehaviorError { .. }) => {
-                    // TODO record in peer meta store
                     tracing::error!("Peer behavior error: {:?}", e);
+
+                    if let Err(e) = this
+                        .peer_meta_store
+                        .incr_peer_behavior_errors(from_peer)
+                        .await
+                    {
+                        tracing::warn!(
+                            "Could not record peer behavior error: {:?}",
+                            e
+                        );
+                    }
                 }
                 Err(e) => {
-                    tracing::error!("could not respond to gossip message: {:?}", e);
+                    tracing::error!(
+                        "could not respond to gossip message: {:?}",
+                        e
+                    );
+
+                    if let Err(e) =
+                        this.peer_meta_store.incr_local_errors(from_peer).await
+                    {
+                        tracing::warn!("Could not record local error: {:?}", e);
+                    }
                 }
             }
         });
@@ -608,7 +627,7 @@ mod test {
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
         let harness_2 = factory.new_instance().await;
-        harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
 
         // Join extra agents for each peer. These will take a few seconds to be
         // found by bootstrap. Try to sync them with gossip.
@@ -640,6 +659,21 @@ mod test {
         harness_2
             .wait_for_agent_in_peer_store(secret_agent_1.agent.clone())
             .await;
+
+        let completed_1 = harness_1
+            .peer_meta_store
+            .completed_rounds(agent_info_2.url.clone().unwrap())
+            .await
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(1, completed_1);
+        let completed_2 = harness_2
+            .peer_meta_store
+            .completed_rounds(agent_info_1.url.clone().unwrap())
+            .await
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(1, completed_2);
     }
 
     #[tokio::test]

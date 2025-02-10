@@ -1,4 +1,5 @@
 use crate::gossip::K2Gossip;
+use crate::peer_meta_store::K2PeerMetaStore;
 use crate::state::GossipRoundState;
 use crate::K2GossipConfig;
 use kitsune2_api::Url;
@@ -25,6 +26,7 @@ pub(crate) fn spawn_timeout_task(
                 round_timeout,
                 gossip.initiated_round_state.clone(),
                 gossip.accepted_round_states.clone(),
+                gossip.peer_meta_store.clone(),
             )
             .await;
         }
@@ -38,12 +40,24 @@ async fn remove_timed_out_rounds(
     accepted_round_states: Arc<
         RwLock<HashMap<Url, Arc<Mutex<GossipRoundState>>>>,
     >,
+    peer_meta_store: Arc<K2PeerMetaStore>,
 ) {
     {
         let mut initiated_state = initiated_round_state.lock().await;
         match initiated_state.as_ref() {
             Some(state) if state.started_at.elapsed() > round_timeout => {
                 tracing::warn!("Initiated round timed out: {:?}", state);
+
+                if let Err(e) = peer_meta_store
+                    .incr_peer_timeout(state.session_with_peer.clone())
+                    .await
+                {
+                    tracing::error!(
+                        "Failed to increment peer timeout: {:?}",
+                        e
+                    );
+                }
+
                 *initiated_state = None;
             }
             _ => (),
@@ -55,6 +69,16 @@ async fn remove_timed_out_rounds(
         for (url, state) in accepted_round_states.iter() {
             if state.lock().await.started_at.elapsed() > round_timeout {
                 tracing::warn!("Accepted round timed out: {:?}", state);
+
+                if let Err(e) =
+                    peer_meta_store.incr_peer_timeout(url.clone()).await
+                {
+                    tracing::error!(
+                        "Failed to increment peer timeout: {:?}",
+                        e
+                    );
+                }
+
                 remove.insert(url.clone());
             }
         }
@@ -64,19 +88,27 @@ async fn remove_timed_out_rounds(
 
 #[cfg(test)]
 mod tests {
+    use crate::peer_meta_store::K2PeerMetaStore;
     use crate::state::GossipRoundState;
     use crate::timeout::remove_timed_out_rounds;
     use kitsune2_api::DhtArc;
     use kitsune2_api::Url;
+    use kitsune2_core::factories::MemPeerMetaStore;
     use kitsune2_dht::ArcSet;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::{Mutex, RwLock};
 
+    fn test_peer_meta_store() -> Arc<K2PeerMetaStore> {
+        Arc::new(K2PeerMetaStore::new(MemPeerMetaStore::create()))
+    }
+
     #[tokio::test(start_paused = true)]
     async fn expire_initiated_round() {
+        let url = Url::from_str("ws://test:80/1").unwrap();
+        let store = test_peer_meta_store();
         let initiated = Arc::new(Mutex::new(Some(GossipRoundState::new(
-            Url::from_str("ws://test:80/1").unwrap(),
+            url.clone(),
             vec![],
             ArcSet::new(vec![DhtArc::FULL]).unwrap(),
         ))));
@@ -84,10 +116,12 @@ mod tests {
             std::time::Duration::from_secs(60),
             initiated.clone(),
             Default::default(),
+            store.clone(),
         )
         .await;
 
         assert!(initiated.lock().await.is_some());
+        assert!(store.peer_timeouts(url.clone()).await.unwrap().is_none());
 
         tokio::time::advance(std::time::Duration::from_secs(61)).await;
 
@@ -95,20 +129,24 @@ mod tests {
             std::time::Duration::from_secs(60),
             initiated.clone(),
             Default::default(),
+            store.clone(),
         )
         .await;
 
         assert!(initiated.lock().await.is_none());
+        assert_eq!(Some(1), store.peer_timeouts(url.clone()).await.unwrap());
     }
 
     #[tokio::test(start_paused = true)]
     async fn expire_accepted_rounds() {
+        let store = test_peer_meta_store();
         let accepted = Arc::new(RwLock::new(HashMap::new()));
 
+        let url_1 = Url::from_str("ws://test:80/1").unwrap();
         accepted.write().await.insert(
-            Url::from_str("ws://test:80/1").unwrap(),
+            url_1.clone(),
             Arc::new(Mutex::new(GossipRoundState::new(
-                Url::from_str("ws://test:80/1").unwrap(),
+                url_1.clone(),
                 vec![],
                 ArcSet::new(vec![DhtArc::FULL]).unwrap(),
             ))),
@@ -130,6 +168,7 @@ mod tests {
             std::time::Duration::from_secs(60),
             Default::default(),
             accepted.clone(),
+            store.clone(),
         )
         .await;
 
@@ -141,6 +180,7 @@ mod tests {
             std::time::Duration::from_secs(60),
             Default::default(),
             accepted.clone(),
+            store.clone(),
         )
         .await;
 
@@ -149,6 +189,7 @@ mod tests {
             expected_url,
             accepted.read().await.keys().next().unwrap().clone()
         );
+        assert_eq!(Some(1), store.peer_timeouts(url_1.clone()).await.unwrap());
 
         tokio::time::advance(std::time::Duration::from_secs(31)).await;
 
@@ -156,9 +197,14 @@ mod tests {
             std::time::Duration::from_secs(60),
             Default::default(),
             accepted.clone(),
+            store.clone(),
         )
         .await;
 
         assert_eq!(0, accepted.read().await.len());
+        assert_eq!(
+            Some(1),
+            store.peer_timeouts(expected_url.clone()).await.unwrap()
+        );
     }
 }

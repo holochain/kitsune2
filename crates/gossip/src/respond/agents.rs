@@ -1,8 +1,8 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipAgentsMessage};
 use crate::state::{GossipRoundState, RoundStage};
-use kitsune2_api::{K2Error, K2Result, Url};
-use crate::error::K2GossipResult;
+use kitsune2_api::{K2Error, Url};
 
 impl K2Gossip {
     pub(super) async fn respond_to_agents(
@@ -19,7 +19,9 @@ impl K2Gossip {
                 initiated_lock.take();
             }
             None => {
-                return Err(K2Error::other("Unsolicited Agents message").into());
+                return Err(K2GossipError::peer_behavior(
+                    "Unsolicited Agents message",
+                ));
             }
         }
 
@@ -34,16 +36,17 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         agents: &K2GossipAgentsMessage,
-    ) -> K2Result<()> {
+    ) -> K2GossipResult<()> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "Agents message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            )));
+            ))
+            .into());
         }
 
         if self.session_id != agents.session_id {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Session id mismatch: {:?} != {:?}",
                 self.session_id, agents.session_id
             )));
@@ -54,7 +57,7 @@ impl GossipRoundState {
                 tracing::trace!("NoDiff round state found");
             }
             stage => {
-                return Err(K2Error::other(format!(
+                return Err(K2GossipError::peer_behavior(format!(
                     "Unexpected round state for agents: NoDiff != {:?}",
                     stage
                 )));

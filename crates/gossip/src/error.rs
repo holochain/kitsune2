@@ -5,9 +5,7 @@ use std::sync::Arc;
 pub(crate) enum K2GossipError {
     /// An error caused by peer behavior.
     #[error("Rejected peer behavior - {ctx}")]
-    PeerBehaviorError {
-        ctx: Arc<str>,
-    },
+    PeerBehaviorError { ctx: Arc<str> },
 
     /// A Kitsune2 error.
     #[error("K2Error - {0}")]

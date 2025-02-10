@@ -1,8 +1,8 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipHashesMessage};
 use kitsune2_api::decode_ids;
-use kitsune2_api::{K2Error, Url};
-use crate::error::K2GossipResult;
+use kitsune2_api::Url;
 
 impl K2Gossip {
     pub(super) async fn respond_to_hashes(
@@ -71,7 +71,9 @@ impl K2Gossip {
         };
 
         if !handled_as_initiator && !handled_as_acceptor {
-            return Err(K2Error::other("Unsolicited Hashes message").into());
+            return Err(K2GossipError::peer_behavior(
+                "Unsolicited Hashes message",
+            ));
         }
 
         Ok(None)

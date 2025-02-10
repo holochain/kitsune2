@@ -67,6 +67,150 @@ impl K2PeerMetaStore {
         .await
     }
 
+    /// Get the number of peer behavior errors.
+    ///
+    /// These are gossip rounds that have failed for a reason that we consider to be a wrong
+    /// behavior by the peer. This might indicate malicious behavior or a protocol mismatch.
+    pub(crate) async fn peer_behavior_errors(
+        &self,
+        peer: Url,
+    ) -> K2Result<Option<u32>> {
+        self.get(peer, "gossip:peer_behavior_errors").await
+    }
+
+    /// Increment the number of peer behavior errors for the given peer.
+    pub(crate) async fn incr_peer_behavior_errors(
+        &self,
+        peer: Url,
+    ) -> K2Result<()> {
+        let value = self.peer_behavior_errors(peer.clone()).await?;
+        self.put(
+            peer,
+            "gossip:peer_behavior_errors",
+            value.unwrap_or_default() + 1,
+            // If no more errors after 1 hour, remove
+            Some(Timestamp::now() + Duration::from_secs(60 * 60)),
+        )
+        .await
+    }
+
+    /// Get the number of local errors.
+    ///
+    /// These are gossip rounds that have failed because of something that happened on our
+    /// instance. Record by peer to discover patterns of forced errors.
+    pub(crate) async fn local_errors(
+        &self,
+        peer: Url,
+    ) -> K2Result<Option<u32>> {
+        self.get(peer, "gossip:local_errors").await
+    }
+
+    /// Increment the number of local errors with the given peer.
+    pub(crate) async fn incr_local_errors(&self, peer: Url) -> K2Result<()> {
+        let value = self.local_errors(peer.clone()).await?;
+        self.put(
+            peer,
+            "gossip:local_errors",
+            value.unwrap_or_default() + 1,
+            // If no more errors after 1 hour, remove
+            Some(Timestamp::now() + Duration::from_secs(60 * 60)),
+        )
+        .await
+    }
+
+    /// Get the number of peer busy messages for the given peer.
+    ///
+    /// These are returned when the peer has reached their limit for number of concurrent
+    /// accepted sessions and has asked us to wait until later to initiate gossip.
+    pub(crate) async fn peer_busy(&self, peer: Url) -> K2Result<Option<u32>> {
+        self.get(peer, "gossip:peer_busy").await
+    }
+
+    /// Increment the number of peer busy messages from the given peer.
+    pub(crate) async fn incr_peer_busy(&self, peer: Url) -> K2Result<()> {
+        let value = self.peer_busy(peer.clone()).await?;
+        self.put(
+            peer,
+            "gossip:peer_busy",
+            value.unwrap_or_default() + 1,
+            // If no more errors after 1 hour, remove
+            Some(Timestamp::now() + Duration::from_secs(60 * 60)),
+        )
+        .await
+    }
+
+    /// Get the number of times the given peer has terminated gossip rounds.
+    ///
+    /// This may happen for legitimate reasons. If it is happening frequently then check the logs
+    /// for the reasons being given.
+    pub(crate) async fn peer_terminated(
+        &self,
+        peer: Url,
+    ) -> K2Result<Option<u32>> {
+        self.get(peer, "gossip:peer_terminated").await
+    }
+
+    /// Increment the number of gossip rounds terminated by the given peer.
+    pub(crate) async fn incr_peer_terminated(&self, peer: Url) -> K2Result<()> {
+        let value = self.peer_terminated(peer.clone()).await?;
+        self.put(
+            peer,
+            "gossip:peer_terminated",
+            value.unwrap_or_default() + 1,
+            // If no more errors after 1 hour, remove
+            Some(Timestamp::now() + Duration::from_secs(60 * 60)),
+        )
+        .await
+    }
+
+    /// Get the number of completed gossip rounds with the given peer.
+    ///
+    /// These are rounds that have ended naturally through some exchange of messages. It does not
+    /// include rounds that ended with some error.
+    pub(crate) async fn completed_rounds(
+        &self,
+        peer: Url,
+    ) -> K2Result<Option<u32>> {
+        self.get(peer, "gossip:completed_rounds").await
+    }
+
+    /// Increment the number of gossip rounds terminated by the given peer.
+    pub(crate) async fn incr_completed_rounds(
+        &self,
+        peer: Url,
+    ) -> K2Result<()> {
+        let value = self.completed_rounds(peer.clone()).await?;
+        self.put(
+            peer,
+            "gossip:completed_rounds",
+            value.unwrap_or_default() + 1,
+            // If no more errors after 24 hours, remove
+            Some(Timestamp::now() + Duration::from_secs(24 * 60 * 60)),
+        )
+        .await
+    }
+
+    /// Get the number of times the given peer has timed out gossip rounds.
+    pub(crate) async fn peer_timeouts(
+        &self,
+        peer: Url,
+    ) -> K2Result<Option<u32>> {
+        self.get(peer, "gossip:peer_timeouts").await
+    }
+
+    /// Increment the number of gossip rounds terminated by the given peer.
+    pub(crate) async fn incr_peer_timeout(&self, peer: Url) -> K2Result<()> {
+        let value = self.peer_timeouts(peer.clone()).await?;
+        self.put(
+            peer,
+            "gossip:peer_timeouts",
+            value.unwrap_or_default() + 1,
+            // If no more errors after 24 hours, remove
+            Some(Timestamp::now() + Duration::from_secs(24 * 60 * 60)),
+        )
+        .await
+    }
+
     async fn get<T: serde::de::DeserializeOwned>(
         &self,
         peer: Url,

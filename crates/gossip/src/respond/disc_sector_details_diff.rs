@@ -1,16 +1,16 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
     encode_op_ids, GossipMessage, K2GossipDiscSectorDetailsDiffMessage,
-    K2GossipDiscSectorDetailsDiffResponseMessage,
+    K2GossipDiscSectorDetailsDiffResponseMessage, K2GossipTerminateMessage,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
     RoundStageDiscSectorsDiff,
 };
-use kitsune2_api::{K2Error, K2Result, Url};
+use kitsune2_api::{K2Error, Url};
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::MutexGuard;
-use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_disc_sector_details_diff(
@@ -64,12 +64,13 @@ impl K2Gossip {
             | DhtSnapshotNextAction::Identical => {
                 tracing::info!("Received a disc sector details diff but no diff to send back, responding with agents");
 
-                // TODO These cases where we terminate don't notify the remote so they'll
-                //      end up timing out. Should do something differently here.
                 // Terminating the session, so remove the state.
                 state.take();
 
-                Ok(None)
+                Ok(Some(GossipMessage::Terminate(K2GossipTerminateMessage {
+                    session_id: disc_sector_details_diff.session_id,
+                    reason: "Nothing to compare".to_string(),
+                })))
             }
             DhtSnapshotNextAction::NewSnapshotAndHashList(snapshot, ops) => {
                 if let Some(state) = state.as_mut() {
@@ -92,7 +93,15 @@ impl K2Gossip {
                 )))
             }
             _ => {
-                unreachable!("unexpected next action")
+                tracing::error!("Unexpected next action: {:?}", next_action);
+
+                // Remove round state.
+                state.take();
+
+                Ok(Some(GossipMessage::Terminate(K2GossipTerminateMessage {
+                    session_id: disc_sector_details_diff.session_id,
+                    reason: "Unexpected next action".into(),
+                })))
             }
         }
     }
@@ -101,7 +110,7 @@ impl K2Gossip {
         &'a self,
         from_peer: Url,
         disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffMessage,
-    ) -> K2Result<(
+    ) -> K2GossipResult<(
         MutexGuard<'a, Option<GossipRoundState>>,
         RoundStageDiscSectorsDiff,
     )> {
@@ -114,7 +123,7 @@ impl K2Gossip {
                 )?
                 .clone(),
             None => {
-                return Err(K2Error::other(
+                return Err(K2GossipError::peer_behavior(
                     "Unsolicited DiscSectorDetailsDiff message",
                 ));
             }
@@ -129,23 +138,24 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         disc_sector_details_diff: &K2GossipDiscSectorDetailsDiffMessage,
-    ) -> K2Result<&RoundStageDiscSectorsDiff> {
+    ) -> K2GossipResult<&RoundStageDiscSectorsDiff> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "DiscSectorDetailsDiff message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            )));
+            ))
+            .into());
         }
 
         if self.session_id != disc_sector_details_diff.session_id {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Session id mismatch: {:?} != {:?}",
                 self.session_id, disc_sector_details_diff.session_id
             )));
         }
 
         let Some(snapshot) = &disc_sector_details_diff.snapshot else {
-            return Err(K2Error::other(
+            return Err(K2GossipError::peer_behavior(
                 "Received DiscSectorDetailsDiff message without snapshot",
             ));
         };
@@ -154,7 +164,7 @@ impl GossipRoundState {
             RoundStage::DiscSectorsDiff(stage @ RoundStageDiscSectorsDiff { common_arc_set }) => {
                 for sector in &snapshot.sector_indices {
                     if !common_arc_set.includes_sector_index(*sector) {
-                        return Err(K2Error::other(
+                        return Err(K2GossipError::peer_behavior(
                             "DiscSectorDetailsDiff message contains sector that isn't in the common arc set",
                         ));
                     }
@@ -163,7 +173,7 @@ impl GossipRoundState {
                 Ok(stage)
             }
             stage => {
-                Err(K2Error::other(format!(
+                Err(K2GossipError::peer_behavior(format!(
                     "Unexpected round state for disc sector details diff: DiscSectorsDiff != {:?}",
                     stage
                 )))

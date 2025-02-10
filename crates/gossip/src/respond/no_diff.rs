@@ -1,11 +1,11 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
     encode_agent_infos, GossipMessage, K2GossipAgentsMessage,
-    K2GossipNoDiffMessage,
+    K2GossipNoDiffMessage, K2GossipTerminateMessage,
 };
 use crate::state::{GossipRoundState, RoundStage, RoundStageAccepted};
-use kitsune2_api::{AgentId, K2Error, K2Result, Url};
-use crate::error::K2GossipResult;
+use kitsune2_api::{AgentId, K2Error, Url};
 
 impl K2Gossip {
     pub(super) async fn respond_to_no_diff(
@@ -24,13 +24,16 @@ impl K2Gossip {
             .await?;
 
         match send_agents {
-            Some(agents) => {
+            Some(agents) if !agents.is_empty() => {
                 Ok(Some(GossipMessage::Agents(K2GossipAgentsMessage {
                     session_id: no_diff.session_id,
                     provided_agents: encode_agent_infos(agents)?,
                 })))
             }
-            None => Ok(None),
+            _ => Ok(Some(GossipMessage::Terminate(K2GossipTerminateMessage {
+                session_id: no_diff.session_id,
+                reason: "No agents".to_string(),
+            }))),
         }
     }
 
@@ -38,10 +41,10 @@ impl K2Gossip {
         &self,
         from_peer: Url,
         no_diff: &K2GossipNoDiffMessage,
-    ) -> K2Result<()> {
+    ) -> K2GossipResult<()> {
         let mut accepted_states = self.accepted_round_states.write().await;
         if !accepted_states.contains_key(&from_peer) {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Unsolicited NoDiff message from peer: {:?}",
                 from_peer
             )));
@@ -65,16 +68,17 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         no_diff: &K2GossipNoDiffMessage,
-    ) -> K2Result<()> {
+    ) -> K2GossipResult<()> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "NoDiff message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            )));
+            ))
+            .into());
         }
 
         if self.session_id != no_diff.session_id {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Session id mismatch: {:?} != {:?}",
                 self.session_id, no_diff.session_id
             )));
@@ -83,7 +87,7 @@ impl GossipRoundState {
         match &self.stage {
             RoundStage::Accepted(RoundStageAccepted { our_agents, .. }) => {
                 let Some(accept_response) = &no_diff.accept_response else {
-                    return Err(K2Error::other(
+                    return Err(K2GossipError::peer_behavior(
                         "Received NoDiff message without accept response",
                     ));
                 };
@@ -93,13 +97,13 @@ impl GossipRoundState {
                     .iter()
                     .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
                 {
-                    return Err(K2Error::other(
+                    return Err(K2GossipError::peer_behavior(
                         "NoDiff message contains agents that we didn't declare",
                     ));
                 }
             }
             stage => {
-                return Err(K2Error::other(format!(
+                return Err(K2GossipError::peer_behavior(format!(
                     "Unexpected round state for accept: Accepted != {:?}",
                     stage
                 )));

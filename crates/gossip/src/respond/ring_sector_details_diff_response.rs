@@ -1,17 +1,17 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
     encode_op_ids, GossipMessage, K2GossipHashesMessage,
-    K2GossipRingSectorDetailsDiffResponseMessage,
+    K2GossipRingSectorDetailsDiffResponseMessage, K2GossipTerminateMessage,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageRingSectorDetailsDiff,
 };
 use kitsune2_api::decode_ids;
-use kitsune2_api::{K2Error, K2Result, Url};
+use kitsune2_api::{K2Error, Url};
 use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::MutexGuard;
-use crate::error::K2GossipResult;
 
 impl K2Gossip {
     pub(super) async fn respond_to_ring_sector_details_diff_response(
@@ -69,7 +69,10 @@ impl K2Gossip {
                 // Terminating the session, so remove the state.
                 state.take();
 
-                Ok(None)
+                Ok(Some(GossipMessage::Terminate(K2GossipTerminateMessage {
+                    session_id: response.session_id,
+                    reason: "Nothing to compare".to_string(),
+                })))
             }
             DhtSnapshotNextAction::HashList(op_ids) => {
                 // This is the final message we're going to send, remove state
@@ -80,8 +83,16 @@ impl K2Gossip {
                     missing_ids: encode_op_ids(op_ids),
                 })))
             }
-            _ => {
-                unreachable!("unexpected next action")
+            a => {
+                tracing::error!("Unexpected next action: {:?}", a);
+
+                // Remove the round state.
+                state.take();
+
+                Ok(Some(GossipMessage::Terminate(K2GossipTerminateMessage {
+                    session_id: response.session_id,
+                    reason: "Unexpected next action".to_string(),
+                })))
             }
         }
     }
@@ -90,7 +101,7 @@ impl K2Gossip {
         &'a self,
         from_peer: Url,
         ring_sector_details_diff_response: &K2GossipRingSectorDetailsDiffResponseMessage,
-    ) -> K2Result<(
+    ) -> K2GossipResult<(
         MutexGuard<'a, Option<GossipRoundState>>,
         RoundStageRingSectorDetailsDiff,
     )> {
@@ -103,7 +114,7 @@ impl K2Gossip {
                 )?
                 .clone(),
             None => {
-                return Err(K2Error::other(
+                return Err(K2GossipError::peer_behavior(
                     "Unsolicited RingSectorDetailsDiffResponse message",
                 ));
             }
@@ -118,23 +129,23 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         ring_sector_details_diff_response: &K2GossipRingSectorDetailsDiffResponseMessage,
-    ) -> K2Result<&RoundStageRingSectorDetailsDiff> {
+    ) -> K2GossipResult<&RoundStageRingSectorDetailsDiff> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "RingSectorDetailsDiffResponse message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            )));
+            )).into());
         }
 
         if self.session_id != ring_sector_details_diff_response.session_id {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Session id mismatch: {:?} != {:?}",
                 self.session_id, ring_sector_details_diff_response.session_id
             )));
         }
 
         let Some(snapshot) = &ring_sector_details_diff_response.snapshot else {
-            return Err(K2Error::other(
+            return Err(K2GossipError::peer_behavior(
                 "Received RingSectorDetailsDiffResponse message without snapshot",
             ));
         };
@@ -143,7 +154,7 @@ impl GossipRoundState {
             RoundStage::RingSectorDetailsDiff(state @ RoundStageRingSectorDetailsDiff { common_arc_set, .. }) => {
                 for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
                     if !common_arc_set.includes_sector_index(*sector) {
-                        return Err(K2Error::other(
+                        return Err(K2GossipError::peer_behavior(
                             "RingSectorDetailsDiffResponse message contains sector that isn't in the common arc set",
                         ));
                     }
@@ -152,7 +163,7 @@ impl GossipRoundState {
                 Ok(state)
             }
             stage => {
-                Err(K2Error::other(format!(
+                Err(K2GossipError::peer_behavior(format!(
                     "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {:?}",
                     stage
                 )))
