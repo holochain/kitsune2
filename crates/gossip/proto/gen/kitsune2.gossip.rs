@@ -49,6 +49,8 @@ pub mod k2_gossip_message {
         Agents = 10,
         /// A gossip busy protocol message.
         Busy = 11,
+        /// A gossip terminate protocol message.
+        Terminate = 12,
     }
     impl GossipMessageType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -73,6 +75,7 @@ pub mod k2_gossip_message {
                 Self::Hashes => "HASHES",
                 Self::Agents => "AGENTS",
                 Self::Busy => "BUSY",
+                Self::Terminate => "TERMINATE",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -94,6 +97,7 @@ pub mod k2_gossip_message {
                 "HASHES" => Some(Self::Hashes),
                 "AGENTS" => Some(Self::Agents),
                 "BUSY" => Some(Self::Busy),
+                "TERMINATE" => Some(Self::Terminate),
                 _ => None,
             }
         }
@@ -365,4 +369,12 @@ pub struct K2GossipAgentsMessage {
 pub struct K2GossipBusyMessage {
     #[prost(bytes = "bytes", tag = "1")]
     pub session_id: ::prost::bytes::Bytes,
+}
+/// A Kitsune2 gossip terminate protocol message.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct K2GossipTerminateMessage {
+    #[prost(bytes = "bytes", tag = "1")]
+    pub session_id: ::prost::bytes::Bytes,
+    #[prost(string, tag = "2")]
+    pub reason: ::prost::alloc::string::String,
 }

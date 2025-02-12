@@ -12,6 +12,7 @@ use std::sync::Arc;
 include!("../proto/gen/kitsune2.gossip.rs");
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 pub enum GossipMessage {
     Initiate(K2GossipInitiateMessage),
     Accept(K2GossipAcceptMessage),
@@ -24,6 +25,7 @@ pub enum GossipMessage {
     Hashes(K2GossipHashesMessage),
     Agents(K2GossipAgentsMessage),
     Busy(K2GossipBusyMessage),
+    Terminate(K2GossipTerminateMessage),
 }
 
 /// Deserialize a gossip message
@@ -91,6 +93,11 @@ pub fn deserialize_gossip_message(value: Bytes) -> K2Result<GossipMessage> {
             let inner = K2GossipBusyMessage::decode(outer.data)
                 .map_err(K2Error::other)?;
             Ok(GossipMessage::Busy(inner))
+        }
+        k2_gossip_message::GossipMessageType::Terminate => {
+            let inner = K2GossipTerminateMessage::decode(outer.data)
+                .map_err(K2Error::other)?;
+            Ok(GossipMessage::Terminate(inner))
         }
         _ => Err(K2Error::other("Unknown gossip message type".to_string())),
     }
@@ -173,6 +180,10 @@ fn serialize_inner_gossip_message(
         )),
         GossipMessage::Busy(inner) => Ok((
             k2_gossip_message::GossipMessageType::Busy,
+            encode(inner, out)?,
+        )),
+        GossipMessage::Terminate(inner) => Ok((
+            k2_gossip_message::GossipMessageType::Terminate,
             encode(inner, out)?,
         )),
     }

@@ -2,10 +2,12 @@ use crate::gossip::{DropAbortHandle, GossipResponse, K2Gossip};
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{deserialize_gossip_message, GossipMessage};
 use crate::K2GossipConfig;
+use base64::Engine;
 use bytes::Bytes;
 use kitsune2_api::*;
-use kitsune2_core::default_test_builder;
+use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
 use kitsune2_dht::Dht;
+use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use rand::RngCore;
 use std::sync::Arc;
@@ -72,7 +74,6 @@ impl RespondTestHarness {
                         .create(builder.clone())
                         .await
                         .unwrap(),
-                    TEST_SPACE_ID,
                 )),
                 op_store: op_store.clone(),
                 fetch: builder
@@ -97,6 +98,25 @@ impl RespondTestHarness {
             },
             response_rx: rx,
         }
+    }
+
+    pub(crate) async fn remote_agent(
+        &self,
+        tgt_storage_arc: DhtArc,
+    ) -> Arc<AgentInfoSigned> {
+        let local_agent = Ed25519LocalAgent::default();
+        local_agent.set_tgt_storage_arc_hint(tgt_storage_arc);
+
+        let builder = AgentBuilder::default().with_url(Some(
+            Url::from_str(format!(
+                "ws://test:80/{}",
+                base64::prelude::BASE64_URL_SAFE
+                    .encode(local_agent.agent().0.as_ref())
+            ))
+            .unwrap(),
+        ));
+
+        builder.build(local_agent)
     }
 
     pub(crate) async fn wait_for_response(&mut self) -> GossipMessage {
