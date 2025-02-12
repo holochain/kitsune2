@@ -10,8 +10,7 @@ use kitsune2_api::{DhtArc, K2Error, K2Result};
 use std::collections::HashSet;
 
 /// Represents a set of [DhtArc]s.
-#[derive(Debug, Clone)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArcSet {
     inner: HashSet<u32>,
 }
