@@ -28,10 +28,10 @@ use tokio::{
     task::AbortHandle,
 };
 
+mod message_handler;
+
 #[cfg(test)]
 mod test;
-
-mod message_handler;
 
 /// CorePublish module name.
 pub const PUBLISH_MOD_NAME: &str = "Publish";
@@ -228,7 +228,7 @@ impl CorePublish {
         while let Some((op_ids, peer)) = response_rx.recv().await {
             tracing::debug!(?peer, ?op_ids, "incoming publish ops");
 
-            // Retrieve ops to send from store.
+            // Add incoming op ids to the fetch queue to let that retrieve the op data
             if let Err(err) = fetch.request_ops(op_ids.clone(), peer).await {
                 tracing::warn!(
                         "could not insert publish ops request into fetch queue: {err}"

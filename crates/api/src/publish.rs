@@ -29,7 +29,7 @@ impl From<PublishOps> for Vec<OpId> {
 }
 
 /// Serialize list of op ids to request.
-pub fn serialize_publish_ops(value: Vec<OpId>) -> Bytes {
+fn serialize_publish_ops(value: Vec<OpId>) -> Bytes {
     let mut out = BytesMut::new();
     PublishOps::from(value)
         .encode(&mut out)
