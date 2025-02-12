@@ -27,6 +27,9 @@ pub use core_fetch::*;
 mod core_gossip;
 pub use core_gossip::*;
 
+mod core_publish;
+pub use core_publish::*;
+
 mod mem_transport;
 pub use mem_transport::*;
 

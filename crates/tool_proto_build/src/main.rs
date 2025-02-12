@@ -4,9 +4,11 @@ fn main() {
         .bytes(["."])
         .compile_protos(
             &[
-                "../api/proto/wire.proto",
+                "../api/proto/agent.proto",
                 "../api/proto/fetch.proto",
                 "../api/proto/op_store.proto",
+                "../api/proto/publish.proto",
+                "../api/proto/wire.proto",
             ],
             &["../api/proto/"],
         )

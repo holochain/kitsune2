@@ -80,6 +80,12 @@
 use crate::*;
 use std::sync::Arc;
 
+pub(crate) mod proto {
+    include!("../proto/gen/kitsune2.agent.rs");
+}
+
+pub use proto::AgentInfoMessage;
+
 /// Defines a type capable of cryptographic signatures.
 pub trait Signer {
     /// Sign the encoded data, returning the resulting detached signature bytes.
