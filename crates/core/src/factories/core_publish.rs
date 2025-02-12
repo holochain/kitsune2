@@ -95,7 +95,7 @@ impl PublishFactory for CorePublishFactory {
     }
 }
 
-type OutgoingPublishOps = (OpId, Url);
+type OutgoingPublishOps = (Vec<OpId>, Url);
 type IncomingPublishOps = (Vec<OpId>, Url);
 
 #[derive(Debug)]
@@ -123,16 +123,14 @@ impl Publish for CorePublish {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             // Insert requests into publish queue.
-            for op_id in op_ids {
-                if let Err(err) = self
-                    .outgoing_publish_ops_tx
-                    .send((op_id, target.clone()))
-                    .await
-                {
-                    tracing::warn!(
-                        "could not insert ops into ops publish queue: {err}"
-                    );
-                }
+            if let Err(err) = self
+                .outgoing_publish_ops_tx
+                .send((op_ids, target.clone()))
+                .await
+            {
+                tracing::warn!(
+                    "could not insert ops into ops publish queue: {err}"
+                );
             }
 
             Ok(())
@@ -199,10 +197,11 @@ impl CorePublish {
         space_id: SpaceId,
         transport: DynTransport,
     ) {
-        while let Some((op_id, peer_url)) = outgoing_publish_ops_rx.recv().await
+        while let Some((op_ids, peer_url)) =
+            outgoing_publish_ops_rx.recv().await
         {
             // Send ops publish message to peer.
-            let data = serialize_publish_ops_message(vec![op_id.clone()]);
+            let data = serialize_publish_ops_message(op_ids.clone());
             if let Err(err) = transport
                 .send_module(
                     peer_url.clone(),
@@ -213,7 +212,7 @@ impl CorePublish {
                 .await
             {
                 tracing::warn!(
-                    ?op_id,
+                    ?op_ids,
                     ?peer_url,
                     "could not send publish ops: {err}"
                 );
