@@ -25,7 +25,7 @@ use message_handler::PublishMessageHandler;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
-    task::JoinHandle,
+    task::AbortHandle,
 };
 
 #[cfg(test)]
@@ -101,7 +101,7 @@ type IncomingPublishOps = (Vec<OpId>, Url);
 #[derive(Debug)]
 struct CorePublish {
     outgoing_publish_ops_tx: Sender<OutgoingPublishOps>,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: Vec<AbortHandle>,
 }
 
 impl CorePublish {
@@ -164,7 +164,8 @@ impl CorePublish {
                 outgoing_publish_ops_rx,
                 space_id.clone(),
                 transport.clone(),
-            ));
+            ))
+            .abort_handle();
         tasks.push(outgoing_publish_ops_task);
 
         // Spawn incoming publish ops task.
@@ -172,7 +173,8 @@ impl CorePublish {
             tokio::task::spawn(CorePublish::incoming_publish_ops_task(
                 incoming_publish_ops_rx,
                 fetch,
-            ));
+            ))
+            .abort_handle();
         tasks.push(incoming_publish_ops_task);
 
         // Register transport module handler for incoming op and agent publishes.
