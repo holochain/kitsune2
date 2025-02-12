@@ -1,9 +1,8 @@
-//! Kitsune2 fetch types.
+//! Kitsune2 publish types.
 
 use crate::builder;
 use crate::{
-    transport::DynTransport, AgentInfoSigned, BoxFut, DynFetch, DynPeerStore,
-    K2Result, OpId, SpaceId, Url,
+    transport::DynTransport, BoxFut, DynFetch, K2Result, OpId, SpaceId, Url,
 };
 use bytes::{Bytes, BytesMut};
 use prost::Message;
@@ -73,7 +72,6 @@ pub trait PublishFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
         fetch: DynFetch,
-        peer_store: DynPeerStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>>;
 }

@@ -1,26 +1,23 @@
-//! Fetch is a Kitsune2 module for fetching ops from peers.
-//!
-//! In particular it tracks which ops need to be fetched from which peers,
-//! sends fetch requests and processes incoming requests and responses.
+//! Publish is a Kitsune2 module for publishing new ops and agent infos to peers.
 //!
 //! It consists of multiple parts:
-//! - State object that tracks op and peer urls in memory
-//! - Fetch tasks that request tracked ops from peers
-//! - An incoming request task that retrieves ops from the op store and responds with the
-//!   ops to the requester
-//! - An incoming response task that writes ops to the op store and removes their ids
-//!   from the state object
+//! - A task that sends Op ids to peers
+//! - A task that adds received Op ids from other peers to the fetch queue
 //!
+//! ### Publish Ops
 //!
-//! ### Publish task
+//! #### Outgoing publishing of Ops
 //!
-//! #### Outgoing publish requests
+//! A channel acts as the queue for outgoing ops to be published. Ops to be
+//! published are sent one by one through the channel to the receiving task,
+//! processing requests in incoming order and dispatching it to the
+//! transport module.
 //!
+//! #### Incoming of published Ops task
 //!
-//!
-//!
-//!
-//!
+//! Similarly to outgoing ops to be published, a channel serves as a queue
+//! for incoming published ops. The queue processes items in order of the
+//! incoming messages and adds the associated Op ids to the fetch queue.
 //!
 
 use kitsune2_api::*;
@@ -37,7 +34,7 @@ mod test;
 mod message_handler;
 
 /// CorePublish module name.
-pub const MOD_NAME: &str = "Publish";
+pub const PUBLISH_MOD_NAME: &str = "Publish";
 
 /// CoreFetch configuration types.
 mod config {
@@ -90,7 +87,6 @@ impl PublishFactory for CorePublishFactory {
         builder: Arc<Builder>,
         space_id: SpaceId,
         fetch: DynFetch,
-        peer_store: DynPeerStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>> {
         Box::pin(async move {
@@ -107,11 +103,7 @@ impl PublishFactory for CorePublishFactory {
     }
 }
 
-// type OutgoingRequest = (OpId, Url);
-// type IncomingRequest = (Vec<OpId>, Url);
-// type IncomingResponse = Vec<Op>;
 type OutgoingPublishOps = (OpId, Url);
-type OutgoingAgentInfo = (AgentInfoSigned, Url);
 type IncomingPublishOps = (Vec<OpId>, Url);
 
 #[derive(Debug)]
@@ -200,7 +192,7 @@ impl CorePublish {
 
         transport.register_module_handler(
             space_id.clone(),
-            MOD_NAME.to_string(),
+            PUBLISH_MOD_NAME.to_string(),
             message_handler.clone(),
         );
 
@@ -225,7 +217,7 @@ impl CorePublish {
                 .send_module(
                     peer_url.clone(),
                     space_id.clone(),
-                    MOD_NAME.to_string(),
+                    PUBLISH_MOD_NAME.to_string(),
                     data,
                 )
                 .await
