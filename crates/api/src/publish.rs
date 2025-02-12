@@ -1,6 +1,6 @@
 //! Kitsune2 fetch types.
 
-use crate::{agent, builder, AgentInfoMessage, K2Error};
+use crate::builder;
 use crate::{
     transport::DynTransport, AgentInfoSigned, BoxFut, DynFetch, DynPeerStore,
     K2Result, OpId, SpaceId, Url,
@@ -13,9 +13,7 @@ pub(crate) mod proto {
     include!("../proto/gen/kitsune2.publish.rs");
 }
 
-pub use proto::{
-    k2_publish_message::*, K2PublishMessage, PublishAgent, PublishOps,
-};
+pub use proto::{k2_publish_message::*, K2PublishMessage, PublishOps};
 
 impl From<Vec<OpId>> for PublishOps {
     fn from(value: Vec<OpId>) -> Self {
@@ -54,72 +52,12 @@ pub fn serialize_publish_ops_message(value: Vec<OpId>) -> Bytes {
     out.freeze()
 }
 
-impl TryFrom<&AgentInfoSigned> for AgentInfoMessage {
-    type Error = K2Error;
-
-    fn try_from(value: &AgentInfoSigned) -> K2Result<Self> {
-        let agent_info_encoded = value.encode()?;
-        Ok(Self {
-            data: agent_info_encoded,
-        })
-    }
-}
-
-impl TryFrom<&AgentInfoSigned> for PublishAgent {
-    type Error = K2Error;
-
-    fn try_from(value: &AgentInfoSigned) -> K2Result<Self> {
-        let agent_info_message = value.try_into()?;
-        Ok(Self {
-            agent_info: Some(agent_info_message),
-        })
-    }
-}
-
-impl From<PublishAgent> for AgentInfoSigned {
-    fn from(value: PublishAgent) -> Self {
-        value.into()
-    }
-}
-
-/// Serialize list of op ids to request.
-pub fn serialize_publish_agent(value: &AgentInfoSigned) -> K2Result<Bytes> {
-    let mut out = BytesMut::new();
-    PublishAgent::try_from(value)?
-        .encode(&mut out)
-        .expect("failed to encode publish agent request");
-    Ok(out.freeze())
-}
-
-/// Serialize list of op ids to fetch request message.
-pub fn serialize_publish_agent_message(
-    value: &AgentInfoSigned,
-) -> K2Result<Bytes> {
-    let mut out = BytesMut::new();
-    let data = serialize_publish_agent(value)?;
-    let publish_message = K2PublishMessage {
-        publish_message_type: PublishMessageType::Agent.into(),
-        data,
-    };
-    publish_message
-        .encode(&mut out)
-        .expect("failed to encode publish agent message");
-    Ok(out.freeze())
-}
-
 /// Trait for implementing a fetch module to fetch ops from other agents.
 pub trait Publish: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be published to a peer.
     fn publish_ops(
         &self,
         op_ids: Vec<OpId>,
-        target: Url,
-    ) -> BoxFut<'_, K2Result<()>>;
-
-    /// Add agent info to be published to a peer.
-    fn publish_agent(
-        &self,
-        agent_info: AgentInfoSigned,
         target: Url,
     ) -> BoxFut<'_, K2Result<()>>;
 }
@@ -146,36 +84,8 @@ pub type DynPublishFactory = Arc<dyn PublishFactory>;
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        id::Id, AgentId, AgentInfo, DhtArc, Signer, Timestamp, Verifier,
-    };
+    use crate::id::Id;
     use prost::Message;
-
-    const SIG: &[u8] = b"fake-signature";
-
-    #[derive(Debug)]
-    struct TestCrypto;
-
-    impl Signer for TestCrypto {
-        fn sign<'a, 'b: 'a, 'c: 'a>(
-            &'a self,
-            _agent_info: &'b AgentInfo,
-            _encoded: &'c [u8],
-        ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
-            Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
-        }
-    }
-
-    impl Verifier for TestCrypto {
-        fn verify(
-            &self,
-            _agent_info: &AgentInfo,
-            _message: &[u8],
-            signature: &[u8],
-        ) -> bool {
-            signature == SIG
-        }
-    }
 
     #[test]
     fn happy_publish_ops_encode_decode() {
@@ -213,31 +123,4 @@ mod test {
             .collect::<Vec<_>>();
         assert_eq!(op_ids, op_ids_dec);
     }
-
-    // #[tokio::test(flavor = "multi_thread")]
-    // async fn happy_publish_agent_encode_decode() {
-    //     let agent: AgentId = bytes::Bytes::from_static(b"test-agent").into();
-    //     let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
-    //     let now = Timestamp::from_micros(1731690797907204);
-    //     let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
-    //     let url = Some(Url::from_str("ws://test.com:80/test-url").unwrap());
-    //     let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
-
-    //     let agent_info = AgentInfoSigned::sign(
-    //         &TestCrypto,
-    //         AgentInfo {
-    //             agent: agent.clone(),
-    //             space: space.clone(),
-    //             created_at: now,
-    //             expires_at: later,
-    //             is_tombstone: false,
-    //             url: url.clone(),
-    //             storage_arc,
-    //         },
-    //     )
-    //     .await
-    //     .unwrap();
-
-    //     let publish_agent = PublishAgent::from(agent_info.get_mut().clone());
-    // }
 }

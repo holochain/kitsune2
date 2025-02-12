@@ -2,18 +2,10 @@ syntax = "proto3";
 
 package kitsune2.publish;
 
-import "agent.proto";
-
 // A publish ops message.
 message PublishOps {
   // Op ids.
   repeated bytes op_ids = 1;
-}
-
-// A publish agent message.
-message PublishAgent {
-  // Agents.
-  kitsune2.agent.AgentInfoMessage agent_info = 1;
 }
 
 // Publish message.
@@ -25,10 +17,8 @@ message K2PublishMessage {
   enum PublishMessageType {
     // Default value.
     UNSPECIFIED = 0;
-    // A n op publish.
+    // A n Op publish.
     OPS = 1;
-    // A agent publish.
-    AGENT = 2;
   }
 
   // Message type.

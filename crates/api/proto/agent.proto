@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package kitsune2.agent;
-
-// A signed agent info.
-message AgentInfoMessage {
-    // Agent info data.
-    string data = 1;
-}

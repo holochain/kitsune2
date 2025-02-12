@@ -6,7 +6,6 @@ use tokio::sync::mpsc::Sender;
 #[derive(Debug)]
 pub(super) struct PublishMessageHandler {
     pub(super) incoming_publish_ops_tx: Sender<IncomingPublishOps>,
-    pub(super) incoming_publish_agent_tx: Sender<AgentInfoSigned>,
 }
 
 impl TxBaseHandler for PublishMessageHandler {}
@@ -39,25 +38,6 @@ impl TxModuleHandler for PublishMessageHandler {
                     .map_err(|err| {
                         K2Error::other_src(
                             "could not insert incoming request into queue",
-                            err,
-                        )
-                    })
-            }
-            PublishMessageType::Agent => {
-                let request =
-                    PublishAgent::decode(publish.data).map_err(|err| {
-                        K2Error::other_src(
-                            format!(
-                                "could not decode publish agent from {peer}"
-                            ),
-                            err,
-                        )
-                    })?;
-                self.incoming_publish_agent_tx
-                    .try_send(request.into())
-                    .map_err(|err| {
-                        K2Error::other_src(
-                            "could not insert incoming response into queue",
                             err,
                         )
                     })

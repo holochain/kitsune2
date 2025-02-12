@@ -6,13 +6,6 @@ pub struct PublishOps {
     #[prost(bytes = "bytes", repeated, tag = "1")]
     pub op_ids: ::prost::alloc::vec::Vec<::prost::bytes::Bytes>,
 }
-/// A publish agent message.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PublishAgent {
-    /// Agents.
-    #[prost(message, optional, tag = "1")]
-    pub agent_info: ::core::option::Option<super::agent::AgentInfoMessage>,
-}
 /// Publish message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct K2PublishMessage {
@@ -44,10 +37,8 @@ pub mod k2_publish_message {
     pub enum PublishMessageType {
         /// Default value.
         Unspecified = 0,
-        /// A n op publish.
+        /// A n Op publish.
         Ops = 1,
-        /// A agent publish.
-        Agent = 2,
     }
     impl PublishMessageType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -58,7 +49,6 @@ pub mod k2_publish_message {
             match self {
                 Self::Unspecified => "UNSPECIFIED",
                 Self::Ops => "OPS",
-                Self::Agent => "AGENT",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -66,7 +56,6 @@ pub mod k2_publish_message {
             match value {
                 "UNSPECIFIED" => Some(Self::Unspecified),
                 "OPS" => Some(Self::Ops),
-                "AGENT" => Some(Self::Agent),
                 _ => None,
             }
         }
