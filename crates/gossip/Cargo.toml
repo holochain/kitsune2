@@ -22,6 +22,7 @@ tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 kitsune2_api = { workspace = true, features = ["mockall"] }
@@ -30,3 +31,7 @@ kitsune2_dht = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 
 tokio = { workspace = true, features = ["test-util"] }
+base64 = { workspace = true }
+
+[features]
+sharding = []

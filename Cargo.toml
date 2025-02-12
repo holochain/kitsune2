@@ -15,10 +15,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
 homepage = "https://github.com/holochain/kitsune2"
-keywords = ["holochain", "holo", "p2p", "dht", "networking"]
+keywords = ["holochain", "kitsune", "p2p", "dht", "networking"]
 categories = ["network-programming"]
 license = "Apache-2.0"
 edition = "2021"
@@ -26,11 +26,11 @@ edition = "2021"
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.
-kitsune2 = { version = "0.0.1-alpha", path = "crates/kitsune2" }
-kitsune2_api = { version = "0.0.1-alpha", path = "crates/api" }
-kitsune2_dht = { version = "0.0.1-alpha", path = "crates/dht" }
-kitsune2_gossip = { version = "0.0.1-alpha", path = "crates/gossip" }
-kitsune2_transport_tx5 = { version = "0.0.1-alpha", path = "crates/transport_tx5" }
+kitsune2 = { version = "0.0.1-alpha.1", path = "crates/kitsune2" }
+kitsune2_api = { version = "0.0.1-alpha.1", path = "crates/api" }
+kitsune2_dht = { version = "0.0.1-alpha.1", path = "crates/dht" }
+kitsune2_gossip = { version = "0.0.1-alpha.1", path = "crates/gossip" }
+kitsune2_transport_tx5 = { version = "0.0.1-alpha.1", path = "crates/transport_tx5" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"
@@ -60,7 +60,7 @@ prost = "0.13.3"
 # used to generate private cryptography keys.
 rand = "0.8.5"
 # kitsune types need to be serializable for network transmission.
-serde = { version = "1.0.215", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
 # bootstrapping. So, we need a json library.
 serde_json = "1.0.132"
@@ -96,7 +96,7 @@ prost-build = "0.13.3"
 # above this section.
 # --- dev-dependencies ---
 kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
-kitsune2_core = { path = "crates/core" }
+kitsune2_core = { version = "0.0.1-alpha.1", path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
 # used to hash op data

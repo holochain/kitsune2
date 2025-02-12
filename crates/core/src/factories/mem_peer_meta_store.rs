@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 #[cfg(test)]
 mod test;
 
-type MemPeerMetaInner = HashMap<(SpaceId, Url), HashMap<String, bytes::Bytes>>;
+type MemPeerMetaInner = HashMap<Url, HashMap<String, bytes::Bytes>>;
 
 /// An in-memory implementation of the [PeerMetaStore].
 ///
@@ -28,7 +28,6 @@ impl MemPeerMetaStore {
 impl PeerMetaStore for MemPeerMetaStore {
     fn put(
         &self,
-        space: SpaceId,
         peer: Url,
         key: String,
         value: bytes::Bytes,
@@ -37,7 +36,7 @@ impl PeerMetaStore for MemPeerMetaStore {
         let inner = self.inner.clone();
         Box::pin(async move {
             let mut inner = inner.lock().await;
-            let entry = inner.entry((space, peer)).or_insert_with(HashMap::new);
+            let entry = inner.entry(peer).or_insert_with(HashMap::new);
             entry.insert(key, value);
             Ok(())
         })
@@ -45,29 +44,21 @@ impl PeerMetaStore for MemPeerMetaStore {
 
     fn get(
         &self,
-        space: SpaceId,
         peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
         let inner = self.inner.clone();
         Box::pin(async move {
             let inner = inner.lock().await;
-            Ok(inner
-                .get(&(space, peer))
-                .and_then(|entry| entry.get(&key).cloned()))
+            Ok(inner.get(&peer).and_then(|entry| entry.get(&key).cloned()))
         })
     }
 
-    fn delete(
-        &self,
-        space: SpaceId,
-        peer: Url,
-        key: String,
-    ) -> BoxFuture<'_, K2Result<()>> {
+    fn delete(&self, peer: Url, key: String) -> BoxFuture<'_, K2Result<()>> {
         let inner = self.inner.clone();
         Box::pin(async move {
             let mut inner = inner.lock().await;
-            if let Some(entry) = inner.get_mut(&(space, peer)) {
+            if let Some(entry) = inner.get_mut(&peer) {
                 entry.remove(&key);
             }
             Ok(())

@@ -1,8 +1,10 @@
+use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
     encode_agent_infos, encode_op_ids, AcceptResponseMessage, GossipMessage,
     K2GossipAcceptMessage, K2GossipDiscSectorsDiffMessage,
     K2GossipNoDiffMessage, K2GossipRingSectorDetailsDiffMessage,
+    K2GossipTerminateMessage,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorsDiff,
@@ -18,7 +20,7 @@ impl K2Gossip {
         &self,
         from_peer: Url,
         accept: K2GossipAcceptMessage,
-    ) -> K2Result<Option<GossipMessage>> {
+    ) -> K2GossipResult<Option<GossipMessage>> {
         // Validate the incoming accept against our own state.
         let (mut lock, initiated) =
             self.check_accept_state(&from_peer, &accept).await?;
@@ -48,16 +50,6 @@ impl K2Gossip {
         // Send discovered ops to the fetch queue
         self.fetch
             .request_ops(decode_ids(accept.new_ops), from_peer.clone())
-            .await?;
-
-        // TODO Ideally we'd reset this if their arc set changes, to avoid missing ops in new
-        //      sectors. Do this by updating bookmark to `Timestamp::now() - UNIT_TIME` when
-        //      receiving or creating an agent id which has a peer URL in the meta store.
-        self.peer_meta_store
-            .set_new_ops_bookmark(
-                from_peer.clone(),
-                Timestamp::from_micros(accept.updated_new_since),
-            )
             .await?;
 
         let (send_new_ops, used_bytes, send_new_bookmark) = self
@@ -96,12 +88,13 @@ impl K2Gossip {
 
         match accept.snapshot {
             Some(their_snapshot) => {
+                let their_snapshot: DhtSnapshot = their_snapshot.into();
                 let (next_action, _) = self
                     .dht
                     .read()
                     .await
                     .handle_snapshot(
-                        their_snapshot.into(),
+                        their_snapshot.clone(),
                         None,
                         common_arc_set.clone(),
                         // Zero because this cannot return op ids
@@ -115,6 +108,13 @@ impl K2Gossip {
                         if let Some(state) = lock.as_mut() {
                             state.stage = RoundStage::NoDiff;
                         }
+
+                        self.update_storage_arcs(
+                            &next_action,
+                            &their_snapshot,
+                            common_arc_set.clone(),
+                        )
+                        .await?;
 
                         Ok(Some(GossipMessage::NoDiff(K2GossipNoDiffMessage {
                             session_id: accept.session_id,
@@ -171,18 +171,40 @@ impl K2Gossip {
                                     },
                                 )))
                             }
-                            _ => {
-                                // TODO while this would require a local inconsistency between
-                                //      the DHT and the gossip crates, we should probably still
-                                //      handle this without a panic.
-                                unreachable!("unexpected snapshot type")
+                            s => {
+                                // Other snapshot types are not expected at this point.
+                                tracing::error!(
+                                    "unexpected snapshot type: {:?}",
+                                    s
+                                );
+
+                                // Remove round state.
+                                lock.take();
+
+                                Ok(Some(GossipMessage::Terminate(
+                                    K2GossipTerminateMessage {
+                                        session_id: accept.session_id,
+                                        reason: "Unexpected snapshot type"
+                                            .into(),
+                                    },
+                                )))
                             }
                         }
                     }
-                    _ => {
+                    a => {
                         // The other action types are not reachable from a minimal
                         // snapshot
-                        unreachable!("unexpected next action")
+                        tracing::error!("unexpected next action: {:?}", a);
+
+                        // Remove round state.
+                        lock.take();
+
+                        Ok(Some(GossipMessage::Terminate(
+                            K2GossipTerminateMessage {
+                                session_id: accept.session_id,
+                                reason: "Unexpected next action".into(),
+                            },
+                        )))
                     }
                 }
             }
@@ -206,7 +228,7 @@ impl K2Gossip {
         &'a self,
         from_peer: &Url,
         accept: &K2GossipAcceptMessage,
-    ) -> K2Result<(
+    ) -> K2GossipResult<(
         MutexGuard<'a, Option<GossipRoundState>>,
         RoundStageInitiated,
     )> {
@@ -216,7 +238,9 @@ impl K2Gossip {
                 state.validate_accept(from_peer.clone(), accept)?.clone()
             }
             None => {
-                return Err(K2Error::other("Unsolicited Accept message"));
+                return Err(K2GossipError::peer_behavior(
+                    "Unsolicited Accept message",
+                ));
             }
         };
 
@@ -226,11 +250,13 @@ impl K2Gossip {
     fn get_common_arc_set(
         initiated: &RoundStageInitiated,
         accept: &K2GossipAcceptMessage,
-    ) -> K2Result<ArcSet> {
+    ) -> K2GossipResult<ArcSet> {
         let other_arc_set = match &accept.arc_set {
             Some(message) => ArcSet::decode(&message.value)?,
             None => {
-                return Err(K2Error::other("no arc set in accept message"));
+                return Err(K2GossipError::peer_behavior(
+                    "no arc set in accept message",
+                ));
             }
         };
 
@@ -243,16 +269,17 @@ impl GossipRoundState {
         &self,
         from_peer: Url,
         accept: &K2GossipAcceptMessage,
-    ) -> K2Result<&RoundStageInitiated> {
+    ) -> K2GossipResult<&RoundStageInitiated> {
         if self.session_with_peer != from_peer {
             return Err(K2Error::other(format!(
                 "Accept message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            )));
+            ))
+            .into());
         }
 
         if self.session_id != accept.session_id {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Session id mismatch: {:?} != {:?}",
                 self.session_id, accept.session_id
             )));
@@ -269,14 +296,14 @@ impl GossipRoundState {
                     .iter()
                     .any(|a| !our_agents.contains(&AgentId::from(a.clone())))
                 {
-                    return Err(K2Error::other(
+                    return Err(K2GossipError::peer_behavior(
                         "Accept message contains agents that we didn't declare",
                     ));
                 }
 
                 Ok(stage)
             }
-            stage => Err(K2Error::other(format!(
+            stage => Err(K2GossipError::peer_behavior(format!(
                 "Unexpected round state for accept: Initiated != {:?}",
                 stage
             ))),

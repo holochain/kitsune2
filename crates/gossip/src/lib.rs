@@ -11,11 +11,12 @@ pub use constant::*;
 mod gossip;
 pub use gossip::*;
 
-mod peer_meta_store;
-
+mod error;
 mod initiate;
+mod peer_meta_store;
 mod protocol;
 mod respond;
 mod state;
+mod storage_arc;
 mod timeout;
 mod update;

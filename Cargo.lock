@@ -1283,7 +1283,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "bytes",
  "futures",
@@ -1298,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_api"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "base64",
  "bytes",
@@ -1317,7 +1317,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_bootstrap_srv"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "async-channel",
  "axum",
@@ -1339,7 +1339,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_core"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "backon",
  "bytes",
@@ -1359,7 +1359,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_dht"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "bytes",
  "kitsune2_api",
@@ -1373,8 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_gossip"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
+ "base64",
  "bytes",
  "kitsune2_api",
  "kitsune2_core",
@@ -1384,13 +1385,14 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "thiserror 2.0.8",
  "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "kitsune2_showcase"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "clap",
  "kitsune2",
@@ -1414,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_transport_tx5"
-version = "0.0.1-alpha"
+version = "0.0.1-alpha.1"
 dependencies = [
  "bytes",
  "kitsune2_api",

@@ -41,6 +41,9 @@ message K2GossipMessage {
 
     // A gossip busy protocol message.
     BUSY = 11;
+
+    // A gossip terminate protocol message.
+    TERMINATE = 12;
   }
 
   // The type of this message.
@@ -277,4 +280,11 @@ message K2GossipAgentsMessage {
 // This allows the initiator to retry the round later, without waiting for a timeout.
 message K2GossipBusyMessage {
   bytes session_id = 1;
+}
+
+// A Kitsune2 gossip terminate protocol message.
+message K2GossipTerminateMessage {
+  bytes session_id = 1;
+
+  string reason = 2;
 }

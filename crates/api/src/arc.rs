@@ -152,6 +152,25 @@ impl DhtArc {
             }
         }
     }
+
+    /// Get the length of the arc.
+    pub fn len(&self) -> u32 {
+        match self {
+            DhtArc::Empty => 0,
+            DhtArc::Arc(start, end) => {
+                if start > end {
+                    u32::MAX - start + end
+                } else {
+                    end - start
+                }
+            }
+        }
+    }
+
+    /// Determine if the arc is empty.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, DhtArc::Empty)
+    }
 }
 
 #[cfg(test)]

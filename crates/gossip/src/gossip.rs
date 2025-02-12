@@ -1,3 +1,4 @@
+use crate::error::K2GossipError;
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
@@ -5,6 +6,7 @@ use crate::protocol::{
     ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
 };
 use crate::state::GossipRoundState;
+use crate::storage_arc::update_storage_arcs;
 use crate::timeout::spawn_timeout_task;
 use crate::update::spawn_dht_update_task;
 use crate::{K2GossipConfig, K2GossipModConfig, MOD_NAME};
@@ -176,10 +178,7 @@ impl K2Gossip {
             space_id: space_id.clone(),
             peer_store,
             local_agent_store,
-            peer_meta_store: Arc::new(K2PeerMetaStore::new(
-                peer_meta_store,
-                space_id.clone(),
-            )),
+            peer_meta_store: Arc::new(K2PeerMetaStore::new(peer_meta_store)),
             op_store,
             fetch,
             agent_verifier,
@@ -239,11 +238,8 @@ impl K2Gossip {
 
         let (our_agents, our_arc_set) = self.local_agent_state().await?;
 
-        let new_since = self
-            .peer_meta_store
-            .new_ops_bookmark(target_peer_url.clone())
-            .await?
-            .unwrap_or(UNIX_TIMESTAMP);
+        let new_since =
+            self.get_request_new_since(target_peer_url.clone()).await?;
 
         let round_state = GossipRoundState::new(
             target_peer_url.clone(),
@@ -288,6 +284,29 @@ impl K2Gossip {
         Ok(true)
     }
 
+    pub(crate) async fn update_storage_arcs(
+        &self,
+        next_action: &kitsune2_dht::DhtSnapshotNextAction,
+        their_snapshot: &kitsune2_dht::DhtSnapshot,
+        common_arc_set: kitsune2_dht::ArcSet,
+    ) -> K2Result<()> {
+        if !matches!(
+            next_action,
+            kitsune2_dht::DhtSnapshotNextAction::CannotCompare
+        ) {
+            // As long as the comparison was successful, use this diff to update storage arcs.
+            if let Err(e) = update_storage_arcs(
+                their_snapshot,
+                self.local_agent_store.get_all().await?,
+                common_arc_set.clone(),
+            ) {
+                tracing::error!("Error updating storage arcs: {:?}", e);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Handle an incoming gossip message.
     ///
     /// Produces a response message if the input is acceptable and a response is required.
@@ -301,8 +320,34 @@ impl K2Gossip {
 
         let this = self.clone();
         tokio::task::spawn(async move {
-            if let Err(e) = this.respond_to_msg(from_peer, msg).await {
-                tracing::error!("could not respond to gossip message: {:?}", e);
+            match this.respond_to_msg(from_peer.clone(), msg).await {
+                Ok(_) => {}
+                Err(e @ K2GossipError::PeerBehaviorError { .. }) => {
+                    tracing::error!("Peer behavior error: {:?}", e);
+
+                    if let Err(e) = this
+                        .peer_meta_store
+                        .incr_peer_behavior_errors(from_peer)
+                        .await
+                    {
+                        tracing::warn!(
+                            "Could not record peer behavior error: {:?}",
+                            e
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "could not respond to gossip message: {:?}",
+                        e
+                    );
+
+                    if let Err(e) =
+                        this.peer_meta_store.incr_local_errors(from_peer).await
+                    {
+                        tracing::warn!("Could not record local error: {:?}", e);
+                    }
+                }
             }
         });
 
@@ -558,10 +603,8 @@ mod test {
                 .await
                 .unwrap();
 
-            let peer_meta_store = K2PeerMetaStore::new(
-                space.peer_meta_store().clone(),
-                self.space_id.clone(),
-            );
+            let peer_meta_store =
+                K2PeerMetaStore::new(space.peer_meta_store().clone());
 
             GossipTestHarness {
                 _gossip: space.gossip().clone(),
@@ -584,7 +627,7 @@ mod test {
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
         let harness_2 = factory.new_instance().await;
-        harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
 
         // Join extra agents for each peer. These will take a few seconds to be
         // found by bootstrap. Try to sync them with gossip.
@@ -616,6 +659,21 @@ mod test {
         harness_2
             .wait_for_agent_in_peer_store(secret_agent_1.agent.clone())
             .await;
+
+        let completed_1 = harness_1
+            .peer_meta_store
+            .completed_rounds(agent_info_2.url.clone().unwrap())
+            .await
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(1, completed_1);
+        let completed_2 = harness_2
+            .peer_meta_store
+            .completed_rounds(agent_info_1.url.clone().unwrap())
+            .await
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(1, completed_2);
     }
 
     #[tokio::test]

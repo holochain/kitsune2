@@ -10,8 +10,7 @@ use kitsune2_api::{DhtArc, K2Error, K2Result};
 use std::collections::HashSet;
 
 /// Represents a set of [DhtArc]s.
-#[derive(Debug, Clone)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArcSet {
     inner: HashSet<u32>,
 }
@@ -152,6 +151,22 @@ impl ArcSet {
     /// Check whether a given sector index is included in this arc set.
     pub fn includes_sector_index(&self, value: u32) -> bool {
         self.inner.contains(&value)
+    }
+
+    /// Remove the given sector indices from this arc set.
+    ///
+    /// Note that this is a mutable operation, which is normally not needed for arc sets. This
+    /// function therefore consumes the provided arc set to make it harder to accidentally modify
+    /// an arc set that wasn't intended to be updated.
+    pub fn without_sector_indices(
+        mut self,
+        remove: impl IntoIterator<Item = u32>,
+    ) -> Self {
+        for sector in remove {
+            self.inner.remove(&sector);
+        }
+
+        self
     }
 
     /// Convert an arc set to a list of arcs.

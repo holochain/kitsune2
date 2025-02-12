@@ -1,3 +1,4 @@
+use crate::error::K2GossipResult;
 use crate::gossip::{send_gossip_message, K2Gossip};
 use crate::protocol::{
     AcceptResponseMessage, GossipMessage, K2GossipInitiateMessage,
@@ -6,7 +7,7 @@ use crate::state::GossipRoundState;
 use crate::K2GossipConfig;
 use bytes::Bytes;
 use kitsune2_api::*;
-use kitsune2_dht::ArcSet;
+use kitsune2_dht::{ArcSet, UNIT_TIME};
 use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -21,6 +22,7 @@ mod initiate;
 mod no_diff;
 mod ring_sector_details_diff;
 mod ring_sector_details_diff_response;
+mod terminate;
 
 #[cfg(test)]
 mod harness;
@@ -30,7 +32,7 @@ impl K2Gossip {
         &self,
         from_peer: Url,
         msg: GossipMessage,
-    ) -> K2Result<()> {
+    ) -> K2GossipResult<()> {
         let res = match msg {
             GossipMessage::Initiate(initiate) => {
                 self.respond_to_initiate(from_peer.clone(), initiate).await
@@ -90,10 +92,31 @@ impl K2Gossip {
                 self.respond_to_busy(from_peer.clone(), busy).await?;
                 Ok(None)
             }
+            GossipMessage::Terminate(terminate) => {
+                self.respond_to_terminate(from_peer.clone(), terminate)
+                    .await?;
+                Ok(None)
+            }
         }?;
 
+        // If we're not sending a message back
+        let is_final_message = matches!(
+            &res,
+            None | Some(
+                GossipMessage::Agents(_)
+                    | GossipMessage::Hashes(_)
+                    | GossipMessage::Terminate(_),
+            )
+        );
+
         if let Some(msg) = res {
-            send_gossip_message(&self.response_tx, from_peer, msg)?;
+            send_gossip_message(&self.response_tx, from_peer.clone(), msg)?;
+        }
+
+        if is_final_message {
+            self.peer_meta_store
+                .incr_completed_rounds(from_peer)
+                .await?;
         }
 
         Ok(())
@@ -154,12 +177,6 @@ impl K2Gossip {
 
         self.fetch
             .request_ops(decode_ids(accept_response.new_ops), from_peer.clone())
-            .await?;
-        self.peer_meta_store
-            .set_new_ops_bookmark(
-                from_peer.clone(),
-                Timestamp::from_micros(accept_response.updated_new_since),
-            )
             .await?;
 
         if accept_response.missing_agents.is_empty() {
@@ -266,6 +283,8 @@ impl K2Gossip {
             .map(|previous_bookmark| previous_bookmark <= updated_bookmark)
             .unwrap_or(true)
         {
+            // TODO Ideally we'd reset this if their arc set changes, to avoid missing ops in new
+            //      sectors.
             self.peer_meta_store
                 .set_new_ops_bookmark(from_peer.clone(), updated_bookmark)
                 .await?;
@@ -309,5 +328,24 @@ impl K2Gossip {
         }
 
         Ok((send_new_ops, used_bytes, send_new_bookmark))
+    }
+
+    pub(crate) async fn get_request_new_since(
+        &self,
+        target_peer_url: Url,
+    ) -> K2Result<Timestamp> {
+        Ok(self
+            .peer_meta_store
+            .new_ops_bookmark(target_peer_url.clone())
+            .await?
+            .unwrap_or_else(|| {
+                // If we don't have a bookmark for this peer then default to roughly where the DHT
+                // rings end. The DHT always leaves on UNIT_TIME of recent time, and may leave up
+                // to one more UNIT_TIME where it can't build rings without using some of the
+                // reserved recent time. So go back by 2 * UNIT_TIME to be safe. Everything else
+                // will have to sync through a DHT diff.
+                (Timestamp::now() - 2 * UNIT_TIME)
+                    .unwrap_or_else(|_| Timestamp::now())
+            }))
     }
 }
