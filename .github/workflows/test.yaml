@@ -62,10 +62,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: install vcpkg packages
-        if: matrix.os == 'windows-latest'
-        uses: johnwason/vcpkg-action@v6
-        id: vcpkg
+      - uses: johnwason/vcpkg-action@v6
         with:
           triplet: x64-windows-release
           token: ${{ github.token }}
@@ -109,6 +106,7 @@ jobs:
     needs:
       - static
       - test
+      - test-windows
       - nix-build
     steps:
       - name: check status
