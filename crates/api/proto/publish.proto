@@ -17,7 +17,7 @@ message K2PublishMessage {
   enum PublishMessageType {
     // Default value.
     UNSPECIFIED = 0;
-    // A n Op publish.
+    // An Ops publish message.
     OPS = 1;
   }
 

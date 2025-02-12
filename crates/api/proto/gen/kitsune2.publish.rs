@@ -37,7 +37,7 @@ pub mod k2_publish_message {
     pub enum PublishMessageType {
         /// Default value.
         Unspecified = 0,
-        /// A n Op publish.
+        /// An Ops publish message.
         Ops = 1,
     }
     impl PublishMessageType {
