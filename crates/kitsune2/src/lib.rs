@@ -1,3 +1,17 @@
+//! Kitsune2 - 2nd generation peer-to-peer communication framework.
+//!
+//! This is the top-level crate of the Kitsune2 framework. It only contains a
+//! production builder for creating instances using the factory pattern. The
+//! individual components of Kitsune2 provide more information about its functionality
+//! and types.
+//!
+//! Kitsune2 is the reference implementation of the [Kitsune2 API](kitsune2_api)
+//!
+//! [DHT](https://docs.rs/kitsune2_dht/latest/kitsune2_dht/)  
+//! [Gossip protocol](https://github.com/holochain/kitsune2/blob/main/crates/gossip/README.md)  
+//! [Bootstrap server](https://docs.rs/kitsune2_bootstrap_srv/latest/kitsune2_bootstrap_srv/)  
+//! [Core modules](kitsune2_core)  
+
 use kitsune2_api::*;
 use kitsune2_core::{
     factories::{self, MemOpStoreFactory},

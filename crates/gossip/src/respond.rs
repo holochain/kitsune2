@@ -1,3 +1,4 @@
+use crate::error::K2GossipResult;
 use crate::gossip::{send_gossip_message, K2Gossip};
 use crate::protocol::{
     AcceptResponseMessage, GossipMessage, K2GossipInitiateMessage,
@@ -21,6 +22,7 @@ mod initiate;
 mod no_diff;
 mod ring_sector_details_diff;
 mod ring_sector_details_diff_response;
+mod terminate;
 
 #[cfg(test)]
 mod harness;
@@ -30,7 +32,7 @@ impl K2Gossip {
         &self,
         from_peer: Url,
         msg: GossipMessage,
-    ) -> K2Result<()> {
+    ) -> K2GossipResult<()> {
         let res = match msg {
             GossipMessage::Initiate(initiate) => {
                 self.respond_to_initiate(from_peer.clone(), initiate).await
@@ -90,10 +92,31 @@ impl K2Gossip {
                 self.respond_to_busy(from_peer.clone(), busy).await?;
                 Ok(None)
             }
+            GossipMessage::Terminate(terminate) => {
+                self.respond_to_terminate(from_peer.clone(), terminate)
+                    .await?;
+                Ok(None)
+            }
         }?;
 
+        // If we're not sending a message back
+        let is_final_message = matches!(
+            &res,
+            None | Some(
+                GossipMessage::Agents(_)
+                    | GossipMessage::Hashes(_)
+                    | GossipMessage::Terminate(_),
+            )
+        );
+
         if let Some(msg) = res {
-            send_gossip_message(&self.response_tx, from_peer, msg)?;
+            send_gossip_message(&self.response_tx, from_peer.clone(), msg)?;
+        }
+
+        if is_final_message {
+            self.peer_meta_store
+                .incr_completed_rounds(from_peer)
+                .await?;
         }
 
         Ok(())

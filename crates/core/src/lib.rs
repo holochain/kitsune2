@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! Kitsune2 p2p / dht communication framework.
+//! Reference implementations of the [Kitsune2 API](kitsune2_api).
 
 use kitsune2_api::*;
 use std::sync::{Arc, Mutex};
@@ -170,6 +170,9 @@ pub fn default_test_builder() -> Builder {
 }
 
 pub mod factories;
+
+#[cfg(any(doc, docsrs))]
+pub mod doc;
 
 #[cfg(test)]
 mod test {

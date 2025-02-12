@@ -1,4 +1,6 @@
 //! Factories for generating instances of Kitsune2 modules.
+//!
+//! Documentation for individual core modules can be found in [this crate's doc module](super::doc).
 
 mod core_kitsune;
 pub use core_kitsune::*;

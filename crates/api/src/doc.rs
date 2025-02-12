@@ -4,3 +4,5 @@
 //! navigation of the other documentation.
 
 pub mod glossary;
+
+pub mod agent;
