@@ -1485,6 +1485,7 @@ dependencies = [
 name = "kitsune2_gossip"
 version = "0.0.1-alpha.1"
 dependencies = [
+ "base64",
  "bytes",
  "kitsune2_api",
  "kitsune2_core",

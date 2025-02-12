@@ -12,6 +12,7 @@ use std::sync::Arc;
 include!("../proto/gen/kitsune2.gossip.rs");
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
 pub enum GossipMessage {
     Initiate(K2GossipInitiateMessage),
     Accept(K2GossipAcceptMessage),

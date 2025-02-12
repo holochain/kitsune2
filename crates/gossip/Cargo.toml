@@ -31,6 +31,7 @@ kitsune2_dht = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 
 tokio = { workspace = true, features = ["test-util"] }
+base64 = { workspace = true }
 
 [features]
 sharding = []

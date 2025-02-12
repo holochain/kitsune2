@@ -152,15 +152,131 @@ impl K2Gossip {
 #[cfg(test)]
 mod tests {
     use crate::protocol::{
-        ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
+        encode_agent_ids, ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
     };
     use crate::respond::harness::{test_session_id, RespondTestHarness};
-    use crate::state::GossipRoundState;
+    use crate::state::{GossipRoundState, RoundStage};
     use crate::K2GossipConfig;
-    use kitsune2_api::{DhtArc, Timestamp, Url};
-    use kitsune2_dht::ArcSet;
+    use kitsune2_api::{DhtArc, LocalAgent, Timestamp, Url};
+    use kitsune2_core::Ed25519LocalAgent;
+    use kitsune2_dht::{ArcSet, SECTOR_SIZE};
     use std::sync::Arc;
     use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn creates_accepted_state() {
+        let harness = RespondTestHarness::create().await;
+
+        // Add two local agents, whose arcs we will combine.
+        let local_agent_1 = Ed25519LocalAgent::default();
+        local_agent_1.set_tgt_storage_arc_hint(DhtArc::Arc(
+            7 * SECTOR_SIZE,
+            12 * SECTOR_SIZE - 1,
+        ));
+        let local_agent_1 = Arc::new(local_agent_1);
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent_1.clone())
+            .await
+            .unwrap();
+
+        let local_agent_2 = Ed25519LocalAgent::default();
+        local_agent_2.set_tgt_storage_arc_hint(DhtArc::Arc(
+            10 * SECTOR_SIZE,
+            15 * SECTOR_SIZE - 1,
+        ));
+        let local_agent_2 = Arc::new(local_agent_2);
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent_2.clone())
+            .await
+            .unwrap();
+
+        // Provide a remote agent who we don't need to know anything about.
+        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+
+        let response = harness
+            .gossip
+            .respond_to_initiate(
+                remote_agent.url.clone().unwrap(),
+                K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: encode_agent_ids([remote_agent
+                        .agent
+                        .clone()]),
+                    arc_set: Some(ArcSetMessage {
+                        value: ArcSet::new(vec![DhtArc::Arc(
+                            11 * SECTOR_SIZE,
+                            20 * SECTOR_SIZE - 1,
+                        )])
+                        .unwrap()
+                        .encode(),
+                    }),
+                    new_since: Timestamp::now().as_micros(),
+                    max_op_data_bytes: 5_000,
+                },
+            )
+            .await
+            .unwrap();
+
+        match response {
+            Some(GossipMessage::Accept(accept)) => {
+                let accept_arc_set =
+                    ArcSet::decode(&accept.arc_set.unwrap().value).unwrap();
+
+                assert_eq!(
+                    ArcSet::new(vec![DhtArc::Arc(
+                        7 * SECTOR_SIZE,
+                        15 * SECTOR_SIZE - 1
+                    )])
+                    .unwrap(),
+                    accept_arc_set
+                );
+            }
+            other => {
+                panic!("Unexpected response: {:?}", other);
+            }
+        };
+
+        let accepted_lock = harness.gossip.accepted_round_states.read().await;
+        let accepted = accepted_lock.get(&remote_agent.url.clone().unwrap());
+        assert!(accepted.is_some());
+
+        let accepted = accepted.unwrap().lock().await;
+        assert_eq!(5_000, accepted.peer_max_op_data_bytes);
+        assert_eq!(
+            remote_agent.url.clone().unwrap(),
+            accepted.session_with_peer
+        );
+
+        match &accepted.stage {
+            RoundStage::Accepted(accepted) => {
+                let mut expected_agents = vec![
+                    local_agent_1.agent().clone(),
+                    local_agent_2.agent().clone(),
+                ];
+                expected_agents.sort();
+
+                let mut our_agents = accepted.our_agents.clone();
+                our_agents.sort();
+                assert_eq!(expected_agents, our_agents);
+
+                assert_eq!(
+                    ArcSet::new(vec![DhtArc::Arc(
+                        11 * SECTOR_SIZE,
+                        15 * SECTOR_SIZE - 1
+                    )])
+                    .unwrap(),
+                    accepted.common_arc_set
+                );
+            }
+            other => {
+                panic!("Unexpected round stage: {:?}", other);
+            }
+        }
+    }
 
     #[tokio::test]
     async fn initiate_while_busy() {
@@ -246,5 +362,61 @@ mod tests {
         }
 
         assert_eq!(3, harness.gossip.accepted_round_states.read().await.len());
+    }
+
+    #[tokio::test]
+    async fn initiate_twice_from_same_peer() {
+        let harness = RespondTestHarness::create().await;
+
+        let other_peer_url = Url::from_str("ws://test-host:80/1").unwrap();
+        let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+        let message = GossipMessage::Initiate(K2GossipInitiateMessage {
+            session_id: test_session_id(),
+            participating_agents: vec![],
+            arc_set: Some(ArcSetMessage {
+                value: arc_set.encode(),
+            }),
+            new_since: Timestamp::now().as_micros(),
+            max_op_data_bytes: 5_000,
+        });
+        harness
+            .gossip
+            .respond_to_msg(other_peer_url.clone(), message.clone())
+            .await
+            .unwrap();
+
+        let err = harness
+            .gossip
+            .respond_to_msg(other_peer_url, message)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            "Rejected peer behavior - initiate too soon",
+            err.to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn initiate_without_arc_set() {
+        let harness = RespondTestHarness::create().await;
+
+        let other_peer_url = Url::from_str("ws://test-host:80/1").unwrap();
+        let err = harness
+            .gossip
+            .respond_to_msg(
+                other_peer_url,
+                GossipMessage::Initiate(K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: vec![],
+                    arc_set: None,
+                    new_since: Timestamp::now().as_micros(),
+                    max_op_data_bytes: 5_000,
+                }),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("no arc set in initiate message"));
     }
 }
