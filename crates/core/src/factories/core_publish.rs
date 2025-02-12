@@ -28,9 +28,6 @@ use tokio::{
     task::JoinHandle,
 };
 
-#[cfg(test)]
-mod test;
-
 mod message_handler;
 
 /// CorePublish module name.

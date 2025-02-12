@@ -85,7 +85,7 @@ mod config {
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct CoreFetchConfig {
-        /// How many parallel op fetch requests can be made at once. Default: 2.  
+        /// How many parallel op fetch requests can be made at once. Default: 2.
         pub parallel_request_count: u8,
         /// Delay before re-inserting ops to request back into the outgoing request queue.
         /// Default: 2 s.
