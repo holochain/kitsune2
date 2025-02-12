@@ -54,6 +54,10 @@ pub struct Builder {
     /// The [LocalAgentStoreFactory] to be used for creating
     /// [LocalAgentStore] instances.
     pub local_agent_store: Arc<dyn LocalAgentStoreFactory>,
+
+    /// The [PublishFactory] to be used for creating [Publish]
+    /// instances
+    pub publish: DynPublishFactory,
 }
 
 impl Builder {
@@ -76,6 +80,7 @@ impl Builder {
                 peer_meta_store,
                 gossip,
                 local_agent_store,
+                publish,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -88,6 +93,7 @@ impl Builder {
             peer_meta_store.default_config(config)?;
             gossip.default_config(config)?;
             local_agent_store.default_config(config)?;
+            publish.default_config(config)?;
 
             config.mark_defaults_set();
         }
@@ -107,6 +113,7 @@ impl Builder {
         self.peer_meta_store.validate_config(&self.config)?;
         self.gossip.validate_config(&self.config)?;
         self.local_agent_store.validate_config(&self.config)?;
+        self.publish.validate_config(&self.config)?;
 
         self.config.mark_validated();
 

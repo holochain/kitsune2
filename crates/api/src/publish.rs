@@ -1,6 +1,6 @@
 //! Kitsune2 publish types.
 
-use crate::builder;
+use crate::{builder, config};
 use crate::{
     transport::DynTransport, BoxFut, DynFetch, K2Result, OpId, SpaceId, Url,
 };
@@ -51,7 +51,7 @@ pub fn serialize_publish_ops_message(value: Vec<OpId>) -> Bytes {
     out.freeze()
 }
 
-/// Trait for implementing a fetch module to fetch ops from other agents.
+/// Trait for implementing a publish module to publish ops to other peers.
 pub trait Publish: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be published to a peer.
     fn publish_ops(
@@ -61,12 +61,19 @@ pub trait Publish: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'_, K2Result<()>>;
 }
 
-/// Trait object [Fetch].
+/// Trait object [Publish].
 pub type DynPublish = Arc<dyn Publish>;
 
-/// A factory for creating Fetch instances.
+/// A factory for creating Publish instances.
 pub trait PublishFactory: 'static + Send + Sync + std::fmt::Debug {
-    /// Construct a Fetch instance.
+    /// Help the builder construct a default config from the chosen
+    /// module factories.
+    fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
+
+    /// Validate configuration.
+    fn validate_config(&self, config: &config::Config) -> K2Result<()>;
+
+    /// Construct a Publish instance.
     fn create(
         &self,
         builder: Arc<builder::Builder>,
@@ -76,7 +83,7 @@ pub trait PublishFactory: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'static, K2Result<DynPublish>>;
 }
 
-/// Trait object [FetchFactory].
+/// Trait object [PublishFactory].
 pub type DynPublishFactory = Arc<dyn PublishFactory>;
 
 #[cfg(test)]

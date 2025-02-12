@@ -28,30 +28,26 @@ use tokio::{
     task::JoinHandle,
 };
 
+#[cfg(test)]
+mod test;
+
 mod message_handler;
 
 /// CorePublish module name.
 pub const PUBLISH_MOD_NAME: &str = "Publish";
 
-/// CoreFetch configuration types.
+/// CorePublish configuration types.
 mod config {
-    /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    /// Configuration parameters for [CorePublishFactory](super::CorePublishFactory).
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
     #[serde(rename_all = "camelCase")]
     pub struct CorePublishConfig {}
 
-    impl Default for CorePublishConfig {
-        // Maximum back off is 11:40 min.
-        fn default() -> Self {
-            Self {}
-        }
-    }
-
-    /// Module-level configuration for CoreFetch.
+    /// Module-level configuration for CorePublish.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct CorePublishModConfig {
-        /// CoreFetch configuration.
+        /// CorePublish configuration.
         pub core_publish: CorePublishConfig,
     }
 }
@@ -63,6 +59,13 @@ pub use config::*;
 pub struct CorePublishFactory {}
 
 impl CorePublishFactory {
+    /// Construct a new CorePublishFactory.
+    pub fn create() -> DynPublishFactory {
+        Arc::new(Self {})
+    }
+}
+
+impl PublishFactory for CorePublishFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
         config.set_module_config(&CorePublishModConfig::default())?;
         Ok(())
@@ -71,14 +74,6 @@ impl CorePublishFactory {
     fn validate_config(&self, _config: &Config) -> K2Result<()> {
         Ok(())
     }
-
-    /// Construct a new CorePublishFactory.
-    pub fn create() -> DynPublishFactory {
-        Arc::new(Self {})
-    }
-}
-
-impl PublishFactory for CorePublishFactory {
     fn create(
         &self,
         builder: Arc<Builder>,
@@ -107,8 +102,6 @@ type IncomingPublishOps = (Vec<OpId>, Url);
 struct CorePublish {
     outgoing_publish_ops_tx: Sender<OutgoingPublishOps>,
     tasks: Vec<JoinHandle<()>>,
-    #[cfg(test)]
-    message_handler: DynTxModuleHandler,
 }
 
 impl CorePublish {
@@ -196,8 +189,6 @@ impl CorePublish {
         Self {
             outgoing_publish_ops_tx,
             tasks,
-            #[cfg(test)]
-            message_handler,
         }
     }
 
@@ -208,9 +199,9 @@ impl CorePublish {
     ) {
         while let Some((op_id, peer_url)) = outgoing_publish_ops_rx.recv().await
         {
-            // Send fetch request to peer.
+            // Send ops publish message to peer.
             let data = serialize_publish_ops_message(vec![op_id.clone()]);
-            match transport
+            if let Err(err) = transport
                 .send_module(
                     peer_url.clone(),
                     space_id.clone(),
@@ -219,14 +210,11 @@ impl CorePublish {
                 )
                 .await
             {
-                Err(err) => {
-                    tracing::warn!(
-                        ?op_id,
-                        ?peer_url,
-                        "could not send publish ops: {err}"
-                    );
-                }
-                Ok(()) => (),
+                tracing::warn!(
+                    ?op_id,
+                    ?peer_url,
+                    "could not send publish ops: {err}"
+                );
             }
         }
     }
@@ -239,14 +227,11 @@ impl CorePublish {
             tracing::debug!(?peer, ?op_ids, "incoming publish ops");
 
             // Retrieve ops to send from store.
-            match fetch.request_ops(op_ids.clone(), peer).await {
-                Err(err) => {
-                    tracing::warn!(
+            if let Err(err) = fetch.request_ops(op_ids.clone(), peer).await {
+                tracing::warn!(
                         "could not insert publish ops request into fetch queue: {err}"
                     );
-                    continue;
-                }
-                Ok(()) => (),
+                continue;
             };
         }
     }
