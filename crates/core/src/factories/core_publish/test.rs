@@ -5,7 +5,7 @@ use kitsune2_api::{
     TxSpaceHandler, Url,
 };
 use kitsune2_test_utils::{
-    enable_tracing, id::create_op_id_list, space::TEST_SPACE_ID,
+    enable_tracing, id::create_op_id_list, iter_check, space::TEST_SPACE_ID,
 };
 
 use crate::{
@@ -88,27 +88,19 @@ async fn published_ops_can_be_retrieved() {
         .await
         .unwrap();
 
-    let ops = tokio::time::timeout(
-        std::time::Duration::from_millis(1000),
-        async move {
-            loop {
-                let ops = op_store_2
-                    .retrieve_ops(vec![
-                        incoming_op_id_1.clone(),
-                        incoming_op_id_2.clone(),
-                    ])
-                    .await
-                    .unwrap();
+    let ops = iter_check!(1000, {
+        let ops = op_store_2
+            .retrieve_ops(vec![
+                incoming_op_id_1.clone(),
+                incoming_op_id_2.clone(),
+            ])
+            .await
+            .unwrap();
 
-                if ops.len() == 2 {
-                    return ops;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
-        },
-    )
-    .await
-    .unwrap();
+        if ops.len() == 2 {
+            return ops;
+        }
+    });
 
     assert!(ops.len() == 2);
 }
@@ -126,4 +118,6 @@ async fn publish_to_invalid_url_does_not_error() {
         .publish_ops(op_ids, Url::from_str("ws://notanexistingurl:80").unwrap())
         .await
         .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 }

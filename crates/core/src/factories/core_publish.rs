@@ -231,7 +231,6 @@ impl CorePublish {
                 tracing::warn!(
                         "could not insert publish ops request into fetch queue: {err}"
                     );
-                continue;
             };
         }
     }

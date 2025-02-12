@@ -54,7 +54,7 @@ mod test {
     use super::PublishMessageHandler;
     use bytes::Bytes;
     use kitsune2_api::*;
-    use kitsune2_test_utils::id::random_op_id;
+    use kitsune2_test_utils::id::create_op_id_list;
     use kitsune2_test_utils::space::TEST_SPACE_ID;
     use prost::Message;
     use std::time::Duration;
@@ -110,7 +110,7 @@ mod test {
             incoming_publish_ops_tx,
         };
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
-        let requested_op_ids = vec![random_op_id()];
+        let requested_op_ids = create_op_id_list(1);
         let request_message =
             serialize_request_message(requested_op_ids.clone());
 
