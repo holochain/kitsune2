@@ -78,6 +78,7 @@ impl App {
                 tx5_transport: kitsune2_transport_tx5::Tx5TransportConfig {
                     signal_allow_plain_text: true,
                     server_url: args.signal_url,
+                    timeout_s: 10,
                 },
             },
         )?;
@@ -111,21 +112,26 @@ impl App {
             .into_iter()
             .filter(|p| &p.agent != self.a.agent())
             .collect::<Vec<_>>();
-        self.p.print_line(format!("found {} peers", peers.len()));
+        self.p
+            .print_line(format!("sending to {} peers", peers.len()));
 
         for peer in peers {
-            self.p
-                .print_line(format!("sending chat to {}", &peer.agent));
-            self.s
-                .send_notify(
-                    peer.agent.clone(),
-                    self.a.agent().clone(),
-                    msg.clone(),
-                )
-                .await?;
+            let p = self.p.clone();
+            let s = self.s.clone();
+            let a = self.a.agent().clone();
+            let m = msg.clone();
+            tokio::task::spawn(async move {
+                match s.send_notify(peer.agent.clone(), a, m).await {
+                    Ok(_) => {
+                        p.print_line(format!("chat to {} success", &peer.agent))
+                    }
+                    Err(err) => p.print_line(format!(
+                        "chat to {} failed: {err:?}",
+                        &peer.agent
+                    )),
+                }
+            });
         }
-
-        self.p.print_line("chat complete".into());
 
         Ok(())
     }

@@ -51,6 +51,10 @@ pub mod config {
 
         /// The url of the sbd signal server. E.g. `wss://sbd.kitsu.ne`.
         pub server_url: String,
+
+        /// The internal time in seconds to use as a maximum for operations,
+        /// connecting, and idleing. (Default: 60s).
+        pub timeout_s: u32,
     }
 
     impl Default for Tx5TransportConfig {
@@ -58,6 +62,7 @@ pub mod config {
             Self {
                 signal_allow_plain_text: false,
                 server_url: "<wss://your.sbd.url>".into(),
+                timeout_s: 60,
             }
         }
     }
@@ -179,6 +184,7 @@ impl Tx5Transport {
                     })
                 }),
             )),
+            timeout: std::time::Duration::from_secs(config.timeout_s as u64),
             backend_module: tx5::backend::BackendModule::LibDataChannel,
             backend_module_config: Some(
                 tx5::backend::BackendModule::LibDataChannel.default_config(),
