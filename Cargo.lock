@@ -471,32 +471,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cpp_build"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27f8638c97fbd79cc6fc80b616e0e74b49bac21014faed590bbc89b7e2676c90"
-dependencies = [
- "cc",
- "cpp_common",
- "lazy_static",
- "proc-macro2",
- "regex",
- "syn 2.0.90",
- "unicode-xid",
-]
-
-[[package]]
-name = "cpp_common"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25fcfea2ee05889597d35e986c2ad0169694320ae5cc8f6d2640a4bb8a884560"
-dependencies = [
- "lazy_static",
- "proc-macro2",
- "syn 2.0.90",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,9 +632,9 @@ checksum = "0e60eed09d8c01d3cee5b7d30acb059b76614c918fa0f992e0dd6eeb10daad6f"
 
 [[package]]
 name = "datachannel"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "065c0a2f521db946447fcea36f1e6a2634633568e4f32dc1384941e455763471"
+checksum = "6a9104be65808f5ba4cae77831aa5b1874a64de31ceed449db37897910d0d72e"
 dependencies = [
  "datachannel-sys",
  "derivative",
@@ -672,15 +646,12 @@ dependencies = [
 
 [[package]]
 name = "datachannel-sys"
-version = "0.21.2"
+version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a1b2f94958fd5ba1ba19d88db9757906ba7849c34cc6a1e535e91c3c8cad831"
+checksum = "2ead19df10c4e46d8d4b33de06c6224dcafc98bad666ac62629d363675866cae"
 dependencies = [
  "bindgen",
  "cmake",
- "cpp_build",
- "once_cell",
- "openssl-src",
 ]
 
 [[package]]
@@ -1828,15 +1799,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
-name = "openssl-src"
-version = "300.4.1+3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faa4eac4138c62414b5622d1b31c5c304f34b406b013c079c2bbc652fdd6678c"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "opentelemetry_api"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2932,9 +2894,9 @@ dependencies = [
 
 [[package]]
 name = "tx5"
-version = "0.2.1-beta"
+version = "0.3.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ed157d1abedff6eaef5d0e98ba81d2fcaf1888dd923e4c0958e694b9c6d2515"
+checksum = "58ff22ef7eda26341ec67a6249ea5b002bafeeda7fd79220d19ab115811af29e"
 dependencies = [
  "base64",
  "futures",
@@ -2950,9 +2912,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-connection"
-version = "0.2.1-beta"
+version = "0.3.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc320ae57810b6df4297b75da1a4e1ffff6664cf181995c445812fe78c3feeea"
+checksum = "22df1f226f5aa9a555a96a8baafd8f7309dc42d9b740dca58e2c4dcd1da0cf9c"
 dependencies = [
  "bit_field",
  "datachannel",
@@ -2967,9 +2929,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-core"
-version = "0.2.1-beta"
+version = "0.3.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d74ab0cfff3841583bb0786e09202ffb0e045e42f04594fdd5e22c7557fc445"
+checksum = "0972fe9c248a645c6d9cf2a1993718775d5c5c910181032197577d7084a6a943"
 dependencies = [
  "base64",
  "once_cell",
@@ -2983,9 +2945,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-signal"
-version = "0.2.1-beta"
+version = "0.3.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "288dcac07d698445a73502b435d29c280ec80b73902cc6533d41c83cd4a7f1db"
+checksum = "4ccd01421392bf92637059b6caa782c301e6ad47794564708827c9eb7bb8187f"
 dependencies = [
  "rand",
  "sbd-e2e-crypto-client",
@@ -3017,12 +2979,6 @@ name = "unicode-width"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
-
-[[package]]
-name = "unicode-xid"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "untrusted"

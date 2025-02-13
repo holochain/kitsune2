@@ -82,7 +82,7 @@ url = "2.5.4"
 # to receive these logs.
 tracing = "0.1"
 # for the transport_tx5 crate
-tx5 = { version = "0.2.1-beta", default-features = false }
+tx5 = { version = "0.3.0-beta", default-features = false }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.
