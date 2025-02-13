@@ -23,3 +23,8 @@ kitsune2_gossip = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 sbd-server = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+default = ["datachannel-vendored"]
+
+datachannel-vendored = ["kitsune2_transport_tx5/datachannel-vendored"]
