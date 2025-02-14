@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package kitsune2.publish;
+
+// A publish ops message.
+message PublishOps {
+  // Op ids.
+  repeated bytes op_ids = 1;
+}
+
+// Publish message.
+message K2PublishMessage {
+  // Publish message type.
+  //
+  // This enum is used to indicate the content of `data`.
+  // So, OPS -> PublishOps and AGENT -> PublishAgent.
+  enum PublishMessageType {
+    // Default value.
+    UNSPECIFIED = 0;
+    // An Ops publish message.
+    OPS = 1;
+  }
+
+  // Message type.
+  PublishMessageType publish_message_type = 1;
+
+  // Message.
+  bytes data = 2;
+}

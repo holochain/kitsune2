@@ -89,6 +89,9 @@ pub use op_store::*;
 mod protocol;
 pub use protocol::*;
 
+mod publish;
+pub use publish::*;
+
 mod url;
 pub use url::*;
 

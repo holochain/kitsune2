@@ -1,4 +1,4 @@
-use super::test_utils::{create_op_id_list, random_peer_url};
+use super::test_utils::random_peer_url;
 use crate::{
     default_test_builder,
     factories::{
@@ -7,7 +7,11 @@ use crate::{
     },
 };
 use kitsune2_api::*;
-use kitsune2_test_utils::{id::random_op_id, iter_check, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{
+    id::{create_op_id_list, random_op_id},
+    iter_check,
+    space::TEST_SPACE_ID,
+};
 use prost::Message;
 use std::{
     sync::{Arc, Mutex},
