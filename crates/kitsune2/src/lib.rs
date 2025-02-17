@@ -35,6 +35,7 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 ///                       Note: you will likely want to implement your own peer meta store.
 /// - `gossip` - The default gossip module is [K2GossipFactory].
 /// - `local_agent_store` - The default local agent store is [factories::CoreLocalAgentStoreFactory].
+/// - `publish` - The default publish module is [factories::CorePublishFactory].
 pub fn default_builder() -> Builder {
     Builder {
         config: Config::default(),
@@ -49,5 +50,6 @@ pub fn default_builder() -> Builder {
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
         gossip: K2GossipFactory::create(),
         local_agent_store: factories::CoreLocalAgentStoreFactory::create(),
+        publish: factories::CorePublishFactory::create(),
     }
 }
