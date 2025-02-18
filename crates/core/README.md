@@ -5,7 +5,7 @@
 [![API Docs](https://docs.rs/kitsune2_core/badge.svg)](https://docs.rs/kitsune2_core)
 [![Discord](https://img.shields.io/badge/Discord-blue.svg?style=flat-square)](https://discord.gg/k55DS5dmPH)
 
-Core functionality for the Kitsune2 project. THis crate provides some production-ready implementations of the 
+Core functionality for the Kitsune2 project. This crate provides some production-ready implementations of the 
 [kitsune2_api](https://crates.io/crates/kitsune2_api) traits and some that are intended for testing.
 
 ## License
