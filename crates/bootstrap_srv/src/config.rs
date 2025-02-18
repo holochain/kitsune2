@@ -57,6 +57,22 @@ pub struct Config {
     /// - `testing = 10s`
     /// - `production = 60s`
     pub prune_interval: std::time::Duration,
+
+    /// The path to a TLS certificate file.
+    ///
+    /// Must be provided when `tls_cert` is provided.
+    ///
+    /// Default:
+    /// - `None`
+    pub tls_cert: Option<std::path::PathBuf>,
+
+    /// The path to a TLS key file.
+    ///
+    /// Must be provided when `tls_cert` is provided.
+    ///
+    /// Default:
+    /// - `None`
+    pub tls_key: Option<std::path::PathBuf>,
 }
 
 impl Config {
@@ -68,6 +84,8 @@ impl Config {
             request_listen_duration: std::time::Duration::from_millis(10),
             listen_address_list: vec![(std::net::Ipv4Addr::LOCALHOST, 0).into()],
             prune_interval: std::time::Duration::from_secs(10),
+            tls_cert: None,
+            tls_key: None,
         }
     }
 
@@ -82,6 +100,8 @@ impl Config {
                 (std::net::Ipv6Addr::UNSPECIFIED, 443).into(),
             ],
             prune_interval: std::time::Duration::from_secs(60),
+            tls_cert: None,
+            tls_key: None,
         }
     }
 }

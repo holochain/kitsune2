@@ -41,7 +41,7 @@ kitsune2_transport_tx5 = { version = "0.0.1-alpha2", path = "crates/transport_tx
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"
 # this is used by bootstrap_srv as the http server implementation.
-axum = { version = "0.7.9", default-features = false }
+axum = { version = "0.7", default-features = false }
 # used by fetch module to back off requests to unresponsive agents
 backon = "1.3"
 # debugging is far easier when you can see short byte arrays
@@ -89,6 +89,10 @@ url = "2.5.4"
 tracing = "0.1"
 # for the transport_tx5 crate
 tx5 = { version = "0.3.0-beta", default-features = false }
+# TLS support for the bootstrap server
+axum-server = { version = "0.7.1", default-features = false }
+# TLS support for the bootstrap server
+rustls = { version = "0.23.0", default-features = false }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.
