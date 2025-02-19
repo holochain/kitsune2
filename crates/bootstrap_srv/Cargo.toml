@@ -34,6 +34,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
 [dev-dependencies]
 ureq = { workspace = true, features = ["tls"] }
+rcgen = { workspace = true }
 
 [features]
 default = []

@@ -20,10 +20,14 @@ pub struct Args {
     pub json: bool,
 
     /// The path to a TLS certificate file.
+    ///
+    /// The certificate must be PEM encoded.
     #[arg(long, requires = "tls_key")]
     pub tls_cert: Option<std::path::PathBuf>,
 
     /// The path to a TLS key file.
+    ///
+    /// The key must be PEM encoded.
     #[arg(long, requires = "tls_cert")]
     pub tls_key: Option<std::path::PathBuf>,
     // TODO - Implement the ability to specify the listening address

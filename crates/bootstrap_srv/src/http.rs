@@ -145,7 +145,12 @@ fn tokio_thread(
             let shutdown_handle = axum_server::Handle::new();
 
             for addr in config.addrs {
-                let listener = match std::net::TcpListener::bind(addr) {
+                let listener = match tokio::task::spawn_blocking(move || {
+                    std::net::TcpListener::bind(addr)
+                })
+                .await
+                .expect("Failed to run bind task")
+                {
                     Ok(listener) => listener,
                     Err(err) => {
                         let _ = ready.send(Err(err));

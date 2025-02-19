@@ -4,7 +4,8 @@ use rustls::client::danger::{
 };
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error, SignatureScheme};
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::Write;
 use std::sync::Arc;
 
 const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
@@ -232,6 +233,8 @@ impl ServerCertVerifier for NoVerify {
             SignatureScheme::RSA_PSS_SHA256,
             SignatureScheme::RSA_PSS_SHA384,
             SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
         ]
     }
 }
@@ -851,17 +854,28 @@ fn expiration_prune() {
 /// > openssl req -x509 -days 1000 -new -key certs/test_key.pem -out certs/test_cert.pem
 #[test]
 fn start_with_tls() {
+    let cert =
+        rcgen::generate_simple_self_signed(vec!["bootstrap.test".to_string()])
+            .unwrap();
+    cert.cert.pem();
+
+    let cert_dir = tempfile::tempdir().unwrap();
+
+    let cert_path = cert_dir.path().join("test_cert.pem");
+    File::create_new(&cert_path)
+        .unwrap()
+        .write_all(cert.cert.pem().as_bytes())
+        .unwrap();
+
+    let key_path = cert_dir.path().join("test_key.pem");
+    File::create_new(&key_path)
+        .unwrap()
+        .write_all(cert.key_pair.serialize_pem().as_bytes())
+        .unwrap();
+
     let mut config = Config::testing();
-    config.tls_cert = Some(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("certs")
-            .join("test_cert.pem"),
-    );
-    config.tls_key = Some(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("certs")
-            .join("test_key.pem"),
-    );
+    config.tls_cert = Some(cert_path);
+    config.tls_key = Some(key_path);
 
     let s = BootstrapSrv::new(Config {
         prune_interval: std::time::Duration::from_millis(5),
