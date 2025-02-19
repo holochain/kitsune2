@@ -332,24 +332,23 @@ impl CorePublish {
         {
             // Send fetch request to peer.
             match serialize_publish_agent_message(&agent_info) {
-                Ok(data) => match transport
-                    .send_module(
-                        peer_url.clone(),
-                        space_id.clone(),
-                        PUBLISH_MOD_NAME.to_string(),
-                        data,
-                    )
-                    .await
-                {
-                    Err(err) => {
+                Ok(data) => {
+                    if let Err(err) = transport
+                        .send_module(
+                            peer_url.clone(),
+                            space_id.clone(),
+                            PUBLISH_MOD_NAME.to_string(),
+                            data,
+                        )
+                        .await
+                    {
                         tracing::warn!(
                             ?agent_info,
                             ?peer_url,
                             "could not send publish agent: {err}"
                         );
                     }
-                    Ok(()) => (),
-                },
+                }
                 Err(err) => {
                     tracing::warn!(
                         ?agent_info,
