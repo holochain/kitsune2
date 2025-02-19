@@ -9,7 +9,7 @@ pub struct PublishOps {
 /// A publish agent message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishAgent {
-    /// Agent.
+    /// Agent info.
     #[prost(string, tag = "1")]
     pub agent_info: ::prost::alloc::string::String,
 }
@@ -46,7 +46,7 @@ pub mod k2_publish_message {
         Unspecified = 0,
         /// An Ops publish message.
         Ops = 1,
-        /// A agent publish message.
+        /// An agent publish message.
         Agent = 2,
     }
     impl PublishMessageType {

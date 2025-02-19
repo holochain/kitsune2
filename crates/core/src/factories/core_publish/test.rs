@@ -1,16 +1,13 @@
 use std::sync::Arc;
 
 use kitsune2_api::{
-    AgentId, AgentInfo, AgentInfoSigned, BoxFut, DhtArc, DynOpStore,
+    AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
     DynPeerStore, K2Result, Publish, Signer, SpaceHandler, SpaceId, Timestamp,
     TxBaseHandler, TxHandler, TxSpaceHandler, Url, Verifier,
 };
 use kitsune2_test_utils::{enable_tracing, iter_check, space::TEST_SPACE_ID};
 
-use crate::{
-    default_test_builder,
-    factories::{core_publish::CorePublish, MemoryOp},
-};
+use crate::factories::{core_publish::CorePublish, MemoryOp};
 
 use super::CorePublishConfig;
 
@@ -68,8 +65,14 @@ impl Verifier for TestCryptoInvalid {
 async fn setup_test(
     config: &CorePublishConfig,
 ) -> (CorePublish, DynOpStore, DynPeerStore, Url) {
-    let builder =
-        Arc::new(default_test_builder().with_default_config().unwrap());
+    let builder = Builder {
+        verifier: Arc::new(TestCrypto),
+        ..crate::default_test_builder()
+    }
+    .with_default_config()
+    .unwrap();
+
+    let builder = Arc::new(builder);
 
     let op_store = builder
         .op_store
@@ -110,9 +113,9 @@ async fn setup_test(
         CorePublish::new(
             config.clone(),
             TEST_SPACE_ID,
+            builder,
             fetch,
             peer_store.clone(),
-            Arc::new(TestCrypto),
             transport,
         ),
         op_store,

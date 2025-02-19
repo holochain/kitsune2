@@ -1,8 +1,6 @@
 //! Kitsune2 publish types.
 
-use crate::{
-    builder, config, AgentInfoSigned, DynPeerStore, DynVerifier, K2Error,
-};
+use crate::{builder, config, AgentInfoSigned, DynPeerStore, K2Error};
 use crate::{
     transport::DynTransport, BoxFut, DynFetch, K2Result, OpId, SpaceId, Url,
 };
@@ -129,7 +127,6 @@ pub trait PublishFactory: 'static + Send + Sync + std::fmt::Debug {
         space_id: SpaceId,
         fetch: DynFetch,
         peer_store: DynPeerStore,
-        verifier: DynVerifier,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>>;
 }

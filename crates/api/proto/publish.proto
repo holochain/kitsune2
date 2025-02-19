@@ -10,7 +10,7 @@ message PublishOps {
 
 // A publish agent message.
 message PublishAgent {
-  // Agent.
+  // Agent info.
   string agent_info = 1;
 }
 
@@ -25,7 +25,7 @@ message K2PublishMessage {
     UNSPECIFIED = 0;
     // An Ops publish message.
     OPS = 1;
-    // A agent publish message.
+    // An agent publish message.
     AGENT = 2;
   }
 

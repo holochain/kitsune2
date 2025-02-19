@@ -102,7 +102,6 @@ impl PublishFactory for CorePublishFactory {
         space_id: SpaceId,
         fetch: DynFetch,
         peer_store: DynPeerStore,
-        verifier: DynVerifier,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>> {
         Box::pin(async move {
@@ -111,9 +110,9 @@ impl PublishFactory for CorePublishFactory {
             let out: DynPublish = Arc::new(CorePublish::new(
                 config.core_publish,
                 space_id,
+                builder,
                 fetch,
                 peer_store,
-                verifier,
                 transport,
             ));
             Ok(out)
@@ -137,13 +136,13 @@ impl CorePublish {
     fn new(
         config: CorePublishConfig,
         space_id: SpaceId,
+        builder: Arc<Builder>,
         fetch: DynFetch,
         peer_store: DynPeerStore,
-        verifier: DynVerifier,
         transport: DynTransport,
     ) -> Self {
         Self::spawn_tasks(
-            config, space_id, fetch, peer_store, verifier, transport,
+            config, space_id, builder, fetch, peer_store, transport,
         )
     }
 }
@@ -196,9 +195,9 @@ impl CorePublish {
     pub fn spawn_tasks(
         _config: CorePublishConfig,
         space_id: SpaceId,
+        builder: Arc<Builder>,
         fetch: DynFetch,
         peer_store: DynPeerStore,
-        verifier: DynVerifier,
         transport: DynTransport,
     ) -> Self {
         // Create a queue to process outgoing op publishes. Publishes are sent to peers.
@@ -254,7 +253,7 @@ impl CorePublish {
             tokio::task::spawn(CorePublish::incoming_publish_agent_task(
                 incoming_publish_agent_rx,
                 peer_store,
-                verifier,
+                builder,
             ))
             .abort_handle();
         tasks.push(incoming_publish_agent_task);
@@ -363,11 +362,11 @@ impl CorePublish {
     async fn incoming_publish_agent_task(
         mut response_rx: Receiver<IncomingAgentInfoEncoded>,
         peer_store: DynPeerStore,
-        verifier: DynVerifier,
+        builder: Arc<Builder>,
     ) {
         while let Some(agent_info_encoded) = response_rx.recv().await {
             match AgentInfoSigned::decode(
-                &verifier,
+                &builder.verifier,
                 agent_info_encoded.as_bytes(),
             ) {
                 Ok(agent_info) => {
