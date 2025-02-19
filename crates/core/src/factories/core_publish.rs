@@ -3,21 +3,43 @@
 //! It consists of multiple parts:
 //! - A task that sends Op ids to peers
 //! - A task that adds received Op ids from other peers to the fetch queue
+//! - A task that sends Agent infos to peers
+//! - A task that verifies the signature of received agent infos and inserts
+//!   them into the peer store.
+//!
 //!
 //! ### Publish Ops
 //!
 //! #### Outgoing publishing of Ops
 //!
-//! A channel acts as the queue for outgoing ops to be published. Ops to be
-//! published are sent one by one through the channel to the receiving task,
-//! processing requests in incoming order and dispatching it to the
+//! A channel acts as the queue for outgoing ops to be published. Lists of
+//! Ops to be are sent one by one through the channel to the receiving task,
+//! processing publish requests in incoming order and dispatching them to the
 //! transport module.
 //!
 //! #### Incoming of published Ops task
 //!
 //! Similarly to outgoing ops to be published, a channel serves as a queue
-//! for incoming published ops. The queue processes items in order of the
+//! for incoming published ops. The queue processes ops lists in order of the
 //! incoming messages and adds the associated Op ids to the fetch queue.
+//!
+//!
+//! ### Publish Agent Info
+//!
+//! #### Outgoing publishing of agent infos
+//!
+//! A channel acts as the queue for outgoing agent infos to be published.
+//! agent infos to be published are sent one by one through the channel
+//! to the receiving task, processing requests in incoming order and
+//! dispatching them to the transport module.
+//!
+//! #### Incoming of published agent infos task
+//!
+//! Similarly to outgoing agent infos to be published, a channel serves as a
+//! queue for incoming published agent infos. The queue processes items in
+//! order of the incoming messages and decodes and verifies associated
+//! agent infos before inserting them into the peer store.
+//!
 //!
 
 use kitsune2_api::*;
