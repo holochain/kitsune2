@@ -13,7 +13,7 @@
 //! #### Outgoing publishing of Ops
 //!
 //! A channel acts as the queue for outgoing ops to be published. Lists of
-//! Ops to be are sent one by one through the channel to the receiving task,
+//! Ops to be published are sent one by one through the channel to the receiving task,
 //! processing publish requests in incoming order and dispatching them to the
 //! transport module.
 //!
@@ -29,7 +29,7 @@
 //! #### Outgoing publishing of agent infos
 //!
 //! A channel acts as the queue for outgoing agent infos to be published.
-//! agent infos to be published are sent one by one through the channel
+//! Agent infos to be published are sent one by one through the channel
 //! to the receiving task, processing requests in incoming order and
 //! dispatching them to the transport module.
 //!
