@@ -1,6 +1,12 @@
 use crate::*;
 use std::sync::Arc;
 
+pub(crate) mod proto {
+    include!("../proto/gen/kitsune2.agent.rs");
+}
+
+pub use proto::AgentInfoMessage;
+
 /// Defines a type capable of cryptographic signatures.
 pub trait Signer {
     /// Sign the encoded data, returning the resulting detached signature bytes.
@@ -307,6 +313,17 @@ impl std::ops::Deref for AgentInfoSigned {
 
     fn deref(&self) -> &Self::Target {
         &self.agent_info
+    }
+}
+
+impl TryFrom<&Arc<AgentInfoSigned>> for AgentInfoMessage {
+    type Error = K2Error;
+
+    fn try_from(value: &Arc<AgentInfoSigned>) -> K2Result<Self> {
+        let agent_info_encoded = value.encode()?;
+        Ok(Self {
+            data: agent_info_encoded,
+        })
     }
 }
 

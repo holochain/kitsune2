@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use kitsune2_api::{
-    DynOpStore, Publish, SpaceHandler, Timestamp, TxBaseHandler, TxHandler,
-    TxSpaceHandler, Url,
+    AgentId, AgentInfo, AgentInfoSigned, BoxFut, DhtArc, DynOpStore,
+    DynPeerStore, K2Result, Publish, Signer, SpaceHandler, SpaceId, Timestamp,
+    TxBaseHandler, TxHandler, TxSpaceHandler, Url, Verifier,
 };
 use kitsune2_test_utils::{enable_tracing, iter_check, space::TEST_SPACE_ID};
 
@@ -13,9 +14,35 @@ use crate::{
 
 use super::CorePublishConfig;
 
+const SIG: &[u8] = b"fake-signature";
+
+#[derive(Debug)]
+struct TestCrypto;
+
+impl Signer for TestCrypto {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        _agent_info: &'b AgentInfo,
+        _encoded: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
+        Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
+    }
+}
+
+impl Verifier for TestCrypto {
+    fn verify(
+        &self,
+        _agent_info: &AgentInfo,
+        _message: &[u8],
+        signature: &[u8],
+    ) -> bool {
+        signature == SIG
+    }
+}
+
 async fn setup_test(
     config: &CorePublishConfig,
-) -> (CorePublish, DynOpStore, Url) {
+) -> (CorePublish, DynOpStore, DynPeerStore, Url) {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
 
@@ -49,12 +76,22 @@ async fn setup_test(
         .await
         .unwrap();
 
+    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+
     let url =
         transport.register_space_handler(TEST_SPACE_ID, Arc::new(NoopHandler));
 
     (
-        CorePublish::new(config.clone(), TEST_SPACE_ID, fetch, transport),
+        CorePublish::new(
+            config.clone(),
+            TEST_SPACE_ID,
+            fetch,
+            peer_store.clone(),
+            builder.verifier.clone(),
+            transport,
+        ),
         op_store,
+        peer_store,
         url.unwrap(),
     )
 }
@@ -63,9 +100,9 @@ async fn setup_test(
 async fn published_ops_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _) =
+    let (core_publish_1, op_store_1, _, _) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, url_2) =
+    let (_core_publish2, op_store_2, _, url_2) =
         setup_test(&CorePublishConfig::default()).await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -107,9 +144,9 @@ async fn published_ops_can_be_retrieved() {
 async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _) =
+    let (core_publish_1, op_store_1, _, _) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, url_2) =
+    let (_core_publish2, op_store_2, _, url_2) =
         setup_test(&CorePublishConfig::default()).await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -153,4 +190,50 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
     });
 
     assert!(ops.len() == 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn published_agent_can_be_retrieved() {
+    enable_tracing();
+
+    let (core_publish_1, _, _, _) =
+        setup_test(&CorePublishConfig::default()).await;
+    let (_core_publish2, _, peer_store_2, url_2) =
+        setup_test(&CorePublishConfig::default()).await;
+
+    let agent_id: AgentId = bytes::Bytes::from_static(b"test-agent").into();
+    let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
+    let now = Timestamp::from_micros(1731690797907204);
+    let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
+    let url = Some(url_2.clone());
+    let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
+
+    let agent_info_signed = AgentInfoSigned::sign(
+        &TestCrypto,
+        AgentInfo {
+            agent: agent_id.clone(),
+            space: space.clone(),
+            created_at: now,
+            expires_at: later,
+            is_tombstone: false,
+            url: url.clone(),
+            storage_arc,
+        },
+    )
+    .await
+    .unwrap();
+
+    core_publish_1
+        .publish_agent(agent_info_signed.clone(), url_2)
+        .await
+        .unwrap();
+
+    let agent = iter_check!(1000, {
+        let agent = peer_store_2.get(agent_id.clone()).await.unwrap();
+        if let Some(agent_info_signed) = agent {
+            return agent_info_signed;
+        }
+    });
+
+    assert_eq!(agent, agent_info_signed)
 }

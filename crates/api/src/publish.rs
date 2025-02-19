@@ -1,11 +1,14 @@
 //! Kitsune2 publish types.
 
-use crate::{builder, config};
+use crate::{
+    builder, config, AgentInfoSigned, DynPeerStore, DynVerifier, K2Error,
+};
 use crate::{
     transport::DynTransport, BoxFut, DynFetch, K2Result, OpId, SpaceId, Url,
 };
 use bytes::{Bytes, BytesMut};
 use prost::Message;
+use proto::PublishAgent;
 use std::sync::Arc;
 
 pub(crate) mod proto {
@@ -51,12 +54,63 @@ pub fn serialize_publish_ops_message(value: Vec<OpId>) -> Bytes {
     out.freeze()
 }
 
+impl TryFrom<&Arc<AgentInfoSigned>> for PublishAgent {
+    type Error = K2Error;
+
+    fn try_from(value: &Arc<AgentInfoSigned>) -> K2Result<Self> {
+        let agent_info_message = value.try_into()?;
+        Ok(Self {
+            agent_info: Some(agent_info_message),
+        })
+    }
+}
+
+impl From<PublishAgent> for AgentInfoSigned {
+    fn from(value: PublishAgent) -> Self {
+        value.into()
+    }
+}
+
+/// Serialize AgentInfoSigned
+pub fn serialize_publish_agent(
+    value: &Arc<AgentInfoSigned>,
+) -> K2Result<Bytes> {
+    let mut out = BytesMut::new();
+    PublishAgent::try_from(value)?
+        .encode(&mut out)
+        .expect("failed to encode publish agent request");
+    Ok(out.freeze())
+}
+
+/// Serialize agent publish message.
+pub fn serialize_publish_agent_message(
+    value: &Arc<AgentInfoSigned>,
+) -> K2Result<Bytes> {
+    let mut out = BytesMut::new();
+    let data = serialize_publish_agent(value)?;
+    let publish_message = K2PublishMessage {
+        publish_message_type: PublishMessageType::Agent.into(),
+        data,
+    };
+    publish_message
+        .encode(&mut out)
+        .expect("failed to encode publish agent message");
+    Ok(out.freeze())
+}
+
 /// Trait for implementing a publish module to publish ops to other peers.
 pub trait Publish: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be published to a peer.
     fn publish_ops(
         &self,
         op_ids: Vec<OpId>,
+        target: Url,
+    ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Add agent info to be published to a peer.
+    fn publish_agent(
+        &self,
+        agent_info: Arc<AgentInfoSigned>,
         target: Url,
     ) -> BoxFut<'_, K2Result<()>>;
 }
@@ -79,6 +133,8 @@ pub trait PublishFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
         fetch: DynFetch,
+        peer_store: DynPeerStore,
+        verifier: DynVerifier,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>>;
 }

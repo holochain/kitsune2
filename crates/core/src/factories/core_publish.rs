@@ -79,6 +79,8 @@ impl PublishFactory for CorePublishFactory {
         builder: Arc<Builder>,
         space_id: SpaceId,
         fetch: DynFetch,
+        peer_store: DynPeerStore,
+        verifier: DynVerifier,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>> {
         Box::pin(async move {
@@ -88,6 +90,8 @@ impl PublishFactory for CorePublishFactory {
                 config.core_publish,
                 space_id,
                 fetch,
+                peer_store,
+                verifier,
                 transport,
             ));
             Ok(out)
@@ -97,10 +101,13 @@ impl PublishFactory for CorePublishFactory {
 
 type OutgoingPublishOps = (Vec<OpId>, Url);
 type IncomingPublishOps = (Vec<OpId>, Url);
+type OutgoingAgentInfo = (Arc<AgentInfoSigned>, Url);
+type IncomingAgentInfoEncoded = String;
 
 #[derive(Debug)]
 struct CorePublish {
     outgoing_publish_ops_tx: Sender<OutgoingPublishOps>,
+    outgoing_publish_agent_tx: Sender<OutgoingAgentInfo>,
     tasks: Vec<AbortHandle>,
 }
 
@@ -109,9 +116,13 @@ impl CorePublish {
         config: CorePublishConfig,
         space_id: SpaceId,
         fetch: DynFetch,
+        peer_store: DynPeerStore,
+        verifier: DynVerifier,
         transport: DynTransport,
     ) -> Self {
-        Self::spawn_tasks(config, space_id, fetch, transport)
+        Self::spawn_tasks(
+            config, space_id, fetch, peer_store, verifier, transport,
+        )
     }
 }
 
@@ -136,6 +147,27 @@ impl Publish for CorePublish {
             Ok(())
         })
     }
+
+    fn publish_agent(
+        &self,
+        agent_info: Arc<AgentInfoSigned>,
+        target: Url,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            // Insert requests into publish queue.
+            if let Err(err) = self
+                .outgoing_publish_agent_tx
+                .send((agent_info, target))
+                .await
+            {
+                tracing::warn!(
+                    "could not insert signed agent info into agent publish queue: {err}"
+                );
+            }
+
+            Ok(())
+        })
+    }
 }
 
 impl CorePublish {
@@ -143,6 +175,8 @@ impl CorePublish {
         _config: CorePublishConfig,
         space_id: SpaceId,
         fetch: DynFetch,
+        peer_store: DynPeerStore,
+        verifier: DynVerifier,
         transport: DynTransport,
     ) -> Self {
         // Create a queue to process outgoing op publishes. Publishes are sent to peers.
@@ -153,6 +187,14 @@ impl CorePublish {
         // fetch queue
         let (incoming_publish_ops_tx, incoming_publish_ops_rx) =
             channel::<IncomingPublishOps>(16_384);
+
+        // Create a queue to process outgoing agent publishes. Publishes are sent to peers.
+        let (outgoing_publish_agent_tx, outgoing_publish_agent_rx) =
+            channel::<OutgoingAgentInfo>(16_384);
+
+        // Create a queue to process incoming agent publishes. Incoming agent infos are added to the peer store.
+        let (incoming_publish_agent_tx, incoming_publish_agent_rx) =
+            channel::<IncomingAgentInfoEncoded>(16_384);
 
         let mut tasks = Vec::new();
 
@@ -175,9 +217,30 @@ impl CorePublish {
             .abort_handle();
         tasks.push(incoming_publish_ops_task);
 
+        // Spawn outgoing publish agent task.
+        let outgoing_publish_agent_task =
+            tokio::task::spawn(CorePublish::outgoing_publish_agent_task(
+                outgoing_publish_agent_rx,
+                space_id.clone(),
+                transport.clone(),
+            ))
+            .abort_handle();
+        tasks.push(outgoing_publish_agent_task);
+
+        // Spawn incoming publish agent task.
+        let incoming_publish_agent_task =
+            tokio::task::spawn(CorePublish::incoming_publish_agent_task(
+                incoming_publish_agent_rx,
+                peer_store,
+                verifier,
+            ))
+            .abort_handle();
+        tasks.push(incoming_publish_agent_task);
+
         // Register transport module handler for incoming op and agent publishes.
         let message_handler = Arc::new(PublishMessageHandler {
             incoming_publish_ops_tx,
+            incoming_publish_agent_tx,
         });
 
         transport.register_module_handler(
@@ -188,6 +251,7 @@ impl CorePublish {
 
         Self {
             outgoing_publish_ops_tx,
+            outgoing_publish_agent_tx,
             tasks,
         }
     }
@@ -233,6 +297,70 @@ impl CorePublish {
                         "could not insert publish ops request into fetch queue: {err}"
                     );
             };
+        }
+    }
+
+    async fn outgoing_publish_agent_task(
+        mut outgoing_publish_agent_rx: Receiver<OutgoingAgentInfo>,
+        space_id: SpaceId,
+        transport: DynTransport,
+    ) {
+        while let Some((agent_info, peer_url)) =
+            outgoing_publish_agent_rx.recv().await
+        {
+            // Send fetch request to peer.
+            match serialize_publish_agent_message(&agent_info) {
+                Ok(data) => match transport
+                    .send_module(
+                        peer_url.clone(),
+                        space_id.clone(),
+                        PUBLISH_MOD_NAME.to_string(),
+                        data,
+                    )
+                    .await
+                {
+                    Err(err) => {
+                        tracing::warn!(
+                            ?agent_info,
+                            ?peer_url,
+                            "could not send publish agent: {err}"
+                        );
+                    }
+                    Ok(()) => (),
+                },
+                Err(err) => {
+                    tracing::warn!(
+                        ?agent_info,
+                        ?peer_url,
+                        "Failed to serialize publish agent message: {err}"
+                    )
+                }
+            };
+        }
+    }
+
+    async fn incoming_publish_agent_task(
+        mut response_rx: Receiver<IncomingAgentInfoEncoded>,
+        peer_store: DynPeerStore,
+        verifier: DynVerifier,
+    ) {
+        while let Some(agent_info_encoded) = response_rx.recv().await {
+            match AgentInfoSigned::decode(
+                &verifier,
+                agent_info_encoded.as_bytes(),
+            ) {
+                Ok(agent_info) => {
+                    if let Err(err) = peer_store.insert(vec![agent_info]).await
+                    {
+                        tracing::warn!(
+                            "could not insert published agent info into peer store: {err}"
+                        );
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!("Failed to decode signed agent info: {err}");
+                }
+            }
         }
     }
 }
