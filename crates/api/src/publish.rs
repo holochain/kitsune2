@@ -66,12 +66,6 @@ impl TryFrom<&Arc<AgentInfoSigned>> for PublishAgent {
     }
 }
 
-impl From<PublishAgent> for AgentInfoSigned {
-    fn from(value: PublishAgent) -> Self {
-        value.into()
-    }
-}
-
 /// Serialize AgentInfoSigned
 pub fn serialize_publish_agent(
     value: &Arc<AgentInfoSigned>,
