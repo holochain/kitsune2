@@ -15,6 +15,7 @@ use crate::{
 use super::CorePublishConfig;
 
 const SIG: &[u8] = b"fake-signature";
+const INVALID_SIG: &[u8] = b"invalid-fake-signature";
 
 #[derive(Debug)]
 struct TestCrypto;
@@ -37,6 +38,30 @@ impl Verifier for TestCrypto {
         signature: &[u8],
     ) -> bool {
         signature == SIG
+    }
+}
+
+#[derive(Debug)]
+struct TestCryptoInvalid;
+
+impl Signer for TestCryptoInvalid {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        _agent_info: &'b AgentInfo,
+        _encoded: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
+        Box::pin(async move { Ok(bytes::Bytes::from_static(INVALID_SIG)) })
+    }
+}
+
+impl Verifier for TestCryptoInvalid {
+    fn verify(
+        &self,
+        _agent_info: &AgentInfo,
+        _message: &[u8],
+        _signature: &[u8],
+    ) -> bool {
+        false
     }
 }
 
@@ -236,4 +261,83 @@ async fn published_agent_can_be_retrieved() {
     });
 
     assert_eq!(agent, agent_info_signed)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_succeed(
+) {
+    enable_tracing();
+
+    let (core_publish_1, _, _, _) =
+        setup_test(&CorePublishConfig::default()).await;
+    let (_core_publish2, _, peer_store_2, url_2) =
+        setup_test(&CorePublishConfig::default()).await;
+
+    let agent_id_invalid: AgentId =
+        bytes::Bytes::from_static(b"test-agent").into();
+    let agent_id_valid: AgentId =
+        bytes::Bytes::from_static(b"test-agent-2").into();
+    let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
+    let now = Timestamp::now();
+    let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
+    let url = Some(url_2.clone());
+    let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
+
+    let agent_info_signed_invalid = AgentInfoSigned::sign(
+        &TestCryptoInvalid,
+        AgentInfo {
+            agent: agent_id_invalid.clone(),
+            space: space.clone(),
+            created_at: now,
+            expires_at: later,
+            is_tombstone: false,
+            url: url.clone(),
+            storage_arc,
+        },
+    )
+    .await
+    .unwrap();
+
+    let agent_info_signed_valid = AgentInfoSigned::sign(
+        &TestCrypto,
+        AgentInfo {
+            agent: agent_id_valid.clone(),
+            space: space.clone(),
+            created_at: now,
+            expires_at: later,
+            is_tombstone: false,
+            url: url.clone(),
+            storage_arc,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Publish an agent with an invalid signature
+    core_publish_1
+        .publish_agent(agent_info_signed_invalid.clone(), url_2.clone())
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Publish an agent with a valid signature
+    core_publish_1
+        .publish_agent(agent_info_signed_valid.clone(), url_2)
+        .await
+        .unwrap();
+
+    // Verify that the agent with the valid signature has been inserted
+    let agen_inserted = iter_check!(1000, {
+        let agen_inserted =
+            peer_store_2.get(agent_id_valid.clone()).await.unwrap();
+        if let Some(agent_info_signed) = agen_inserted {
+            return agent_info_signed;
+        }
+    });
+
+    assert_eq!(agen_inserted, agent_info_signed_valid);
+
+    // Verify that the invalid agent info has not been inserted
+    assert_eq!(peer_store_2.get(agent_id_invalid).await.unwrap(), None);
 }
