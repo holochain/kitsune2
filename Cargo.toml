@@ -15,7 +15,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.1-alpha.1"
+version = "0.0.1-alpha2"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
 homepage = "https://github.com/holochain/kitsune2"
 keywords = ["holochain", "kitsune", "p2p", "dht", "networking"]
@@ -23,14 +23,20 @@ categories = ["network-programming"]
 license = "Apache-2.0"
 edition = "2021"
 
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.
-kitsune2 = { version = "0.0.1-alpha.1", path = "crates/kitsune2" }
-kitsune2_api = { version = "0.0.1-alpha.1", path = "crates/api" }
-kitsune2_dht = { version = "0.0.1-alpha.1", path = "crates/dht" }
-kitsune2_gossip = { version = "0.0.1-alpha.1", path = "crates/gossip" }
-kitsune2_transport_tx5 = { version = "0.0.1-alpha.1", path = "crates/transport_tx5" }
+kitsune2 = { version = "0.0.1-alpha2", path = "crates/kitsune2" }
+kitsune2_api = { version = "0.0.1-alpha2", path = "crates/api" }
+kitsune2_dht = { version = "0.0.1-alpha2", path = "crates/dht" }
+kitsune2_gossip = { version = "0.0.1-alpha2", path = "crates/gossip" }
+kitsune2_transport_tx5 = { version = "0.0.1-alpha2", path = "crates/transport_tx5" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"
@@ -96,7 +102,7 @@ prost-build = "0.13.3"
 # above this section.
 # --- dev-dependencies ---
 kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
-kitsune2_core = { version = "0.0.1-alpha.1", path = "crates/core" }
+kitsune2_core = { version = "0.0.1-alpha2", path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
 # used to hash op data

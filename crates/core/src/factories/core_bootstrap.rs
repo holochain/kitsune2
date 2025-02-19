@@ -52,7 +52,7 @@ pub mod config {
     }
 }
 
-use config::*;
+pub use config::*;
 
 /// The core bootstrap implementation provided by Kitsune2.
 #[derive(Debug)]

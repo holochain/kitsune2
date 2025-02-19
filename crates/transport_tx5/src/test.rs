@@ -43,6 +43,7 @@ impl Test {
                 tx5_transport: config::Tx5TransportConfig {
                     signal_allow_plain_text: true,
                     server_url: format!("ws://127.0.0.1:{}", this.port),
+                    ..Default::default()
                 },
             })
             .unwrap();
@@ -209,6 +210,7 @@ fn validate_bad_server_url() {
             tx5_transport: Tx5TransportConfig {
                 signal_allow_plain_text: true,
                 server_url: "<bad-url>".into(),
+                ..Default::default()
             },
         })
         .unwrap();

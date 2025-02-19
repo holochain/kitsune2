@@ -27,7 +27,7 @@ test:
 proto:
 	cd crates/tool_proto_build && cargo run
 
-publish_all:
+publish-all:
 	cargo publish -p kitsune2_api
 	cargo publish -p kitsune2_bootstrap_srv
 	cargo publish -p kitsune2_core
