@@ -273,7 +273,7 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
     .unwrap();
 
     // Verify that the signature is indeed invalid according to the verifier
-    // used in CorePublish
+    // used on the receiving side of the agent publish
     if let Ok(_) = AgentInfoSigned::decode(
         &verifier_2,
         agent_info_signed_invalid.encode().unwrap().as_bytes(),
@@ -311,15 +311,15 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
         .unwrap();
 
     // Verify that the agent with the valid signature has been inserted
-    let agen_inserted = iter_check!(1000, {
-        let agen_inserted =
+    let agent_inserted = iter_check!(1000, {
+        let agent_inserted =
             peer_store_2.get(agent_id_valid.clone()).await.unwrap();
-        if let Some(agent_info_signed) = agen_inserted {
+        if let Some(agent_info_signed) = agent_inserted {
             return agent_info_signed;
         }
     });
 
-    assert_eq!(agen_inserted, agent_info_signed_valid);
+    assert_eq!(agent_inserted, agent_info_signed_valid);
 
     // Verify that the invalid agent info has not been inserted
     assert_eq!(peer_store_2.get(agent_id_invalid).await.unwrap(), None);
