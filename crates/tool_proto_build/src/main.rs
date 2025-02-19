@@ -7,7 +7,6 @@ fn main() {
                 // Wire protocol for sending messages over the K2 transport
                 "../api/proto/wire.proto",
                 // Module protocols, as the content of wire messages
-                "../api/proto/agent.proto",
                 "../api/proto/fetch.proto",
                 "../api/proto/op_store.proto",
                 "../api/proto/publish.proto",

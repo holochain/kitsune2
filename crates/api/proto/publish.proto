@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package kitsune2.publish;
 
-import "agent.proto";
-
 // A publish ops message.
 message PublishOps {
   // Op ids.
@@ -12,8 +10,8 @@ message PublishOps {
 
 // A publish agent message.
 message PublishAgent {
-  // Agents.
-  kitsune2.agent.AgentInfoMessage agent_info = 1;
+  // Agent.
+  string agent_info = 1;
 }
 
 // Publish message.

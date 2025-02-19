@@ -9,9 +9,9 @@ pub struct PublishOps {
 /// A publish agent message.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublishAgent {
-    /// Agents.
-    #[prost(message, optional, tag = "1")]
-    pub agent_info: ::core::option::Option<crate::agent::AgentInfoMessage>,
+    /// Agent.
+    #[prost(string, tag = "1")]
+    pub agent_info: ::prost::alloc::string::String,
 }
 /// Publish message.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -38,7 +38,7 @@ pub mod k2_publish_message {
         Hash,
         PartialOrd,
         Ord,
-        ::prost::Enumeration,
+        ::prost::Enumeration
     )]
     #[repr(i32)]
     pub enum PublishMessageType {

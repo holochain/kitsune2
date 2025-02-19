@@ -8,14 +8,15 @@ use crate::{
 };
 use bytes::{Bytes, BytesMut};
 use prost::Message;
-use proto::PublishAgent;
 use std::sync::Arc;
 
 pub(crate) mod proto {
     include!("../proto/gen/kitsune2.publish.rs");
 }
 
-pub use proto::{k2_publish_message::*, K2PublishMessage, PublishOps};
+pub use proto::{
+    k2_publish_message::*, K2PublishMessage, PublishAgent, PublishOps,
+};
 
 impl From<Vec<OpId>> for PublishOps {
     fn from(value: Vec<OpId>) -> Self {
@@ -58,9 +59,9 @@ impl TryFrom<&Arc<AgentInfoSigned>> for PublishAgent {
     type Error = K2Error;
 
     fn try_from(value: &Arc<AgentInfoSigned>) -> K2Result<Self> {
-        let agent_info_message = value.try_into()?;
+        let agent_info_encoded = value.encode()?;
         Ok(Self {
-            agent_info: Some(agent_info_message),
+            agent_info: agent_info_encoded,
         })
     }
 }

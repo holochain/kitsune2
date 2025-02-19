@@ -45,7 +45,7 @@ impl TxModuleHandler for PublishMessageHandler {
             }
             PublishMessageType::Agent => {
                 let request =
-                    AgentInfoMessage::decode(publish.data).map_err(|err| {
+                    PublishAgent::decode(publish.data).map_err(|err| {
                         K2Error::other_src(
                             format!(
                                 "could not decode publish agent from {peer}"
@@ -54,7 +54,7 @@ impl TxModuleHandler for PublishMessageHandler {
                         )
                     })?;
                 self.incoming_publish_agent_tx
-                    .try_send(request.data)
+                    .try_send(request.agent_info)
                     .map_err(|err| {
                         K2Error::other_src(
                             "could not insert incoming agent publish into queue",

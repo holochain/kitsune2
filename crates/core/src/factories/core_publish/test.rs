@@ -87,7 +87,7 @@ async fn setup_test(
             TEST_SPACE_ID,
             fetch,
             peer_store.clone(),
-            builder.verifier.clone(),
+            Arc::new(TestCrypto),
             transport,
         ),
         op_store,
@@ -203,7 +203,7 @@ async fn published_agent_can_be_retrieved() {
 
     let agent_id: AgentId = bytes::Bytes::from_static(b"test-agent").into();
     let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
-    let now = Timestamp::from_micros(1731690797907204);
+    let now = Timestamp::now();
     let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
     let url = Some(url_2.clone());
     let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
