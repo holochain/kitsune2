@@ -2,46 +2,25 @@ use std::sync::Arc;
 
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
-    DynPeerStore, K2Result, Publish, Signer, SpaceHandler, SpaceId, Timestamp,
-    TxBaseHandler, TxHandler, TxSpaceHandler, Url, Verifier,
+    DynPeerStore, DynVerifier, K2Result, Publish, Signer, SpaceHandler,
+    SpaceId, Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler, Url,
 };
-use kitsune2_test_utils::{enable_tracing, iter_check, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{
+    agent::{TestLocalAgent, TestVerifier},
+    enable_tracing, iter_check,
+    space::TEST_SPACE_ID,
+};
 
 use crate::factories::{core_publish::CorePublish, MemoryOp};
 
 use super::CorePublishConfig;
 
-const SIG: &[u8] = b"fake-signature";
-const INVALID_SIG: &[u8] = b"invalid-fake-signature";
+const INVALID_SIG: &[u8] = b"invalid-signature";
 
 #[derive(Debug)]
-struct TestCrypto;
+struct IinvalidSigner;
 
-impl Signer for TestCrypto {
-    fn sign<'a, 'b: 'a, 'c: 'a>(
-        &'a self,
-        _agent_info: &'b AgentInfo,
-        _encoded: &'c [u8],
-    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
-        Box::pin(async move { Ok(bytes::Bytes::from_static(SIG)) })
-    }
-}
-
-impl Verifier for TestCrypto {
-    fn verify(
-        &self,
-        _agent_info: &AgentInfo,
-        _message: &[u8],
-        signature: &[u8],
-    ) -> bool {
-        signature == SIG
-    }
-}
-
-#[derive(Debug)]
-struct TestCryptoInvalid;
-
-impl Signer for TestCryptoInvalid {
+impl Signer for IinvalidSigner {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
         _agent_info: &'b AgentInfo,
@@ -51,22 +30,13 @@ impl Signer for TestCryptoInvalid {
     }
 }
 
-impl Verifier for TestCryptoInvalid {
-    fn verify(
-        &self,
-        _agent_info: &AgentInfo,
-        _message: &[u8],
-        _signature: &[u8],
-    ) -> bool {
-        false
-    }
-}
-
 async fn setup_test(
     config: &CorePublishConfig,
-) -> (CorePublish, DynOpStore, DynPeerStore, Url) {
+) -> (CorePublish, DynOpStore, DynPeerStore, DynVerifier, Url) {
+    let verifier = Arc::new(TestVerifier);
+
     let builder = Builder {
-        verifier: Arc::new(TestCrypto),
+        verifier: verifier.clone(),
         ..crate::default_test_builder()
     }
     .with_default_config()
@@ -120,6 +90,7 @@ async fn setup_test(
         ),
         op_store,
         peer_store,
+        verifier,
         url.unwrap(),
     )
 }
@@ -128,9 +99,9 @@ async fn setup_test(
 async fn published_ops_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _, _) =
+    let (core_publish_1, op_store_1, _, _, _) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, _, url_2) =
+    let (_core_publish2, op_store_2, _, _, url_2) =
         setup_test(&CorePublishConfig::default()).await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -172,9 +143,9 @@ async fn published_ops_can_be_retrieved() {
 async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _, _) =
+    let (core_publish_1, op_store_1, _, _, _) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, _, url_2) =
+    let (_core_publish2, op_store_2, _, _, url_2) =
         setup_test(&CorePublishConfig::default()).await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -224,9 +195,9 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
 async fn published_agent_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, _, _, _) =
+    let (core_publish_1, _, _, _, _) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, _, peer_store_2, url_2) =
+    let (_core_publish2, _, peer_store_2, _, url_2) =
         setup_test(&CorePublishConfig::default()).await;
 
     let agent_id: AgentId = bytes::Bytes::from_static(b"test-agent").into();
@@ -237,7 +208,7 @@ async fn published_agent_can_be_retrieved() {
     let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
 
     let agent_info_signed = AgentInfoSigned::sign(
-        &TestCrypto,
+        &TestLocalAgent::default(),
         AgentInfo {
             agent: agent_id.clone(),
             space: space.clone(),
@@ -271,9 +242,9 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
 ) {
     enable_tracing();
 
-    let (core_publish_1, _, _, _) =
+    let (core_publish_1, _, _, _, _) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, _, peer_store_2, url_2) =
+    let (_core_publish2, _, peer_store_2, verifier_2, url_2) =
         setup_test(&CorePublishConfig::default()).await;
 
     let agent_id_invalid: AgentId =
@@ -287,7 +258,7 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
     let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
 
     let agent_info_signed_invalid = AgentInfoSigned::sign(
-        &TestCryptoInvalid,
+        &IinvalidSigner,
         AgentInfo {
             agent: agent_id_invalid.clone(),
             space: space.clone(),
@@ -301,8 +272,17 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
     .await
     .unwrap();
 
+    // Verify that the signature is indeed invalid according to the verifier
+    // used in CorePublish
+    if let Ok(_) = AgentInfoSigned::decode(
+        &verifier_2,
+        agent_info_signed_invalid.encode().unwrap().as_bytes(),
+    ) {
+        panic!("Signature of agent info used for this test should be invalid.")
+    };
+
     let agent_info_signed_valid = AgentInfoSigned::sign(
-        &TestCrypto,
+        &TestLocalAgent::default(),
         AgentInfo {
             agent: agent_id_valid.clone(),
             space: space.clone(),
