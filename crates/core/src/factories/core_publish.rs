@@ -342,7 +342,7 @@ impl CorePublish {
                         )
                         .await
                     {
-                        tracing::warn!(
+                        tracing::debug!(
                             ?agent_info,
                             ?peer_url,
                             "could not send publish agent: {err}"
