@@ -82,7 +82,7 @@ async fn space_local_agent_join_leave() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn space_notify_send_recv() {
-    type Item = (AgentId, AgentId, SpaceId, bytes::Bytes);
+    type Item = (Url, SpaceId, bytes::Bytes);
     type Recv = Arc<Mutex<Vec<Item>>>;
     let recv = Arc::new(Mutex::new(Vec::new()));
 
@@ -92,15 +92,11 @@ async fn space_notify_send_recv() {
     impl SpaceHandler for S {
         fn recv_notify(
             &self,
-            to_agent: AgentId,
-            from_agent: AgentId,
+            from_peer: Url,
             space: SpaceId,
             data: bytes::Bytes,
         ) -> K2Result<()> {
-            self.0
-                .lock()
-                .unwrap()
-                .push((to_agent, from_agent, space, data));
+            self.0.lock().unwrap().push((from_peer, space, data));
             Ok(())
         }
     }
@@ -157,13 +153,13 @@ async fn space_notify_send_recv() {
 
     let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
     let bob_info = AgentBuilder {
-        url: Some(Some(u2)),
+        url: Some(Some(u2.clone())),
         ..Default::default()
     }
     .build(bob.clone());
     let ned = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
     let ned_info = AgentBuilder {
-        url: Some(Some(u1)),
+        url: Some(Some(u1.clone())),
         ..Default::default()
     }
     .build(ned.clone());
@@ -171,31 +167,21 @@ async fn space_notify_send_recv() {
     s1.peer_store().insert(vec![bob_info]).await.unwrap();
     s2.peer_store().insert(vec![ned_info]).await.unwrap();
 
-    s1.send_notify(
-        bob.agent().clone(),
-        ned.agent().clone(),
-        bytes::Bytes::from_static(b"hello"),
-    )
-    .await
-    .unwrap();
+    s1.send_notify(u2.clone(), bytes::Bytes::from_static(b"hello"))
+        .await
+        .unwrap();
 
-    let (t, f, s, d) = recv.lock().unwrap().remove(0);
-    assert_eq!(bob.agent(), &t);
-    assert_eq!(ned.agent(), &f);
+    let (f, s, d) = recv.lock().unwrap().remove(0);
+    assert_eq!(u1.clone(), f);
     assert_eq!(TEST_SPACE_ID, s);
     assert_eq!("hello", String::from_utf8_lossy(&d));
 
-    s2.send_notify(
-        ned.agent().clone(),
-        bob.agent().clone(),
-        bytes::Bytes::from_static(b"world"),
-    )
-    .await
-    .unwrap();
+    s2.send_notify(u1, bytes::Bytes::from_static(b"world"))
+        .await
+        .unwrap();
 
-    let (t, f, s, d) = recv.lock().unwrap().remove(0);
-    assert_eq!(ned.agent(), &t);
-    assert_eq!(bob.agent(), &f);
+    let (f, s, d) = recv.lock().unwrap().remove(0);
+    assert_eq!(u2, f);
     assert_eq!(TEST_SPACE_ID, s);
     assert_eq!("world", String::from_utf8_lossy(&d));
 }

@@ -24,8 +24,7 @@ impl App {
         impl SpaceHandler for S {
             fn recv_notify(
                 &self,
-                _to_agent: AgentId,
-                _from_agent: AgentId,
+                _from_peer: Url,
                 _space: SpaceId,
                 data: Bytes,
             ) -> K2Result<()> {
@@ -110,7 +109,7 @@ impl App {
             .get_all()
             .await?
             .into_iter()
-            .filter(|p| &p.agent != self.a.agent())
+            .filter(|p| &p.agent != self.a.agent() && p.url.is_some())
             .collect::<Vec<_>>();
         self.p
             .print_line(format!("sending to {} peers", peers.len()));
@@ -118,10 +117,9 @@ impl App {
         for peer in peers {
             let p = self.p.clone();
             let s = self.s.clone();
-            let a = self.a.agent().clone();
             let m = msg.clone();
             tokio::task::spawn(async move {
-                match s.send_notify(peer.agent.clone(), a, m).await {
+                match s.send_notify(peer.url.clone().unwrap(), m).await {
                     Ok(_) => {
                         p.print_line(format!("chat to {} success", &peer.agent))
                     }

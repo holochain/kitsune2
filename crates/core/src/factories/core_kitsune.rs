@@ -152,8 +152,7 @@ mod test {
         impl SpaceHandler for S {
             fn recv_notify(
                 &self,
-                _to_agent: AgentId,
-                _from_agent: AgentId,
+                _peer: Url,
                 _space: SpaceId,
                 _data: bytes::Bytes,
             ) -> K2Result<()> {
