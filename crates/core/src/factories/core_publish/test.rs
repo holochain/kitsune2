@@ -18,9 +18,9 @@ use super::CorePublishConfig;
 const INVALID_SIG: &[u8] = b"invalid-signature";
 
 #[derive(Debug)]
-struct IinvalidSigner;
+struct InvalidSigner;
 
-impl Signer for IinvalidSigner {
+impl Signer for InvalidSigner {
     fn sign<'a, 'b: 'a, 'c: 'a>(
         &'a self,
         _agent_info: &'b AgentInfo,
@@ -258,7 +258,7 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
     let storage_arc = DhtArc::Arc(42, u32::MAX / 13);
 
     let agent_info_signed_invalid = AgentInfoSigned::sign(
-        &IinvalidSigner,
+        &InvalidSigner,
         AgentInfo {
             agent: agent_id_invalid.clone(),
             space: space.clone(),
