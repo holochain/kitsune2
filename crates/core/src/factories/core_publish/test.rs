@@ -274,10 +274,12 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
 
     // Verify that the signature is indeed invalid according to the verifier
     // used on the receiving side of the agent publish
-    if let Ok(_) = AgentInfoSigned::decode(
+    if AgentInfoSigned::decode(
         &verifier_2,
         agent_info_signed_invalid.encode().unwrap().as_bytes(),
-    ) {
+    )
+    .is_ok()
+    {
         panic!("Signature of agent info used for this test should be invalid.")
     };
 
