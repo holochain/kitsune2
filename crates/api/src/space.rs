@@ -10,19 +10,13 @@ pub trait SpaceHandler: 'static + Send + Sync + std::fmt::Debug {
     /// The sync handler for receiving notifications sent by a remote
     /// peer in reference to a particular space. If this callback returns
     /// an error, then the connection which sent the message will be closed.
-    //
-    // Note: this is the minimal low-level messaging unit. We can decide
-    //       later if we want to handle request/response tracking in
-    //       kitsune itself as a convenience or if users of this lib
-    //       should have to implement that if they want it.
     fn recv_notify(
         &self,
-        to_agent: AgentId,
-        from_agent: AgentId,
+        from_peer: Url,
         space: SpaceId,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        drop((to_agent, from_agent, space, data));
+        drop((from_peer, space, data));
         Ok(())
     }
 }
@@ -83,15 +77,9 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// network transport implementation. But once the data is handed off
     /// there, this function will return Ok, and you will not know if
     /// the remote has received it or not.
-    //
-    // Note: this is the minimal low-level messaging unit. We can decide
-    //       later if we want to handle request/response tracking in
-    //       kitsune itself as a convenience or if users of this lib
-    //       should have to implement that if they want it.
     fn send_notify(
         &self,
-        to_agent: AgentId,
-        from_agent: AgentId,
+        to_peer: Url,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>>;
 

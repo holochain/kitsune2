@@ -3,8 +3,6 @@
 use kitsune2_api::*;
 use std::sync::{Arc, Mutex, Weak};
 
-mod protocol;
-
 /// CoreSpace configuration types.
 mod config {
     /// Configuration parameters for [CoreSpaceFactory](super::CoreSpaceFactory).
@@ -173,17 +171,11 @@ impl TxBaseHandler for TxHandlerTranslator {
 impl TxSpaceHandler for TxHandlerTranslator {
     fn recv_space_notify(
         &self,
-        _peer: Url,
+        peer: Url,
         space: SpaceId,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        let dec = protocol::K2SpaceProto::decode(&data)?;
-        self.0.recv_notify(
-            dec.to_agent.into(),
-            dec.from_agent.into(),
-            space,
-            dec.data,
-        )
+        self.0.recv_notify(peer, space, data)
     }
 }
 
@@ -428,41 +420,10 @@ impl Space for CoreSpace {
 
     fn send_notify(
         &self,
-        to_agent: AgentId,
-        from_agent: AgentId,
+        to_peer: Url,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move {
-            let info = match self.peer_store.get(to_agent.clone()).await? {
-                Some(info) => info,
-                None => {
-                    // TODO - once discovery is implemented try to
-                    //        look up the peer from the network.
-                    return Err(K2Error::other(format!(
-                        "to_agent {to_agent} not found"
-                    )));
-                }
-            };
-            let url = match &info.url {
-                Some(url) => url.clone(),
-                None => {
-                    return Err(K2Error::other(format!(
-                        "to_agent {to_agent} is offline"
-                    )));
-                }
-            };
-
-            let enc = protocol::K2SpaceProto {
-                to_agent: to_agent.into(),
-                from_agent: from_agent.into(),
-                data,
-            }
-            .encode()?;
-
-            self.tx
-                .send_space_notify(url, self.space.clone(), enc)
-                .await
-        })
+        self.tx.send_space_notify(to_peer, self.space.clone(), data)
     }
 
     fn inform_ops_stored(
