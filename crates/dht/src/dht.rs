@@ -18,8 +18,8 @@
 //! to compare discs by exchanging [DhtSnapshot::Minimal], [DhtSnapshot::DiscSectors] and then
 //! [DhtSnapshot::DiscSectorDetails].
 
-use crate::arc_set::ArcSet;
 use crate::HashPartition;
+use crate::arc_set::ArcSet;
 use kitsune2_api::{
     BoxFut, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
 };
@@ -465,9 +465,9 @@ impl DhtApi for Dht {
                                 )
                             else {
                                 tracing::error!(
-                                "Partial slice index {} out of bounds, ignoring",
-                                ring_index
-                            );
+                                    "Partial slice index {} out of bounds, ignoring",
+                                    ring_index
+                                );
                                 continue;
                             };
 
@@ -479,11 +479,19 @@ impl DhtApi for Dht {
                                 .await?;
 
                             if (used_bytes + ub) as i32 <= max_op_data_bytes {
-                                tracing::info!("Accepting op batch in sector: {}, ring: {}", sector_index, ring_index);
+                                tracing::info!(
+                                    "Accepting op batch in sector: {}, ring: {}",
+                                    sector_index,
+                                    ring_index
+                                );
                                 out.extend(op_ids);
                                 used_bytes += ub;
                             } else {
-                                tracing::info!("No space for batch of ops from sector {}, needs {} bytes", sector_index, ub);
+                                tracing::info!(
+                                    "No space for batch of ops from sector {}, needs {} bytes",
+                                    sector_index,
+                                    ub
+                                );
                             }
                         }
                     }

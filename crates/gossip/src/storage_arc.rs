@@ -37,7 +37,9 @@ pub(crate) fn update_storage_arcs(
                 .collect::<HashSet<_>>()
         }
         _ => {
-            tracing::info!("Unable to update storage arc with a non-ring sector details snapshot");
+            tracing::info!(
+                "Unable to update storage arc with a non-ring sector details snapshot"
+            );
             return Ok(());
         }
     };

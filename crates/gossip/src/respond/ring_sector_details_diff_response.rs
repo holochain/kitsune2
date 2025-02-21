@@ -1,8 +1,9 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_op_ids, GossipMessage, K2GossipHashesMessage,
+    GossipMessage, K2GossipHashesMessage,
     K2GossipRingSectorDetailsDiffResponseMessage, K2GossipTerminateMessage,
+    encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageRingSectorDetailsDiff,
@@ -64,7 +65,9 @@ impl K2Gossip {
         match next_action {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
-                tracing::info!("Received a ring sector details diff response that we can't respond to, terminating gossip round");
+                tracing::info!(
+                    "Received a ring sector details diff response that we can't respond to, terminating gossip round"
+                );
 
                 // Terminating the session, so remove the state.
                 state.take();
@@ -151,8 +154,16 @@ impl GossipRoundState {
         };
 
         match &self.stage {
-            RoundStage::RingSectorDetailsDiff(state @ RoundStageRingSectorDetailsDiff { common_arc_set, .. }) => {
-                for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
+            RoundStage::RingSectorDetailsDiff(
+                state @ RoundStageRingSectorDetailsDiff {
+                    common_arc_set, ..
+                },
+            ) => {
+                for sector in snapshot
+                    .ring_sector_hashes
+                    .iter()
+                    .flat_map(|sh| sh.sector_indices.iter())
+                {
                     if !common_arc_set.includes_sector_index(*sector) {
                         return Err(K2GossipError::peer_behavior(
                             "RingSectorDetailsDiffResponse message contains sector that isn't in the common arc set",
@@ -162,12 +173,10 @@ impl GossipRoundState {
 
                 Ok(state)
             }
-            stage => {
-                Err(K2GossipError::peer_behavior(format!(
-                    "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {:?}",
-                    stage
-                )))
-            }
+            stage => Err(K2GossipError::peer_behavior(format!(
+                "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {:?}",
+                stage
+            ))),
         }
     }
 }

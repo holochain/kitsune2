@@ -134,13 +134,13 @@ imp_from!(bytes::Bytes, AgentId, i => i.0 .0);
 
 impl std::fmt::Display for AgentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display(&self.0 .0, f, &AGENT_DISP)
+        display(&self.0.0, f, &AGENT_DISP)
     }
 }
 
 impl std::fmt::Debug for AgentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display(&self.0 .0, f, &AGENT_DISP)
+        display(&self.0.0, f, &AGENT_DISP)
     }
 }
 
@@ -178,13 +178,13 @@ imp_from!(bytes::Bytes, SpaceId, i => i.0 .0);
 
 impl std::fmt::Display for SpaceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display(&self.0 .0, f, &SPACE_DISP)
+        display(&self.0.0, f, &SPACE_DISP)
     }
 }
 
 impl std::fmt::Debug for SpaceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display(&self.0 .0, f, &SPACE_DISP)
+        display(&self.0.0, f, &SPACE_DISP)
     }
 }
 
@@ -222,13 +222,13 @@ imp_from!(bytes::Bytes, OpId, i => i.0 .0);
 
 impl std::fmt::Display for OpId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display(&self.0 .0, f, &OP_DISP)
+        display(&self.0.0, f, &OP_DISP)
     }
 }
 
 impl std::fmt::Debug for OpId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display(&self.0 .0, f, &OP_DISP)
+        display(&self.0.0, f, &OP_DISP)
     }
 }
 
@@ -337,7 +337,7 @@ mod test {
                 .unwrap();
             assert_eq!(e, &r);
             let r: AgentId = serde_json::from_str(e).unwrap();
-            assert_eq!(d, &r.0 .0);
+            assert_eq!(d, &r.0.0);
         }
     }
 }

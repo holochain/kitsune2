@@ -254,7 +254,9 @@ impl Transport for DefaultTransport {
             .insert((space.clone(), module.clone()), handler)
             .is_some()
         {
-            panic!("Attempted to register duplicate module handler! {space} {module}");
+            panic!(
+                "Attempted to register duplicate module handler! {space} {module}"
+            );
         }
     }
 

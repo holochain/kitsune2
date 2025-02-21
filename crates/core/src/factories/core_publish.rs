@@ -46,7 +46,7 @@ use kitsune2_api::*;
 use message_handler::PublishMessageHandler;
 use std::sync::Arc;
 use tokio::{
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, channel},
     task::AbortHandle,
 };
 
@@ -315,8 +315,8 @@ impl CorePublish {
             // Add incoming op ids to the fetch queue to let that retrieve the op data
             if let Err(err) = fetch.request_ops(op_ids.clone(), peer).await {
                 tracing::warn!(
-                        "could not insert publish ops request into fetch queue: {err}"
-                    );
+                    "could not insert publish ops request into fetch queue: {err}"
+                );
             };
         }
     }

@@ -87,7 +87,7 @@ struct PutInfo<'lt> {
     pub use_tls: bool,
 }
 
-impl<'lt> Default for PutInfo<'lt> {
+impl Default for PutInfo<'_> {
     fn default() -> Self {
         let created_at = now();
         let expires_at = created_at
@@ -109,7 +109,7 @@ impl<'lt> Default for PutInfo<'lt> {
     }
 }
 
-impl<'lt> PutInfo<'lt> {
+impl PutInfo<'_> {
     fn call(self) -> std::io::Result<PutInfoRes> {
         use base64::prelude::*;
         use ed25519_dalek::*;

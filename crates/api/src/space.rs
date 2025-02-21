@@ -106,7 +106,7 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// "new ops" mechanism, depending on the op store implementation, but that only makes them
     /// available briefly.
     fn inform_ops_stored(&self, ops: Vec<StoredOp>)
-        -> BoxFut<'_, K2Result<()>>;
+    -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Space].

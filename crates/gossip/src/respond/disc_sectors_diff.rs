@@ -1,9 +1,9 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_agent_infos, GossipMessage, K2GossipAgentsMessage,
-    K2GossipDiscSectorDetailsDiffMessage, K2GossipDiscSectorsDiffMessage,
-    K2GossipTerminateMessage,
+    GossipMessage, K2GossipAgentsMessage, K2GossipDiscSectorDetailsDiffMessage,
+    K2GossipDiscSectorsDiffMessage, K2GossipTerminateMessage,
+    encode_agent_infos,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,
@@ -56,7 +56,9 @@ impl K2Gossip {
         match next_action {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
-                tracing::info!("Received a disc sectors diff but no diff to send back, responding with agents");
+                tracing::info!(
+                    "Received a disc sectors diff but no diff to send back, responding with agents"
+                );
 
                 // Terminating the session, so remove the state.
                 self.accepted_round_states.write().await.remove(&from_peer);

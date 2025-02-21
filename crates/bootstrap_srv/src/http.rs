@@ -282,7 +282,7 @@ fn b64_to_bytes(
                     status: 400,
                     body: err.to_string().into_bytes(),
                 }
-                .respond())
+                .respond());
             }
         },
     ))

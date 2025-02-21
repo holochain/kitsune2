@@ -143,34 +143,35 @@ impl Config {
                 new_map: &ConfigMap,
             ) -> K2Result<()> {
                 match new_map {
-                    ConfigMap::ConfigMap(new_map) => {
-                        match old_map {
-                            ConfigMap::ConfigMap(old_map) => {
-                                for (key, new_map) in new_map.iter() {
-                                    if are_defaults_set
-                                        && !old_map.contains_key(key)
-                                    {
-                                        tracing::warn!(debug_path, "this config parameter may be unused");
-                                    }
-                                    let old_map =
-                                        old_map.entry(key.clone()).or_default();
-                                    apply_map(
+                    ConfigMap::ConfigMap(new_map) => match old_map {
+                        ConfigMap::ConfigMap(old_map) => {
+                            for (key, new_map) in new_map.iter() {
+                                if are_defaults_set
+                                    && !old_map.contains_key(key)
+                                {
+                                    tracing::warn!(
                                         debug_path,
-                                        are_defaults_set,
-                                        is_runtime,
-                                        updates,
-                                        old_map,
-                                        new_map,
-                                    )?;
+                                        "this config parameter may be unused"
+                                    );
                                 }
-                            }
-                            ConfigMap::ConfigEntry(_) => {
-                                return Err(K2Error::other(format!(
-                                "{debug_path} attempted to insert a map where an entry exists",
-                            )));
+                                let old_map =
+                                    old_map.entry(key.clone()).or_default();
+                                apply_map(
+                                    debug_path,
+                                    are_defaults_set,
+                                    is_runtime,
+                                    updates,
+                                    old_map,
+                                    new_map,
+                                )?;
                             }
                         }
-                    }
+                        ConfigMap::ConfigEntry(_) => {
+                            return Err(K2Error::other(format!(
+                                "{debug_path} attempted to insert a map where an entry exists",
+                            )));
+                        }
+                    },
                     ConfigMap::ConfigEntry(new_entry) => match old_map {
                         ConfigMap::ConfigMap(m) => {
                             if !m.is_empty() {
@@ -181,7 +182,10 @@ impl Config {
                             *old_map =
                                 ConfigMap::ConfigEntry(new_entry.clone());
                             if is_runtime {
-                                tracing::warn!(debug_path, "no update callback for runtime config alteration");
+                                tracing::warn!(
+                                    debug_path,
+                                    "no update callback for runtime config alteration"
+                                );
                             }
                         }
                         ConfigMap::ConfigEntry(old_entry) => {
@@ -192,7 +196,10 @@ impl Config {
                                     new_entry.value.clone(),
                                 ));
                             } else if is_runtime {
-                                tracing::warn!(debug_path, "no update callback for runtime config alteration");
+                                tracing::warn!(
+                                    debug_path,
+                                    "no update callback for runtime config alteration"
+                                );
                             }
                         }
                     },
@@ -234,7 +241,7 @@ impl Config {
                     ConfigMap::ConfigEntry(_) => {
                         return Err(K2Error::other(
                             "attempted to insert a map where an entry exists",
-                        ))
+                        ));
                     }
                 }
             }

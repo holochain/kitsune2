@@ -115,7 +115,11 @@ mod test {
         );
         assert_eq!(
             "Other { ctx: \"foo\", src: Some(Custom { kind: Other, error: \"bar\" }) }",
-            format!("{:?}", K2Error::other_src("foo", std::io::Error::other("bar"))).as_str(),
+            format!(
+                "{:?}",
+                K2Error::other_src("foo", std::io::Error::other("bar"))
+            )
+            .as_str(),
         );
     }
 

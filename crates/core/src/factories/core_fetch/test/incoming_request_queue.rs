@@ -1,8 +1,8 @@
 use crate::{
     default_test_builder,
     factories::{
-        core_fetch::{test::test_utils::make_op, CoreFetch, CoreFetchConfig},
         MemOpStoreFactory, MemoryOp,
+        core_fetch::{CoreFetch, CoreFetchConfig, test::test_utils::make_op},
     },
 };
 use bytes::Bytes;
@@ -134,15 +134,19 @@ async fn respond_to_multiple_requests() {
         }
     });
 
-    assert!(responses_sent
-        .lock()
-        .unwrap()
-        .contains(&(vec![op_1.into(), op_2.into()], peer_url_1)));
+    assert!(
+        responses_sent
+            .lock()
+            .unwrap()
+            .contains(&(vec![op_1.into(), op_2.into()], peer_url_1))
+    );
     // Only op 3 is in op store.
-    assert!(responses_sent
-        .lock()
-        .unwrap()
-        .contains(&(vec![op_3.into()], peer_url_2)));
+    assert!(
+        responses_sent
+            .lock()
+            .unwrap()
+            .contains(&(vec![op_3.into()], peer_url_2))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

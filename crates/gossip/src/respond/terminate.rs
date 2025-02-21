@@ -9,7 +9,10 @@ impl K2Gossip {
         from_peer: Url,
         terminate: K2GossipTerminateMessage,
     ) -> K2GossipResult<Option<GossipMessage>> {
-        tracing::info!("Peer {from_peer} is attempting to terminate gossip session with reason: {}", terminate.reason);
+        tracing::info!(
+            "Peer {from_peer} is attempting to terminate gossip session with reason: {}",
+            terminate.reason
+        );
 
         let terminated_initiated_session = {
             let mut initiate_lock = self.initiated_round_state.lock().await;

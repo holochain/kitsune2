@@ -1,6 +1,6 @@
+use crate::K2GossipConfig;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::K2GossipConfig;
 use kitsune2_api::*;
 use kitsune2_api::{AgentId, DynLocalAgentStore, K2Result, Timestamp, Url};
 use rand::prelude::SliceRandom;
@@ -107,7 +107,9 @@ async fn select_next_target(
     // wider and gossip with agents that might still be growing their arc and have some ops
     // or agent infos that we are missing
     if all_agents.is_empty() {
-        tracing::info!("No agents with overlapping arcs available, selecting from all agents");
+        tracing::info!(
+            "No agents with overlapping arcs available, selecting from all agents"
+        );
 
         all_agents = peer_store.get_all().await?.into_iter().collect();
         remove_local_agents(&mut all_agents, &local_agent_ids);
@@ -124,7 +126,9 @@ async fn select_next_target(
 
     // We tried using overlapping agents, but they're all on timeout
     if possible_targets.is_empty() && using_overlapping_agents {
-        tracing::info!("All agents with overlapping arcs are on timeout, selecting from all agents");
+        tracing::info!(
+            "All agents with overlapping arcs are on timeout, selecting from all agents"
+        );
 
         all_agents = peer_store.get_all().await?.into_iter().collect();
         remove_local_agents(&mut all_agents, &local_agent_ids);

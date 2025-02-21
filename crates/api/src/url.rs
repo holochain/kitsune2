@@ -27,7 +27,7 @@ impl<'de> serde::Deserialize<'de> for Url {
     {
         struct V;
 
-        impl<'de> serde::de::Visitor<'de> for V {
+        impl serde::de::Visitor<'_> for V {
             type Value = bytes::Bytes;
 
             fn expecting(

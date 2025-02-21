@@ -1,11 +1,11 @@
+use crate::K2GossipConfig;
 use crate::gossip::{DropAbortHandle, GossipResponse, K2Gossip};
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::protocol::{deserialize_gossip_message, GossipMessage};
-use crate::K2GossipConfig;
+use crate::protocol::{GossipMessage, deserialize_gossip_message};
 use base64::Engine;
 use bytes::Bytes;
 use kitsune2_api::*;
-use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
+use kitsune2_core::{Ed25519LocalAgent, default_test_builder};
 use kitsune2_dht::Dht;
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;

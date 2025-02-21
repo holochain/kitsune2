@@ -197,7 +197,7 @@ struct Handler<'lt> {
     res: HttpRespondCb,
 }
 
-impl<'lt> Handler<'lt> {
+impl Handler<'_> {
     /// Wrap the handle call so we can respond to the client with errors.
     pub fn handle(mut self, req: HttpRequest) -> std::io::Result<()> {
         match self.handle_inner(req) {

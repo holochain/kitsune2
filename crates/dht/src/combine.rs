@@ -38,7 +38,11 @@ pub fn combine_hashes(into: &mut bytes::BytesMut, other: bytes::Bytes) {
     }
 
     if into.len() != other.len() {
-        panic!("Refusing to combine hashes of different lengths ({} != {}), this data should have been rejected by the host", into.len(), other.len());
+        panic!(
+            "Refusing to combine hashes of different lengths ({} != {}), this data should have been rejected by the host",
+            into.len(),
+            other.len()
+        );
     }
 
     for (into_byte, other_byte) in into.iter_mut().zip(other.iter()) {

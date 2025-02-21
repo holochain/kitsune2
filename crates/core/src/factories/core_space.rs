@@ -502,7 +502,10 @@ async fn check_agent_infos(
                 Ok(Some(info)) => info.expires_at <= cutoff,
                 Ok(None) => true,
                 Err(err) => {
-                    tracing::debug!(?err, "error fetching agent in re-signing before expiry logic");
+                    tracing::debug!(
+                        ?err,
+                        "error fetching agent in re-signing before expiry logic"
+                    );
                     true
                 }
             };

@@ -65,11 +65,13 @@ fn prune_prunes_only_expired_agents() {
 fn happy_get() {
     let mut s = create();
 
-    s.insert(vec![AgentBuilder {
-        agent: Some(AGENT_1),
-        ..Default::default()
-    }
-    .build(TestLocalAgent::default())]);
+    s.insert(vec![
+        AgentBuilder {
+            agent: Some(AGENT_1),
+            ..Default::default()
+        }
+        .build(TestLocalAgent::default()),
+    ]);
 
     let a = s.get(AGENT_1).unwrap();
     assert_eq!(a.agent, AGENT_1);
@@ -138,12 +140,14 @@ fn fixture_get_by_overlapping_storage_arc() {
         let mut s = create();
 
         for (arc_name, arc) in arc_list.iter() {
-            s.insert(vec![AgentBuilder {
-                storage_arc: Some(*arc),
-                url: Some(Some(sneak_url(arc_name))),
-                ..Default::default()
-            }
-            .build(TestLocalAgent::default())]);
+            s.insert(vec![
+                AgentBuilder {
+                    storage_arc: Some(*arc),
+                    url: Some(Some(sneak_url(arc_name))),
+                    ..Default::default()
+                }
+                .build(TestLocalAgent::default()),
+            ]);
         }
 
         let mut got = s
@@ -164,14 +168,16 @@ fn fixture_get_near_location() {
 
     for idx in 0..8 {
         let loc = (u32::MAX / 8) * idx;
-        s.insert(vec![AgentBuilder {
-            // for simplicity have agents claim arcs of len 1
-            storage_arc: Some(DhtArc::Arc(loc, loc + 1)),
-            // set the url to the idx for matching
-            url: Some(Some(sneak_url(&idx.to_string()))),
-            ..Default::default()
-        }
-        .build(TestLocalAgent::default())]);
+        s.insert(vec![
+            AgentBuilder {
+                // for simplicity have agents claim arcs of len 1
+                storage_arc: Some(DhtArc::Arc(loc, loc + 1)),
+                // set the url to the idx for matching
+                url: Some(Some(sneak_url(&idx.to_string()))),
+                ..Default::default()
+            }
+            .build(TestLocalAgent::default()),
+        ]);
     }
 
     // these should not be returned because they are invalid.

@@ -19,7 +19,7 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
 
     /// Get all agents from the store.
     fn get_all(&self)
-        -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
+    -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
 
     /// Get the complete list of agents we know about that
     /// claim storage_arcs that overlap the provided storage arc.

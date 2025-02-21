@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, channel},
     task::JoinHandle,
 };
 
@@ -307,7 +307,11 @@ impl CoreFetch {
                             .remove_peer(&peer_url);
                     }
                     Err(err) => {
-                        tracing::warn!(?op_id, ?peer_url, "could not send fetch request: {err}. Putting peer on back off list.");
+                        tracing::warn!(
+                            ?op_id,
+                            ?peer_url,
+                            "could not send fetch request: {err}. Putting peer on back off list."
+                        );
                         let mut lock = state.lock().unwrap();
                         lock.back_off_list.back_off_peer(&peer_url);
 
@@ -334,7 +338,9 @@ impl CoreFetch {
                 if let Err(err) = outgoing_request_tx
                     .try_send((op_id.clone(), peer_url.clone()))
                 {
-                    tracing::warn!("could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}");
+                    tracing::warn!(
+                        "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
+                    );
                     // Remove op id/peer url from set to prevent build-up of state.
                     state.lock().unwrap().requests.remove(&(op_id, peer_url));
                 }

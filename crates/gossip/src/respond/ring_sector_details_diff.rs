@@ -1,9 +1,9 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_agent_infos, encode_op_ids, GossipMessage, K2GossipAgentsMessage,
-    K2GossipRingSectorDetailsDiffMessage,
+    GossipMessage, K2GossipAgentsMessage, K2GossipRingSectorDetailsDiffMessage,
     K2GossipRingSectorDetailsDiffResponseMessage, K2GossipTerminateMessage,
+    encode_agent_infos, encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,
@@ -66,7 +66,9 @@ impl K2Gossip {
         match next_action {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
-                tracing::info!("Received a ring sector details diff but no diff to send back, responding with agents");
+                tracing::info!(
+                    "Received a ring sector details diff but no diff to send back, responding with agents"
+                );
 
                 // Terminating the session, so remove the state.
                 self.accepted_round_states.write().await.remove(&from_peer);
@@ -172,8 +174,15 @@ impl GossipRoundState {
         };
 
         match &self.stage {
-            RoundStage::Accepted(stage @ RoundStageAccepted { our_agents, common_arc_set, .. }) => {
-                let Some(accept_response) = &ring_sector_details_diff.accept_response
+            RoundStage::Accepted(
+                stage @ RoundStageAccepted {
+                    our_agents,
+                    common_arc_set,
+                    ..
+                },
+            ) => {
+                let Some(accept_response) =
+                    &ring_sector_details_diff.accept_response
                 else {
                     return Err(K2GossipError::peer_behavior(
                         "Received RingSectorDetailsDiff message without accept response",
@@ -190,7 +199,11 @@ impl GossipRoundState {
                     ));
                 }
 
-                for sector in snapshot.ring_sector_hashes.iter().flat_map(|sh| sh.sector_indices.iter()) {
+                for sector in snapshot
+                    .ring_sector_hashes
+                    .iter()
+                    .flat_map(|sh| sh.sector_indices.iter())
+                {
                     if !common_arc_set.includes_sector_index(*sector) {
                         return Err(K2GossipError::peer_behavior(
                             "RingSectorDetailsDiff message contains sector that isn't in the common arc set",
@@ -200,12 +213,10 @@ impl GossipRoundState {
 
                 Ok(stage)
             }
-            stage => {
-                Err(K2GossipError::peer_behavior(format!(
-                    "Unexpected round state for ring sector details diff: Accepted != {:?}",
-                    stage
-                )))
-            }
+            stage => Err(K2GossipError::peer_behavior(format!(
+                "Unexpected round state for ring sector details diff: Accepted != {:?}",
+                stage
+            ))),
         }
     }
 }

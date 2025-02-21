@@ -1,8 +1,8 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_op_ids, GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
-    K2GossipHashesMessage, K2GossipTerminateMessage,
+    GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
+    K2GossipHashesMessage, K2GossipTerminateMessage, encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
@@ -58,7 +58,9 @@ impl K2Gossip {
         match next_action {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
-                tracing::info!("Received a disc sector details diff response that we can't respond to, terminating gossip round");
+                tracing::info!(
+                    "Received a disc sector details diff response that we can't respond to, terminating gossip round"
+                );
 
                 // Terminating the session, so remove the state.
                 self.accepted_round_states.write().await.remove(&from_peer);
@@ -102,17 +104,19 @@ impl K2Gossip {
         match self.accepted_round_states.read().await.get(&from_peer) {
             Some(state) => {
                 let state = state.clone().lock_owned().await;
-                let disc_sector_details = state.validate_disc_sector_details_diff_response(
-                    from_peer.clone(),
-                    disc_sector_details_diff_response,
-                )?.clone();
+                let disc_sector_details = state
+                    .validate_disc_sector_details_diff_response(
+                        from_peer.clone(),
+                        disc_sector_details_diff_response,
+                    )?
+                    .clone();
 
                 Ok((state, disc_sector_details))
             }
             None => Err(K2GossipError::peer_behavior(format!(
                 "Unsolicited DiscSectorDetailsDiffResponse message from peer: {:?}",
                 from_peer
-            )))
+            ))),
         }
     }
 }
@@ -144,7 +148,11 @@ impl GossipRoundState {
         };
 
         match &self.stage {
-            RoundStage::DiscSectorDetailsDiff(state @ RoundStageDiscSectorDetailsDiff { common_arc_set, .. }) => {
+            RoundStage::DiscSectorDetailsDiff(
+                state @ RoundStageDiscSectorDetailsDiff {
+                    common_arc_set, ..
+                },
+            ) => {
                 for sector in &snapshot.sector_indices {
                     if !common_arc_set.includes_sector_index(*sector) {
                         return Err(K2GossipError::peer_behavior(
@@ -155,12 +163,10 @@ impl GossipRoundState {
 
                 Ok(state)
             }
-            stage => {
-                Err(K2GossipError::peer_behavior(format!(
-                    "Unexpected round state for disc sector details diff response: DiscSectorDetailsDiff != {:?}",
-                    stage
-                )))
-            }
+            stage => Err(K2GossipError::peer_behavior(format!(
+                "Unexpected round state for disc sector details diff response: DiscSectorDetailsDiff != {:?}",
+                stage
+            ))),
         }
     }
 }

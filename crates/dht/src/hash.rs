@@ -62,7 +62,7 @@
 
 use crate::arc_set::ArcSet;
 use crate::combine::combine_hashes;
-use crate::{TimePartition, SECTOR_SIZE};
+use crate::{SECTOR_SIZE, TimePartition};
 use kitsune2_api::{
     DhtArc, DynOpStore, K2Error, K2Result, StoredOp, Timestamp,
 };
@@ -442,6 +442,7 @@ impl HashPartition {
 
 #[cfg(test)]
 impl HashPartition {
+    /// Get the full slice end timestamp.
     pub fn full_slice_end_timestamp(&self) -> Timestamp {
         self.sectors[0].full_slice_end_timestamp()
     }
@@ -450,8 +451,8 @@ impl HashPartition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::test_store;
     use crate::UNIT_TIME;
+    use crate::test::test_store;
     use kitsune2_api::{OpId, UNIX_TIMESTAMP};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_test_utils::enable_tracing;
@@ -648,12 +649,14 @@ mod tests {
                 _ => panic!("Expected an arc"),
             };
             store
-                .process_incoming_ops(vec![MemoryOp::new(
-                    now,
-                    // Place the op within the current space partition
-                    (start + 1).to_le_bytes().as_slice().to_vec(),
-                )
-                .into()])
+                .process_incoming_ops(vec![
+                    MemoryOp::new(
+                        now,
+                        // Place the op within the current space partition
+                        (start + 1).to_le_bytes().as_slice().to_vec(),
+                    )
+                    .into(),
+                ])
                 .await
                 .unwrap();
         }

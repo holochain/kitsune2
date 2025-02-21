@@ -1,8 +1,9 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_op_ids, GossipMessage, K2GossipDiscSectorDetailsDiffMessage,
+    GossipMessage, K2GossipDiscSectorDetailsDiffMessage,
     K2GossipDiscSectorDetailsDiffResponseMessage, K2GossipTerminateMessage,
+    encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
@@ -62,7 +63,9 @@ impl K2Gossip {
         match next_action {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
-                tracing::info!("Received a disc sector details diff but no diff to send back, responding with agents");
+                tracing::info!(
+                    "Received a disc sector details diff but no diff to send back, responding with agents"
+                );
 
                 // Terminating the session, so remove the state.
                 state.take();
@@ -161,7 +164,9 @@ impl GossipRoundState {
         };
 
         match &self.stage {
-            RoundStage::DiscSectorsDiff(stage @ RoundStageDiscSectorsDiff { common_arc_set }) => {
+            RoundStage::DiscSectorsDiff(
+                stage @ RoundStageDiscSectorsDiff { common_arc_set },
+            ) => {
                 for sector in &snapshot.sector_indices {
                     if !common_arc_set.includes_sector_index(*sector) {
                         return Err(K2GossipError::peer_behavior(
@@ -172,12 +177,10 @@ impl GossipRoundState {
 
                 Ok(stage)
             }
-            stage => {
-                Err(K2GossipError::peer_behavior(format!(
-                    "Unexpected round state for disc sector details diff: DiscSectorsDiff != {:?}",
-                    stage
-                )))
-            }
+            stage => Err(K2GossipError::peer_behavior(format!(
+                "Unexpected round state for disc sector details diff: DiscSectorsDiff != {:?}",
+                stage
+            ))),
         }
     }
 }

@@ -152,7 +152,9 @@ impl DhtSyncHarness {
             DhtSnapshotNextAction::NewSnapshot(new_snapshot) => {
                 match new_snapshot {
                     DhtSnapshot::Minimal { .. } => {
-                        panic!("A minimal snapshot cannot be produced from a minimal snapshot");
+                        panic!(
+                            "A minimal snapshot cannot be produced from a minimal snapshot"
+                        );
                     }
                     DhtSnapshot::DiscSectors { .. } => {
                         // This means there's a historical mismatch, so we need to continue
@@ -160,7 +162,9 @@ impl DhtSyncHarness {
                         self.sync_disc_with(other, &arc_set, new_snapshot).await
                     }
                     DhtSnapshot::DiscSectorDetails { .. } => {
-                        panic!("A sector details snapshot cannot be produced from a minimal snapshot");
+                        panic!(
+                            "A sector details snapshot cannot be produced from a minimal snapshot"
+                        );
                     }
                     DhtSnapshot::RingSectorDetails { .. } => {
                         // This means there's a recent mismatch in the partial time slices.

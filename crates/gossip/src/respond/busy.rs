@@ -25,8 +25,8 @@ impl K2Gossip {
         Ok(())
     }
 
-    async fn check_busy_state_and_remove<'a>(
-        &'a self,
+    async fn check_busy_state_and_remove(
+        &self,
         from_peer: &Url,
         busy: K2GossipBusyMessage,
     ) -> K2GossipResult<()> {

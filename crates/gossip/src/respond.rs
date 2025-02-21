@@ -1,10 +1,10 @@
+use crate::K2GossipConfig;
 use crate::error::K2GossipResult;
-use crate::gossip::{send_gossip_message, K2Gossip};
+use crate::gossip::{K2Gossip, send_gossip_message};
 use crate::protocol::{
     AcceptResponseMessage, GossipMessage, K2GossipInitiateMessage,
 };
 use crate::state::GossipRoundState;
-use crate::K2GossipConfig;
 use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_dht::{ArcSet, UNIT_TIME};

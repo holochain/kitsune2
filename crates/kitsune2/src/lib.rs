@@ -14,8 +14,8 @@
 
 use kitsune2_api::*;
 use kitsune2_core::{
-    factories::{self, MemOpStoreFactory},
     Ed25519Verifier,
+    factories::{self, MemOpStoreFactory},
 };
 use kitsune2_gossip::K2GossipFactory;
 use kitsune2_transport_tx5::Tx5TransportFactory;
@@ -63,11 +63,11 @@ mod test {
         KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId, Timestamp,
     };
     use kitsune2_core::{
-        factories::{
-            config::{CoreBootstrapConfig, CoreBootstrapModConfig},
-            MemoryOp,
-        },
         Ed25519LocalAgent,
+        factories::{
+            MemoryOp,
+            config::{CoreBootstrapConfig, CoreBootstrapModConfig},
+        },
     };
     use kitsune2_gossip::{K2GossipConfig, K2GossipModConfig};
     use kitsune2_test_utils::{
