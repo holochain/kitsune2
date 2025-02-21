@@ -1,4 +1,4 @@
-use super::IncomingPublishOps;
+use super::{IncomingAgentInfoEncoded, IncomingPublishOps};
 use kitsune2_api::*;
 use prost::Message;
 use tokio::sync::mpsc::Sender;
@@ -6,6 +6,7 @@ use tokio::sync::mpsc::Sender;
 #[derive(Debug)]
 pub(super) struct PublishMessageHandler {
     pub(super) incoming_publish_ops_tx: Sender<IncomingPublishOps>,
+    pub(super) incoming_publish_agent_tx: Sender<IncomingAgentInfoEncoded>, // takes a json encoded AgentInfoSigned
 }
 
 impl TxBaseHandler for PublishMessageHandler {}
@@ -42,6 +43,25 @@ impl TxModuleHandler for PublishMessageHandler {
                         )
                     })
             }
+            PublishMessageType::Agent => {
+                let request =
+                    PublishAgent::decode(publish.data).map_err(|err| {
+                        K2Error::other_src(
+                            format!(
+                                "could not decode publish agent from {peer}"
+                            ),
+                            err,
+                        )
+                    })?;
+                self.incoming_publish_agent_tx
+                    .try_send(request.agent_info)
+                    .map_err(|err| {
+                        K2Error::other_src(
+                            "could not insert incoming agent publish into queue",
+                            err,
+                        )
+                    })
+            }
             unknown_message => Err(K2Error::other(format!(
                 "unknown publish message: {unknown_message:?}"
             ))),
@@ -62,8 +82,10 @@ mod test {
     #[test]
     fn decoding_error() {
         let (incoming_publish_ops_tx, _) = tokio::sync::mpsc::channel(1);
+        let (incoming_publish_agent_tx, _) = tokio::sync::mpsc::channel(1);
         let message_handler = PublishMessageHandler {
             incoming_publish_ops_tx,
+            incoming_publish_agent_tx,
         };
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
         let wrong_message =
@@ -81,8 +103,10 @@ mod test {
     #[test]
     fn invalid_message_type() {
         let (incoming_publish_ops_tx, _) = tokio::sync::mpsc::channel(1);
+        let (incoming_publish_agent_tx, _) = tokio::sync::mpsc::channel(1);
         let message_handler = PublishMessageHandler {
             incoming_publish_ops_tx,
+            incoming_publish_agent_tx,
         };
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
         let request_message = K2FetchMessage {
@@ -106,8 +130,10 @@ mod test {
     async fn publish_ops() {
         let (incoming_publish_ops_tx, mut incoming_publish_ops_rx) =
             tokio::sync::mpsc::channel(1);
+        let (incoming_publish_agent_tx, _) = tokio::sync::mpsc::channel(1);
         let message_handler = PublishMessageHandler {
             incoming_publish_ops_tx,
+            incoming_publish_agent_tx,
         };
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
         let requested_op_ids = create_op_id_list(1);

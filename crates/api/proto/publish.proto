@@ -8,6 +8,12 @@ message PublishOps {
   repeated bytes op_ids = 1;
 }
 
+// A publish agent message.
+message PublishAgent {
+  // Agent info.
+  string agent_info = 1;
+}
+
 // Publish message.
 message K2PublishMessage {
   // Publish message type.
@@ -19,6 +25,8 @@ message K2PublishMessage {
     UNSPECIFIED = 0;
     // An Ops publish message.
     OPS = 1;
+    // An agent publish message.
+    AGENT = 2;
   }
 
   // Message type.
