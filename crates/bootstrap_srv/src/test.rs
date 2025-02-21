@@ -1,4 +1,12 @@
 use crate::*;
+use rustls::client::danger::{
+    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{ClientConfig, DigitallySignedStruct, Error, SignatureScheme};
+use std::fs::File;
+use std::io::Write;
+use std::sync::Arc;
 
 const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
 
@@ -76,6 +84,7 @@ struct PutInfo<'lt> {
     pub final_agent_pk: Option<&'lt str>,
     pub signature: Option<&'lt str>,
     pub test_prop: &'lt str,
+    pub use_tls: bool,
 }
 
 impl<'lt> Default for PutInfo<'lt> {
@@ -95,6 +104,7 @@ impl<'lt> Default for PutInfo<'lt> {
             final_agent_pk: None,
             signature: None,
             test_prop: "<none>",
+            use_tls: false,
         }
     }
 }
@@ -139,7 +149,8 @@ impl<'lt> PutInfo<'lt> {
         .unwrap();
 
         let addr = format!(
-            "http://{:?}/bootstrap/{}/{}",
+            "http{}://{:?}/bootstrap/{}/{}",
+            if self.use_tls { "s" } else { "" },
             self.addr,
             self.space_url,
             match self.final_agent_pk {
@@ -151,7 +162,19 @@ impl<'lt> PutInfo<'lt> {
             },
         );
 
-        match ureq::put(&addr).send_string(&info) {
+        let agent_builder = ureq::builder();
+        let agent = if self.use_tls {
+            let client_config = ClientConfig::builder()
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(NoVerify))
+                .with_no_client_auth();
+
+            agent_builder.tls_config(Arc::new(client_config)).build()
+        } else {
+            agent_builder.build()
+        };
+
+        match agent.put(&addr).send_string(&info) {
             Ok(res) => {
                 let res = res.into_string()?;
                 if res != "{}" {
@@ -165,6 +188,54 @@ impl<'lt> PutInfo<'lt> {
             }
             Err(ureq::Error::Transport(err)) => Err(std::io::Error::other(err)),
         }
+    }
+}
+
+#[derive(Debug)]
+struct NoVerify;
+
+impl ServerCertVerifier for NoVerify {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer,
+        _intermediates: &[CertificateDer],
+        _server_name: &ServerName,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+        ]
     }
 }
 
@@ -776,4 +847,48 @@ fn expiration_prune() {
     let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
 
     assert_eq!(1, res.len());
+}
+
+/// Certificates created with:
+/// > openssl genrsa 2048 > certs/test_key.pem
+/// > openssl req -x509 -days 1000 -new -key certs/test_key.pem -out certs/test_cert.pem
+#[test]
+fn start_with_tls() {
+    let cert =
+        rcgen::generate_simple_self_signed(vec!["bootstrap.test".to_string()])
+            .unwrap();
+    cert.cert.pem();
+
+    let cert_dir = tempfile::tempdir().unwrap();
+
+    let cert_path = cert_dir.path().join("test_cert.pem");
+    File::create_new(&cert_path)
+        .unwrap()
+        .write_all(cert.cert.pem().as_bytes())
+        .unwrap();
+
+    let key_path = cert_dir.path().join("test_key.pem");
+    File::create_new(&key_path)
+        .unwrap()
+        .write_all(cert.key_pair.serialize_pem().as_bytes())
+        .unwrap();
+
+    let mut config = Config::testing();
+    config.tls_cert = Some(cert_path);
+    config.tls_key = Some(key_path);
+
+    let s = BootstrapSrv::new(Config {
+        prune_interval: std::time::Duration::from_millis(5),
+        ..config
+    })
+    .unwrap();
+
+    // If we can do a PUT, the server is up and running.
+    PutInfo {
+        addr: s.listen_addrs()[0],
+        use_tls: true,
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
 }

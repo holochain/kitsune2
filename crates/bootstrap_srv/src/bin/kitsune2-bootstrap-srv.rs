@@ -5,19 +5,31 @@ use kitsune2_bootstrap_srv::*;
 #[derive(clap::Parser, Debug)]
 #[command(version)]
 pub struct Args {
-    /// By default kitsune2-boot-srv runs in "testing" configuration
+    /// By default, kitsune2-boot-srv runs in "testing" configuration
     /// with much lighter resource usage settings. This testing mode
     /// should be more than enough for most developer application testing
     /// and continuous integration or automated tests.
     ///
-    /// To setup the server to be ready to use most of the resources available
+    /// To set up the server to be ready to use most of the resources available
     /// on a single given machine, you can set this "production" mode.
     #[arg(long)]
     pub production: bool,
+
     /// Output tracing in json format.
     #[arg(long)]
     pub json: bool,
-    // TODO - Implement the ability to specify TLS certificates
+
+    /// The path to a TLS certificate file.
+    ///
+    /// The certificate must be PEM encoded.
+    #[arg(long, requires = "tls_key")]
+    pub tls_cert: Option<std::path::PathBuf>,
+
+    /// The path to a TLS key file.
+    ///
+    /// The key must be PEM encoded.
+    #[arg(long, requires = "tls_cert")]
+    pub tls_key: Option<std::path::PathBuf>,
     // TODO - Implement the ability to specify the listening address
     // TODO - Implement the ability to override any other relevant
     //        config params that we wish to expose
@@ -42,13 +54,16 @@ fn main() {
     }
     .expect("failed to init tracing");
 
-    let config = if args.production {
+    let mut config = if args.production {
         Config::production()
     } else {
         Config::testing()
     };
 
-    tracing::info!(?args, ?config);
+    config.tls_cert = args.tls_cert;
+    config.tls_key = args.tls_key;
+
+    tracing::info!(?config);
 
     let (send, recv) = std::sync::mpsc::channel();
 

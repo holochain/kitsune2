@@ -1,4 +1,6 @@
+use crate::tls::TlsConfig;
 use axum::*;
+use axum_server::tls_rustls::RustlsAcceptor;
 use std::io::Result;
 
 pub struct HttpResponse {
@@ -48,6 +50,7 @@ impl HttpReceiver {
 pub struct ServerConfig {
     pub addrs: Vec<std::net::SocketAddr>,
     pub worker_thread_count: usize,
+    pub tls_config: Option<TlsConfig>,
 }
 
 pub struct Server {
@@ -55,14 +58,14 @@ pub struct Server {
     addrs: Vec<std::net::SocketAddr>,
     receiver: HttpReceiver,
     h_send: HSend,
-    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown: Option<axum_server::Handle>,
 }
 
 impl Drop for Server {
     fn drop(&mut self) {
         self.h_send.close();
         if let Some(shutdown) = self.shutdown.take() {
-            let _ = shutdown.send(());
+            shutdown.shutdown();
         }
         if let Some(t_join) = self.t_join.take() {
             let _ = t_join.join();
@@ -105,8 +108,11 @@ struct Ready {
     h_send: HSend,
     addrs: Vec<std::net::SocketAddr>,
     receiver: HttpReceiver,
-    shutdown: tokio::sync::oneshot::Sender<()>,
+    shutdown: axum_server::Handle,
 }
+
+type BoxFut<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 fn tokio_thread(
     config: ServerConfig,
@@ -132,17 +138,19 @@ fn tokio_thread(
 
             let receiver = HttpReceiver(h_recv);
 
-            let (s_shutdown, r_shutdown) =
-                tokio::sync::oneshot::channel::<()>();
-            let r_shutdown = futures::future::FutureExt::shared(async move {
-                let _ = r_shutdown.await;
-            });
-
             let mut addrs = Vec::with_capacity(config.addrs.len());
-            let mut servers = Vec::with_capacity(config.addrs.len());
+            let mut servers: Vec<BoxFut<'static, Result<()>>> =
+                Vec::with_capacity(config.addrs.len());
+
+            let shutdown_handle = axum_server::Handle::new();
 
             for addr in config.addrs {
-                let listener = match tokio::net::TcpListener::bind(addr).await {
+                let listener = match tokio::task::spawn_blocking(move || {
+                    std::net::TcpListener::bind(addr)
+                })
+                .await
+                .expect("Failed to run bind task")
+                {
                     Ok(listener) => listener,
                     Err(err) => {
                         let _ = ready.send(Err(err));
@@ -158,10 +166,28 @@ fn tokio_thread(
                     }
                 }
 
-                servers.push(std::future::IntoFuture::into_future(
-                    serve(listener, app.clone())
-                        .with_graceful_shutdown(r_shutdown.clone()),
-                ));
+                let app = app.clone();
+                let shutdown_handle = shutdown_handle.clone();
+                if let Some(tls_config) = &config.tls_config {
+                    let tls_config = tls_config
+                        .create_tls_config()
+                        .await
+                        .expect("Failed to create TLS config");
+
+                    let s = axum_server::Server::from_tcp(listener)
+                        .acceptor(RustlsAcceptor::new(tls_config))
+                        .handle(shutdown_handle)
+                        .serve(app.into_make_service());
+
+                    servers.push(Box::pin(s));
+                } else {
+                    let s = std::future::IntoFuture::into_future(
+                        axum_server::Server::from_tcp(listener)
+                            .handle(shutdown_handle)
+                            .serve(app.into_make_service()),
+                    );
+                    servers.push(Box::pin(s));
+                };
             }
 
             if ready
@@ -169,7 +195,7 @@ fn tokio_thread(
                     h_send,
                     addrs,
                     receiver,
-                    shutdown: s_shutdown,
+                    shutdown: shutdown_handle,
                 }))
                 .is_err()
             {

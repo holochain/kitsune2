@@ -59,8 +59,13 @@ impl BootstrapSrv {
         let sconf = ServerConfig {
             addrs: config.listen_address_list.clone(),
             worker_thread_count: config.worker_thread_count,
-            // TODO make the server able to accept TLS certificates
-            // ssl: None,
+            tls_config: if let (Some(cert), Some(key)) =
+                (&config.tls_cert, &config.tls_key)
+            {
+                Some(TlsConfig::new(cert.clone(), key.clone()))
+            } else {
+                None
+            },
         };
 
         // virtual-memory-like file system storage for infos

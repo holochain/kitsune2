@@ -211,5 +211,8 @@ use http::*;
 mod server;
 pub use server::*;
 
+mod tls;
+pub use tls::*;
+
 #[cfg(test)]
 mod test;
