@@ -1,4 +1,4 @@
-use crate::{BoxFut, K2Result, Timestamp, Url, builder, config};
+use crate::{builder, config, BoxFut, K2Result, Timestamp, Url};
 use futures::future::BoxFuture;
 use std::sync::Arc;
 

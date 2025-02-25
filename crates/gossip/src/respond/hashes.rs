@@ -1,8 +1,8 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipHashesMessage};
-use kitsune2_api::Url;
 use kitsune2_api::decode_ids;
+use kitsune2_api::Url;
 
 impl K2Gossip {
     pub(super) async fn respond_to_hashes(

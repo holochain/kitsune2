@@ -2,8 +2,8 @@
 
 use crate::op_store;
 use crate::{
-    BoxFut, DynOpStore, K2Result, OpId, SpaceId, Url, builder, config,
-    transport::DynTransport,
+    builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
+    OpId, SpaceId, Url,
 };
 use bytes::{Bytes, BytesMut};
 use prost::Message;
@@ -14,7 +14,7 @@ pub(crate) mod proto {
 }
 
 pub use proto::{
-    FetchRequest, FetchResponse, K2FetchMessage, k2_fetch_message::*,
+    k2_fetch_message::*, FetchRequest, FetchResponse, K2FetchMessage,
 };
 
 impl From<Vec<OpId>> for FetchRequest {

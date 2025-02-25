@@ -18,8 +18,8 @@
 //! to compare discs by exchanging [DhtSnapshot::Minimal], [DhtSnapshot::DiscSectors] and then
 //! [DhtSnapshot::DiscSectorDetails].
 
-use crate::HashPartition;
 use crate::arc_set::ArcSet;
+use crate::HashPartition;
 use kitsune2_api::{
     BoxFut, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
 };

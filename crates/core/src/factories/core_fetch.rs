@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::mpsc::{Receiver, Sender, channel},
+    sync::mpsc::{channel, Receiver, Sender},
     task::JoinHandle,
 };
 

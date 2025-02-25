@@ -2,8 +2,8 @@ use crate::error::K2GossipError;
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
-    ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
     deserialize_gossip_message, encode_agent_ids, serialize_gossip_message,
+    ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
 };
 use crate::state::GossipRoundState;
 use crate::storage_arc::update_storage_arcs;
@@ -415,7 +415,7 @@ pub(crate) fn send_gossip_message(
 mod test {
     use super::*;
     use kitsune2_core::factories::MemoryOp;
-    use kitsune2_core::{Ed25519LocalAgent, default_test_builder};
+    use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_dht::{SECTOR_SIZE, UNIT_TIME};
     use kitsune2_test_utils::enable_tracing;
     use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
@@ -632,23 +632,19 @@ mod test {
         // Join extra agents for each peer. These will take a few seconds to be
         // found by bootstrap. Try to sync them with gossip.
         let secret_agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
-        assert!(
-            harness_2
-                .peer_store
-                .get(secret_agent_1.agent.clone())
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(harness_2
+            .peer_store
+            .get(secret_agent_1.agent.clone())
+            .await
+            .unwrap()
+            .is_none());
         let secret_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
-        assert!(
-            harness_1
-                .peer_store
-                .get(secret_agent_2.agent.clone())
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(harness_1
+            .peer_store
+            .get(secret_agent_2.agent.clone())
+            .await
+            .unwrap()
+            .is_none());
 
         // Simulate peer discovery so that gossip can sync agents
         harness_2

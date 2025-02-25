@@ -1,8 +1,8 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
-    K2GossipHashesMessage, K2GossipTerminateMessage, encode_op_ids,
+    encode_op_ids, GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
+    K2GossipHashesMessage, K2GossipTerminateMessage,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,

@@ -456,20 +456,18 @@ async fn check_agent_infos(
 
         for agent in agents {
             // is this agent going to expire?
-            let should_re_sign = match peer_store
-                .get(agent.agent().clone())
-                .await
-            {
-                Ok(Some(info)) => info.expires_at <= cutoff,
-                Ok(None) => true,
-                Err(err) => {
-                    tracing::debug!(
+            let should_re_sign =
+                match peer_store.get(agent.agent().clone()).await {
+                    Ok(Some(info)) => info.expires_at <= cutoff,
+                    Ok(None) => true,
+                    Err(err) => {
+                        tracing::debug!(
                         ?err,
                         "error fetching agent in re-signing before expiry logic"
                     );
-                    true
-                }
-            };
+                        true
+                    }
+                };
 
             if should_re_sign {
                 // if so, re-sign it

@@ -4,8 +4,8 @@ use crate::fetch::DynFetch;
 use crate::peer_store::DynPeerStore;
 use crate::transport::DynTransport;
 use crate::{
-    BoxFut, DynLocalAgentStore, DynOpStore, DynPeerMetaStore, K2Result,
-    SpaceId, StoredOp, builder, config,
+    builder, config, BoxFut, DynLocalAgentStore, DynOpStore, DynPeerMetaStore,
+    K2Result, SpaceId, StoredOp,
 };
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
     /// This is not expected to be called directly. It is intended to be used by the
     /// space that owns this gossip module. See [crate::space::Space::inform_ops_stored].
     fn inform_ops_stored(&self, ops: Vec<StoredOp>)
-    -> BoxFut<'_, K2Result<()>>;
+        -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Gossip].

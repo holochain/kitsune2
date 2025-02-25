@@ -1,5 +1,5 @@
-use crate::factories::MemoryOp;
 use crate::factories::mem_op_store::Kitsune2MemoryOpStore;
+use crate::factories::MemoryOp;
 use kitsune2_api::{DhtArc, DynOpStore, Timestamp};
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::sync::Arc;

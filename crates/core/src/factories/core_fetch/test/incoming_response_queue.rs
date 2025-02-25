@@ -2,8 +2,8 @@ use super::test_utils::random_peer_url;
 use crate::{
     default_test_builder,
     factories::{
-        MemOpStoreFactory, MemoryOp,
         core_fetch::{CoreFetch, CoreFetchConfig},
+        MemOpStoreFactory, MemoryOp,
     },
 };
 use kitsune2_api::*;

@@ -2,8 +2,8 @@ use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 use crate::protocol::{
-    ArcSetMessage, GossipMessage, K2GossipAcceptMessage, K2GossipBusyMessage,
-    K2GossipInitiateMessage, encode_agent_ids, encode_op_ids,
+    encode_agent_ids, encode_op_ids, ArcSetMessage, GossipMessage,
+    K2GossipAcceptMessage, K2GossipBusyMessage, K2GossipInitiateMessage,
 };
 use kitsune2_api::{K2Error, Timestamp, Url};
 use kitsune2_dht::ArcSet;
@@ -151,12 +151,12 @@ impl K2Gossip {
 
 #[cfg(test)]
 mod tests {
-    use crate::K2GossipConfig;
     use crate::protocol::{
-        ArcSetMessage, GossipMessage, K2GossipInitiateMessage, encode_agent_ids,
+        encode_agent_ids, ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
     };
-    use crate::respond::harness::{RespondTestHarness, test_session_id};
+    use crate::respond::harness::{test_session_id, RespondTestHarness};
     use crate::state::{GossipRoundState, RoundStage};
+    use crate::K2GossipConfig;
     use kitsune2_api::{DhtArc, LocalAgent, Timestamp, Url};
     use kitsune2_core::Ed25519LocalAgent;
     use kitsune2_dht::{ArcSet, SECTOR_SIZE};
