@@ -48,12 +48,12 @@ pub struct Config {
     pub listen_address_list: Vec<std::net::SocketAddr>,
 
     /// The interval at which expired agents are purged from the cache.
+    ///
     /// This is a fairly expensive operation that requires iterating
     /// through every registered space and loading all the infos off the disk,
     /// so it should not be undertaken too frequently.
     ///
     /// Defaults:
-    ///
     /// - `testing = 10s`
     /// - `production = 60s`
     pub prune_interval: std::time::Duration,

@@ -19,6 +19,12 @@ pub struct Args {
     #[arg(long)]
     pub json: bool,
 
+    /// The address(es) at which to listen.
+    ///
+    /// Defaults: testing = "[127.0.0.1:0]", production = "[0.0.0.0:443, [::]:443]"
+    #[arg(long)]
+    pub listen: Vec<std::net::SocketAddr>,
+
     /// The path to a TLS certificate file.
     ///
     /// The certificate must be PEM encoded.
@@ -30,9 +36,31 @@ pub struct Args {
     /// The key must be PEM encoded.
     #[arg(long, requires = "tls_cert")]
     pub tls_key: Option<std::path::PathBuf>,
-    // TODO - Implement the ability to specify the listening address
-    // TODO - Implement the ability to override any other relevant
-    //        config params that we wish to expose
+
+    /// The number of worker threads to use.
+    ///
+    /// Defaults: testing = 2, production = 4 * cpu_count
+    #[arg(long)]
+    pub worker_thread_count: Option<usize>,
+
+    /// The maximum agent info entry count per space.
+    ///
+    /// Defaults: testing = 32, production = 32
+    #[arg(long)]
+    pub max_entries_per_space: Option<usize>,
+
+    /// The number of milliseconds that worker threads will block waiting for incoming connections
+    /// before checking to see if the server is shutting down.
+    ///
+    /// Defaults: testing = 10ms, production = 2s
+    #[arg(long)]
+    pub request_listen_duration_ms: Option<u32>,
+
+    /// The interval at which expired agents are purged from the cache.
+    ///
+    /// Defaults: testing = 10s, production = 60s
+    #[arg(long)]
+    pub prune_interval_ms: Option<u32>,
 }
 
 fn main() {
@@ -62,6 +90,22 @@ fn main() {
 
     config.tls_cert = args.tls_cert;
     config.tls_key = args.tls_key;
+    if !args.listen.is_empty() {
+        config.listen_address_list = args.listen;
+    }
+    if let Some(count) = args.worker_thread_count {
+        config.worker_thread_count = count;
+    }
+    if let Some(count) = args.max_entries_per_space {
+        config.max_entries_per_space = count;
+    }
+    if let Some(ms) = args.request_listen_duration_ms {
+        config.request_listen_duration =
+            std::time::Duration::from_millis(ms as u64);
+    }
+    if let Some(ms) = args.prune_interval_ms {
+        config.prune_interval = std::time::Duration::from_millis(ms as u64);
+    }
 
     tracing::info!(?config);
 
