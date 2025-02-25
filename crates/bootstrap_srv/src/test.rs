@@ -849,9 +849,6 @@ fn expiration_prune() {
     assert_eq!(1, res.len());
 }
 
-/// Certificates created with:
-/// > openssl genrsa 2048 > certs/test_key.pem
-/// > openssl req -x509 -days 1000 -new -key certs/test_key.pem -out certs/test_cert.pem
 #[test]
 fn start_with_tls() {
     let cert =

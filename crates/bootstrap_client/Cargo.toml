@@ -1,0 +1,25 @@
+[package]
+name = "kitsune2_bootstrap_client"
+version.workspace = true
+description = "p2p / dht communication WAN discovery bootstrapping client"
+license.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/kitsune2_bootstrap_client"
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+
+[dependencies]
+kitsune2_api = { workspace = true }
+
+tracing = { workspace = true }
+ureq = { workspace = true, features = ["tls"] }
+
+[dev-dependencies]
+kitsune2_core = { workspace = true }
+kitsune2_test_utils = { workspace = true }
+kitsune2_bootstrap_srv = { workspace = true }
+
+[features]
+default = []

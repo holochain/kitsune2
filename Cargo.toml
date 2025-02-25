@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/api",
+  "crates/bootstrap_client",
   "crates/bootstrap_srv",
   "crates/core",
   "crates/dht",
@@ -106,6 +107,7 @@ prost-build = "0.13.3"
 # above this section.
 # --- dev-dependencies ---
 kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
+kitsune2_bootstrap_client = { path = "crates/bootstrap_client" }
 kitsune2_core = { version = "0.0.1-alpha3", path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 

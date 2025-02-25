@@ -1368,6 +1368,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kitsune2_bootstrap_client"
+version = "0.0.1-alpha3"
+dependencies = [
+ "kitsune2_api",
+ "kitsune2_bootstrap_srv",
+ "kitsune2_core",
+ "kitsune2_test_utils",
+ "tracing",
+ "ureq",
+]
+
+[[package]]
 name = "kitsune2_bootstrap_srv"
 version = "0.0.1-alpha3"
 dependencies = [

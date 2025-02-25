@@ -288,6 +288,8 @@ impl Handler<'_> {
             return Err(std::io::Error::other("InvalidExpiresAt"));
         }
 
+        tracing::info!("Basic checks passed");
+
         // validate signature (do this at the end because it's more expensive)
         info.agent
             .verify(info.encoded.as_bytes(), &info.signature)
