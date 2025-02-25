@@ -12,6 +12,7 @@ edition.workspace = true
 
 [dependencies]
 kitsune2_api = { workspace = true }
+kitsune2_bootstrap_client = { workspace = true }
 
 backon = { workspace = true }
 bytes = { workspace = true }

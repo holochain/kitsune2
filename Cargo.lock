@@ -1413,6 +1413,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "kitsune2_api",
+ "kitsune2_bootstrap_client",
  "kitsune2_test_utils",
  "prost",
  "rand",

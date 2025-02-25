@@ -190,17 +190,10 @@ async fn push_task(
     let mut wait = None;
 
     while let Some(info) = push_recv.recv().await {
-        let url =
-            format!("{server_url}/bootstrap/{}/{}", &info.space, &info.agent);
-        let enc = match info.encode() {
-            Err(err) => {
-                tracing::error!(?err, "Could not encode agent info, dropping");
-                continue;
-            }
-            Ok(enc) => enc,
-        };
-        match tokio::task::spawn_blocking(move || {
-            ureq::put(&url).send_string(&enc)
+        match tokio::task::spawn_blocking({
+            let server_url = server_url.clone();
+            let info = info.clone();
+            move || kitsune2_bootstrap_client::put(server_url, info)
         })
         .await
         {
@@ -248,13 +241,17 @@ async fn poll_task(
     let mut wait = config.backoff_min();
 
     loop {
-        let url = format!("{server_url}/bootstrap/{space}");
-        match tokio::task::spawn_blocking(move || {
-            ureq::get(&url)
-                .call()
-                .map_err(K2Error::other)?
-                .into_string()
-                .map_err(K2Error::other)
+        match tokio::task::spawn_blocking({
+            let server_url = server_url.clone();
+            let space = space.clone();
+            let verifier = builder.verifier.clone();
+            move || {
+                kitsune2_bootstrap_client::get(
+                    server_url,
+                    space.clone(),
+                    verifier,
+                )
+            }
         })
         .await
         .map_err(|_| K2Error::other("task join error"))
@@ -262,36 +259,8 @@ async fn poll_task(
             Err(err) | Ok(Err(err)) => {
                 tracing::debug!(?err, "failure contacting bootstrap server");
             }
-            Ok(Ok(data)) => {
-                match AgentInfoSigned::decode_list(
-                    &builder.verifier,
-                    data.as_bytes(),
-                ) {
-                    Err(err) => tracing::debug!(
-                        ?err,
-                        "failure decoding bootstrap server response"
-                    ),
-                    Ok(list) => {
-                        // count decoding a success, and set the wait to max
-                        wait = config.backoff_max();
-
-                        let list = list
-                            .into_iter()
-                            .filter_map(|l| match l {
-                                Ok(l) => Some(l),
-                                Err(err) => {
-                                    tracing::debug!(
-                                        ?err,
-                                        "failure decoding bootstrap agent info"
-                                    );
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                        let _ = peer_store.insert(list).await;
-                    }
-                }
+            Ok(Ok(list)) => {
+                let _ = peer_store.insert(list).await;
             }
         }
 
