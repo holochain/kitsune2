@@ -30,6 +30,7 @@ proto:
 publish-all:
 	cargo publish -p kitsune2_api
 	cargo publish -p kitsune2_bootstrap_srv
+	cargo publish -p kitsune2_bootstrap_client
 	cargo publish -p kitsune2_core
 	cargo publish -p kitsune2_transport_tx5
 	cargo publish -p kitsune2_dht
