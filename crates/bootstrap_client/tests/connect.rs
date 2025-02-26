@@ -21,11 +21,11 @@ fn connect_with_client() {
         .into();
 
     // Put the agent info to the server
-    kitsune2_bootstrap_client::put(server_url.clone(), info.clone()).unwrap();
+    kitsune2_bootstrap_client::blocking_put(&server_url, &info).unwrap();
 
     // Get all agent infos from the server, should just be ours
-    let infos = kitsune2_bootstrap_client::get(
-        server_url,
+    let infos = kitsune2_bootstrap_client::blocking_get(
+        &server_url,
         info.space.clone(),
         Arc::new(Ed25519Verifier),
     )

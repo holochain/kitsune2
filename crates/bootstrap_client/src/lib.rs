@@ -6,9 +6,12 @@ use kitsune2_api::{AgentInfoSigned, DynVerifier, K2Error, K2Result, SpaceId};
 use std::sync::Arc;
 
 /// Send the agent info, for the given space, to the bootstrap server.
-pub fn put(
-    server_url: Arc<str>,
-    agent_info: Arc<AgentInfoSigned>,
+///
+/// Note the `blocking_` prefix. This is a hint to the caller that if the function is used in
+/// an async context, it should be treated as a blocking operation.
+pub fn blocking_put(
+    server_url: &str,
+    agent_info: &AgentInfoSigned,
 ) -> K2Result<()> {
     let url = format!(
         "{server_url}/bootstrap/{}/{}",
@@ -24,8 +27,11 @@ pub fn put(
 }
 
 /// Get all agent infos from the bootstrap server for the given space.
-pub fn get(
-    server_url: Arc<str>,
+///
+/// Note the `blocking_` prefix. This is a hint to the caller that if the function is used in
+/// an async context, it should be treated as a blocking operation.
+pub fn blocking_get(
+    server_url: &str,
     space: SpaceId,
     verifier: DynVerifier,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {

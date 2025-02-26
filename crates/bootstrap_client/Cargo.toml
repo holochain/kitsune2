@@ -20,6 +20,3 @@ ureq = { workspace = true, features = ["tls"] }
 kitsune2_core = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 kitsune2_bootstrap_srv = { workspace = true }
-
-[features]
-default = []

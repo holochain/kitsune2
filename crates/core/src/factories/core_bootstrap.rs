@@ -193,7 +193,7 @@ async fn push_task(
         match tokio::task::spawn_blocking({
             let server_url = server_url.clone();
             let info = info.clone();
-            move || kitsune2_bootstrap_client::put(server_url, info)
+            move || kitsune2_bootstrap_client::blocking_put(&server_url, &info)
         })
         .await
         {
@@ -246,8 +246,8 @@ async fn poll_task(
             let space = space.clone();
             let verifier = builder.verifier.clone();
             move || {
-                kitsune2_bootstrap_client::get(
-                    server_url,
+                kitsune2_bootstrap_client::blocking_get(
+                    &server_url,
                     space.clone(),
                     verifier,
                 )
