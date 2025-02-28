@@ -94,7 +94,11 @@ tx5 = { version = "0.3.0-beta", default-features = false }
 # TLS support for the bootstrap server
 axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
-rustls = { version = "0.23.0", default-features = false }
+rustls = { version = "0.23", default-features = false }
+# embedded in the bootstrap server and to test the tx5 integration
+sbd-server = { version = "0.0.9-alpha2", path = "../sbd/rust/sbd-server" }
+# axum-server integration with the SBD server
+tokio-rustls = "0.26"
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.
@@ -111,10 +115,11 @@ kitsune2_bootstrap_srv = { path = "crates/bootstrap_srv" }
 kitsune2_core = { version = "0.0.1-alpha3", path = "crates/core" }
 kitsune2_test_utils = { path = "crates/test_utils" }
 
+# used to test the bootstrap server with SBD enabled
+sbd-client = "0.0.9-alpha2"
+
 # used to hash op data
 sha2 = "0.10.8"
-# used to test the tx5 integration
-sbd-server = "0.0.9-alpha2"
 # used in testing to output tracing
 tracing-subscriber = "0.3"
 # Generating test certificates in the bootstrap_srv

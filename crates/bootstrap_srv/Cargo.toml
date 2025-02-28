@@ -17,7 +17,7 @@ axum = { workspace = true, default-features = false, features = [
   "tokio",
 ] }
 axum-server = { workspace = true, features = ["tls-rustls-no-provider"] }
-rustls = { workspace = true, features = ["std", "ring"] }
+rustls = { workspace = true, features = ["ring"] }
 base64 = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
@@ -28,16 +28,34 @@ num_cpus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
+tokio = { workspace = true, features = [
+  "time",
+  "rt",
+  "rt-multi-thread",
+  "io-util",
+] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+sbd-server = { workspace = true, optional = true, features = ["tungstenite"] }
+tokio-rustls = { workspace = true, optional = true }
 
 [dev-dependencies]
 ureq = { workspace = true, features = ["tls"] }
 rcgen = { workspace = true }
 
+sbd-client = { workspace = true }
+
 [features]
 default = []
+
+# enable running the SBD server alongside the bootstrap server
+sbd = [
+  "dep:sbd-server",
+  "dep:tokio-rustls",
+  "sbd-server/tungstenite",
+  "axum/ws",
+]
 
 # enable axum http2 support
 http2 = ["axum/http2"]

@@ -214,5 +214,8 @@ pub use server::*;
 mod tls;
 pub use tls::*;
 
+#[cfg(feature = "sbd")]
+mod sbd;
+
 #[cfg(test)]
 mod test;

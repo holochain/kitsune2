@@ -1,7 +1,9 @@
 use crate::tls::TlsConfig;
+use crate::Config;
 use axum::*;
 use axum_server::tls_rustls::RustlsAcceptor;
-use std::io::Result;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 pub struct HttpResponse {
     pub status: u16,
@@ -74,9 +76,14 @@ impl Drop for Server {
 }
 
 impl Server {
-    pub fn new(config: ServerConfig) -> Result<Self> {
+    pub fn new(
+        config: Arc<Config>,
+        server_config: ServerConfig,
+    ) -> std::io::Result<Self> {
         let (s_ready, r_ready) = tokio::sync::oneshot::channel();
-        let t_join = std::thread::spawn(move || tokio_thread(config, s_ready));
+        let t_join = std::thread::spawn(move || {
+            tokio_thread(config, server_config, s_ready)
+        });
         match r_ready.blocking_recv() {
             Ok(Ok(Ready {
                 h_send,
@@ -111,40 +118,73 @@ struct Ready {
     shutdown: axum_server::Handle,
 }
 
+#[derive(Clone)]
+pub struct AppState {
+    pub h_send: HSend,
+    #[cfg(feature = "sbd")]
+    pub sbd_state: crate::sbd::SbdState,
+}
+
 type BoxFut<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 fn tokio_thread(
-    config: ServerConfig,
+    config: Arc<Config>,
+    server_config: ServerConfig,
     ready: tokio::sync::oneshot::Sender<std::io::Result<Ready>>,
 ) {
+    tracing::trace!(?config, "Starting tokio thread");
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(async move {
             let (h_send, h_recv) =
-                async_channel::bounded(config.worker_thread_count);
+                async_channel::bounded(server_config.worker_thread_count);
 
-            let app: Router = Router::new()
+            #[cfg(feature = "sbd")]
+            let sbd_config = Arc::new(config.sbd.clone());
+
+            #[cfg(feature = "sbd")]
+            let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
+
+            #[cfg(feature = "sbd")]
+            let c_slot =
+                sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone());
+
+            let app = Router::<AppState>::new()
                 .route("/health", routing::get(handle_health_get))
                 .route("/bootstrap/:space", routing::get(handle_boot_get))
                 .route(
                     "/bootstrap/:space/:agent",
                     routing::put(handle_boot_put),
-                )
+                );
+
+            #[cfg(feature = "sbd")]
+            let app = app.route("/:pub_key", routing::get(crate::sbd::handle_sbd));
+
+            let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
-                .with_state(h_send.clone());
+                .with_state(AppState {
+                    h_send: h_send.clone(),
+                    #[cfg(feature = "sbd")]
+                    sbd_state: crate::sbd::SbdState {
+                        config: sbd_config.clone(),
+                        ip_rate: ip_rate.clone(),
+                        c_slot: c_slot.weak(),
+                    }
+                });
 
             let receiver = HttpReceiver(h_recv);
 
-            let mut addrs = Vec::with_capacity(config.addrs.len());
-            let mut servers: Vec<BoxFut<'static, Result<()>>> =
-                Vec::with_capacity(config.addrs.len());
+            let mut addrs = Vec::with_capacity(server_config.addrs.len());
+            let mut servers: Vec<BoxFut<'static, std::io::Result<()>>> =
+                Vec::with_capacity(server_config.addrs.len());
 
             let shutdown_handle = axum_server::Handle::new();
 
-            for addr in config.addrs {
+            for addr in server_config.addrs {
                 let listener = match tokio::task::spawn_blocking(move || {
                     std::net::TcpListener::bind(addr)
                 })
@@ -168,23 +208,43 @@ fn tokio_thread(
 
                 let app = app.clone();
                 let shutdown_handle = shutdown_handle.clone();
-                if let Some(tls_config) = &config.tls_config {
+                if let Some(tls_config) = &server_config.tls_config {
                     let tls_config = tls_config
                         .create_tls_config()
                         .await
                         .expect("Failed to create TLS config");
 
+                    let acceptor = RustlsAcceptor::new(tls_config);
+
+                    #[cfg(feature = "sbd")]
+                    let acceptor = {
+                        acceptor.acceptor(crate::sbd::SbdAcceptor::new(
+                                sbd_config.clone(),
+                                ip_rate.clone(),
+                            ))
+                    };
+
                     let s = axum_server::Server::from_tcp(listener)
-                        .acceptor(RustlsAcceptor::new(tls_config))
+                        .acceptor(acceptor)
                         .handle(shutdown_handle)
-                        .serve(app.into_make_service());
+                        .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 
                     servers.push(Box::pin(s));
                 } else {
+                    let server = axum_server::Server::from_tcp(listener);
+
+                    #[cfg(feature = "sbd")]
+                    let server = {
+                        server.acceptor(crate::sbd::SbdAcceptor::new(
+                            sbd_config.clone(),
+                            ip_rate.clone(),
+                        ))
+                    };
+
                     let s = std::future::IntoFuture::into_future(
-                        axum_server::Server::from_tcp(listener)
+                        server
                             .handle(shutdown_handle)
-                            .serve(app.into_make_service()),
+                            .serve(app.into_make_service_with_connect_info::<SocketAddr>()),
                     );
                     servers.push(Box::pin(s));
                 };
@@ -214,7 +274,7 @@ async fn handle_dispatch(
     let s = Box::new(move |res| {
         let _ = s.send(res);
     });
-    match tokio::time::timeout(std::time::Duration::from_secs(10), async move {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async move {
         let _ = h_send.send((req, s)).await;
         match r.await {
             Ok(r) => r.respond(),
@@ -226,36 +286,35 @@ async fn handle_dispatch(
         }
     })
     .await
-    {
-        Ok(r) => r,
-        Err(_) => HttpResponse {
+    .unwrap_or_else(|_| {
+        HttpResponse {
             status: 500,
             body: b"{\"error\":\"internal timeout\"}".to_vec(),
         }
-        .respond(),
-    }
+        .respond()
+    })
 }
 
 async fn handle_health_get(
-    extract::State(h_send): extract::State<HSend>,
+    extract::State(state): extract::State<AppState>,
 ) -> response::Response {
-    handle_dispatch(&h_send, HttpRequest::HealthGet).await
+    handle_dispatch(&state.h_send, HttpRequest::HealthGet).await
 }
 
 async fn handle_boot_get(
     extract::Path(space): extract::Path<String>,
-    extract::State(h_send): extract::State<HSend>,
+    extract::State(state): extract::State<AppState>,
 ) -> response::Response {
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
         Err(err) => return err,
     };
-    handle_dispatch(&h_send, HttpRequest::BootstrapGet { space }).await
+    handle_dispatch(&state.h_send, HttpRequest::BootstrapGet { space }).await
 }
 
 async fn handle_boot_put(
     extract::Path((space, agent)): extract::Path<(String, String)>,
-    extract::State(h_send): extract::State<HSend>,
+    extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
     let space = match b64_to_bytes(&space) {
@@ -266,13 +325,16 @@ async fn handle_boot_put(
         Ok(agent) => agent,
         Err(err) => return err,
     };
-    handle_dispatch(&h_send, HttpRequest::BootstrapPut { space, agent, body })
-        .await
+    handle_dispatch(
+        &state.h_send,
+        HttpRequest::BootstrapPut { space, agent, body },
+    )
+    .await
 }
 
 fn b64_to_bytes(
     s: &str,
-) -> std::result::Result<bytes::Bytes, response::Response<body::Body>> {
+) -> Result<bytes::Bytes, response::Response<body::Body>> {
     use base64::prelude::*;
     Ok(bytes::Bytes::copy_from_slice(
         &match BASE64_URL_SAFE_NO_PAD.decode(s) {
