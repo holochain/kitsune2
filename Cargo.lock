@@ -1446,7 +1446,7 @@ dependencies = [
  "num_cpus",
  "rcgen",
  "rustls 0.23.23",
- "sbd-client",
+ "sbd-client 0.0.10-alpha2",
  "sbd-server",
  "serde",
  "serde_json",
@@ -2395,13 +2395,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sbd-client"
+version = "0.0.10-alpha2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10e305e9550251a181e8c8610740689e54edfcc5b5b762c00e7c3d004dad552f"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "futures",
+ "rand",
+ "rustls 0.23.23",
+ "rustls-native-certs",
+ "tokio",
+ "tokio-rustls 0.26.1",
+ "tokio-tungstenite 0.23.1",
+ "tracing",
+ "webpki-roots",
+]
+
+[[package]]
 name = "sbd-e2e-crypto-client"
 version = "0.0.9-alpha2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50b3f2616dad53cbe25ba970243bdad92aadb37fec2caeb91462c40900f75448"
 dependencies = [
  "bytes",
- "sbd-client",
+ "sbd-client 0.0.9-alpha2",
  "sodoken",
  "tokio",
  "tracing",
@@ -2409,8 +2428,9 @@ dependencies = [
 
 [[package]]
 name = "sbd-server"
-version = "0.0.9-alpha2"
-source = "git+https://github.com/holochain/sbd?branch=expose-lib-functionality#4a2df0ce5f1f3deb789a94fda752e841f161b89c"
+version = "0.0.10-alpha2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e4b26ba9214bd74c44b21b0c79dbb78ee291d0d964f035da97634acb8a55105"
 dependencies = [
  "anstyle",
  "base64",
@@ -2860,7 +2880,10 @@ checksum = "c6989540ced10490aaf14e6bad2e3d33728a2813310a0c71d1574304c49631cd"
 dependencies = [
  "futures-util",
  "log",
+ "rustls 0.23.23",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls 0.26.1",
  "tungstenite 0.23.0",
 ]
 
@@ -3047,6 +3070,8 @@ dependencies = [
  "httparse",
  "log",
  "rand",
+ "rustls 0.23.23",
+ "rustls-pki-types",
  "sha1",
  "thiserror 1.0.69",
  "utf-8",
