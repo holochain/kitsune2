@@ -10,19 +10,12 @@ ADD crates ./crates
 # Build the bootstrap server
 RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv
 
-FROM golang:1.24-bookworm AS lego-builder
-
-# Install the lego tool
-ENV GO111MODULE=on
-RUN go install github.com/go-acme/lego/v4/cmd/lego@latest
-
 FROM debian:bookworm-slim
 
 EXPOSE 443
 
 # Copy the built binary into the runtime container
 COPY --from=builder /usr/local/cargo/bin/kitsune2-bootstrap-srv /usr/local/bin/
-COPY --from=lego-builder /go/bin/lego /usr/local/bin/
 
 # Create a directory to store the TLS certificate and key
 RUN mkdir -p /etc/bootstrap_srv
