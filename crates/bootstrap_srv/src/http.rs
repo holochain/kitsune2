@@ -160,10 +160,10 @@ fn tokio_thread(
                     routing::put(handle_boot_put),
                 );
 
-            let app = if !config.no_sbd {
-                app.route("/:pub_key", routing::get(crate::sbd::handle_sbd))
-            } else {
+            let app = if config.no_sbd {
                 app
+            } else {
+                app.route("/:pub_key", routing::get(crate::sbd::handle_sbd))
             };
 
             let app: Router = app
