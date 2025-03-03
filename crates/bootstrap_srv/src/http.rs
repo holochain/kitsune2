@@ -146,10 +146,10 @@ fn tokio_thread(
 
             let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
 
-            let c_slot = if !config.no_sbd {
-                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone()))
-            } else {
+            let c_slot = if config.no_sbd {
                 None
+            } else {
+                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone()))
             };
 
             let app = Router::<AppState>::new()
