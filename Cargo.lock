@@ -2410,6 +2410,7 @@ dependencies = [
 [[package]]
 name = "sbd-server"
 version = "0.0.9-alpha2"
+source = "git+https://github.com/holochain/sbd?branch=expose-lib-functionality#4a2df0ce5f1f3deb789a94fda752e841f161b89c"
 dependencies = [
  "anstyle",
  "base64",

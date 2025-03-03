@@ -96,7 +96,7 @@ axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
 # embedded in the bootstrap server and to test the tx5 integration
-sbd-server = { version = "0.0.9-alpha2", path = "../sbd/rust/sbd-server" }
+sbd-server = { version = "0.0.9-alpha2", git = "https://github.com/holochain/sbd", branch = "expose-lib-functionality" }
 # axum-server integration with the SBD server
 tokio-rustls = "0.26"
 # --- tool-dependencies ---
