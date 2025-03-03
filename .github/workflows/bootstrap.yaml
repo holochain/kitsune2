@@ -2,6 +2,9 @@ name: "Bootstrap"
 
 on:
   workflow_dispatch: {}
+  push:
+    branches:
+      - add-docker-container
 
 env:
   REGISTRY: ghcr.io
