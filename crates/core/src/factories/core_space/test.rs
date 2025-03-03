@@ -24,16 +24,17 @@ async fn space_local_agent_join_leave() {
         }
     }
 
-    let k: DynKitsuneHandler = Arc::new(K);
+    let h: DynKitsuneHandler = Arc::new(K);
     let k1 = Builder {
         verifier: Arc::new(TestVerifier),
         ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap()
-    .build(k)
+    .build()
     .await
     .unwrap();
+    k1.register_handler(h).await.unwrap();
 
     let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
     let ned = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
@@ -123,29 +124,31 @@ async fn space_notify_send_recv() {
         }
     }
 
-    let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
+    let h: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k1 = Builder {
         verifier: Arc::new(TestVerifier),
         ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap()
-    .build(k)
+    .build()
     .await
     .unwrap();
+    k1.register_handler(h).await.unwrap();
     let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
     let u1 = u_r.recv().await.unwrap();
 
-    let k: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
+    let h: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
     let k2 = Builder {
         verifier: Arc::new(TestVerifier),
         ..crate::default_test_builder()
     }
     .with_default_config()
     .unwrap()
-    .build(k)
+    .build()
     .await
     .unwrap();
+    k2.register_handler(h).await.unwrap();
     let s2 = k2.space(TEST_SPACE_ID.clone()).await.unwrap();
     let u2 = u_r.recv().await.unwrap();
 
@@ -266,8 +269,9 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
         })
         .unwrap();
 
-    let k: DynKitsuneHandler = Arc::new(K);
-    let k1 = builder.build(k).await.unwrap();
+    let h: DynKitsuneHandler = Arc::new(K);
+    let k1 = builder.build().await.unwrap();
+    k1.register_handler(h).await.unwrap();
 
     let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
 

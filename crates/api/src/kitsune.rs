@@ -57,6 +57,15 @@ pub type DynKitsuneHandler = Arc<dyn KitsuneHandler>;
 
 /// The top-level Kitsune2 api trait.
 pub trait Kitsune: 'static + Send + Sync + std::fmt::Debug {
+    /// Register the kitsune handler. This should be called exactly once,
+    /// before any other apis are invoked on the instance. The only reason
+    /// this isn't in the factory is to support a struct containing a
+    /// kitsune instance as well as acting as its handler.
+    fn register_handler(
+        &self,
+        handler: DynKitsuneHandler,
+    ) -> BoxFut<'_, K2Result<()>>;
+
     /// Get an existing space with the provided [SpaceId] or create
     /// a new one.
     fn space(&self, space: SpaceId) -> BoxFut<'_, K2Result<space::DynSpace>>;
@@ -78,7 +87,6 @@ pub trait KitsuneFactory: 'static + Send + Sync + std::fmt::Debug {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
-        handler: DynKitsuneHandler,
     ) -> BoxFut<'static, K2Result<DynKitsune>>;
 }
 

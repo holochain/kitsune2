@@ -83,7 +83,8 @@ impl App {
         )?;
 
         let h: DynKitsuneHandler = Arc::new(K(print.clone()));
-        let k = builder.build(h).await?;
+        let k = builder.build().await?;
+        k.register_handler(h).await?;
         let s = k.space(SPACE).await?;
 
         let a = Arc::new(kitsune2_core::Ed25519LocalAgent::default());

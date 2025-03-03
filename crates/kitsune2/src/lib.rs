@@ -149,8 +149,9 @@ mod test {
             .unwrap();
 
         let kitsune_handler = Arc::new(TestKitsuneHandler);
-        let kitsune = kitsune_builder
-            .build(kitsune_handler.clone())
+        let kitsune = kitsune_builder.build().await.unwrap();
+        kitsune
+            .register_handler(kitsune_handler.clone())
             .await
             .unwrap();
         let space = kitsune.space(TEST_SPACE_ID).await.unwrap();

@@ -122,10 +122,7 @@ impl Builder {
 
     /// Generate the actual kitsune instance, validating configuration
     /// if that has not already explicitly been done.
-    pub async fn build(
-        self,
-        handler: DynKitsuneHandler,
-    ) -> K2Result<DynKitsune> {
+    pub async fn build(self) -> K2Result<DynKitsune> {
         if !self.config.mark_validated() {
             self.validate_config()?;
         }
@@ -133,6 +130,6 @@ impl Builder {
         self.config.mark_runtime();
         let builder = Arc::new(self);
 
-        builder.kitsune.create(builder.clone(), handler).await
+        builder.kitsune.create(builder.clone()).await
     }
 }
