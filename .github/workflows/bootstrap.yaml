@@ -8,7 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: kitsune2-bootstrap-srv
+  IMAGE_NAME: kitsune2_bootstrap_srv
 
 jobs:
   build-and-push-image:
