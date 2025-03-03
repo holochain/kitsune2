@@ -61,6 +61,27 @@ pub struct Args {
     /// Defaults: testing = 10s, production = 60s
     #[arg(long)]
     pub prune_interval_ms: Option<u32>,
+
+    /// If specified, this server will only handle bootstrap requests,
+    /// dropping websocket upgrade requests from sbd clients.
+    #[arg(long)]
+    pub no_sbd: bool,
+
+    /// Use this http header to determine IP address instead of the raw
+    /// TCP connection details.
+    #[arg(long)]
+    pub sbd_trusted_ip_header: Option<String>,
+
+    /// Limit client connections.
+    #[arg(long)]
+    pub sbd_limit_clients: Option<i32>,
+
+    /// If set, rate-limiting will be disabled on the server,
+    /// and clients will be informed they have an 8gbps rate limit.
+    ///
+    /// Note that this is an SBD option, but when SBD is enabled, this applies to all connections.
+    #[arg(long)]
+    pub sbd_disable_rate_limiting: bool,
 }
 
 fn main() {
@@ -88,6 +109,7 @@ fn main() {
         Config::testing()
     };
 
+    // Apply bootstrap command line arguments
     config.tls_cert = args.tls_cert;
     config.tls_key = args.tls_key;
     if !args.listen.is_empty() {
@@ -105,6 +127,17 @@ fn main() {
     }
     if let Some(ms) = args.prune_interval_ms {
         config.prune_interval = std::time::Duration::from_millis(ms as u64);
+    }
+
+    // Apply SBD command line arguments
+    if let Some(header) = args.sbd_trusted_ip_header {
+        config.sbd.trusted_ip_header = Some(header);
+    }
+    if let Some(limit) = args.sbd_limit_clients {
+        config.sbd.limit_clients = limit;
+    }
+    if args.sbd_disable_rate_limiting {
+        config.sbd.disable_rate_limiting = true;
     }
 
     tracing::info!(?config);

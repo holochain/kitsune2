@@ -72,7 +72,8 @@ impl BootstrapSrv {
         let store = Arc::new(crate::Store::default());
 
         // start the actual http server
-        let server = Server::new(sconf).map_err(std::io::Error::other)?;
+        let server = Server::new(config.clone(), sconf)
+            .map_err(std::io::Error::other)?;
 
         // get the address that was assigned
         let addrs = server.server_addrs().to_vec();

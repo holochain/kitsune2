@@ -1,7 +1,7 @@
 //! config types.
 
 /// Configuration for running a BootstrapSrv.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Config {
     /// Worker thread count.
     ///
@@ -73,6 +73,12 @@ pub struct Config {
     /// Default:
     /// - `None`
     pub tls_key: Option<std::path::PathBuf>,
+
+    /// Disable the SBD server.
+    pub no_sbd: bool,
+
+    /// The SBD server configuration.
+    pub sbd: sbd_server::Config,
 }
 
 impl Config {
@@ -86,6 +92,8 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(10),
             tls_cert: None,
             tls_key: None,
+            no_sbd: false,
+            sbd: sbd_server::Config::default(),
         }
     }
 
@@ -102,6 +110,8 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(60),
             tls_cert: None,
             tls_key: None,
+            no_sbd: false,
+            sbd: sbd_server::Config::default(),
         }
     }
 }
