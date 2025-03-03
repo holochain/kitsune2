@@ -62,6 +62,8 @@ pub struct Args {
     #[arg(long)]
     pub prune_interval_ms: Option<u32>,
 
+    /// If specified, this server will only handle bootstrap requests,
+    /// dropping websocket upgrade requests from sbd clients.
     #[arg(long)]
     pub no_sbd: bool,
 
