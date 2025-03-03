@@ -121,8 +121,7 @@ struct Ready {
 #[derive(Clone)]
 pub struct AppState {
     pub h_send: HSend,
-    #[cfg(feature = "sbd")]
-    pub sbd_state: crate::sbd::SbdState,
+    pub sbd_state: Option<crate::sbd::SbdState>,
 }
 
 type BoxFut<'a, T> =
@@ -143,15 +142,15 @@ fn tokio_thread(
             let (h_send, h_recv) =
                 async_channel::bounded(server_config.worker_thread_count);
 
-            #[cfg(feature = "sbd")]
             let sbd_config = Arc::new(config.sbd.clone());
 
-            #[cfg(feature = "sbd")]
             let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
 
-            #[cfg(feature = "sbd")]
-            let c_slot =
-                sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone());
+            let c_slot = if !config.no_sbd {
+                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone()))
+            } else {
+                None
+            };
 
             let app = Router::<AppState>::new()
                 .route("/health", routing::get(handle_health_get))
@@ -161,18 +160,24 @@ fn tokio_thread(
                     routing::put(handle_boot_put),
                 );
 
-            #[cfg(feature = "sbd")]
-            let app = app.route("/:pub_key", routing::get(crate::sbd::handle_sbd));
+            let app = if !config.no_sbd {
+                app.route("/:pub_key", routing::get(crate::sbd::handle_sbd))
+            } else {
+                app
+            };
 
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
                     h_send: h_send.clone(),
-                    #[cfg(feature = "sbd")]
-                    sbd_state: crate::sbd::SbdState {
-                        config: sbd_config.clone(),
-                        ip_rate: ip_rate.clone(),
-                        c_slot: c_slot.weak(),
+                    sbd_state: if !config.no_sbd {
+                        Some(crate::sbd::SbdState {
+                            config: sbd_config.clone(),
+                            ip_rate: ip_rate.clone(),
+                            c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),
+                        })
+                    } else {
+                        None
                     }
                 });
 
@@ -216,7 +221,6 @@ fn tokio_thread(
 
                     let acceptor = RustlsAcceptor::new(tls_config);
 
-                    #[cfg(feature = "sbd")]
                     let acceptor = {
                         acceptor.acceptor(crate::sbd::SbdAcceptor::new(
                                 sbd_config.clone(),
@@ -233,7 +237,6 @@ fn tokio_thread(
                 } else {
                     let server = axum_server::Server::from_tcp(listener);
 
-                    #[cfg(feature = "sbd")]
                     let server = {
                         server.acceptor(crate::sbd::SbdAcceptor::new(
                             sbd_config.clone(),

@@ -21,10 +21,7 @@ doc:
 build:
 	cargo build
 
-bootstrap_sbd:
-	cargo test --package kitsune2_bootstrap_srv --features "sbd"
-
-test: bootstrap_sbd
+test:
 	cargo test
 
 proto:

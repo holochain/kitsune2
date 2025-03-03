@@ -67,7 +67,7 @@ where
             .await
             .is_none()
             {
-                return Err(io::Error::other("ip not allowed"));
+                return Err(Error::other("ip not allowed"));
             }
 
             Ok((stream, service))
@@ -165,7 +165,13 @@ pub async fn handle_sbd(
 
     let mut calc_ip = to_canonical_ip(addr.ip());
 
-    if let Some(trusted_ip_header) = &state.sbd_state.config.trusted_ip_header {
+    if let Some(trusted_ip_header) = &state
+        .sbd_state
+        .as_ref()
+        .expect("Missing SBD state")
+        .config
+        .trusted_ip_header
+    {
         if let Some(header) =
             headers.get(trusted_ip_header).and_then(|h| h.to_str().ok())
         {
@@ -186,10 +192,12 @@ async fn handle_socket(
     pk: PubKey,
     calc_ip: Arc<Ipv6Addr>,
 ) {
+    let sbd_state = state.sbd_state.as_ref().expect("Missing sbd state");
+
     handle_upgraded(
-        state.sbd_state.config.clone(),
-        state.sbd_state.ip_rate.clone(),
-        state.sbd_state.c_slot.clone(),
+        sbd_state.config.clone(),
+        sbd_state.ip_rate.clone(),
+        sbd_state.c_slot.clone(),
         Arc::new(WebsocketForSbd::new(socket)),
         pk,
         calc_ip,

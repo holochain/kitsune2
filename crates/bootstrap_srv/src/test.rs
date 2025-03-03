@@ -902,7 +902,6 @@ fn start_with_tls() {
     println!("Finished");
 }
 
-#[cfg(feature = "sbd")]
 #[test]
 fn use_bootstrap_and_sbd() {
     let s = BootstrapSrv::new(Config {

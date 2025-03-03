@@ -62,14 +62,15 @@ pub struct Args {
     #[arg(long)]
     pub prune_interval_ms: Option<u32>,
 
+    #[arg(long)]
+    pub no_sbd: bool,
+
     /// Use this http header to determine IP address instead of the raw
     /// TCP connection details.
-    #[cfg(feature = "sbd")]
     #[arg(long)]
     pub sbd_trusted_ip_header: Option<String>,
 
     /// Limit client connections.
-    #[cfg(feature = "sbd")]
     #[arg(long)]
     pub sbd_limit_clients: Option<i32>,
 
@@ -77,7 +78,6 @@ pub struct Args {
     /// and clients will be informed they have an 8gbps rate limit.
     ///
     /// Note that this is an SBD option, but when SBD is enabled, this applies to all connections.
-    #[cfg(feature = "sbd")]
     #[arg(long)]
     pub sbd_disable_rate_limiting: bool,
 }
@@ -107,6 +107,7 @@ fn main() {
         Config::testing()
     };
 
+    // Apply bootstrap command line arguments
     config.tls_cert = args.tls_cert;
     config.tls_key = args.tls_key;
     if !args.listen.is_empty() {
@@ -125,17 +126,16 @@ fn main() {
     if let Some(ms) = args.prune_interval_ms {
         config.prune_interval = std::time::Duration::from_millis(ms as u64);
     }
-    #[cfg(feature = "sbd")]
-    {
-        if let Some(header) = args.sbd_trusted_ip_header {
-            config.sbd.trusted_ip_header = Some(header);
-        }
-        if let Some(limit) = args.sbd_limit_clients {
-            config.sbd.limit_clients = limit;
-        }
-        if args.sbd_disable_rate_limiting {
-            config.sbd.disable_rate_limiting = true;
-        }
+
+    // Apply SBD command line arguments
+    if let Some(header) = args.sbd_trusted_ip_header {
+        config.sbd.trusted_ip_header = Some(header);
+    }
+    if let Some(limit) = args.sbd_limit_clients {
+        config.sbd.limit_clients = limit;
+    }
+    if args.sbd_disable_rate_limiting {
+        config.sbd.disable_rate_limiting = true;
     }
 
     tracing::info!(?config);

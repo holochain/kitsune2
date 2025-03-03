@@ -74,8 +74,10 @@ pub struct Config {
     /// - `None`
     pub tls_key: Option<std::path::PathBuf>,
 
+    /// Disable the SBD server.
+    pub no_sbd: bool,
+
     /// The SBD server configuration.
-    #[cfg(feature = "sbd")]
     pub sbd: sbd_server::Config,
 }
 
@@ -90,7 +92,7 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(10),
             tls_cert: None,
             tls_key: None,
-            #[cfg(feature = "sbd")]
+            no_sbd: false,
             sbd: sbd_server::Config::default(),
         }
     }
@@ -108,7 +110,7 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(60),
             tls_cert: None,
             tls_key: None,
-            #[cfg(feature = "sbd")]
+            no_sbd: false,
             sbd: sbd_server::Config::default(),
         }
     }
