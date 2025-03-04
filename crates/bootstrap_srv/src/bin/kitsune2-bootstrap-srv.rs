@@ -109,6 +109,12 @@ fn main() {
         Config::testing()
     };
 
+    if args.tls_cert.is_some() || args.tls_key.is_some() {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Failed to configure default TLS provider");
+    }
+
     // Apply bootstrap command line arguments
     config.tls_cert = args.tls_cert;
     config.tls_key = args.tls_key;

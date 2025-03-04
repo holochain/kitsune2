@@ -853,8 +853,7 @@ fn expiration_prune() {
 #[test]
 fn start_with_tls() {
     // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
-    // return a default. It's only `ureq` that does that and this shouldn't be needed in the
-    // server.
+    // return a default.
     rustls::crypto::ring::default_provider()
         .install_default()
         .unwrap();
