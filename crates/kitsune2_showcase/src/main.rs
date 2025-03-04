@@ -7,11 +7,11 @@ mod readline;
 #[derive(clap::Parser)]
 struct Args {
     /// The signal server to use.
-    #[arg(long, default_value = "wss://bootstrap2.holochain.org")]
+    #[arg(long, default_value = "wss://dev-test-bootstrap2.holochain.org")]
     signal_url: String,
 
     /// The bootstrap server to use.
-    #[arg(long, default_value = "https://bootstrap2.holochain.org")]
+    #[arg(long, default_value = "https://dev-test-bootstrap2.holochain.org")]
     bootstrap_url: String,
 
     /// The nickname you'd like to use.
