@@ -355,6 +355,8 @@ impl Space for CoreSpace {
 
                         // add it to bootstrapping.
                         bootstrap.put(info);
+                    } else {
+                        tracing::trace!("Not updating agent info because we don't have a current url");
                     }
                 });
             }));
