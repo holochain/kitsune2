@@ -13,7 +13,7 @@
 
   outputs = inputs@{ nixpkgs, flake-parts, crane, rust-overlay, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = [ "x86_64-linux" "aarch64-darwin" ];
+      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
       perSystem = { self', inputs', pkgs, system, ... }:
         let
@@ -33,7 +33,7 @@
             ];
             buildInputs = [
               pkgs.openssl
-            ];
+            ] ++ (pkgs.lib.optional (system == "x86_64-darwin") pkgs.apple-sdk_10_15);
             doCheck = false;
           };
         in
