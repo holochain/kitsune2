@@ -190,6 +190,8 @@ fn tokio_thread(
             let shutdown_handle = axum_server::Handle::new();
 
             for addr in server_config.addrs {
+                tracing::info!("Binding to: {}", addr);
+
                 let listener = match tokio::task::spawn_blocking(move || {
                     std::net::TcpListener::bind(addr)
                 })
@@ -204,7 +206,10 @@ fn tokio_thread(
                 };
 
                 match listener.local_addr() {
-                    Ok(addr) => addrs.push(addr),
+                    Ok(addr) => {
+                        tracing::info!("Bound with local address: {}", addr);
+                        addrs.push(addr)
+                    },
                     Err(err) => {
                         let _ = ready.send(Err(err));
                         return;
@@ -252,6 +257,8 @@ fn tokio_thread(
                     servers.push(Box::pin(s));
                 };
             }
+
+            tracing::info!("Sending ready signal");
 
             if ready
                 .send(Ok(Ready {
