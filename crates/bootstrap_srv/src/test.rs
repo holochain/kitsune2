@@ -696,14 +696,15 @@ fn default_storage_rollover() {
 #[test]
 fn multi_thread_stress() {
     let config = Config::testing();
-    let s = BootstrapSrv::new(config.clone()).unwrap();
+    let worker_count = config.worker_thread_count as u32;
+
+    let s = BootstrapSrv::new(config).unwrap();
     let addr = s.listen_addrs()[0];
 
     let start = std::time::Instant::now();
 
     // the testing config has a small number worker threads (currently 2).
     // Read and write with more than that.
-    let worker_count = config.worker_thread_count as u32;
     let t_w_count = worker_count * 8;
     let t_r_count = worker_count * 16;
 
@@ -851,6 +852,13 @@ fn expiration_prune() {
 
 #[test]
 fn start_with_tls() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default. It's only `ureq` that does that and this shouldn't be needed in the
+    // server.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .unwrap();
+
     let cert =
         rcgen::generate_simple_self_signed(vec!["bootstrap.test".to_string()])
             .unwrap();
@@ -880,6 +888,8 @@ fn start_with_tls() {
     })
     .unwrap();
 
+    println!("Started K2 with TLS");
+
     // If we can do a PUT, the server is up and running.
     PutInfo {
         addr: s.listen_addrs()[0],
@@ -888,4 +898,67 @@ fn start_with_tls() {
     }
     .call()
     .unwrap();
+
+    println!("Finished");
+}
+
+#[test]
+fn use_bootstrap_and_sbd() {
+    let s = BootstrapSrv::new(Config {
+        prune_interval: std::time::Duration::from_millis(5),
+        ..Config::testing()
+    })
+    .unwrap();
+    let addr = s.listen_addrs()[0];
+
+    PutInfo {
+        addr: s.listen_addrs()[0],
+        ..Default::default()
+    }
+    .call()
+    .unwrap();
+
+    let bootstrap_url = format!("http://{:?}/bootstrap/{}", addr, S1);
+    let res = ureq::get(&bootstrap_url)
+        .call()
+        .unwrap()
+        .into_string()
+        .unwrap();
+    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
+    assert_eq!(1, res.len());
+
+    async fn connect(
+        addr: std::net::SocketAddr,
+    ) -> (sbd_client::SbdClient, sbd_client::MsgRecv) {
+        sbd_client::SbdClient::connect_config(
+            &format!("ws://{addr}"),
+            &sbd_client::DefaultCrypto::default(),
+            sbd_client::SbdClientConfig {
+                allow_plain_text: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .unwrap();
+    rt.block_on(async move {
+        let (c1, _r1) = connect(addr).await;
+        let p1 = c1.pub_key().clone();
+        let (c2, mut r2) = connect(addr).await;
+        let p2 = c2.pub_key().clone();
+
+        c1.send(&p2, b"hello").await.unwrap();
+        let received = r2.recv().await.unwrap().0;
+        assert_eq!(p1.as_slice(), &received[0..32]);
+        assert_eq!(b"hello".as_slice(), &received[32..]);
+
+        c1.close().await;
+        c2.close().await;
+    });
 }
