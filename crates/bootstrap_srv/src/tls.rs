@@ -1,4 +1,5 @@
 use axum_server::tls_rustls::RustlsConfig;
+use futures::future::BoxFuture;
 
 /// Configuration for TLS.
 ///
@@ -27,5 +28,33 @@ impl TlsConfig {
             self.key_path.clone(),
         )
         .await
+    }
+
+    /// Create a future that reloads the TLS configuration every hour.
+    pub fn reload_task(self, config: RustlsConfig) -> BoxFuture<'static, ()> {
+        const ONE_HOUR: std::time::Duration =
+            std::time::Duration::from_secs(60 * 60);
+
+        Box::pin(async move {
+            loop {
+                tokio::time::sleep(ONE_HOUR).await;
+
+                // Reload rustls configuration.
+                if let Err(e) = config
+                    .reload_from_pem_file(
+                        self.cert_path.clone(),
+                        self.key_path.clone(),
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        "failed to reload rustls configuration: {}",
+                        e
+                    );
+                } else {
+                    tracing::info!("rustls configuration reloaded");
+                }
+            }
+        })
     }
 }

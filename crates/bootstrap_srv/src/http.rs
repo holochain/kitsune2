@@ -152,6 +152,19 @@ fn tokio_thread(
                 Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone()))
             };
 
+            let rustls_config = if let Some(tls_config) = server_config.tls_config {
+                let rustls_config = tls_config
+                    .create_tls_config()
+                    .await
+                    .expect("Failed to create TLS config");
+
+                tokio::task::spawn(tls_config.reload_task(rustls_config.clone()));
+
+                Some(rustls_config)
+            } else {
+                None
+            };
+
             let app = Router::<AppState>::new()
                 .route("/health", routing::get(handle_health_get))
                 .route("/bootstrap/:space", routing::get(handle_boot_get))
@@ -218,13 +231,8 @@ fn tokio_thread(
 
                 let app = app.clone();
                 let shutdown_handle = shutdown_handle.clone();
-                if let Some(tls_config) = &server_config.tls_config {
-                    let tls_config = tls_config
-                        .create_tls_config()
-                        .await
-                        .expect("Failed to create TLS config");
-
-                    let acceptor = RustlsAcceptor::new(tls_config);
+                if let Some(tls_config) = &rustls_config {
+                    let acceptor = RustlsAcceptor::new(tls_config.clone());
 
                     let acceptor = {
                         acceptor.acceptor(crate::sbd::SbdAcceptor::new(
