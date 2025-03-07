@@ -887,8 +887,6 @@ fn start_with_tls() {
     })
     .unwrap();
 
-    println!("Started K2 with TLS");
-
     // If we can do a PUT, the server is up and running.
     PutInfo {
         addr: s.listen_addrs()[0],
@@ -897,8 +895,6 @@ fn start_with_tls() {
     }
     .call()
     .unwrap();
-
-    println!("Finished");
 }
 
 #[test]
