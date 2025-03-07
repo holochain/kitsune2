@@ -152,17 +152,17 @@ fn tokio_thread(
                 Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone()))
             };
 
-            let rustls_config = if let Some(tls_config) = server_config.tls_config {
+            let (rustls_config, tls_reload_task) = if let Some(tls_config) = server_config.tls_config {
                 let rustls_config = tls_config
                     .create_tls_config()
                     .await
                     .expect("Failed to create TLS config");
 
-                tokio::task::spawn(tls_config.reload_task(rustls_config.clone()));
+                let tls_reload_handle = tokio::task::spawn(tls_config.reload_task(rustls_config.clone())).abort_handle();
 
-                Some(rustls_config)
+                (Some(rustls_config), Some(tls_reload_handle))
             } else {
-                None
+                (None, None)
             };
 
             let app = Router::<AppState>::new()
@@ -281,6 +281,11 @@ fn tokio_thread(
             }
 
             let _ = futures::future::join_all(servers).await;
+
+            if let Some(tls_reload_task) = tls_reload_task {
+                println!("Aborting TLS reload task");
+                tls_reload_task.abort();
+            }
         });
 }
 
