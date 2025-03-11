@@ -89,6 +89,7 @@ impl PeerMetaStoreFactory for MemPeerMetaStoreFactory {
     fn create(
         &self,
         _builder: Arc<Builder>,
+        _space: SpaceId,
     ) -> BoxFuture<'static, K2Result<DynPeerMetaStore>> {
         Box::pin(async move { Ok(MemPeerMetaStore::create()) })
     }

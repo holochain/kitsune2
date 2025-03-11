@@ -44,6 +44,7 @@ pub trait PeerMetaStoreFactory:
     fn create(
         &self,
         builder: Arc<builder::Builder>,
+        space: crate::SpaceId,
     ) -> BoxFut<'static, K2Result<DynPeerMetaStore>>;
 }
 

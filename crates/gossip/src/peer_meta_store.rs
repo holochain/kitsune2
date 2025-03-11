@@ -263,7 +263,7 @@ mod tests {
         let builder =
             Arc::new(default_test_builder().with_default_config().unwrap());
         let inner = MemPeerMetaStoreFactory::create()
-            .create(builder)
+            .create(builder, kitsune2_test_utils::space::TEST_SPACE_ID.clone())
             .await
             .unwrap();
         K2PeerMetaStore::new(inner)

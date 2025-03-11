@@ -45,9 +45,10 @@ impl TestPeerMetaStore {
 async fn mem_meta_store() {
     let factory = MemPeerMetaStoreFactory::create();
     let store = factory
-        .create(Arc::new(
-            default_test_builder().with_default_config().unwrap(),
-        ))
+        .create(
+            Arc::new(default_test_builder().with_default_config().unwrap()),
+            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+        )
         .await
         .unwrap();
 
@@ -72,9 +73,10 @@ async fn mem_meta_store() {
 async fn store_with_multiple_agents() {
     let factory = MemPeerMetaStoreFactory::create();
     let store = factory
-        .create(Arc::new(
-            default_test_builder().with_default_config().unwrap(),
-        ))
+        .create(
+            Arc::new(default_test_builder().with_default_config().unwrap()),
+            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+        )
         .await
         .unwrap();
 

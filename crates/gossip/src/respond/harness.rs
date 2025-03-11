@@ -71,7 +71,7 @@ impl RespondTestHarness {
                 peer_meta_store: Arc::new(K2PeerMetaStore::new(
                     builder
                         .peer_meta_store
-                        .create(builder.clone())
+                        .create(builder.clone(), TEST_SPACE_ID)
                         .await
                         .unwrap(),
                 )),

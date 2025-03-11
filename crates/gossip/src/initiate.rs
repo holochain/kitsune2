@@ -245,7 +245,10 @@ mod tests {
                 peer_meta_store: Arc::new(K2PeerMetaStore::new(
                     builder
                         .peer_meta_store
-                        .create(builder.clone())
+                        .create(
+                            builder.clone(),
+                            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+                        )
                         .await
                         .unwrap(),
                 )),

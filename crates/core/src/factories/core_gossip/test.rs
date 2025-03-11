@@ -37,7 +37,10 @@ async fn create_gossip_instance() {
                 .unwrap(),
             builder
                 .peer_meta_store
-                .create(builder.clone())
+                .create(
+                    builder.clone(),
+                    kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+                )
                 .await
                 .unwrap(),
             op_store.clone(),
