@@ -118,6 +118,10 @@ impl Kitsune for CoreKitsune {
         })
     }
 
+    fn list_spaces(&self) -> Vec<SpaceId> {
+        self.map.lock().unwrap().keys().cloned().collect()
+    }
+
     fn space(&self, space: SpaceId) -> BoxFut<'_, K2Result<DynSpace>> {
         Box::pin(async move {
             const ERR: &str = "handler not registered";
@@ -156,6 +160,13 @@ impl Kitsune for CoreKitsune {
             };
 
             fut.await
+        })
+    }
+
+    fn space_if_exists(&self, space: SpaceId) -> BoxFut<'_, Option<DynSpace>> {
+        Box::pin(async move {
+            let fut = self.map.lock().unwrap().get(&space)?.clone();
+            fut.await.ok()
         })
     }
 }

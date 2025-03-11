@@ -71,9 +71,18 @@ pub trait Kitsune: 'static + Send + Sync + std::fmt::Debug {
         handler: DynKitsuneHandler,
     ) -> BoxFut<'_, K2Result<()>>;
 
+    /// List the active spaces.
+    fn list_spaces(&self) -> Vec<SpaceId>;
+
     /// Get an existing space with the provided [SpaceId] or create
     /// a new one.
     fn space(&self, space: SpaceId) -> BoxFut<'_, K2Result<space::DynSpace>>;
+
+    /// Get a space, only if it exists.
+    fn space_if_exists(
+        &self,
+        space: SpaceId,
+    ) -> BoxFut<'_, Option<space::DynSpace>>;
 }
 
 /// Trait-object [Kitsune].
