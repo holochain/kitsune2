@@ -39,7 +39,17 @@ async fn space_local_agent_join_leave() {
     let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
     let ned = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
 
+    assert!(k1.space_if_exists(TEST_SPACE_ID).await.is_none());
+    assert_eq!(0, k1.list_spaces().len());
+
     let s1 = k1.space(TEST_SPACE_ID).await.unwrap();
+
+    assert!(k1.space_if_exists(TEST_SPACE_ID).await.is_some());
+    assert!(k1
+        .space_if_exists(bytes::Bytes::from_static(b"nope").into())
+        .await
+        .is_none());
+    assert_eq!(1, k1.list_spaces().len());
 
     s1.local_agent_join(bob.clone()).await.unwrap();
     s1.local_agent_join(ned.clone()).await.unwrap();
