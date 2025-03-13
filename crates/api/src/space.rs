@@ -49,6 +49,9 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// Get a reference to the fetch module of this space.
     fn fetch(&self) -> &DynFetch;
 
+    /// get a reference to the publish module of this space.
+    fn publish(&self) -> &DynPublish;
+
     /// Get a reference to the gossip module of this space.
     fn gossip(&self) -> &DynGossip;
 

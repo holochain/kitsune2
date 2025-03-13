@@ -108,6 +108,16 @@ impl SpaceFactory for CoreSpaceFactory {
                     tx.clone(),
                 )
                 .await?;
+            let publish = builder
+                .publish
+                .create(
+                    builder.clone(),
+                    space.clone(),
+                    fetch.clone(),
+                    peer_store.clone(),
+                    tx.clone(),
+                )
+                .await?;
             let peer_meta_store = builder
                 .peer_meta_store
                 .create(builder.clone(), space.clone())
@@ -143,6 +153,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     inner,
                     op_store,
                     fetch,
+                    publish,
                     gossip,
                 )
             });
@@ -194,6 +205,7 @@ struct CoreSpace {
     peer_meta_store: DynPeerMetaStore,
     op_store: DynOpStore,
     fetch: DynFetch,
+    publish: DynPublish,
     gossip: DynGossip,
     inner: Arc<Mutex<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
@@ -226,6 +238,7 @@ impl CoreSpace {
         inner: Arc<Mutex<InnerData>>,
         op_store: DynOpStore,
         fetch: DynFetch,
+        publish: DynPublish,
         gossip: DynGossip,
     ) -> Self {
         let task_check_agent_infos = tokio::task::spawn(check_agent_infos(
@@ -244,6 +257,7 @@ impl CoreSpace {
             op_store,
             task_check_agent_infos,
             fetch,
+            publish,
             gossip,
         }
     }
@@ -277,6 +291,10 @@ impl Space for CoreSpace {
 
     fn fetch(&self) -> &DynFetch {
         &self.fetch
+    }
+
+    fn publish(&self) -> &DynPublish {
+        &self.publish
     }
 
     fn gossip(&self) -> &DynGossip {
