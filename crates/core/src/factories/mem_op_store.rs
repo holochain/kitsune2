@@ -310,6 +310,32 @@ impl OpStore for Kitsune2MemoryOpStore {
         })
     }
 
+    fn earliest_timestamp_in_arc(
+        &self,
+        arc: DhtArc,
+    ) -> BoxFuture<'_, K2Result<Option<Timestamp>>> {
+        Box::pin(async move {
+            println!(
+                "Getting earliest from: {:?}",
+                self.read().await.op_list.len()
+            );
+
+            Ok(self
+                .read()
+                .await
+                .op_list
+                .iter()
+                .filter_map(|(_, op)| {
+                    if arc.contains(op.op_id.loc()) {
+                        Some(op.created_at)
+                    } else {
+                        None
+                    }
+                })
+                .min())
+        })
+    }
+
     /// Store the combined hash of a time slice.
     ///
     /// The `slice_id` is the index of the time slice. This is a 0-based index. So for a given
