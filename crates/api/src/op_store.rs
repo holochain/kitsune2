@@ -130,6 +130,18 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         limit_bytes: u32,
     ) -> BoxFuture<'_, K2Result<(Vec<OpId>, u32, Timestamp)>>;
 
+    /// Get the earliest op timestamp in the given arc.
+    ///
+    /// If there are no ops in the arc, return None.
+    /// Otherwise, return the earliest `created_at` timestamp of the ops in the arc.
+    ///
+    /// This is used to determine the earliest timestamp that the arc has seen. That is a lower
+    /// bound on the work that needs to be done when building a summary model of the DHT.
+    fn earliest_timestamp_in_arc(
+        &self,
+        arc: DhtArc,
+    ) -> BoxFuture<'_, K2Result<Option<Timestamp>>>;
+
     /// Store the combined hash of a time slice.
     fn store_slice_hash(
         &self,
