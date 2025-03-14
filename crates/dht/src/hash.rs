@@ -105,6 +105,7 @@ impl HashPartition {
     /// Each sector owns a [TimePartition] structure that is responsible for managing the time
     /// slices for that sector. The parameters to this function are used to create the
     /// [TimePartition] structure.
+    #[tracing::instrument(level = "debug", skip(store))]
     pub async fn try_from_store(
         time_factor: u8,
         current_time: Timestamp,
@@ -166,7 +167,7 @@ impl HashPartition {
         current_time: Timestamp,
     ) -> K2Result<()> {
         for partition in self.sectors.iter_mut() {
-            partition.update(store.clone(), current_time).await?;
+            partition.update(current_time, store.clone()).await?;
         }
 
         Ok(())

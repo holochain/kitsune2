@@ -154,6 +154,7 @@ impl TimePartition {
     ///
     /// The resulting [TimePartition] will be consistent with the store at the current time.
     /// It should be updated again after [TimePartition::next_update_at].
+    #[tracing::instrument(level = "trace", skip(store))]
     pub async fn try_from_store(
         factor: u8,
         current_time: Timestamp,
@@ -167,6 +168,23 @@ impl TimePartition {
         let mut pt = Self::new(factor, sector_constraint)?;
 
         pt.full_slices = store.slice_hash_count(sector_constraint).await?;
+
+        // If we haven't stored any full slices yet, we might be able to avoid some work
+        if pt.full_slices == 0 {
+            let earliest_timestamp = store
+                .earliest_timestamp_in_arc(sector_constraint)
+                .await?
+                // If no ops have been stored, compute full slices to now
+                .unwrap_or(current_time);
+
+            // Compute the index of the slice that the earliest timestamp belongs to
+            let index = earliest_timestamp.as_micros() as u128
+                / pt.full_slice_duration.as_micros();
+
+            // Index is one less than count, so we set the count to cover the previous index
+            pt.full_slices = index.saturating_sub(1) as u64;
+            tracing::info!("Corrected full slices to {}", pt.full_slices);
+        }
 
         // The end timestamp of the last full slice
         let full_slice_end_timestamp = pt.full_slice_end_timestamp();
@@ -183,7 +201,7 @@ impl TimePartition {
         }
 
         // Update the state for the current time. The stored slices might be out of date.
-        pt.update(store, current_time).await?;
+        pt.update(current_time, store).await?;
 
         Ok(pt)
     }
@@ -208,15 +226,22 @@ impl TimePartition {
     ///   - Update the `next_update_at` field to the next time an update is required.
     pub async fn update(
         &mut self,
-        store: DynOpStore,
         current_time: Timestamp,
+        store: DynOpStore,
     ) -> K2Result<()> {
         // Check if there is enough time to allocate new full slices
-        self.update_full_slice_hashes(store.clone(), current_time)
+        self.update_full_slice_hashes(current_time, store.clone())
+            .await?;
+
+        // get the earliest op timestamp to avoid computing more partial
+        // slices than necessary.
+        let earliest_timestamp = store
+            .earliest_timestamp_in_arc(self.sector_constraint)
             .await?;
 
         // Check if there is enough time to allocate new partial slices
-        self.update_partials(current_time, store.clone()).await?;
+        self.update_partials(earliest_timestamp, current_time, store.clone())
+            .await?;
 
         // There will be a small amount of time left over, which we can't partition into smaller
         // slices. Some amount less than [UNIT_TIME] will be left over.
@@ -513,8 +538,8 @@ impl TimePartition {
     /// combine them into a single hash. That combined hash is then stored on the host.
     async fn update_full_slice_hashes(
         &mut self,
-        store: DynOpStore,
         current_time: Timestamp,
+        store: DynOpStore,
     ) -> K2Result<()> {
         let new_full_slices_count = self.layout_full_slices(current_time)?;
 
@@ -600,6 +625,7 @@ impl TimePartition {
     /// stable, especially the larger ones that require more ops to be fetched.
     async fn update_partials(
         &mut self,
+        earliest_timestamp: Option<Timestamp>,
         current_time: Timestamp,
         store: DynOpStore,
     ) -> K2Result<()> {
@@ -626,16 +652,24 @@ impl TimePartition {
                         + Duration::from_secs(
                             (1u64 << size) * UNIT_TIME.as_secs(),
                         );
-                    combine::combine_op_hashes(
-                        store
-                            .retrieve_op_hashes_in_time_slice(
-                                self.sector_constraint,
-                                start,
-                                end,
-                            )
-                            .await?
-                            .0,
-                    )
+
+                    match earliest_timestamp {
+                        Some(t) if end >= t => combine::combine_op_hashes(
+                            store
+                                .retrieve_op_hashes_in_time_slice(
+                                    self.sector_constraint,
+                                    start,
+                                    end,
+                                )
+                                .await?
+                                .0,
+                        ),
+                        _ => {
+                            // If there are no ops or the start/end time are before the earliest
+                            // authored timestamp then there are no ops to combine.
+                            bytes::BytesMut::new()
+                        }
+                    }
                 }
             };
 
@@ -1085,7 +1119,7 @@ mod tests {
                 current_time + Duration::from_secs(UNIT_TIME.as_secs() / 100);
             assert!(call_at < pt.next_update_at());
 
-            pt.update(store.clone(), call_at).await.unwrap();
+            pt.update(call_at, store.clone()).await.unwrap();
 
             assert_eq!(pt_original, pt);
         }
@@ -1146,7 +1180,7 @@ mod tests {
             .await
             .unwrap();
 
-        pt.update(store.clone(), current_time + UNIT_TIME)
+        pt.update(current_time + UNIT_TIME, store.clone())
             .await
             .unwrap();
 
@@ -1212,11 +1246,11 @@ mod tests {
             .unwrap();
 
         pt.update(
-            store.clone(),
             UNIX_TIMESTAMP
                 + 2 * full_slice_duration(factor)
                 + min_recent_time(factor)
                 + Duration::from_secs(1),
+            store.clone(),
         )
         .await
         .unwrap();
@@ -1284,7 +1318,7 @@ mod tests {
             .await
             .unwrap();
 
-        pt.update(store.clone(), current_time + (2 * pt.full_slice_duration))
+        pt.update(current_time + (2 * pt.full_slice_duration), store.clone())
             .await
             .unwrap();
 
@@ -1360,7 +1394,7 @@ mod tests {
             .await
             .unwrap();
         // and compute the new state in the future
-        pt.update(store.clone(), Timestamp::now() + pt.full_slice_duration)
+        pt.update(Timestamp::now() + pt.full_slice_duration, store.clone())
             .await
             .unwrap();
 

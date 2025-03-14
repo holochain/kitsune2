@@ -519,6 +519,7 @@ impl Dht {
     /// Creates the inner [HashPartition] using the store. The sizing for the sectors and time
     /// slices are currently hard-coded. This will create 512 sectors and each full time slice will
     /// be approximately 5.3 days.
+    #[tracing::instrument(level = "debug", skip(store))]
     pub async fn try_from_store(
         current_time: Timestamp,
         store: DynOpStore,
