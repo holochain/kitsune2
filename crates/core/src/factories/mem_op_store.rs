@@ -315,10 +315,6 @@ impl OpStore for Kitsune2MemoryOpStore {
         arc: DhtArc,
     ) -> BoxFuture<'_, K2Result<Option<Timestamp>>> {
         Box::pin(async move {
-            println!(
-                "Getting earliest from: {:?}",
-                self.read().await.op_list.len()
-            );
 
             Ok(self
                 .read()
