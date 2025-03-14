@@ -315,7 +315,6 @@ impl OpStore for Kitsune2MemoryOpStore {
         arc: DhtArc,
     ) -> BoxFuture<'_, K2Result<Option<Timestamp>>> {
         Box::pin(async move {
-
             Ok(self
                 .read()
                 .await
