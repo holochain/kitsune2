@@ -153,13 +153,17 @@ impl DhtArc {
         }
     }
 
-    /// Get the length of the arc.
-    pub fn len(&self) -> u32 {
+    /// The distance from the inclusive beginning of the arc
+    /// to the inclusive end of the arc. (Or length minus one.)
+    /// Note: DhtArc::Empty and DhtArc::Arc(0, 0) will both
+    /// return arc_span() == 0. To address this, first match on
+    /// the enum variants.
+    pub fn arc_span(&self) -> u32 {
         match self {
             DhtArc::Empty => 0,
             DhtArc::Arc(start, end) => {
                 if start > end {
-                    u32::MAX - start + end
+                    u32::MAX - start + end + 1
                 } else {
                     end - start
                 }
@@ -176,6 +180,22 @@ impl DhtArc {
 #[cfg(test)]
 mod tests {
     use crate::DhtArc;
+
+    #[test]
+    fn arc_span_fixtures() {
+        for (expected, arc) in [
+            (0, DhtArc::Empty),
+            (0, DhtArc::Arc(0, 0)),
+            (1, DhtArc::Arc(0, 1)),
+            (1, DhtArc::Arc(u32::MAX, 0)),
+            (2, DhtArc::Arc(42, 44)),
+            (u32::MAX, DhtArc::Arc(42, 41)),
+            (u32::MAX, DhtArc::Arc(0, u32::MAX)),
+            (u32::MAX, DhtArc::Arc(u32::MAX, u32::MAX - 1)),
+        ] {
+            assert_eq!(expected, arc.arc_span());
+        }
+    }
 
     #[test]
     fn contains_full_arc_all_values() {
