@@ -154,7 +154,7 @@ impl DhtArc {
     }
 
     /// The distance from the inclusive beginning of the arc
-    /// to the inclusive end of the arc. (Or length minus one.)
+    /// to the exclusive end of the arc. (Or length minus one.)
     /// Note: DhtArc::Empty and DhtArc::Arc(0, 0) will both
     /// return arc_span() == 0. To address this, first match on
     /// the enum variants.
