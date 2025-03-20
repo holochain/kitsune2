@@ -10,6 +10,7 @@ impl K2Gossip {
         terminate: K2GossipTerminateMessage,
     ) -> K2GossipResult<Option<GossipMessage>> {
         tracing::info!(
+            ?terminate.session_id,
             "Peer {from_peer} is attempting to terminate gossip session with reason: {}",
             terminate.reason
         );
@@ -26,9 +27,11 @@ impl K2Gossip {
                             "Unsolicited terminate message from: {from_peer}"
                         )));
                     }
-                }
 
-                true
+                    true
+                } else {
+                    false
+                }
             } else {
                 false
             }
