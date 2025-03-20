@@ -1,65 +1,3 @@
-//! Partition of the hash space.
-//!
-//! The set of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::Id::loc)
-//! for more information about this. Each agent is responsible for storing and serving some part of
-//! the hash space. This module provides a structure that partitions the hash space into 512
-//! equally-sized DHT sectors.
-//!
-//! Each sector manages a [TimePartition] structure that is responsible for managing the time
-//! slices for that sector. The interface of this module is largely responsible for delegating
-//! the updating of time slices to the inner [TimePartition]s. This ensures all the
-//! [TimePartition]s are updated in lockstep, which makes reasoning about the space-time state
-//! easier.
-//!
-//! This module must be informed about ops that have been stored. There is no active process here
-//! that can look for newly stored ops. When a batch of ops is stored, the [HashPartition] must
-//! be informed and will split the ops into the right sector based on the location of the op. Ops
-//! are then pushed to the inner [TimePartition] for each sector. That determines which time slice
-//! the ops belong to and update the combined hash values for affected slices.
-//!
-//! That completes the high level information for this module, what follows is a more detailed
-//! explanation of the design.
-//!
-//! The bit-depth of the location roughly determines how evenly ops are distributed across the
-//! sectors. For example, an 8-bit location can only map op hashes to 256 possible locations,
-//! which would not use the top half of the sectors here. A 32-bit location retains enough
-//! information to use the full range of sectors. A 16-bit or 64-bit location would work too, and
-//! the choice between the options is not quantified here.
-//!
-//! The choice of 512 sectors is a tradeoff between the minimum amount of data that a node must
-//! store to participate in the network and the amount of data that must be sent over the network
-//! to discover what op data needs to be fetched. Every node will store between 0 and 512
-//! sectors. For nodes that are choosing to store data, the minimum they can store is 1
-//! sector. Or in other words, 1/512th of the total data. To put this in context, an application
-//! that has a complete data set of 5TB would require a minimum of 10GB of storage dedicated to
-//! that app to be able to participate in the network.
-//! It is important to note though, that each sector is managing a [TimePartition] structure
-//! which requires some memory and processing to maintain. Nodes that take on more partitions will
-//! have more work to do and will have to send more data to sync [Dht](crate::dht::Dht)s.
-//! That happens when there are changes to data that has made it into a time slice and become part
-//! of a combined hash. Generally, nodes will be able to just sync "what's new" but for catch-up,
-//! this is true.
-//! As a consequence, a new network that hasn't yet gained enough members to start reducing how
-//! many sectors are covered by each node will have a higher overhead for each node.
-//! It is the responsibility of the gossip module to work out how to be efficient about sending
-//! the minimum amount of data required to keep all nodes up to date. However, the worst case is
-//! that 512 combined hashes must be sent to find out which sector has a mismatch for a given
-//! time slice. Over time, there will be more time slices to check.
-//! Therefore, the choice of 512 should be thought of as a best-effort choice to ask a reasonable
-//! amount of work and storage from each node in a large network but being no larger than that
-//! so we don't add overhead to gossip.
-//!
-//! It is also important to note that nodes may have to store the full 512 sectors if the
-//! number of peers in the network is not high enough. The network must have enough peers that
-//! data is still stored redundantly before the number of sectors per node can be reduced.
-//!
-//! It should also be understood that as well as the minimum storage requirement and the
-//! possibility of having to store more data on smaller networks, a user of a Kitsune2 app is
-//! likely to want to use data that isn't stored on their own node. That means that although they
-//! are free to delete that data again once they are done with it, the amount of data stored and
-//! served by a node is not the only storage it may require. It is just a lower bound on the
-//! free space that a node will need to have available.
-
 use crate::arc_set::ArcSet;
 use crate::combine::combine_hashes;
 use crate::{TimePartition, SECTOR_SIZE};
@@ -72,6 +10,66 @@ use std::collections::{HashMap, HashSet};
 ///
 /// Partitions the hash structure into a fixed number of sectors. Each sector is
 /// responsible for managing the time slices for that sector using a [TimePartition].
+///
+/// The set of possible hashes is mapped to a 32-bit location. See [Id::loc](::kitsune2_api::Id::loc)
+/// for more information about this. Each agent is responsible for storing and serving some part of
+/// the hash space. This module provides a structure that partitions the hash space into 512
+/// equally-sized DHT sectors.
+///
+/// Each sector manages a [TimePartition] structure that is responsible for managing the time
+/// slices for that sector. The interface of this module is largely responsible for delegating
+/// the updating of time slices to the inner [TimePartition]s. This ensures all the
+/// [TimePartition]s are updated in lockstep, which makes reasoning about the space-time state
+/// easier.
+///
+/// This module must be informed about ops that have been stored. There is no active process here
+/// that can look for newly stored ops. When a batch of ops is stored, the [HashPartition] must
+/// be informed and will split the ops into the right sector based on the location of the op. Ops
+/// are then pushed to the inner [TimePartition] for each sector. That determines which time slice
+/// the ops belong to and update the combined hash values for affected slices.
+///
+/// That completes the high level information for this module, what follows is a more detailed
+/// explanation of the design.
+///
+/// The bit-depth of the location roughly determines how evenly ops are distributed across the
+/// sectors. For example, an 8-bit location can only map op hashes to 256 possible locations,
+/// which would not use the top half of the sectors here. A 32-bit location retains enough
+/// information to use the full range of sectors. A 16-bit or 64-bit location would work too, and
+/// the choice between the options is not quantified here.
+///
+/// The choice of 512 sectors is a tradeoff between the minimum amount of data that a node must
+/// store to participate in the network and the amount of data that must be sent over the network
+/// to discover what op data needs to be fetched. Every node will store between 0 and 512
+/// sectors. For nodes that are choosing to store data, the minimum they can store is 1
+/// sector. Or in other words, 1/512th of the total data. To put this in context, an application
+/// that has a complete data set of 5TB would require a minimum of 10GB of storage dedicated to
+/// that app to be able to participate in the network.
+/// It is important to note though, that each sector is managing a [TimePartition] structure
+/// which requires some memory and processing to maintain. Nodes that take on more partitions will
+/// have more work to do and will have to send more data to sync [Dht](crate::dht::Dht)s.
+/// That happens when there are changes to data that has made it into a time slice and become part
+/// of a combined hash. Generally, nodes will be able to just sync "what's new" but for catch-up,
+/// this is true.
+/// As a consequence, a new network that hasn't yet gained enough members to start reducing how
+/// many sectors are covered by each node will have a higher overhead for each node.
+/// It is the responsibility of the gossip module to work out how to be efficient about sending
+/// the minimum amount of data required to keep all nodes up to date. However, the worst case is
+/// that 512 combined hashes must be sent to find out which sector has a mismatch for a given
+/// time slice. Over time, there will be more time slices to check.
+/// Therefore, the choice of 512 should be thought of as a best-effort choice to ask a reasonable
+/// amount of work and storage from each node in a large network but being no larger than that
+/// so we don't add overhead to gossip.
+///
+/// It is also important to note that nodes may have to store the full 512 sectors if the
+/// number of peers in the network is not high enough. The network must have enough peers that
+/// data is still stored redundantly before the number of sectors per node can be reduced.
+///
+/// It should also be understood that as well as the minimum storage requirement and the
+/// possibility of having to store more data on smaller networks, a user of a Kitsune2 app is
+/// likely to want to use data that isn't stored on their own node. That means that although they
+/// are free to delete that data again once they are done with it, the amount of data stored and
+/// served by a node is not the only storage it may require. It is just a lower bound on the
+/// free space that a node will need to have available.
 pub struct HashPartition {
     /// This is just a convenience for internal function use.
     /// This should always be exactly `(u32::MAX / self.partitioned_hashes.len()) + 1`.

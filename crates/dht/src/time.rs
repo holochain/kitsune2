@@ -1,62 +1,3 @@
-//! Partition of time into slices.
-//!
-//! Provides an encapsulation for calculating time slices that is consistent when computed
-//! by different nodes. This is used to group Kitsune2 op data into time slices for combined hashes.
-//! Giving multiple nodes the same time slice boundaries allows them to compute the same combined
-//! hashes, and therefore effectively communicate which of their time slices match and which do not.
-//!
-//! A time slice is defined to be an interval of time that is closed at the start and open at the
-//! end. That is, an interval `[start, end)` where:
-//! - `start` is included in the time slice (inclusive bound)
-//! - `end` is not included in the time slice (exclusive bound)
-//!
-//! Time slices are partitioned into two types: full slices and partial slices. Full slices are
-//! always of a fixed size, while partial slices are of varying sizes. Full slices occupy
-//! historical time, while partial slices occupy recent time.
-//!
-//! The granularity of time slices is determined by the `factor` parameter. The factor determines
-//! the size of time slices. Where 2^X means "2 raised to the power of X", the size of a full time
-//! slice is 2^factor * [UNIT_TIME]. Partial time slices vary in size from
-//! 2^(factor - 1) * [UNIT_TIME] down to 2^0 * [UNIT_TIME] (i.e. [UNIT_TIME]). There is some
-//! amount of time left over that cannot be partitioned into smaller slices. This time cannot be
-//! included in comparisons but has an upper bound of [UNIT_TIME].
-//!
-//! > Note: The factor is used with durations and the code needs to be able to do arithmetic with
-//! > it, so the factor has a maximum value of 53. The factor also has a minimum value of 1,
-//! > though values lower than 4 are effectively meaningless. Consider choosing a factor that
-//! > results in a meaningful split between recent time and historical, full slices.
-//!
-//! Because recent time is expected to change more frequently, combined hashes for partial slices
-//! are stored in memory. Full slices are stored in the Kitsune2 op store. Storage of full slice
-//! combined hashes is required to be sparse because time starts at 0, so there will usually be
-//! many empty slices before the first one with data.
-//!
-//! The algorithm for partitioning time is as follows:
-//!   - Reserve a minimum amount of recent time as a sum of possible partial slice sizes.
-//!   - Allocate as many full slices as possible.
-//!   - Partition the remaining time into smaller slices. If there is space for two slices of a
-//!     given size, then allocate two slices of that size. Otherwise, allocate one slice of that
-//!     size. Larger slices are allocated before smaller slices.
-//!
-//! As time progresses, the partitioning needs to be updated. This is done by calling the
-//! [TimePartition::update] method. The update method will:
-//!    - Run the partitioning algorithm to determine whether new full slices can be allocated and
-//!      how to partition the remaining time into partial slices.
-//!    - Store the combined hash of any new full slices in the Kitsune2 op store.
-//!    - Store the combined hash of any new partial slices in memory.
-//!    - Update the `next_update_at` field to the next time an update is required.
-//!
-//! As an example, consider a factor of 9. This means that full slices are 2^9 = 512 times the [UNIT_TIME].
-//! With a unit time of 15 minutes, that means full slices are 512 * 15 minutes = 7680 minutes = 128 hours.
-//! So every 5 days, a new full slice is created.
-//! The partial slices reserve at least 2^8 + 2^7 ... 2^0 = 511 times the [UNIT_TIME], so 511 * 15 minutes
-//! = 7685 minutes = 127.75 hours. That gives roughly 5 days of recent time.
-//!
-//! A lower factor allocates less recent time and requires more full slices to be stored but is
-//! more granular when comparing time slices with another peer. A higher factor allocates more
-//! recent time and requires fewer full slices to be stored but is less granular when comparing
-//! time slices with another peer.
-
 use crate::combine;
 use crate::constant::UNIT_TIME;
 use kitsune2_api::{
@@ -65,6 +6,63 @@ use kitsune2_api::{
 use std::time::Duration;
 
 /// The time partition structure.
+///
+/// Provides an encapsulation for calculating time slices that is consistent when computed
+/// by different nodes. This is used to group Kitsune2 op data into time slices for combined hashes.
+/// Giving multiple nodes the same time slice boundaries allows them to compute the same combined
+/// hashes, and therefore effectively communicate which of their time slices match and which do not.
+///
+/// A time slice is defined to be an interval of time that is closed at the start and open at the
+/// end. That is, an interval `[start, end)` where:
+/// - `start` is included in the time slice (inclusive bound)
+/// - `end` is not included in the time slice (exclusive bound)
+///
+/// Time slices are partitioned into two types: full slices and partial slices. Full slices are
+/// always of a fixed size, while partial slices are of varying sizes. Full slices occupy
+/// historical time, while partial slices occupy recent time.
+///
+/// The granularity of time slices is determined by the `factor` parameter. The factor determines
+/// the size of time slices. Where 2^X means "2 raised to the power of X", the size of a full time
+/// slice is 2^factor * [UNIT_TIME]. Partial time slices vary in size from
+/// 2^(factor - 1) * [UNIT_TIME] down to 2^0 * [UNIT_TIME] (i.e. [UNIT_TIME]). There is some
+/// amount of time left over that cannot be partitioned into smaller slices. This time cannot be
+/// included in comparisons but has an upper bound of [UNIT_TIME].
+///
+/// > Note: The factor is used with durations and the code needs to be able to do arithmetic with
+/// > it, so the factor has a maximum value of 53. The factor also has a minimum value of 1,
+/// > though values lower than 4 are effectively meaningless. Consider choosing a factor that
+/// > results in a meaningful split between recent time and historical, full slices.
+///
+/// Because recent time is expected to change more frequently, combined hashes for partial slices
+/// are stored in memory. Full slices are stored in the Kitsune2 op store. Storage of full slice
+/// combined hashes is required to be sparse because time starts at 0, so there will usually be
+/// many empty slices before the first one with data.
+///
+/// The algorithm for partitioning time is as follows:
+///   - Reserve a minimum amount of recent time as a sum of possible partial slice sizes.
+///   - Allocate as many full slices as possible.
+///   - Partition the remaining time into smaller slices. If there is space for two slices of a
+///     given size, then allocate two slices of that size. Otherwise, allocate one slice of that
+///     size. Larger slices are allocated before smaller slices.
+///
+/// As time progresses, the partitioning needs to be updated. This is done by calling the
+/// [TimePartition::update] method. The update method will:
+///    - Run the partitioning algorithm to determine whether new full slices can be allocated and
+///      how to partition the remaining time into partial slices.
+///    - Store the combined hash of any new full slices in the Kitsune2 op store.
+///    - Store the combined hash of any new partial slices in memory.
+///    - Update the `next_update_at` field to the next time an update is required.
+///
+/// As an example, consider a factor of 9. This means that full slices are 2^9 = 512 times the [UNIT_TIME].
+/// With a unit time of 15 minutes, that means full slices are 512 * 15 minutes = 7680 minutes = 128 hours.
+/// So every 5 days, a new full slice is created.
+/// The partial slices reserve at least 2^8 + 2^7 ... 2^0 = 511 times the [UNIT_TIME], so 511 * 15 minutes
+/// = 7685 minutes = 127.75 hours. That gives roughly 5 days of recent time.
+///
+/// A lower factor allocates less recent time and requires more full slices to be stored but is
+/// more granular when comparing time slices with another peer. A higher factor allocates more
+/// recent time and requires fewer full slices to be stored but is less granular when comparing
+/// time slices with another peer.
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone, PartialEq))]
 pub struct TimePartition {

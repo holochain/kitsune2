@@ -1,15 +1,13 @@
-//! Represents a set of [DhtArc]s.
-//!
-//! A set of [DhtArc]s is combined as a set union into an [ArcSet].
-//!
-//! To restrict [crate::dht::Dht] operations to a specific set of sectors, the [ArcSet]s of two
-//! DHTs can be intersected to find the common sectors, using [ArcSet::intersection].
-
 use crate::SECTOR_SIZE;
 use kitsune2_api::{DhtArc, K2Error, K2Result};
 use std::collections::HashSet;
 
 /// Represents a set of [DhtArc]s.
+///
+/// A set of [DhtArc]s is combined as a set union into an [ArcSet].
+///
+/// To restrict [crate::dht::Dht] operations to a specific set of sectors, the [ArcSet]s of two
+/// DHTs can be intersected to find the common sectors, using [ArcSet::intersection].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArcSet {
     inner: HashSet<u32>,

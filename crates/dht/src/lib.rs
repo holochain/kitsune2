@@ -49,13 +49,13 @@
 //!
 //! There are detailed explanations of the pieces of the model in each module. To aid with navigation, here is a brief
 //! overview of the modules:
-//! - The model starts in the `time` module. This module defines time slices, and handles combining hashes
+//! - The model starts with the [`TimePartition`] type. This defines time slices, and handles combining hashes
 //!   within time slices. It can also combine hashes to yield top hashes.
-//! - The next step in the model is the `hash` module. This module defines the partition over location, and
-//!   uses the `time` module for its inner state.
-//! - The supporting module `arc_set` defines a set of agent arcs. This module provides a simple
-//!   representation of the overlap between the storage [DhtArc](kitsune2_api::DhtArc)s' of two agents.
-//! - The top level module is the `dht` module. This module uses the hash module as its inner state, and adds
+//! - The next piece of the model is the [`HashPartition`] type. This defines the partition over location, and
+//!   uses [`TimePartition`]s for its inner state.
+//! - The [`ArcSet`] type defines a set of agent arcs. This provides a simple representation of the
+//!   overlap between the storage [DhtArc](kitsune2_api::DhtArc)s' of two agents.
+//! - The top level of the model is the [`Dht`] type. This uses a [`HashPartition`] as its inner state, and adds
 //!   the logic for computing a diff between two DHT models. This is a multistep process, and is designed to balance the
 //!   amount of data that must be sent, with the number of round-trips required to sync the models.
 

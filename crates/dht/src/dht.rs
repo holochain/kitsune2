@@ -1,23 +1,3 @@
-//! Top-level DHT model.
-//!
-//! This module is largely implemented in terms of the [HashPartition] and
-//! [PartitionedTime](crate::time::TimePartition) types. It combines these types into a single
-//! model that can be used to track the state of a distributed hash table (DHT).
-//!
-//! On top of the inner types, this type adds the ability to compare two DHT models and determine
-//! a set of op hashes that may need to be fetched from one model to the other to bring them into
-//! sync. The comparison process is symmetric, meaning that both parties will end up with the same
-//! list of op hashes to fetch regardless of who initiated the comparison. Comparison is initiated
-//! using the [Dht::snapshot_minimal] method which produces a minimal snapshot of the DHT model.
-//!
-//! The set of op hashes to fetch is unlikely to be the exact ops that are missing but rather a
-//! tradeoff between the number of steps required to determine the set of possible missing ops and
-//! the number of op hashes that have to be sent. In the case of recent ops, this is a two-step
-//! process to compare rings by exchanging [DhtSnapshot::Minimal] and then
-//! [DhtSnapshot::RingSectorDetails]. In the case of historical ops, this is a three-step process
-//! to compare discs by exchanging [DhtSnapshot::Minimal], [DhtSnapshot::DiscSectors] and then
-//! [DhtSnapshot::DiscSectorDetails].
-
 use crate::arc_set::ArcSet;
 use crate::HashPartition;
 use kitsune2_api::{
@@ -35,6 +15,24 @@ mod tests;
 ///
 /// Represents a distributed hash table (DHT) model that can be compared with other instances of
 /// itself to determine if they are in sync and which regions to sync if they are not.
+///
+/// This is largely implemented in terms of the [HashPartition] and
+/// [PartitionedTime](crate::time::TimePartition) types. It combines these types into a single
+/// model that can be used to track the state of a distributed hash table (DHT).
+///
+/// On top of the inner types, this type adds the ability to compare two DHT models and determine
+/// a set of op hashes that may need to be fetched from one model to the other to bring them into
+/// sync. The comparison process is symmetric, meaning that both parties will end up with the same
+/// list of op hashes to fetch regardless of who initiated the comparison. Comparison is initiated
+/// using the [Dht::snapshot_minimal] method which produces a minimal snapshot of the DHT model.
+///
+/// The set of op hashes to fetch is unlikely to be the exact ops that are missing but rather a
+/// tradeoff between the number of steps required to determine the set of possible missing ops and
+/// the number of op hashes that have to be sent. In the case of recent ops, this is a two-step
+/// process to compare rings by exchanging [DhtSnapshot::Minimal] and then
+/// [DhtSnapshot::RingSectorDetails]. In the case of historical ops, this is a three-step process
+/// to compare discs by exchanging [DhtSnapshot::Minimal], [DhtSnapshot::DiscSectors] and then
+/// [DhtSnapshot::DiscSectorDetails].
 pub struct Dht {
     partition: HashPartition,
     store: DynOpStore,
