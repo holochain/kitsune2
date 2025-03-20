@@ -175,7 +175,7 @@ impl K2Gossip {
                             s => {
                                 // Other snapshot types are not expected at this point.
                                 tracing::error!(
-                                        ?accept.session_id,
+                                    ?accept.session_id,
                                     "unexpected snapshot type: {:?}",
                                     s
                                 );
