@@ -52,6 +52,7 @@ impl K2Gossip {
 
         if let Some(state) = state.as_mut() {
             tracing::debug!(
+                ?disc_sector_details_diff.session_id,
                 "Used {}/{} op budget to send disc ops",
                 used_bytes,
                 state.peer_max_op_data_bytes,
@@ -63,6 +64,7 @@ impl K2Gossip {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
                 tracing::info!(
+                    ?disc_sector_details_diff.session_id,
                     "Received a disc sector details diff but no diff to send back, responding with agents"
                 );
 
@@ -95,7 +97,7 @@ impl K2Gossip {
                 )))
             }
             _ => {
-                tracing::error!("Unexpected next action: {:?}", next_action);
+                tracing::error!(?disc_sector_details_diff.session_id, "Unexpected next action: {:?}", next_action);
 
                 // Remove round state.
                 state.take();

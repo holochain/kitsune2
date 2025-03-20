@@ -49,6 +49,7 @@ impl K2Gossip {
             .await?;
 
         tracing::debug!(
+            ?response.session_id,
             "Used {}/{} op budget to send disc ops",
             used_bytes,
             state.peer_max_op_data_bytes,
@@ -59,6 +60,7 @@ impl K2Gossip {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
                 tracing::info!(
+                    ?response.session_id,
                     "Received a disc sector details diff response that we can't respond to, terminating gossip round"
                 );
 
@@ -80,7 +82,7 @@ impl K2Gossip {
                 })))
             }
             a => {
-                tracing::error!("Unexpected next action: {:?}", a);
+                tracing::error!(?response.session_id, "Unexpected next action: {:?}", a);
 
                 // Terminating the session, so remove the state.
                 self.accepted_round_states.write().await.remove(&from_peer);

@@ -46,13 +46,14 @@ async fn remove_timed_out_rounds(
         let mut initiated_state = initiated_round_state.lock().await;
         match initiated_state.as_ref() {
             Some(state) if state.started_at.elapsed() > round_timeout => {
-                tracing::warn!("Initiated round timed out: {:?}", state);
+                tracing::warn!(?state.session_id, "Initiated round timed out: {:?}", state);
 
                 if let Err(e) = peer_meta_store
                     .incr_peer_timeout(state.session_with_peer.clone())
                     .await
                 {
                     tracing::error!(
+                        ?state.session_id,
                         "Failed to increment peer timeout: {:?}",
                         e
                     );
@@ -67,13 +68,15 @@ async fn remove_timed_out_rounds(
     let mut remove = HashSet::new();
     {
         for (url, state) in accepted_round_states.iter() {
-            if state.lock().await.started_at.elapsed() > round_timeout {
-                tracing::warn!("Accepted round timed out: {:?}", state);
+            let state_lock = state.lock().await;
+            if state_lock.started_at.elapsed() > round_timeout {
+                tracing::warn!(?state_lock.session_id, "Accepted round timed out: {:?}", state);
 
                 if let Err(e) =
                     peer_meta_store.incr_peer_timeout(url.clone()).await
                 {
                     tracing::error!(
+                        ?state_lock.session_id,
                         "Failed to increment peer timeout: {:?}",
                         e
                     );

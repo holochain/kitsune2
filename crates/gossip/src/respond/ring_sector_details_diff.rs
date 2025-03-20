@@ -67,6 +67,7 @@ impl K2Gossip {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
                 tracing::info!(
+                    ?ring_sector_details_diff.session_id,
                     "Received a ring sector details diff but no diff to send back, responding with agents"
                 );
 
@@ -108,7 +109,7 @@ impl K2Gossip {
                 )))
             }
             a => {
-                tracing::error!("Unexpected next action: {:?}", a);
+                tracing::error!(?ring_sector_details_diff.session_id, "Unexpected next action: {:?}", a);
 
                 // Remove round state
                 self.accepted_round_states.write().await.remove(&from_peer);

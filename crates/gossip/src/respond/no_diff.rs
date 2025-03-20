@@ -32,7 +32,7 @@ impl K2Gossip {
             }
             _ => Ok(Some(GossipMessage::Terminate(K2GossipTerminateMessage {
                 session_id: no_diff.session_id,
-                reason: "No agents".to_string(),
+                reason: "No agents requested".to_string(),
             }))),
         }
     }

@@ -54,7 +54,7 @@ impl GossipRoundState {
 
         match &self.stage {
             RoundStage::NoDiff { .. } => {
-                tracing::trace!("NoDiff round state found");
+                tracing::trace!(?agents.session_id, "NoDiff round state found");
             }
             stage => {
                 return Err(K2GossipError::peer_behavior(format!(

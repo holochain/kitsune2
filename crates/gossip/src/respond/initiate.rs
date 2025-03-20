@@ -23,7 +23,7 @@ impl K2Gossip {
             && self.accepted_round_states.read().await.len()
                 >= self.config.max_concurrent_accepted_rounds as usize
         {
-            tracing::debug!("Busy, refusing initiate from {:?}", from_peer);
+            tracing::debug!(?initiate.session_id, "Busy, refusing initiate from {:?}", from_peer);
             return Ok(Some(GossipMessage::Busy(K2GossipBusyMessage {
                 session_id: initiate.session_id,
             })));
@@ -77,6 +77,7 @@ impl K2Gossip {
                 //      to need to initiate to discover this but we do want to minimize work
                 //      in this case.
                 tracing::info!(
+                    ?initiate.session_id,
                     "no common arc set, continue to sync agents but not ops"
                 );
                 None
@@ -99,6 +100,7 @@ impl K2Gossip {
         // Update the peer's max op data bytes to reflect the amount of data we're sending ids for.
         // The remaining limit will be used for the DHT diff as required.
         tracing::debug!(
+            ?initiate.session_id,
             "Used {}/{} op budget to send {} op ids",
             used_bytes,
             initiate.max_op_data_bytes,

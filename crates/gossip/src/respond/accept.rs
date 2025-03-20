@@ -64,6 +64,7 @@ impl K2Gossip {
         // The remaining limit will be used for the DHT diff as required.
         if let Some(state) = lock.as_mut() {
             tracing::debug!(
+                ?accept.session_id,
                 "Used {}/{} op budget to send {} op ids",
                 used_bytes,
                 accept.max_op_data_bytes,
@@ -174,6 +175,7 @@ impl K2Gossip {
                             s => {
                                 // Other snapshot types are not expected at this point.
                                 tracing::error!(
+                                        ?accept.session_id,
                                     "unexpected snapshot type: {:?}",
                                     s
                                 );
@@ -194,7 +196,7 @@ impl K2Gossip {
                     a => {
                         // The other action types are not reachable from a minimal
                         // snapshot
-                        tracing::error!("unexpected next action: {:?}", a);
+                        tracing::error!(?accept.session_id, "unexpected next action: {:?}", a);
 
                         // Remove round state.
                         lock.take();
@@ -289,7 +291,7 @@ impl GossipRoundState {
             RoundStage::Initiated(
                 stage @ RoundStageInitiated { our_agents, .. },
             ) => {
-                tracing::trace!("Initiated round state found");
+                tracing::trace!(?accept.session_id, "Initiated round state found");
 
                 if accept
                     .missing_agents

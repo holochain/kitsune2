@@ -65,6 +65,7 @@ impl K2Gossip {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::Identical => {
                 tracing::info!(
+                    ?response.session_id,
                     "Received a ring sector details diff response that we can't respond to, terminating gossip round"
                 );
 
@@ -86,7 +87,7 @@ impl K2Gossip {
                 })))
             }
             a => {
-                tracing::error!("Unexpected next action: {:?}", a);
+                tracing::error!(?response.session_id, "Unexpected next action: {:?}", a);
 
                 // Remove the round state.
                 state.take();
