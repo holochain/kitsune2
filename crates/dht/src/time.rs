@@ -183,7 +183,7 @@ impl TimePartition {
 
             // Index is one less than count, so we set the count to cover the previous index
             pt.full_slices = index.saturating_sub(1) as u64;
-            tracing::info!("Corrected full slices to {}", pt.full_slices);
+            tracing::debug!("Corrected full slices to {}", pt.full_slices);
         }
 
         // The end timestamp of the last full slice
