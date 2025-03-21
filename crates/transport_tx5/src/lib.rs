@@ -254,11 +254,9 @@ impl TxImp for Tx5Transport {
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
         Box::pin(async move {
-            let mut stats: serde_json::Value = serde_json::from_slice(
-                &serde_json::to_vec(&self.ep.get_stats())
-                    .map_err(K2Error::other)?,
-            )
-            .map_err(K2Error::other)?;
+            let mut stats: serde_json::Value =
+                serde_json::to_value(self.ep.get_stats())
+                    .map_err(K2Error::other)?;
 
             let connection_list = stats
                 .as_object_mut()
