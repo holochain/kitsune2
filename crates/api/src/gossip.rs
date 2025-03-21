@@ -9,6 +9,13 @@ use crate::{
 };
 use std::sync::Arc;
 
+/// Request for a gossip state summary.
+#[derive(Debug, Clone)]
+pub struct GossipStateSummaryRequest {
+    /// Include DHT summary in the response.
+    pub include_dht_summary: bool,
+}
+
 /// Represents the ability to sync DHT data with other agents through background communication.
 pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
     /// Inform the gossip module that a set of ops have been stored.
@@ -17,6 +24,12 @@ pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
     /// space that owns this gossip module. See [crate::space::Space::inform_ops_stored].
     fn inform_ops_stored(&self, ops: Vec<StoredOp>)
         -> BoxFut<'_, K2Result<()>>;
+
+    /// Get a state summary from the gossip module.
+    fn get_state_summary(
+        &self,
+        request: GossipStateSummaryRequest,
+    ) -> BoxFut<'_, K2Result<serde_json::Value>>;
 }
 
 /// Trait-object [Gossip].
