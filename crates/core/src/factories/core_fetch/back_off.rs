@@ -4,7 +4,7 @@ use std::{
 };
 
 use backon::BackoffBuilder;
-use kitsune2_api::Url;
+use kitsune2_api::{Timestamp, Url};
 
 #[derive(Debug)]
 pub struct BackOffList {
@@ -114,6 +114,14 @@ impl BackOff {
     pub fn has_last_interval_expired(&self) -> bool {
         self.is_last_interval
             && self.interval_start.elapsed() > self.current_interval
+    }
+
+    /// Get the timestamp when the current back off will expire.
+    pub(crate) fn current_backoff_expiry(&self) -> Timestamp {
+        let remaining_duration = self
+            .current_interval
+            .saturating_sub(self.interval_start.elapsed());
+        Timestamp::now() + remaining_duration
     }
 }
 
