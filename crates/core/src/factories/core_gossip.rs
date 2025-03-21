@@ -1,4 +1,5 @@
 use kitsune2_api::*;
+use serde_json::Value;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -58,6 +59,13 @@ impl Gossip for CoreGossipStub {
             drop(ops);
             Ok(())
         })
+    }
+
+    fn get_state_summary(
+        &self,
+        _request: GossipStateSummaryRequest,
+    ) -> BoxFut<'_, K2Result<Value>> {
+        Box::pin(async move { Ok(serde_json::json!({})) })
     }
 }
 
