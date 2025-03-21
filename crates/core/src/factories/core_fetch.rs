@@ -1,6 +1,7 @@
 use back_off::BackOffList;
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
+use std::collections::HashMap;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -115,6 +116,30 @@ struct State {
     back_off_list: BackOffList,
 }
 
+impl State {
+    fn summary(&self) -> FetchStateSummary {
+        FetchStateSummary {
+            pending_requests: self.requests.iter().fold(
+                HashMap::new(),
+                |mut acc, (op_id, peer_url)| {
+                    acc.entry(op_id.clone())
+                        .or_default()
+                        .push(peer_url.clone());
+                    acc
+                },
+            ),
+            peers_on_backoff: self
+                .back_off_list
+                .state
+                .iter()
+                .map(|(peer_url, backoff)| {
+                    (peer_url.clone(), backoff.current_backoff_expiry())
+                })
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct CoreFetch {
     state: Arc<Mutex<State>>,
@@ -166,6 +191,10 @@ impl Fetch for CoreFetch {
 
             Ok(())
         })
+    }
+
+    fn get_state_summary(&self) -> BoxFut<'_, K2Result<FetchStateSummary>> {
+        Box::pin(async move { Ok(self.state.lock().unwrap().summary()) })
     }
 }
 

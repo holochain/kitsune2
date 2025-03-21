@@ -1,12 +1,13 @@
 //! Kitsune2 fetch types.
 
-use crate::op_store;
 use crate::{
     builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
     OpId, SpaceId, Url,
 };
+use crate::{op_store, Timestamp};
 use bytes::{Bytes, BytesMut};
 use prost::Message;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) mod proto {
@@ -93,6 +94,9 @@ pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
         op_ids: Vec<OpId>,
         source: Url,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Get a state summary from the fetch module.
+    fn get_state_summary(&self) -> BoxFut<'_, K2Result<FetchStateSummary>>;
 }
 
 /// Trait object [Fetch].
@@ -119,6 +123,22 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait object [FetchFactory].
 pub type DynFetchFactory = Arc<dyn FetchFactory>;
+
+/// Summary of the fetch state.
+#[derive(Debug)]
+pub struct FetchStateSummary {
+    /// The op ids that are currently being fetched.
+    ///
+    /// Each op id is associated with one or more peer URL from which the op data could be
+    /// requested.
+    pub pending_requests: HashMap<OpId, Vec<Url>>,
+
+    /// The peer URL for nodes that are currently on backoff because of failed fetch requests.
+    ///
+    /// If peers are in here then they are not being used as potential sources in
+    /// [`FetchStateSummary::pending_requests`].
+    pub peers_on_backoff: HashMap<Url, Timestamp>,
+}
 
 #[cfg(test)]
 mod test {
