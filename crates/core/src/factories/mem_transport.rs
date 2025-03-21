@@ -127,6 +127,14 @@ impl TxImp for MemTransport {
             }
         })
     }
+
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
+        Box::pin(async move {
+            Ok(serde_json::json!({
+                "backend": "kitsune2-core-mem",
+            }))
+        })
+    }
 }
 
 type Res = tokio::sync::oneshot::Sender<K2Result<()>>;

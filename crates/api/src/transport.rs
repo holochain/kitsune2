@@ -138,6 +138,14 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// Indicates that the implementation should send the payload to the remote
     /// peer, opening a connection if needed.
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>>;
+
+    /// Dump network stats.
+    ///
+    /// What this returns will depend on the transport implementation. The only guarantee is that
+    /// you can expect a JSON object that contains a `backend` key. The value of the `backend`
+    /// field will be a string that identifies the backend that is in use. That may be used as a
+    /// hint for processing the rest of the JSON object.
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>>;
 }
 
 /// Trait-object [TxImp].
@@ -198,6 +206,13 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         module: String,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Dump network stats.
+    ///
+    /// What this returns will depend on the transport implementation. It should contain any
+    /// information that might be relevant for diagnosing network issues or checking that
+    /// the transport is functioning as expected.
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>>;
 }
 
 /// Trait-object [Transport].
@@ -316,6 +331,10 @@ impl Transport for DefaultTransport {
             .encode()?;
             self.imp.send(peer, enc).await
         })
+    }
+
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
+        self.imp.dump_network_stats()
     }
 }
 

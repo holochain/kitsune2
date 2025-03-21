@@ -1,6 +1,7 @@
 #![deny(missing_docs)]
 //! kitsune2 tx5 transport module.
 
+use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
 
@@ -248,6 +249,51 @@ impl TxImp for Tx5Transport {
                 .send(peer, data.to_vec())
                 .await
                 .map_err(|e| K2Error::other_src("tx5 send error", e))
+        })
+    }
+
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
+        Box::pin(async move {
+            let mut stats: serde_json::Value = serde_json::from_slice(
+                &serde_json::to_vec(&self.ep.get_stats())
+                    .map_err(K2Error::other)?,
+            )
+            .map_err(K2Error::other)?;
+
+            let connection_list = stats
+                .as_object_mut()
+                .ok_or_else(|| K2Error::other("Stats should be an object"))?
+                .get_mut("connectionList")
+                .ok_or_else(|| K2Error::other("Missing connection list"))?
+                .as_array_mut()
+                .ok_or_else(|| {
+                    K2Error::other("Connection list not an array")
+                })?;
+
+            for conn in connection_list.iter_mut() {
+                let pub_key = conn
+                    .get_mut("pubKey")
+                    .ok_or_else(|| K2Error::other("Missing pubKey"))?;
+
+                *pub_key = serde_json::Value::String(
+                    base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(
+                        pub_key
+                            .as_array()
+                            .ok_or_else(|| {
+                                K2Error::other("pubKey not an array")
+                            })?
+                            .iter()
+                            .map(|v| {
+                                v.as_u64().map(|v| v as u8).ok_or_else(|| {
+                                    K2Error::other("invalid pubKey")
+                                })
+                            })
+                            .collect::<K2Result<Vec<u8>>>()?,
+                    ),
+                );
+            }
+
+            Ok(stats)
         })
     }
 }

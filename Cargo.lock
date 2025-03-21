@@ -1544,12 +1544,14 @@ dependencies = [
 name = "kitsune2_transport_tx5"
 version = "0.0.1-alpha.13"
 dependencies = [
+ "base64",
  "bytes",
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_test_utils",
  "sbd-server",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tx5",

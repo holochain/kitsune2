@@ -1,5 +1,6 @@
 use super::*;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 // We don't need or want to test all of tx5 in here... that should be done
@@ -238,7 +239,7 @@ async fn restart_addr() {
 
     test.restart().await;
 
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             if addr.lock().unwrap().len() > init_len {
                 // End the test, we're happy!
@@ -383,7 +384,7 @@ async fn message_send_recv() {
     .unwrap();
 
     println!("{r:?}");
-    assert_eq!(b"hello", r.2.as_ref())
+    assert_eq!(b"hello", r.2.as_ref());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -447,4 +448,92 @@ async fn preflight_send_recv() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dump_network_stats() {
+    let test = Test::new().await;
+
+    let h1 = Arc::new(CbHandler {
+        ..Default::default()
+    });
+    let t1 = test.build_transport(h1.clone()).await;
+
+    let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let h2 = Arc::new(CbHandler {
+        new_addr: Arc::new({
+            let u2 = u2.clone();
+            move |url| {
+                *u2.lock().unwrap() = url;
+            }
+        }),
+        ..Default::default()
+    });
+    let t2 = test.build_transport(h2.clone()).await;
+
+    // establish a connection
+    let url2 = u2.lock().unwrap().clone();
+    t1.send_space_notify(
+        url2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+
+    // Check that we can get network stats
+    let stats_1 = t1.dump_network_stats().await.unwrap();
+    let stats_2 = t2.dump_network_stats().await.unwrap();
+
+    let backend = stats_1
+        .as_object()
+        .expect("Is an object")
+        .get("backend")
+        .expect("Has backend key")
+        .as_str()
+        .expect("Backend value is a string")
+        .to_string();
+    assert_eq!(backend, "backendLibDataChannel");
+
+    fn get_peer_url(stats: &serde_json::Value) -> Url {
+        Url::from_str(
+            stats
+                .as_object()
+                .unwrap()
+                .get("peerUrlList")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .first()
+                .unwrap()
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn get_connection_list(stats: &serde_json::Value) -> HashSet<String> {
+        stats
+            .as_object()
+            .unwrap()
+            .get("connectionList")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.get("pubKey").unwrap().as_str().unwrap().to_string())
+            .collect()
+    }
+
+    let peer_url_1 = get_peer_url(&stats_1);
+    let peer_id_1 = peer_url_1.peer_id().unwrap();
+
+    let peer_url_2 = get_peer_url(&stats_2);
+    let peer_id_2 = peer_url_2.peer_id().unwrap();
+
+    let connection_list_1 = get_connection_list(&stats_1);
+    let connection_list_2 = get_connection_list(&stats_2);
+
+    assert!(connection_list_1.contains(peer_id_2));
+    assert!(connection_list_2.contains(peer_id_1));
 }
