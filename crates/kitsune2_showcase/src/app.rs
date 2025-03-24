@@ -78,6 +78,7 @@ impl App {
                     signal_allow_plain_text: true,
                     server_url: args.signal_url,
                     timeout_s: 10,
+                    ..Default::default()
                 },
             },
         )?;

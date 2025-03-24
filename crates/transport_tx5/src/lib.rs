@@ -56,6 +56,11 @@ pub mod config {
         /// The internal time in seconds to use as a maximum for operations,
         /// connecting, and idleing. (Default: 60s).
         pub timeout_s: u32,
+
+        /// WebRTC peer connection config.
+        ///
+        /// Passed directly to the current WebRTC backend without further processing.
+        pub webrtc_config: serde_json::Value,
     }
 
     impl Default for Tx5TransportConfig {
@@ -64,6 +69,7 @@ pub mod config {
                 signal_allow_plain_text: false,
                 server_url: "<wss://your.sbd.url>".into(),
                 timeout_s: 60,
+                webrtc_config: serde_json::json!({}),
             }
         }
     }
@@ -190,6 +196,10 @@ impl Tx5Transport {
             backend_module_config: Some(
                 tx5::backend::BackendModule::LibDataChannel.default_config(),
             ),
+            initial_webrtc_config: serde_json::to_string(&config.webrtc_config)
+                .map_err(|e| {
+                    K2Error::other_src("failed to serialize webrtc config", e)
+                })?,
             ..Default::default()
         });
 
