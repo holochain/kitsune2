@@ -79,7 +79,7 @@ impl K2Gossip {
                         );
                     }
                     _ => {
-                        return Err(K2Error::other("unexpected snapshot type"))
+                        unreachable!("unexpected snapshot type")
                     }
                 }
             }
