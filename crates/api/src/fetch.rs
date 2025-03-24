@@ -7,6 +7,7 @@ use crate::{
 use crate::{op_store, Timestamp};
 use bytes::{Bytes, BytesMut};
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -125,7 +126,7 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
 pub type DynFetchFactory = Arc<dyn FetchFactory>;
 
 /// Summary of the fetch state.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchStateSummary {
     /// The op ids that are currently being fetched.
     ///
