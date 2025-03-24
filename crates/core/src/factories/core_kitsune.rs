@@ -169,6 +169,15 @@ impl Kitsune for CoreKitsune {
             fut.await.ok()
         })
     }
+
+    fn transport(&self) -> BoxFut<'_, K2Result<DynTransport>> {
+        Box::pin(async move {
+            self.tx
+                .get()
+                .cloned()
+                .ok_or_else(|| K2Error::other("Transport not registered yet"))
+        })
+    }
 }
 
 #[cfg(test)]

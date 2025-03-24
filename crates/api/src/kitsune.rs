@@ -83,6 +83,9 @@ pub trait Kitsune: 'static + Send + Sync + std::fmt::Debug {
         &self,
         space: SpaceId,
     ) -> BoxFut<'_, Option<space::DynSpace>>;
+
+    /// Get the transport handle.
+    fn transport(&self) -> BoxFut<'_, K2Result<DynTransport>>;
 }
 
 /// Trait-object [Kitsune].
