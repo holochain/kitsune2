@@ -368,7 +368,7 @@ impl Gossip for K2Gossip {
     fn get_state_summary(
         &self,
         request: GossipStateSummaryRequest,
-    ) -> BoxFut<'_, K2Result<serde_json::Value>> {
+    ) -> BoxFut<'_, K2Result<GossipStateSummary>> {
         Box::pin(async move { self.summary(request.include_dht_summary).await })
     }
 }
@@ -421,7 +421,6 @@ pub(crate) fn send_gossip_message(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::PeerMeta;
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_dht::{SECTOR_SIZE, UNIT_TIME};
@@ -1156,15 +1155,12 @@ mod test {
             .await
             .unwrap();
 
-        assert!(summary["dht_summary"]["0..4294967295"]
-            .as_object()
-            .is_some());
-        let meta: PeerMeta = serde_json::from_value(
-            summary["peer_meta"]
-                [local_agent_2.url.as_ref().unwrap().to_string()]
-            .clone(),
-        )
-        .unwrap();
+        assert!(summary.dht_summary.contains_key("0..4294967295"));
+        let meta = summary
+            .peer_meta
+            .get(&local_agent_2.url.clone().unwrap())
+            .cloned()
+            .unwrap();
 
         assert!(meta.completed_rounds.unwrap() > 0);
     }

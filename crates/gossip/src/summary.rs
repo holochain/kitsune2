@@ -1,71 +1,17 @@
 use crate::gossip::K2Gossip;
-use kitsune2_api::{DhtArc, K2Error, K2Result, LocalAgent, Timestamp, Url};
+use kitsune2_api::{
+    DhtArc, DhtSegmentState, GossipRoundStateSummary, GossipStateSummary,
+    K2Error, K2Result, LocalAgent, PeerMeta,
+};
 use kitsune2_dht::{ArcSet, DhtSnapshot};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-/// DHT segment state.
-///
-/// See [`DhtSnapshot::Minimal`]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DhtSegmentState {
-    /// The top hash of the DHT ring segment.
-    pub disc_top_hash: bytes::Bytes,
-    /// The boundary timestamp of the DHT ring segment.
-    pub disc_boundary: Timestamp,
-    /// The top hashes of each DHT ring segment.
-    pub ring_top_hashes: Vec<bytes::Bytes>,
-}
-
-/// Peer metadata dump.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PeerMeta {
-    /// The timestamp of the last gossip round.
-    pub last_gossip_timestamp: Option<Timestamp>,
-    /// The bookmark of the last op bookmark received.
-    pub new_ops_bookmark: Option<Timestamp>,
-    /// The number of behavior errors observed.
-    pub peer_behavior_errors: Option<u32>,
-    /// The number of local errors.
-    pub local_errors: Option<u32>,
-    /// The number of busy peer errors.
-    pub peer_busy: Option<u32>,
-    /// The number of terminated rounds.
-    ///
-    /// Note that termination is not necessarily an error.
-    pub peer_terminated: Option<u32>,
-    /// The number of completed rounds.
-    pub completed_rounds: Option<u32>,
-    /// The number of peer timeouts.
-    pub peer_timeouts: Option<u32>,
-}
-
-/// Gossip round state summary.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GossipRoundStateSummary {
-    /// The URL of the peer with which the round is initiated.
-    pub session_with_peer: Url,
-}
-
-/// Gossip state summary.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GossipSummary {
-    /// The current initiated round summary.
-    pub initiated_round: Option<GossipRoundStateSummary>,
-    /// The list of accepted round summaries.
-    pub accepted_rounds: Vec<GossipRoundStateSummary>,
-    /// DHT summary.
-    pub dht_summary: HashMap<String, DhtSegmentState>,
-    /// Peer metadata dump for each agent in this space.
-    pub peer_meta: HashMap<Url, PeerMeta>,
-}
 
 impl K2Gossip {
     pub async fn summary(
         &self,
         include_dht_summary: bool,
-    ) -> K2Result<serde_json::Value> {
-        let mut summary = GossipSummary {
+    ) -> K2Result<GossipStateSummary> {
+        let mut summary = GossipStateSummary {
             initiated_round: None,
             accepted_rounds: Vec::new(),
             dht_summary: HashMap::new(),
@@ -188,7 +134,6 @@ impl K2Gossip {
             );
         }
 
-        serde_json::to_value(summary)
-            .map_err(|e| K2Error::other_src("Failed to serialize summary", e))
+        Ok(summary)
     }
 }
