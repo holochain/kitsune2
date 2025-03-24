@@ -133,7 +133,7 @@ pub struct FetchStateSummary {
     /// requested.
     pub pending_requests: HashMap<OpId, Vec<Url>>,
 
-    /// The peer URL for nodes that are currently on backoff because of failed fetch requests.
+    /// The peer URL for nodes that are currently on backoff because of failed fetch requests, and the timestamp when that backoff will expire.
     ///
     /// If peers are in here then they are not being used as potential sources in
     /// [`FetchStateSummary::pending_requests`].
