@@ -128,11 +128,13 @@ impl TxImp for MemTransport {
         })
     }
 
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
-            Ok(serde_json::json!({
-                "backend": "kitsune2-core-mem",
-            }))
+            Ok(TransportStats {
+                backend: "kitsune2-core-mem".to_string(),
+                peer_urls: Vec::with_capacity(0),
+                connections: Vec::with_capacity(0),
+            })
         })
     }
 }

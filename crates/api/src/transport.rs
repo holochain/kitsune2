@@ -3,6 +3,7 @@
 use crate::{protocol::*, *};
 #[cfg(feature = "mockall")]
 use mockall::automock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -145,7 +146,7 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// you can expect a JSON object that contains a `backend` key. The value of the `backend`
     /// field will be a string that identifies the backend that is in use. That may be used as a
     /// hint for processing the rest of the JSON object.
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>>;
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 }
 
 /// Trait-object [TxImp].
@@ -212,7 +213,7 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     /// What this returns will depend on the transport implementation. It should contain any
     /// information that might be relevant for diagnosing network issues or checking that
     /// the transport is functioning as expected.
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>>;
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 }
 
 /// Trait-object [Transport].
@@ -333,7 +334,7 @@ impl Transport for DefaultTransport {
         })
     }
 
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         self.imp.dump_network_stats()
     }
 }
@@ -453,3 +454,43 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait-object [TransportFactory].
 pub type DynTransportFactory = Arc<dyn TransportFactory>;
+
+/// Stats for a transport connection.
+///
+/// This is intended to be a state dump that gives some insight into what the transport is doing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransportStats {
+    /// The networking backend that is in use.
+    pub backend: String,
+
+    /// The list of peer urls that this Kitsune2 instance can currently be reached at.
+    pub peer_urls: Vec<Url>,
+
+    /// The list of current connections.
+    pub connections: Vec<TransportConnectionStats>,
+}
+
+/// Stats for a single transport connection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransportConnectionStats {
+    /// The public key of the remote peer.
+    pub pub_key: String,
+
+    /// The message count sent on this connection.
+    pub send_message_count: u64,
+
+    /// The bytes sent on this connection.
+    pub send_bytes: u64,
+
+    /// The message count received on this connection.
+    pub recv_message_count: u64,
+
+    /// The bytes received on this connection
+    pub recv_bytes: u64,
+
+    /// UNIX epoch timestamp in seconds when this connection was opened.
+    pub opened_at_s: u64,
+
+    /// True if this connection has successfully upgraded to webrtc.
+    pub is_webrtc: bool,
+}

@@ -485,54 +485,24 @@ async fn dump_network_stats() {
     let stats_1 = t1.dump_network_stats().await.unwrap();
     let stats_2 = t2.dump_network_stats().await.unwrap();
 
-    let backend = stats_1
-        .as_object()
-        .expect("Is an object")
-        .get("backend")
-        .expect("Has backend key")
-        .as_str()
-        .expect("Backend value is a string")
-        .to_string();
-    assert_eq!(backend, "backendLibDataChannel");
+    assert_eq!(stats_1.backend, "BackendLibDataChannel");
 
-    fn get_peer_url(stats: &serde_json::Value) -> Url {
-        Url::from_str(
-            stats
-                .as_object()
-                .unwrap()
-                .get("peerUrlList")
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .first()
-                .unwrap()
-                .as_str()
-                .unwrap(),
-        )
-        .unwrap()
-    }
-
-    fn get_connection_list(stats: &serde_json::Value) -> HashSet<String> {
-        stats
-            .as_object()
-            .unwrap()
-            .get("connectionList")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|x| x.get("pubKey").unwrap().as_str().unwrap().to_string())
-            .collect()
-    }
-
-    let peer_url_1 = get_peer_url(&stats_1);
+    let peer_url_1 = stats_1.peer_urls.first().unwrap();
     let peer_id_1 = peer_url_1.peer_id().unwrap();
 
-    let peer_url_2 = get_peer_url(&stats_2);
+    let peer_url_2 = stats_2.peer_urls.first().unwrap();
     let peer_id_2 = peer_url_2.peer_id().unwrap();
 
-    let connection_list_1 = get_connection_list(&stats_1);
-    let connection_list_2 = get_connection_list(&stats_2);
+    let connection_list_1 = stats_1
+        .connections
+        .iter()
+        .map(|c| c.pub_key.clone())
+        .collect::<HashSet<_>>();
+    let connection_list_2 = stats_2
+        .connections
+        .iter()
+        .map(|c| c.pub_key.clone())
+        .collect::<HashSet<_>>();
 
     assert!(connection_list_1.contains(peer_id_2));
     assert!(connection_list_2.contains(peer_id_1));

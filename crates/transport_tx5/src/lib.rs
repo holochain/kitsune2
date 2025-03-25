@@ -262,46 +262,32 @@ impl TxImp for Tx5Transport {
         })
     }
 
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<serde_json::Value>> {
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
-            let mut stats: serde_json::Value =
-                serde_json::to_value(self.ep.get_stats())
-                    .map_err(K2Error::other)?;
+            let tx5_stats = self.ep.get_stats();
 
-            let connection_list = stats
-                .as_object_mut()
-                .ok_or_else(|| K2Error::other("Stats should be an object"))?
-                .get_mut("connectionList")
-                .ok_or_else(|| K2Error::other("Missing connection list"))?
-                .as_array_mut()
-                .ok_or_else(|| {
-                    K2Error::other("Connection list not an array")
-                })?;
-
-            for conn in connection_list.iter_mut() {
-                let pub_key = conn
-                    .get_mut("pubKey")
-                    .ok_or_else(|| K2Error::other("Missing pubKey"))?;
-
-                *pub_key = serde_json::Value::String(
-                    base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(
-                        pub_key
-                            .as_array()
-                            .ok_or_else(|| {
-                                K2Error::other("pubKey not an array")
-                            })?
-                            .iter()
-                            .map(|v| {
-                                v.as_u64().map(|v| v as u8).ok_or_else(|| {
-                                    K2Error::other("invalid pubKey")
-                                })
-                            })
-                            .collect::<K2Result<Vec<u8>>>()?,
-                    ),
-                );
-            }
-
-            Ok(stats)
+            Ok(TransportStats {
+                backend: format!("{:?}", tx5_stats.backend),
+                peer_urls: tx5_stats
+                    .peer_url_list
+                    .into_iter()
+                    .map(|url| url.to_kitsune())
+                    .collect::<K2Result<Vec<_>>>()?,
+                connections: tx5_stats
+                    .connection_list
+                    .into_iter()
+                    .map(|conn| TransportConnectionStats {
+                        pub_key: base64::prelude::BASE64_URL_SAFE_NO_PAD
+                            .encode(conn.pub_key),
+                        send_message_count: conn.send_message_count,
+                        send_bytes: conn.send_bytes,
+                        recv_message_count: conn.recv_message_count,
+                        recv_bytes: conn.recv_bytes,
+                        opened_at_s: conn.opened_at_s,
+                        is_webrtc: conn.is_webrtc,
+                    })
+                    .collect(),
+            })
         })
     }
 }
