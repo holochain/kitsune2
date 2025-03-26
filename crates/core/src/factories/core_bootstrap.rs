@@ -134,14 +134,10 @@ impl CoreBootstrap {
         peer_store: DynPeerStore,
         space: SpaceId,
     ) -> Self {
-        let server_url: Arc<str> =
-            config.server_url.clone().into_boxed_str().into();
-
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
 
         let push_task = tokio::task::spawn(push_task(
             config.clone(),
-            server_url.clone(),
             push_send.clone(),
             push_recv,
         ));
@@ -149,7 +145,6 @@ impl CoreBootstrap {
         let poll_task = tokio::task::spawn(poll_task(
             builder,
             config,
-            server_url,
             space.clone(),
             peer_store,
         ));
@@ -183,17 +178,20 @@ impl Bootstrap for CoreBootstrap {
 
 async fn push_task(
     config: CoreBootstrapConfig,
-    server_url: Arc<str>,
     push_send: PushSend,
     mut push_recv: PushRecv,
 ) {
+    // Already checked to be a valid URL by the config validation.
+    let server_url =
+        url::Url::parse(&config.server_url).expect("invalid server url");
+
     let mut wait = None;
 
     while let Some(info) = push_recv.recv().await {
         match tokio::task::spawn_blocking({
             let server_url = server_url.clone();
             let info = info.clone();
-            move || kitsune2_bootstrap_client::blocking_put(&server_url, &info)
+            move || kitsune2_bootstrap_client::blocking_put(server_url, &info)
         })
         .await
         {
@@ -202,7 +200,12 @@ async fn push_task(
                 // before sending the next info if it is ready
                 wait = None;
             }
-            _ => {
+            err => {
+                tracing::debug!(
+                    ?err,
+                    "Failed to push agent info to bootstrap server"
+                );
+
                 let now = Timestamp::now();
 
                 // the put failed, send it back to try again if not expired
@@ -234,10 +237,13 @@ async fn push_task(
 async fn poll_task(
     builder: Arc<Builder>,
     config: CoreBootstrapConfig,
-    server_url: Arc<str>,
     space: SpaceId,
     peer_store: DynPeerStore,
 ) {
+    // Already checked to be a valid URL by the config validation.
+    let server_url =
+        url::Url::parse(&config.server_url).expect("invalid server url");
+
     let mut wait = config.backoff_min();
 
     loop {
@@ -247,7 +253,7 @@ async fn poll_task(
             let verifier = builder.verifier.clone();
             move || {
                 kitsune2_bootstrap_client::blocking_get(
-                    &server_url,
+                    server_url,
                     space.clone(),
                     verifier,
                 )

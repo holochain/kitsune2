@@ -1422,12 +1422,14 @@ dependencies = [
 name = "kitsune2_bootstrap_client"
 version = "0.0.1-alpha.15"
 dependencies = [
+ "base64",
  "kitsune2_api",
  "kitsune2_bootstrap_srv",
  "kitsune2_core",
  "kitsune2_test_utils",
  "tracing",
  "ureq",
+ "url",
 ]
 
 [[package]]

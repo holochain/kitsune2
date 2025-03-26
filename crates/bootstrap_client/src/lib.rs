@@ -2,24 +2,27 @@
 
 #![deny(missing_docs)]
 
+use base64::Engine;
 use kitsune2_api::{AgentInfoSigned, DynVerifier, K2Error, K2Result, SpaceId};
 use std::sync::Arc;
+use url::Url;
 
 /// Send the agent info, for the given space, to the bootstrap server.
 ///
 /// Note the `blocking_` prefix. This is a hint to the caller that if the function is used in
 /// an async context, it should be treated as a blocking operation.
 pub fn blocking_put(
-    server_url: &str,
+    mut server_url: Url,
     agent_info: &AgentInfoSigned,
 ) -> K2Result<()> {
-    let url = format!(
-        "{server_url}/bootstrap/{}/{}",
-        &agent_info.space, &agent_info.agent
-    );
+    server_url.set_path(&format!(
+        "bootstrap/{}/{}",
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.space),
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.agent),
+    ));
 
     let encoded = agent_info.encode()?;
-    ureq::put(&url)
+    ureq::put(server_url.as_str())
         .send_string(&encoded)
         .map_err(|e| K2Error::other_src("Failed to put agent info", e))?;
 
@@ -31,13 +34,16 @@ pub fn blocking_put(
 /// Note the `blocking_` prefix. This is a hint to the caller that if the function is used in
 /// an async context, it should be treated as a blocking operation.
 pub fn blocking_get(
-    server_url: &str,
+    mut server_url: Url,
     space: SpaceId,
     verifier: DynVerifier,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
-    let url = format!("{server_url}/bootstrap/{}", space);
+    server_url.set_path(&format!(
+        "bootstrap/{}",
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**space)
+    ));
 
-    let encoded = ureq::get(&url)
+    let encoded = ureq::get(server_url.as_str())
         .call()
         .map_err(K2Error::other)?
         .into_string()
