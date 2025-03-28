@@ -16,12 +16,12 @@ pub fn spawn_initiate_task(
     tracing::info!("Starting initiate task");
 
     let initiate_interval = config.initiate_interval();
-    let initiate_jitter_ms = (config.initiate_jitter_ms / 2) as u64;
+    let initiate_jitter_ms = config.initiate_jitter_ms as u64;
     let min_initiate_interval = config.min_initiate_interval();
     tokio::task::spawn(async move {
         loop {
             let jitter = if initiate_jitter_ms > 0 {
-                Duration::from_millis(initiate_jitter_ms + rand::random::<u64>() % (initiate_jitter_ms))
+                Duration::from_millis(rand::random::<u64>() % initiate_jitter_ms)
             } else {
                 Duration::ZERO
             };

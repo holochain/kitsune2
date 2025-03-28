@@ -48,8 +48,8 @@ pub struct K2GossipConfig {
     /// interval. Over time, this will naturally vary which node initiates a gossip round when
     /// two peers would otherwise want to initiate a round at the same time.
     ///
-    /// The actual jitter value is calculated from this value on each delay using the formula:
-    /// `initiate_jitter_ms / 2 + rand(0, initiate_jitter_ms / 2)`.
+    /// The jitter is added to the `initiate_interval_ms` and is a random value between `0` and
+    /// `initiate_jitter_ms`.
     ///
     /// This parameter can be set to `0` to disable jitter.
     ///
