@@ -88,7 +88,7 @@ pub(crate) fn update_storage_arcs(
             // ignored sectors that aren't in our target arc. We can find the largest overlapping
             // arc and that will contain our old storage arc with any new sectors added.
             if let Some(new_arc) = new_arcs.into_iter().find(|arc| {
-                arc.len() > current_storage_arc.len()
+                arc.len() > current_storage_arc.arc_span()
                     && arc.overlaps(&current_storage_arc)
             }) {
                 local_agent.set_cur_storage_arc(new_arc);
@@ -96,6 +96,8 @@ pub(crate) fn update_storage_arcs(
         }
         #[cfg(not(feature = "sharding"))]
         if new_arcs.into_iter().any(|arc| arc == DhtArc::FULL) {
+            let agent_id = local_agent.agent();
+            tracing::info!(?agent_id, "Updating storage arc to full");
             local_agent.set_cur_storage_arc(DhtArc::FULL);
         }
     }

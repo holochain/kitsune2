@@ -16,10 +16,16 @@ pub fn spawn_initiate_task(
     tracing::info!("Starting initiate task");
 
     let initiate_interval = config.initiate_interval();
+    let initiate_jitter_ms = (config.initiate_jitter_ms / 2) as u64;
     let min_initiate_interval = config.min_initiate_interval();
     tokio::task::spawn(async move {
         loop {
-            tokio::time::sleep(initiate_interval).await;
+            let jitter = if initiate_jitter_ms > 0 {
+                Duration::from_millis(initiate_jitter_ms + rand::random::<u64>() % (initiate_jitter_ms))
+            } else {
+                Duration::ZERO
+            };
+            tokio::time::sleep(initiate_interval + jitter).await;
 
             if gossip.initiated_round_state.lock().await.is_some() {
                 tracing::info!("Not initiating gossip because there is already an initiated round");

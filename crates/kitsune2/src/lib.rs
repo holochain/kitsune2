@@ -142,6 +142,7 @@ mod test {
                 k2_gossip: K2GossipConfig {
                     initiate_interval_ms: 100,
                     min_initiate_interval_ms: 75,
+                    initiate_jitter_ms: 10,
                     round_timeout_ms: 10_000,
                     ..Default::default()
                 },

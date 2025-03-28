@@ -569,6 +569,7 @@ mod test {
                         K2GossipConfig {
                             initiate_interval_ms: 10,
                             min_initiate_interval_ms: 10,
+                            initiate_jitter_ms: 0,
                             ..Default::default()
                         }
                     },
@@ -884,6 +885,7 @@ mod test {
                 // bootstrapping but leave the min initiate interval high so that we can
                 // run a single gossip round during the test.
                 initiate_interval_ms: 10,
+                initiate_jitter_ms: 0,
                 ..Default::default()
             }),
         )
@@ -947,6 +949,7 @@ mod test {
                 // bootstrapping but leave the min initiate interval high so that we can
                 // run a single gossip round during the test.
                 initiate_interval_ms: 10,
+                initiate_jitter_ms: 0,
                 ..Default::default()
             }),
         )
@@ -1041,6 +1044,7 @@ mod test {
                 // bootstrapping but leave the min initiate interval high so that we can
                 // run a single gossip round during the test.
                 initiate_interval_ms: 10,
+                initiate_jitter_ms: 0,
                 ..Default::default()
             }),
         )
