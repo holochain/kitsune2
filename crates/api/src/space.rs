@@ -1,6 +1,5 @@
 //! Kitsune2 space related types.
 
-use crate::agent::DynLocalAgent;
 use crate::fetch::DynFetch;
 use crate::*;
 use std::sync::Arc;
