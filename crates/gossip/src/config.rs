@@ -49,7 +49,7 @@ pub struct K2GossipConfig {
     /// two peers would otherwise want to initiate a round at the same time.
     ///
     /// The actual jitter value is calculated from this value on each delay using the formula:
-    /// `initiate_interval_ms / 2 + rand(0, initiate_jitter_ms / 2)`.
+    /// `initiate_jitter_ms / 2 + rand(0, initiate_jitter_ms / 2)`.
     ///
     /// This parameter can be set to `0` to disable jitter.
     ///
