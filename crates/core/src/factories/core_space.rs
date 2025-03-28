@@ -436,10 +436,6 @@ impl Space for CoreSpace {
         })
     }
 
-    fn get_local_agents(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>> {
-        self.local_agent_store.get_all()
-    }
-
     fn send_notify(
         &self,
         to_peer: Url,

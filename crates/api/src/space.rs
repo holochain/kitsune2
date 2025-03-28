@@ -72,9 +72,6 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// be made to publish this tombstone to peers in the space as well.
     fn local_agent_leave(&self, local_agent: id::AgentId) -> BoxFut<'_, ()>;
 
-    /// Get a list of all local agents currently joined to this space.
-    fn get_local_agents(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>>;
-
     /// Send a message to a remote peer. The future returned from this
     /// function will track the message all the way down to the low-level
     /// network transport implementation. But once the data is handed off
