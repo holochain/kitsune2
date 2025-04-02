@@ -74,6 +74,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # we cannot use cmake 4 until openssl-src is updated
+      - name: cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.31.x'
+
       - uses: johnwason/vcpkg-action@v6
         with:
           triplet: x64-windows-release
