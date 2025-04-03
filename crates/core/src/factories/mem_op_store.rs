@@ -188,12 +188,8 @@ impl OpStore for Kitsune2MemoryOpStore {
             let mut op_ids = Vec::with_capacity(ops_to_add.len());
             let mut lock = self.write().await;
             for (op_id, record) in ops_to_add {
-                if let std::collections::hash_map::Entry::Vacant(entry) =
-                    lock.op_list.entry(op_id.clone())
-                {
-                    entry.insert(record);
-                    op_ids.push(op_id);
-                }
+                lock.op_list.entry(op_id.clone()).or_insert(record);
+                op_ids.push(op_id);
             }
 
             Ok(op_ids)
