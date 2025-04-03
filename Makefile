@@ -46,4 +46,4 @@ bump:
 		echo "USAGE: make bump ver=0.0.1-alpha8"; \
 		exit 1; \
 	fi
-	sed -i 's/^\(kitsune2[^=]*= { version = "=\|version = "\)[^"]*"/\1$(ver)"/g' ./Cargo.toml
+	sed -i 's/^\(kitsune2[^=]*= { version = "\|version = "\)[^"]*"/\1$(ver)"/g' ./Cargo.toml
