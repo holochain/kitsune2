@@ -1,8 +1,12 @@
 use kitsune2_api::{DynPeerMetaStore, K2Error, K2Result, Timestamp, Url};
 use std::time::Duration;
 
+/// A K2Gossip-specific peer meta store.
+///
+/// This is a wrapper around any [`DynPeerMetaStore`] that provides a set of get and set operations
+/// for peer metadata that K2 gossip tracks.
 #[derive(Debug)]
-pub(crate) struct K2PeerMetaStore {
+pub struct K2PeerMetaStore {
     inner: DynPeerMetaStore,
 }
 
@@ -13,7 +17,7 @@ impl K2PeerMetaStore {
     }
 
     /// When did we last gossip with the given peer?
-    pub(crate) async fn last_gossip_timestamp(
+    pub async fn last_gossip_timestamp(
         &self,
         peer: Url,
     ) -> K2Result<Option<Timestamp>> {
@@ -42,7 +46,7 @@ impl K2PeerMetaStore {
     ///
     /// This is a value provided by the agent to indicate the last op they have
     /// sent us. We can use this to request an incremental update from them.
-    pub(crate) async fn new_ops_bookmark(
+    pub async fn new_ops_bookmark(
         &self,
         peer: Url,
     ) -> K2Result<Option<Timestamp>> {
@@ -71,7 +75,7 @@ impl K2PeerMetaStore {
     ///
     /// These are gossip rounds that have failed for a reason that we consider to be a wrong
     /// behavior by the peer. This might indicate malicious behavior or a protocol mismatch.
-    pub(crate) async fn peer_behavior_errors(
+    pub async fn peer_behavior_errors(
         &self,
         peer: Url,
     ) -> K2Result<Option<u32>> {
@@ -98,10 +102,7 @@ impl K2PeerMetaStore {
     ///
     /// These are gossip rounds that have failed because of something that happened on our
     /// instance. Record by peer to discover patterns of forced errors.
-    pub(crate) async fn local_errors(
-        &self,
-        peer: Url,
-    ) -> K2Result<Option<u32>> {
+    pub async fn local_errors(&self, peer: Url) -> K2Result<Option<u32>> {
         self.get(peer, "gossip:local_errors").await
     }
 
@@ -122,7 +123,7 @@ impl K2PeerMetaStore {
     ///
     /// These are returned when the peer has reached their limit for number of concurrent
     /// accepted sessions and has asked us to wait until later to initiate gossip.
-    pub(crate) async fn peer_busy(&self, peer: Url) -> K2Result<Option<u32>> {
+    pub async fn peer_busy(&self, peer: Url) -> K2Result<Option<u32>> {
         self.get(peer, "gossip:peer_busy").await
     }
 
@@ -143,10 +144,7 @@ impl K2PeerMetaStore {
     ///
     /// This may happen for legitimate reasons. If it is happening frequently then check the logs
     /// for the reasons being given.
-    pub(crate) async fn peer_terminated(
-        &self,
-        peer: Url,
-    ) -> K2Result<Option<u32>> {
+    pub async fn peer_terminated(&self, peer: Url) -> K2Result<Option<u32>> {
         self.get(peer, "gossip:peer_terminated").await
     }
 
@@ -167,10 +165,7 @@ impl K2PeerMetaStore {
     ///
     /// These are rounds that have ended naturally through some exchange of messages. It does not
     /// include rounds that ended with some error.
-    pub(crate) async fn completed_rounds(
-        &self,
-        peer: Url,
-    ) -> K2Result<Option<u32>> {
+    pub async fn completed_rounds(&self, peer: Url) -> K2Result<Option<u32>> {
         self.get(peer, "gossip:completed_rounds").await
     }
 
@@ -191,10 +186,7 @@ impl K2PeerMetaStore {
     }
 
     /// Get the number of times the given peer has timed out gossip rounds.
-    pub(crate) async fn peer_timeouts(
-        &self,
-        peer: Url,
-    ) -> K2Result<Option<u32>> {
+    pub async fn peer_timeouts(&self, peer: Url) -> K2Result<Option<u32>> {
         self.get(peer, "gossip:peer_timeouts").await
     }
 

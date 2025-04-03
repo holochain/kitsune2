@@ -24,14 +24,20 @@ serde_json = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 
+kitsune2_test_utils = { workspace = true, optional = true }
+
 [dev-dependencies]
+kitsune2_gossip = { path = ".", features = ["test-utils"] }
+
 kitsune2_api = { workspace = true, features = ["mockall"] }
 kitsune2_core = { workspace = true }
 kitsune2_dht = { workspace = true, features = ["mockall"] }
-kitsune2_test_utils = { workspace = true }
+kitsune2_transport_tx5 = { workspace = true }
 
 tokio = { workspace = true, features = ["test-util"] }
 base64 = { workspace = true }
 
 [features]
 sharding = []
+
+test-utils = ["dep:kitsune2_test_utils"]

@@ -426,208 +426,11 @@ pub(crate) fn send_gossip_message(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::harness::K2GossipFunctionalTestFactory;
     use kitsune2_core::factories::MemoryOp;
-    use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
     use kitsune2_dht::{SECTOR_SIZE, UNIT_TIME};
     use kitsune2_test_utils::enable_tracing;
-    use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
     use kitsune2_test_utils::space::TEST_SPACE_ID;
-    use std::time::Duration;
-
-    #[derive(Debug, Clone)]
-    struct GossipTestHarness {
-        gossip: DynGossip,
-        peer_store: DynPeerStore,
-        op_store: DynOpStore,
-        space: DynSpace,
-        peer_meta_store: Arc<K2PeerMetaStore>,
-    }
-
-    impl GossipTestHarness {
-        async fn join_local_agent(
-            &self,
-            target_arc: DhtArc,
-        ) -> Arc<AgentInfoSigned> {
-            let local_agent = Arc::new(Ed25519LocalAgent::default());
-            local_agent.set_tgt_storage_arc_hint(target_arc);
-
-            self.space
-                .local_agent_join(local_agent.clone())
-                .await
-                .unwrap();
-
-            // Wait for the agent info to be published
-            // This means tests can rely on the agent being available in the peer store
-            tokio::time::timeout(Duration::from_secs(5), {
-                let agent_id = local_agent.agent().clone();
-                let peer_store = self.peer_store.clone();
-                async move {
-                    while !peer_store
-                        .get_all()
-                        .await
-                        .unwrap()
-                        .iter()
-                        .any(|a| a.agent.clone() == agent_id)
-                    {
-                        tokio::time::sleep(Duration::from_millis(5)).await;
-                    }
-                }
-            })
-            .await
-            .unwrap();
-
-            self.peer_store
-                .get(local_agent.agent().clone())
-                .await
-                .unwrap()
-                .unwrap()
-        }
-
-        async fn wait_for_agent_in_peer_store(&self, agent: AgentId) {
-            tokio::time::timeout(Duration::from_millis(100), {
-                let this = self.clone();
-                async move {
-                    loop {
-                        let has_agent = this
-                            .peer_store
-                            .get(agent.clone())
-                            .await
-                            .unwrap()
-                            .is_some();
-
-                        if has_agent {
-                            break;
-                        }
-
-                        tokio::time::sleep(Duration::from_millis(5)).await;
-                    }
-                }
-            })
-            .await
-            .unwrap();
-        }
-
-        async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<MemoryOp> {
-            tokio::time::timeout(Duration::from_millis(500), {
-                let this = self.clone();
-                async move {
-                    loop {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
-
-                        let ops = this
-                            .op_store
-                            .retrieve_ops(op_ids.clone())
-                            .await
-                            .unwrap();
-
-                        if ops.len() != op_ids.len() {
-                            tracing::info!(
-                                "Have {}/{} requested ops",
-                                ops.len(),
-                                op_ids.len()
-                            );
-                            continue;
-                        }
-
-                        return ops
-                            .into_iter()
-                            .map(|op| {
-                                let out: MemoryOp = op.op_data.into();
-
-                                out
-                            })
-                            .collect::<Vec<_>>();
-                    }
-                }
-            })
-            .await
-            .expect("Timed out waiting for ops")
-        }
-    }
-
-    struct TestGossipFactory {
-        space_id: SpaceId,
-        builder: Arc<Builder>,
-    }
-
-    impl TestGossipFactory {
-        pub async fn create(
-            space: SpaceId,
-            bootstrap: bool,
-            config: Option<K2GossipConfig>,
-        ) -> TestGossipFactory {
-            let mut builder =
-                default_test_builder().with_default_config().unwrap();
-            // Replace the core builder with a real gossip factory
-            builder.gossip = K2GossipFactory::create();
-
-            if !bootstrap {
-                builder.bootstrap = Arc::new(NoopBootstrapFactory);
-            }
-
-            builder
-                .config
-                .set_module_config(&K2GossipModConfig {
-                    k2_gossip: if let Some(config) = config {
-                        config
-                    } else {
-                        K2GossipConfig {
-                            initiate_interval_ms: 10,
-                            min_initiate_interval_ms: 10,
-                            initiate_jitter_ms: 0,
-                            ..Default::default()
-                        }
-                    },
-                })
-                .unwrap();
-
-            let builder = Arc::new(builder);
-
-            TestGossipFactory {
-                space_id: space,
-                builder,
-            }
-        }
-
-        pub async fn new_instance(&self) -> GossipTestHarness {
-            #[derive(Debug)]
-            struct NoopHandler;
-            impl TxBaseHandler for NoopHandler {}
-            impl TxHandler for NoopHandler {}
-            impl TxSpaceHandler for NoopHandler {}
-            impl SpaceHandler for NoopHandler {}
-
-            let transport = self
-                .builder
-                .transport
-                .create(self.builder.clone(), Arc::new(NoopHandler))
-                .await
-                .unwrap();
-
-            let space = self
-                .builder
-                .space
-                .create(
-                    self.builder.clone(),
-                    Arc::new(NoopHandler),
-                    self.space_id.clone(),
-                    transport.clone(),
-                )
-                .await
-                .unwrap();
-
-            let peer_meta_store =
-                K2PeerMetaStore::new(space.peer_meta_store().clone());
-
-            GossipTestHarness {
-                gossip: space.gossip().clone(),
-                peer_store: space.peer_store().clone(),
-                op_store: space.op_store().clone(),
-                space,
-                peer_meta_store: Arc::new(peer_meta_store),
-            }
-        }
-    }
 
     #[tokio::test]
     async fn two_way_agent_sync() {
@@ -635,7 +438,8 @@ mod test {
 
         let space = TEST_SPACE_ID;
         let factory =
-            TestGossipFactory::create(space.clone(), false, None).await;
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
@@ -646,14 +450,16 @@ mod test {
         // found by bootstrap. Try to sync them with gossip.
         let secret_agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         assert!(harness_2
-            .peer_store
+            .space
+            .peer_store()
             .get(secret_agent_1.agent.clone())
             .await
             .unwrap()
             .is_none());
         let secret_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         assert!(harness_1
-            .peer_store
+            .space
+            .peer_store()
             .get(secret_agent_2.agent.clone())
             .await
             .unwrap()
@@ -661,7 +467,8 @@ mod test {
 
         // Simulate peer discovery so that gossip can sync agents
         harness_2
-            .peer_store
+            .space
+            .peer_store()
             .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
@@ -695,13 +502,15 @@ mod test {
 
         let space = TEST_SPACE_ID;
         let factory =
-            TestGossipFactory::create(space.clone(), true, None).await;
+            K2GossipFunctionalTestFactory::create(space.clone(), true, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
@@ -711,7 +520,8 @@ mod test {
         let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();
@@ -731,14 +541,16 @@ mod test {
 
         let space = TEST_SPACE_ID;
         let factory =
-            TestGossipFactory::create(space.clone(), false, None).await;
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
+                .await;
 
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
@@ -753,7 +565,8 @@ mod test {
         let op_2 = MemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();
@@ -784,7 +597,8 @@ mod test {
 
         // Simulate peer discovery so that gossip can perform a disc sync
         harness_1
-            .peer_store
+            .space
+            .peer_store()
             .insert(vec![agent_info_2.clone()])
             .await
             .unwrap();
@@ -804,7 +618,8 @@ mod test {
 
         let space = TEST_SPACE_ID;
         let factory =
-            TestGossipFactory::create(space.clone(), false, None).await;
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(
@@ -813,7 +628,8 @@ mod test {
         );
         let op_id_1 = op_1.compute_op_id();
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
@@ -831,7 +647,8 @@ mod test {
         );
         let op_id_2 = op_2.compute_op_id();
         harness_2
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();
@@ -862,7 +679,8 @@ mod test {
 
         // Simulate peer discovery so that gossip can perform a ring sync
         harness_1
-            .peer_store
+            .space
+            .peer_store()
             .insert(vec![agent_info_2.clone()])
             .await
             .unwrap();
@@ -881,7 +699,7 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(
+        let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
             true,
             Some(K2GossipConfig {
@@ -906,7 +724,8 @@ mod test {
         }
 
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(
                 ops.clone().into_iter().map(Into::into).collect(),
             )
@@ -933,7 +752,8 @@ mod test {
 
         // We received the ones we wanted above, make sure it's just those 3.
         let all_ops = harness_2
-            .op_store
+            .space
+            .op_store()
             .retrieve_ops(ops.iter().map(|op| op.compute_op_id()).collect())
             .await
             .unwrap();
@@ -945,7 +765,7 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(
+        let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
             true,
             Some(K2GossipConfig {
@@ -973,7 +793,8 @@ mod test {
             ops.push(op);
         }
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(
                 ops.clone().into_iter().map(Into::into).collect(),
             )
@@ -988,7 +809,8 @@ mod test {
         }
 
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(
                 ops.clone().into_iter().skip(5).map(Into::into).collect(),
             )
@@ -1028,7 +850,8 @@ mod test {
 
         // We received the ones we wanted above, make sure it's just those 7.
         let all_ops = harness_2
-            .op_store
+            .space
+            .op_store()
             .retrieve_ops(ops.iter().map(|op| op.compute_op_id()).collect())
             .await
             .unwrap();
@@ -1040,7 +863,7 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = TestGossipFactory::create(
+        let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
             true,
             Some(K2GossipConfig {
@@ -1070,7 +893,8 @@ mod test {
             ops.push(op);
         }
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(
                 ops.clone().into_iter().map(Into::into).collect(),
             )
@@ -1085,7 +909,8 @@ mod test {
         }
 
         harness_1
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(
                 ops.clone().into_iter().skip(5).map(Into::into).collect(),
             )
@@ -1125,7 +950,8 @@ mod test {
 
         // We received the ones we wanted above, make sure it's just those 7.
         let all_ops = harness_2
-            .op_store
+            .space
+            .op_store()
             .retrieve_ops(ops.iter().map(|op| op.compute_op_id()).collect())
             .await
             .unwrap();
@@ -1138,7 +964,8 @@ mod test {
 
         let space = TEST_SPACE_ID;
         let factory =
-            TestGossipFactory::create(space.clone(), true, None).await;
+            K2GossipFunctionalTestFactory::create(space.clone(), true, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
 
@@ -1147,7 +974,8 @@ mod test {
         let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
-            .op_store
+            .space
+            .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
             .await
             .unwrap();

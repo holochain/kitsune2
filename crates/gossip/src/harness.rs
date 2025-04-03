@@ -1,0 +1,353 @@
+//! Functional test harness for K2Gossip.
+
+use crate::peer_meta_store::K2PeerMetaStore;
+use crate::{K2GossipConfig, K2GossipFactory, K2GossipModConfig};
+use kitsune2_api::{
+    AgentId, AgentInfoSigned, Builder, DhtArc, DynGossip, DynSpace, LocalAgent,
+    OpId, SpaceHandler, SpaceId, TxBaseHandler, TxHandler, TxSpaceHandler,
+    UNIX_TIMESTAMP,
+};
+use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
+use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+/// A functional test harness for K2Gossip.
+///
+/// Create instances of this using the [`K2GossipFunctionalTestFactory`].
+#[derive(Debug, Clone)]
+pub struct K2GossipFunctionalTestHarness {
+    /// The inner gossip instance.
+    pub gossip: DynGossip,
+    /// The space instance.
+    pub space: DynSpace,
+    /// The peer meta store.
+    pub peer_meta_store: Arc<K2PeerMetaStore>,
+}
+
+impl K2GossipFunctionalTestHarness {
+    /// Join a local agent to the space.
+    pub async fn join_local_agent(
+        &self,
+        target_arc: DhtArc,
+    ) -> Arc<AgentInfoSigned> {
+        let local_agent = Arc::new(Ed25519LocalAgent::default());
+        local_agent.set_tgt_storage_arc_hint(target_arc);
+
+        self.space
+            .local_agent_join(local_agent.clone())
+            .await
+            .unwrap();
+
+        // Wait for the agent info to be published
+        // This means tests can rely on the agent being available in the peer store
+        tokio::time::timeout(Duration::from_secs(5), {
+            let agent_id = local_agent.agent().clone();
+            let peer_store = self.space.peer_store().clone();
+            async move {
+                while !peer_store
+                    .get_all()
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|a| a.agent.clone() == agent_id)
+                {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        self.space
+            .peer_store()
+            .get(local_agent.agent().clone())
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    /// Wait for this agent to be in our peer store.
+    pub async fn wait_for_agent_in_peer_store(&self, agent: AgentId) {
+        tokio::time::timeout(Duration::from_millis(100), {
+            let this = self.clone();
+            async move {
+                loop {
+                    let has_agent = this
+                        .space
+                        .peer_store()
+                        .get(agent.clone())
+                        .await
+                        .unwrap()
+                        .is_some();
+
+                    if has_agent {
+                        break;
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    /// Wait for the given ops to be in our op store.
+    pub async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<MemoryOp> {
+        tokio::time::timeout(Duration::from_millis(500), {
+            let this = self.clone();
+            async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+
+                    let ops = this
+                        .space
+                        .op_store()
+                        .retrieve_ops(op_ids.clone())
+                        .await
+                        .unwrap();
+
+                    if ops.len() != op_ids.len() {
+                        tracing::info!(
+                            "Have {}/{} requested ops",
+                            ops.len(),
+                            op_ids.len()
+                        );
+                        continue;
+                    }
+
+                    return ops
+                        .into_iter()
+                        .map(|op| {
+                            let out: MemoryOp = op.op_data.into();
+
+                            out
+                        })
+                        .collect::<Vec<_>>();
+                }
+            }
+        })
+        .await
+        .expect("Timed out waiting for ops")
+    }
+
+    /// Wait until ops are either stored or are being fetched.
+    ///
+    /// This is a soft check for "will be in sync soon" that lets tests check the progress of
+    /// gossip without having to wait for fetching to complete.
+    pub async fn wait_for_ops_discovered(
+        &self,
+        other: &Self,
+        timeout: Duration,
+    ) {
+        let this = self.clone();
+        let other = other.clone();
+
+        tokio::time::timeout(timeout, async move {
+            loop {
+                // Known ops
+                let mut our_op_ids = this
+                    .space
+                    .op_store()
+                    .retrieve_op_ids_bounded(
+                        DhtArc::FULL,
+                        UNIX_TIMESTAMP,
+                        u32::MAX,
+                    )
+                    .await
+                    .unwrap()
+                    .0
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+
+                our_op_ids.extend(
+                    this.space
+                        .fetch()
+                        .get_state_summary()
+                        .await
+                        .unwrap()
+                        .pending_requests
+                        .keys()
+                        .cloned(),
+                );
+
+                let mut other_op_ids = other
+                    .space
+                    .op_store()
+                    .retrieve_op_ids_bounded(
+                        DhtArc::FULL,
+                        UNIX_TIMESTAMP,
+                        u32::MAX,
+                    )
+                    .await
+                    .unwrap()
+                    .0
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+
+                other_op_ids.extend(
+                    other
+                        .space
+                        .fetch()
+                        .get_state_summary()
+                        .await
+                        .unwrap()
+                        .pending_requests
+                        .keys()
+                        .cloned(),
+                );
+
+                if our_op_ids == other_op_ids {
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("Timed out waiting for instances to sync");
+    }
+
+    /// Wait for two instances to sync their op stores.
+    pub async fn wait_for_sync_with(&self, other: &Self, timeout: Duration) {
+        let this = self.clone();
+        let other = other.clone();
+
+        tokio::time::timeout(timeout, async move {
+            loop {
+                let our_op_ids = this
+                    .space
+                    .op_store()
+                    .retrieve_op_ids_bounded(
+                        DhtArc::FULL,
+                        UNIX_TIMESTAMP,
+                        u32::MAX,
+                    )
+                    .await
+                    .unwrap()
+                    .0;
+                let other_op_ids = other
+                    .space
+                    .op_store()
+                    .retrieve_op_ids_bounded(
+                        DhtArc::FULL,
+                        UNIX_TIMESTAMP,
+                        u32::MAX,
+                    )
+                    .await
+                    .unwrap()
+                    .0;
+
+                if our_op_ids.len() == other_op_ids.len() {
+                    let our_op_ids_set =
+                        our_op_ids.into_iter().collect::<HashSet<_>>();
+                    let other_op_ids_set =
+                        other_op_ids.into_iter().collect::<HashSet<_>>();
+
+                    if our_op_ids_set == other_op_ids_set {
+                        break;
+                    }
+                } else {
+                    tracing::info!(
+                        "Waiting for more ops to sync: {} != {}",
+                        our_op_ids.len(),
+                        other_op_ids.len(),
+                    );
+                }
+
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("Timed out waiting for instances to sync");
+    }
+}
+
+/// Functional test factory for K2Gossip.
+pub struct K2GossipFunctionalTestFactory {
+    /// The space ID to use for the test.
+    space_id: SpaceId,
+    /// The builder for creating new instances.
+    builder: Arc<Builder>,
+}
+
+impl K2GossipFunctionalTestFactory {
+    /// Create a new functional test factory.
+    pub async fn create(
+        space: SpaceId,
+        bootstrap: bool,
+        config: Option<K2GossipConfig>,
+    ) -> K2GossipFunctionalTestFactory {
+        let mut builder = default_test_builder().with_default_config().unwrap();
+        // Replace the core builder with a real gossip factory
+        builder.gossip = K2GossipFactory::create();
+
+        if !bootstrap {
+            builder.bootstrap = Arc::new(NoopBootstrapFactory);
+        }
+
+        builder
+            .config
+            .set_module_config(&K2GossipModConfig {
+                k2_gossip: if let Some(config) = config {
+                    config
+                } else {
+                    K2GossipConfig {
+                        initiate_interval_ms: 10,
+                        min_initiate_interval_ms: 10,
+                        initiate_jitter_ms: 0,
+                        ..Default::default()
+                    }
+                },
+            })
+            .unwrap();
+
+        let builder = Arc::new(builder);
+
+        K2GossipFunctionalTestFactory {
+            space_id: space,
+            builder,
+        }
+    }
+
+    /// Create a new instance of the test harness.
+    pub async fn new_instance(&self) -> K2GossipFunctionalTestHarness {
+        #[derive(Debug)]
+        struct NoopHandler;
+        impl TxBaseHandler for NoopHandler {}
+        impl TxHandler for NoopHandler {}
+        impl TxSpaceHandler for NoopHandler {}
+        impl SpaceHandler for NoopHandler {}
+
+        let transport = self
+            .builder
+            .transport
+            .create(self.builder.clone(), Arc::new(NoopHandler))
+            .await
+            .unwrap();
+
+        let space = self
+            .builder
+            .space
+            .create(
+                self.builder.clone(),
+                Arc::new(NoopHandler),
+                self.space_id.clone(),
+                transport.clone(),
+            )
+            .await
+            .unwrap();
+
+        let peer_meta_store =
+            K2PeerMetaStore::new(space.peer_meta_store().clone());
+
+        K2GossipFunctionalTestHarness {
+            gossip: space.gossip().clone(),
+            space,
+            peer_meta_store: Arc::new(peer_meta_store),
+        }
+    }
+}
