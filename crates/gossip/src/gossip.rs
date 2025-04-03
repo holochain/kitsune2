@@ -221,6 +221,11 @@ impl K2Gossip {
 }
 
 impl K2Gossip {
+    /// Attempt to initiate gossip.
+    ///
+    /// If we have an initiated state, or an accepted state from this peer, this will fail and
+    /// return `false`. Otherwise, we will send a [`K2GossipInitiateMessage`] to this peer URL and
+    /// return `true`.
     pub(crate) async fn initiate_gossip(
         &self,
         target_peer_url: Url,

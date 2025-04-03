@@ -10,6 +10,7 @@ use kitsune2_dht::Dht;
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use rand::RngCore;
+use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -103,7 +104,7 @@ impl RespondTestHarness {
     pub(crate) async fn remote_agent(
         &self,
         tgt_storage_arc: DhtArc,
-    ) -> Arc<AgentInfoSigned> {
+    ) -> TestRemoteAgent {
         let local_agent = Ed25519LocalAgent::default();
         local_agent.set_tgt_storage_arc_hint(tgt_storage_arc);
 
@@ -116,10 +117,14 @@ impl RespondTestHarness {
             .unwrap(),
         ));
 
-        builder.build(local_agent)
+        let local: DynLocalAgent = Arc::new(local_agent);
+        TestRemoteAgent {
+            local: local.clone(),
+            agent_info: builder.build(local),
+        }
     }
 
-    pub(crate) async fn wait_for_response(&mut self) -> GossipMessage {
+    pub(crate) async fn wait_for_sent_response(&mut self) -> GossipMessage {
         let received = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             self.response_rx.recv(),
@@ -129,6 +134,20 @@ impl RespondTestHarness {
         .unwrap();
 
         deserialize_gossip_message(received.0).unwrap()
+    }
+}
+
+#[derive(Debug)]
+pub struct TestRemoteAgent {
+    pub local: DynLocalAgent,
+    pub agent_info: Arc<AgentInfoSigned>,
+}
+
+impl Deref for TestRemoteAgent {
+    type Target = Arc<AgentInfoSigned>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.agent_info
     }
 }
 

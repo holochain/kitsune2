@@ -321,7 +321,7 @@ mod tests {
             .unwrap();
 
         // Should result in a busy response
-        let response = harness.wait_for_response().await;
+        let response = harness.wait_for_sent_response().await;
         assert!(matches!(response, GossipMessage::Busy(_)));
     }
 
@@ -359,7 +359,7 @@ mod tests {
                 .unwrap();
 
             // Each one should result in an accept response
-            let response = harness.wait_for_response().await;
+            let response = harness.wait_for_sent_response().await;
             assert!(matches!(response, GossipMessage::Accept(_)));
         }
 
