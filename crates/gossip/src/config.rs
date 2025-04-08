@@ -29,7 +29,7 @@ pub struct K2GossipConfig {
     /// Default: 100MB
     pub max_request_gossip_op_bytes: u32,
 
-    /// The interval in seconds between initiating gossip rounds.
+    /// The interval in milliseconds between initiating gossip rounds.
     ///
     /// This controls how often Kitsune will attempt to find a peer to gossip with.
     ///
