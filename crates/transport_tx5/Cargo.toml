@@ -11,6 +11,7 @@ categories.workspace = true
 edition.workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 bytes = { workspace = true }
 kitsune2_api = { workspace = true }
 serde = { workspace = true }
@@ -20,7 +21,7 @@ tracing = { workspace = true }
 tx5 = { workspace = true, default-features = false, features = [
   "backend-libdatachannel",
 ] }
-base64 = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 kitsune2_core = { workspace = true }

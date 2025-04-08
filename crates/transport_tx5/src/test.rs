@@ -219,6 +219,28 @@ fn validate_bad_server_url() {
     assert!(builder.validate_config().is_err());
 }
 
+#[test]
+fn validate_plain_server_url() {
+    let builder = Builder {
+        transport: Tx5TransportFactory::create(),
+        ..kitsune2_core::default_test_builder()
+    };
+
+    builder
+        .config
+        .set_module_config(&Tx5TransportModConfig {
+            tx5_transport: Tx5TransportConfig {
+                signal_allow_plain_text: false,
+                server_url: "ws://test.url".into(),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    let result = format!("{:?}", builder.validate_config());
+    assert!(result.contains("disallowed plaintext signal url"));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_addr() {
     let mut test = Test::new().await;

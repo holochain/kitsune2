@@ -106,7 +106,17 @@ impl TransportFactory for Tx5TransportFactory {
         let config: Tx5TransportModConfig = config.get_module_config()?;
 
         // make sure our signal server url is parse-able.
-        config.tx5_transport.server_url.as_str().to_sig_url()?;
+        let sig = config.tx5_transport.server_url.as_str().to_sig_url()?;
+        let sig = url::Url::parse(&sig)
+            .map_err(|err| K2Error::other_src("invalid tx5 server url", err))?;
+        let uses_tls = sig.scheme() == "wss";
+
+        if !uses_tls && !config.tx5_transport.signal_allow_plain_text {
+            return Err(K2Error::other(format!(
+                "disallowed plaintext signal url, either specify wss or set signal_allow_plain_text to true: {}",
+                sig,
+            )));
+        }
 
         Ok(())
     }
