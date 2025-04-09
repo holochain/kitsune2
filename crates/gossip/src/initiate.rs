@@ -16,7 +16,7 @@ pub fn spawn_initiate_task(
 ) -> AbortHandle {
     tracing::info!("Starting initiate task");
 
-    let mut rush_to_fist_initiated_round = true;
+    let mut rush_to_first_initiated_round = true;
 
     let initial_initiate_interval = config.initial_initiate_interval();
     let mut rush_backoff = backon::ExponentialBuilder::new()
@@ -31,7 +31,7 @@ pub fn spawn_initiate_task(
     let min_initiate_interval = config.min_initiate_interval();
     tokio::task::spawn(async move {
         loop {
-            if rush_to_fist_initiated_round {
+            if rush_to_first_initiated_round {
                 tokio::time::sleep(rush_backoff.next().unwrap_or(initiate_interval)).await;
             } else {
                 let jitter = if initiate_jitter_ms > 0 {
@@ -58,7 +58,7 @@ pub fn spawn_initiate_task(
                 Ok(Some(url)) => {
                     match gossip.initiate_gossip(url.clone()).await {
                         Ok(true) => {
-                            rush_to_fist_initiated_round = true;
+                            rush_to_first_initiated_round = true;
                             tracing::info!("Initiated gossip with {}", url);
                         }
                         Ok(false) => {
