@@ -45,7 +45,7 @@ async-channel = "2.3.1"
 # this is used by bootstrap_srv as the http server implementation.
 axum = { version = "0.7", default-features = false }
 # used by fetch module to back off requests to unresponsive agents
-backon = "1.3"
+backon = { version = "1.3", default-features = false }
 # debugging is far easier when you can see short byte arrays
 # as base64 instead of decimal u8s.
 base64 = "0.22.1"

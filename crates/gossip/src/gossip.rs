@@ -707,6 +707,7 @@ mod test {
                 // Set the initiate interval low so that gossip will start quickly after
                 // bootstrapping but leave the min initiate interval high so that we can
                 // run a single gossip round during the test.
+                initial_initiate_interval_ms: 10,
                 initiate_interval_ms: 10,
                 initiate_jitter_ms: 0,
                 ..Default::default()
@@ -773,6 +774,7 @@ mod test {
                 // Set the initiate interval low so that gossip will start quickly after
                 // bootstrapping but leave the min initiate interval high so that we can
                 // run a single gossip round during the test.
+                initial_initiate_interval_ms: 10,
                 initiate_interval_ms: 10,
                 initiate_jitter_ms: 0,
                 ..Default::default()
@@ -871,6 +873,7 @@ mod test {
                 // Set the initiate interval low so that gossip will start quickly after
                 // bootstrapping but leave the min initiate interval high so that we can
                 // run a single gossip round during the test.
+                initial_initiate_interval_ms: 10,
                 initiate_interval_ms: 10,
                 initiate_jitter_ms: 0,
                 ..Default::default()

@@ -1,6 +1,7 @@
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::K2GossipConfig;
+use backon::BackoffBuilder;
 use kitsune2_api::*;
 use kitsune2_api::{AgentId, DynLocalAgentStore, K2Result, Timestamp, Url};
 use rand::prelude::SliceRandom;
@@ -15,17 +16,31 @@ pub fn spawn_initiate_task(
 ) -> AbortHandle {
     tracing::info!("Starting initiate task");
 
+    let mut rush_to_fist_initiated_round = true;
+
+    let initial_initiate_interval = config.initial_initiate_interval();
+    let mut rush_backoff = backon::ExponentialBuilder::new()
+        .with_min_delay(Duration::from_millis(10))
+        .with_max_delay(initial_initiate_interval)
+        .with_factor(1.2)
+        .with_jitter()
+        .build();
+
     let initiate_interval = config.initiate_interval();
     let initiate_jitter_ms = config.initiate_jitter_ms as u64;
     let min_initiate_interval = config.min_initiate_interval();
     tokio::task::spawn(async move {
         loop {
-            let jitter = if initiate_jitter_ms > 0 {
-                Duration::from_millis(rand::random::<u64>() % initiate_jitter_ms)
+            if rush_to_fist_initiated_round {
+                tokio::time::sleep(rush_backoff.next().unwrap_or(initiate_interval)).await;
             } else {
-                Duration::ZERO
-            };
-            tokio::time::sleep(initiate_interval + jitter).await;
+                let jitter = if initiate_jitter_ms > 0 {
+                    Duration::from_millis(rand::random::<u64>() % initiate_jitter_ms)
+                } else {
+                    Duration::ZERO
+                };
+                tokio::time::sleep(initiate_interval + jitter).await;
+            }
 
             if gossip.initiated_round_state.lock().await.is_some() {
                 tracing::info!("Not initiating gossip because there is already an initiated round");
@@ -43,6 +58,7 @@ pub fn spawn_initiate_task(
                 Ok(Some(url)) => {
                     match gossip.initiate_gossip(url.clone()).await {
                         Ok(true) => {
+                            rush_to_fist_initiated_round = true;
                             tracing::info!("Initiated gossip with {}", url);
                         }
                         Ok(false) => {
