@@ -202,6 +202,9 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = create_mock_transport(requests_sent.clone());
     let mut op_store = MockOpStore::new();
+    op_store
+        .expect_filter_out_existing_ops()
+        .returning(|op_ids| Box::pin(async { Ok(op_ids) }));
     op_store.expect_process_incoming_ops().returning(|_| {
         Box::pin(async { Err(K2Error::other("couldn't store ops")) })
     });
