@@ -94,7 +94,6 @@ impl App {
                         { "urls": ["stun:stun-1.main.infra.holo.host:443"] }
                       ]
                     }),
-                    ..Default::default()
                 },
             },
         )?;
