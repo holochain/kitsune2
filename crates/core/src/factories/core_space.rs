@@ -1,6 +1,7 @@
 //! The core space implementation provided by Kitsune2.
 
 use kitsune2_api::*;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
 /// CoreSpace configuration types.
@@ -316,22 +317,22 @@ impl Space for CoreSpace {
             // update our local map
             self.local_agent_store.add(local_agent.clone()).await?;
 
-            // TODO - inform sharding module of new join
-
             let inner = self.inner.clone();
             let space = self.space.clone();
             let local_agent2 = local_agent.clone();
             let peer_store = self.peer_store.clone();
+            let local_agent_store = self.local_agent_store.clone();
+            let publish = self.publish.clone();
             let bootstrap = self.bootstrap.clone();
             local_agent.register_cb(Arc::new(move || {
                 let inner = inner.clone();
                 let space = space.clone();
                 let local_agent2 = local_agent2.clone();
                 let peer_store = peer_store.clone();
+                let local_agent_store = local_agent_store.clone();
+                let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    // TODO - call an update function on the sharding module.
-
                     let url = inner.lock().unwrap().current_url.clone();
 
                     if let Some(url) = url {
@@ -374,7 +375,12 @@ impl Space for CoreSpace {
                         }
 
                         // add it to bootstrapping.
-                        bootstrap.put(info);
+                        bootstrap.put(info.clone());
+
+                        // and send it to our peers.
+                        if let Err(err) = broadcast_agent_info(peer_store, local_agent_store, publish, info).await {
+                            tracing::warn!(?err, "Failed to broadcast agent info")
+                        }
                     } else {
                         tracing::info!("Not updating agent info because we don't have a current url");
                     }
@@ -493,6 +499,44 @@ async fn check_agent_infos(
             }
         }
     }
+}
+
+async fn broadcast_agent_info(
+    peer_store: DynPeerStore,
+    local_agent_store: DynLocalAgentStore,
+    publish: DynPublish,
+    agent_info_signed: Arc<AgentInfoSigned>,
+) -> K2Result<()> {
+    let all_agents = peer_store.get_all().await?;
+    let all_local_agents = local_agent_store
+        .get_all()
+        .await?
+        .into_iter()
+        .map(|a| a.agent().clone())
+        .collect::<HashSet<_>>();
+
+    let all_remote_agents = all_agents
+        .into_iter()
+        .filter(|a| !all_local_agents.contains(&a.agent));
+
+    let results =
+        futures::future::join_all(all_remote_agents.filter_map(|a| {
+            if let Some(url) = a.url.clone() {
+                let publish = publish.clone();
+                let agent_info_signed = agent_info_signed.clone();
+                Some(Box::pin(async move {
+                    publish.publish_agent(agent_info_signed, url).await
+                }))
+            } else {
+                None
+            }
+        }))
+        .await;
+
+    let ok = results.iter().filter(|r| r.is_ok()).count();
+    tracing::info!("Broadcast new agent info to {} peers", ok);
+
+    Ok(())
 }
 
 #[cfg(test)]

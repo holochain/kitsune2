@@ -82,6 +82,7 @@ pub(crate) fn update_storage_arcs(
                 new_arcs.into_iter().max_by_key(|arc| arc.len())
             {
                 local_agent.set_cur_storage_arc(new_arc);
+                local_agent.invoke_cb();
             }
         } else {
             // At this point, we have added any synced sectors to our current storage arc and
@@ -92,6 +93,7 @@ pub(crate) fn update_storage_arcs(
                     && arc.overlaps(&current_storage_arc)
             }) {
                 local_agent.set_cur_storage_arc(new_arc);
+                local_agent.invoke_cb();
             }
         }
         #[cfg(not(feature = "sharding"))]
@@ -99,6 +101,7 @@ pub(crate) fn update_storage_arcs(
             let agent_id = local_agent.agent();
             tracing::info!(?agent_id, "Updating storage arc to full");
             local_agent.set_cur_storage_arc(DhtArc::FULL);
+            local_agent.invoke_cb();
         }
     }
 
