@@ -4,13 +4,14 @@ use kitsune2_api::*;
 use std::sync::Arc;
 
 // hard-coded random space
-const SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
+const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
     215, 33, 182, 196, 173, 34, 116, 214, 251, 139, 163, 71, 112, 51, 234, 167,
     61, 62, 237, 27, 79, 162, 114, 232, 16, 184, 183, 235, 147, 138, 247, 202,
 ])));
 
 pub struct App {
     _k: DynKitsune,
+    t: DynTransport,
     s: DynSpace,
     a: Arc<kitsune2_core::Ed25519LocalAgent>,
     p: readline::Print,
@@ -18,6 +19,15 @@ pub struct App {
 
 impl App {
     pub async fn new(print: readline::Print, args: Args) -> K2Result<Self> {
+        let space = if let Some(seed) = args.network_seed {
+            use sha2::Digest;
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(seed);
+            SpaceId(Id(Bytes::copy_from_slice(&hasher.finalize())))
+        } else {
+            DEF_SPACE
+        };
+
         #[derive(Debug)]
         struct S(readline::Print);
 
@@ -78,6 +88,12 @@ impl App {
                     signal_allow_plain_text: true,
                     server_url: args.signal_url,
                     timeout_s: 10,
+                    webrtc_config: serde_json::json!({
+                      "iceServers": [
+                        { "urls": ["stun:stun-0.main.infra.holo.host:443"] },
+                        { "urls": ["stun:stun-1.main.infra.holo.host:443"] }
+                      ]
+                    }),
                     ..Default::default()
                 },
             },
@@ -86,7 +102,8 @@ impl App {
         let h: DynKitsuneHandler = Arc::new(K(print.clone()));
         let k = builder.build().await?;
         k.register_handler(h).await?;
-        let s = k.space(SPACE).await?;
+        let t = k.transport().await?;
+        let s = k.space(space).await?;
 
         let a = Arc::new(kitsune2_core::Ed25519LocalAgent::default());
 
@@ -94,10 +111,17 @@ impl App {
 
         Ok(Self {
             _k: k,
+            t,
             s,
             a,
             p: print,
         })
+    }
+
+    pub async fn stats(&self) -> K2Result<()> {
+        let stats = self.t.dump_network_stats().await?;
+        self.p.print_line(format!("{stats:#?}"));
+        Ok(())
     }
 
     pub async fn chat(&self, msg: Bytes) -> K2Result<()> {
