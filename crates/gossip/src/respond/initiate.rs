@@ -139,25 +139,26 @@ impl K2Gossip {
         if let Some(initiated) = initiate_lock.as_ref() {
             // We've initiated with this peer, and we're now receiving an initiate message from them
             if initiated.session_with_peer == from_peer {
-                match &initiated.stage {
+                return match &initiated.stage {
                     RoundStage::Initiated(i) => {
                         if i.tie_breaker > initiate.tie_breaker {
                             // We win, our initiation should be accepted by the peer, and we can drop this incoming message.
-                            return Ok(false);
+                            Ok(false)
                         } else {
                             // We lose, the other peer's initiation should be accepted, and we should drop our own initiation.
                             *initiate_lock = None;
-                        };
+                            Ok(true)
+                        }
                     }
                     _ => {
                         // This would be odd. We've made it past the initial message exchange and
                         // the peer is trying to initiate again. That definitely wouldn't be
                         // following the protocol so treat this as a peer behaviour error
-                        return Err(K2GossipError::peer_behavior(
+                        Err(K2GossipError::peer_behavior(
                             "Attempted to initiate during a round",
-                        ));
+                        ))
                     }
-                }
+                };
             }
         }
 
@@ -506,7 +507,7 @@ mod tests {
             .unwrap();
 
         // Check that we didn't send a response
-        harness.response_rx.try_recv().unwrap_err();
+        harness.rx.try_recv().unwrap_err();
 
         // And that our initiated state is still set
         {

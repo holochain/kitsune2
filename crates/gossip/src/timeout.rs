@@ -1,10 +1,10 @@
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::state::GossipRoundState;
+use crate::state::{GossipRoundState, RoundStage};
 use crate::K2GossipConfig;
 use kitsune2_api::Url;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::AbortHandle;
@@ -12,7 +12,8 @@ use tokio::task::AbortHandle;
 /// Spawns a task that checks for timed-out gossip rounds and drops their state.
 pub(crate) fn spawn_timeout_task(
     config: Arc<K2GossipConfig>,
-    gossip: K2Gossip,
+    force_initiate: tokio::sync::mpsc::Sender<()>,
+    gossip: Weak<K2Gossip>,
 ) -> AbortHandle {
     tracing::info!("Starting timeout task");
 
@@ -22,11 +23,19 @@ pub(crate) fn spawn_timeout_task(
             // Check for timed out rounds every 5s
             tokio::time::sleep(Duration::from_secs(5)).await;
 
+            let Some(gossip) = gossip.upgrade() else {
+                tracing::info!(
+                    "Gossip instance dropped, stopping timeout task"
+                );
+                break;
+            };
+
             remove_timed_out_rounds(
                 round_timeout,
                 gossip.initiated_round_state.clone(),
                 gossip.accepted_round_states.clone(),
                 gossip.peer_meta_store.clone(),
+                force_initiate.clone(),
             )
             .await;
         }
@@ -41,6 +50,7 @@ async fn remove_timed_out_rounds(
         RwLock<HashMap<Url, Arc<Mutex<GossipRoundState>>>>,
     >,
     peer_meta_store: Arc<K2PeerMetaStore>,
+    force_initiate: tokio::sync::mpsc::Sender<()>,
 ) {
     {
         let mut initiated_state = initiated_round_state.lock().await;
@@ -57,6 +67,14 @@ async fn remove_timed_out_rounds(
                         "Failed to increment peer timeout: {:?}",
                         e
                     );
+                }
+
+                // If we failed to initiate, then we want to try again. Otherwise, an unavailable
+                // peer can prevent us from initiating gossip.
+                if matches!(state.stage, RoundStage::Initiated(_)) {
+                    if let Err(err) = force_initiate.try_send(()) {
+                        tracing::info!(?err, "Failed to send force initiate");
+                    }
                 }
 
                 *initiated_state = None;
@@ -92,7 +110,7 @@ async fn remove_timed_out_rounds(
 #[cfg(test)]
 mod tests {
     use crate::peer_meta_store::K2PeerMetaStore;
-    use crate::state::GossipRoundState;
+    use crate::state::{GossipRoundState, RoundStage};
     use crate::timeout::remove_timed_out_rounds;
     use kitsune2_api::DhtArc;
     use kitsune2_api::Url;
@@ -115,11 +133,13 @@ mod tests {
             vec![],
             ArcSet::new(vec![DhtArc::FULL]).unwrap(),
         ))));
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
         remove_timed_out_rounds(
             std::time::Duration::from_secs(60),
             initiated.clone(),
             Default::default(),
             store.clone(),
+            tx.clone(),
         )
         .await;
 
@@ -133,6 +153,7 @@ mod tests {
             initiated.clone(),
             Default::default(),
             store.clone(),
+            tx.clone(),
         )
         .await;
 
@@ -144,6 +165,7 @@ mod tests {
     async fn expire_accepted_rounds() {
         let store = test_peer_meta_store();
         let accepted = Arc::new(RwLock::new(HashMap::new()));
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
 
         let url_1 = Url::from_str("ws://test:80/1").unwrap();
         accepted.write().await.insert(
@@ -172,6 +194,7 @@ mod tests {
             Default::default(),
             accepted.clone(),
             store.clone(),
+            tx.clone(),
         )
         .await;
 
@@ -184,6 +207,7 @@ mod tests {
             Default::default(),
             accepted.clone(),
             store.clone(),
+            tx.clone(),
         )
         .await;
 
@@ -201,6 +225,7 @@ mod tests {
             Default::default(),
             accepted.clone(),
             store.clone(),
+            tx,
         )
         .await;
 
@@ -209,5 +234,61 @@ mod tests {
             Some(1),
             store.peer_timeouts(expected_url.clone()).await.unwrap()
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn force_initiate_on_initiate_timeout() {
+        let url = Url::from_str("ws://test:80/1").unwrap();
+        let store = test_peer_meta_store();
+        let initiated = Arc::new(Mutex::new(Some(GossipRoundState::new(
+            url.clone(),
+            vec![],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        ))));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+        tokio::time::advance(std::time::Duration::from_secs(61)).await;
+
+        remove_timed_out_rounds(
+            std::time::Duration::from_secs(60),
+            initiated.clone(),
+            Default::default(),
+            store.clone(),
+            tx.clone(),
+        )
+        .await;
+
+        assert!(initiated.lock().await.is_none());
+        assert_eq!(Some(1), store.peer_timeouts(url.clone()).await.unwrap());
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn skip_force_initiate_on_other_stage_timeout() {
+        let url = Url::from_str("ws://test:80/1").unwrap();
+        let store = test_peer_meta_store();
+        let mut state = GossipRoundState::new(
+            url.clone(),
+            vec![],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        );
+        state.stage = RoundStage::NoDiff;
+        let initiated = Arc::new(Mutex::new(Some(state)));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+        tokio::time::advance(std::time::Duration::from_secs(61)).await;
+
+        remove_timed_out_rounds(
+            std::time::Duration::from_secs(60),
+            initiated.clone(),
+            Default::default(),
+            store.clone(),
+            tx.clone(),
+        )
+        .await;
+
+        assert!(initiated.lock().await.is_none());
+        assert_eq!(Some(1), store.peer_timeouts(url.clone()).await.unwrap());
+        assert!(rx.try_recv().is_err());
     }
 }

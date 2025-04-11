@@ -1,5 +1,5 @@
 use crate::error::K2GossipResult;
-use crate::gossip::{send_gossip_message, K2Gossip};
+use crate::gossip::K2Gossip;
 use crate::protocol::{
     AcceptResponseMessage, GossipMessage, K2GossipInitiateMessage,
 };
@@ -110,7 +110,7 @@ impl K2Gossip {
         );
 
         if let Some(msg) = res {
-            send_gossip_message(&self.response_tx, from_peer.clone(), msg)?;
+            self.send_gossip_message(msg, from_peer.clone()).await?;
         }
 
         if is_final_message {

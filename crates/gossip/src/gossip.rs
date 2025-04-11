@@ -14,8 +14,7 @@ use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_dht::{Dht, DhtApi};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
+use std::sync::{Arc, Weak};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 
@@ -54,20 +53,18 @@ impl GossipFactory for K2GossipFactory {
             let config =
                 builder.config.get_module_config::<K2GossipModConfig>()?;
 
-            let gossip: DynGossip = Arc::new(
-                K2Gossip::create(
-                    config.k2_gossip,
-                    space_id,
-                    peer_store,
-                    local_agent_store,
-                    peer_meta_store,
-                    op_store,
-                    transport,
-                    fetch,
-                    builder.verifier.clone(),
-                )
-                .await?,
-            );
+            let gossip: DynGossip = K2Gossip::create(
+                config.k2_gossip,
+                space_id,
+                peer_store,
+                local_agent_store,
+                peer_meta_store,
+                op_store,
+                transport,
+                fetch,
+                builder.verifier.clone(),
+            )
+            .await?;
 
             Ok(gossip)
         })
@@ -118,11 +115,10 @@ pub(crate) struct K2Gossip {
     pub(crate) op_store: DynOpStore,
     pub(crate) fetch: DynFetch,
     pub(crate) agent_verifier: DynVerifier,
-    pub(crate) response_tx: Sender<GossipResponse>,
-    pub(crate) _response_task: Arc<DropAbortHandle>,
-    pub(crate) _initiate_task: Arc<Option<DropAbortHandle>>,
-    pub(crate) _timeout_task: Arc<Option<DropAbortHandle>>,
-    pub(crate) _dht_update_task: Arc<Option<DropAbortHandle>>,
+    pub(crate) transport: Weak<dyn Transport>,
+    pub(crate) _initiate_task: Arc<std::sync::Mutex<Option<DropAbortHandle>>>,
+    pub(crate) _timeout_task: Arc<std::sync::Mutex<Option<DropAbortHandle>>>,
+    pub(crate) _dht_update_task: Arc<std::sync::Mutex<Option<DropAbortHandle>>>,
 }
 
 impl K2Gossip {
@@ -138,30 +134,7 @@ impl K2Gossip {
         transport: DynTransport,
         fetch: DynFetch,
         agent_verifier: DynVerifier,
-    ) -> K2Result<K2Gossip> {
-        let (response_tx, mut rx) =
-            tokio::sync::mpsc::channel::<GossipResponse>(1024);
-        let response_task = tokio::task::spawn({
-            let space_id = space_id.clone();
-            let transport = transport.clone();
-            async move {
-                while let Some(msg) = rx.recv().await {
-                    if let Err(e) = transport
-                        .send_module(
-                            msg.1,
-                            space_id.clone(),
-                            MOD_NAME.to_string(),
-                            msg.0,
-                        )
-                        .await
-                    {
-                        tracing::error!("could not send response: {:?}", e);
-                    };
-                }
-            }
-        })
-        .abort_handle();
-
+    ) -> K2Result<Arc<K2Gossip>> {
         // Initialise the DHT model from the op store.
         //
         // This might take a while if the op store is large!
@@ -170,7 +143,7 @@ impl K2Gossip {
             Dht::try_from_store(Timestamp::now(), op_store.clone()).await?;
         tracing::info!("DHT model initialised in {:?}", start.elapsed());
 
-        let mut gossip = K2Gossip {
+        let gossip = K2Gossip {
             config: Arc::new(config),
             initiated_round_state: Default::default(),
             accepted_round_states: Default::default(),
@@ -182,39 +155,40 @@ impl K2Gossip {
             op_store,
             fetch,
             agent_verifier,
-            response_tx,
-            _response_task: Arc::new(DropAbortHandle {
-                name: "Gossip response task".to_string(),
-                handle: response_task,
-            }),
+            transport: Arc::downgrade(&transport),
             _initiate_task: Default::default(),
             _timeout_task: Default::default(),
             _dht_update_task: Default::default(),
         };
 
+        let gossip = Arc::new(gossip);
+
         transport.register_module_handler(
             space_id,
             MOD_NAME.to_string(),
-            Arc::new(gossip.clone()),
+            gossip.clone(),
         );
 
-        let initiate_task =
-            spawn_initiate_task(gossip.config.clone(), gossip.clone());
-        gossip._initiate_task = Arc::new(Some(DropAbortHandle {
+        let (force_initiate, initiate_task) =
+            spawn_initiate_task(gossip.config.clone(), Arc::downgrade(&gossip));
+        *gossip._initiate_task.lock().unwrap() = Some(DropAbortHandle {
             name: "Gossip initiate task".to_string(),
             handle: initiate_task,
-        }));
-        let timeout_task =
-            spawn_timeout_task(gossip.config.clone(), gossip.clone());
-        gossip._timeout_task = Arc::new(Some(DropAbortHandle {
+        });
+        let timeout_task = spawn_timeout_task(
+            gossip.config.clone(),
+            force_initiate,
+            Arc::downgrade(&gossip),
+        );
+        *gossip._timeout_task.lock().unwrap() = Some(DropAbortHandle {
             name: "Gossip timeout task".to_string(),
             handle: timeout_task,
-        }));
+        });
         let dht_update_task = spawn_dht_update_task(gossip.dht.clone());
-        gossip._dht_update_task = Arc::new(Some(DropAbortHandle {
+        *gossip._dht_update_task.lock().unwrap() = Some(DropAbortHandle {
             name: "Gossip DHT update task".to_string(),
             handle: dht_update_task,
-        }));
+        });
 
         Ok(gossip)
     }
@@ -283,11 +257,21 @@ impl K2Gossip {
             target_peer_url,
         );
 
-        send_gossip_message(
-            &self.response_tx,
-            target_peer_url,
+        // Record that we're initiating gossip with this peer.
+        // Even if this fails, we should still record that this peer has been selected, and they
+        // shouldn't be a valid target for the next initiation if this fails.
+        self.peer_meta_store
+            .set_last_gossip_timestamp(
+                target_peer_url.clone(),
+                Timestamp::now(),
+            )
+            .await?;
+
+        self.send_gossip_message(
             GossipMessage::Initiate(initiate),
-        )?;
+            target_peer_url,
+        )
+        .await?;
         *initiated_lock = Some(round_state);
 
         Ok(true)
@@ -314,6 +298,35 @@ impl K2Gossip {
         }
 
         Ok(())
+    }
+
+    /// Send a gossip message to a peer
+    pub(crate) async fn send_gossip_message(
+        &self,
+        msg: GossipMessage,
+        target_url: Url,
+    ) -> K2Result<()> {
+        let Some(transport) = self.transport.upgrade() else {
+            return Err(K2Error::other(
+                "Transport has been dropped, can no longer send messages",
+            ));
+        };
+
+        tracing::debug!(
+            "Sending gossip message to {:?}: {:?}",
+            target_url,
+            msg
+        );
+
+        let msg = serialize_gossip_message(msg)?;
+        transport
+            .send_module(
+                target_url,
+                self.space_id.clone(),
+                MOD_NAME.to_string(),
+                msg,
+            )
+            .await
     }
 
     /// Handle an incoming gossip message.
@@ -415,27 +428,14 @@ impl TxModuleHandler for K2Gossip {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct GossipResponse(pub(crate) Bytes, pub(crate) Url);
-
-pub(crate) fn send_gossip_message(
-    tx: &Sender<GossipResponse>,
-    target_url: Url,
-    msg: GossipMessage,
-) -> K2Result<()> {
-    tracing::debug!("Sending gossip response to {:?}: {:?}", target_url, msg);
-    tx.try_send(GossipResponse(serialize_gossip_message(msg)?, target_url))
-        .map_err(|e| K2Error::other_src("could not send response", e))
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::harness::K2GossipFunctionalTestFactory;
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::{SECTOR_SIZE, UNIT_TIME};
-    use kitsune2_test_utils::enable_tracing;
     use kitsune2_test_utils::space::TEST_SPACE_ID;
+    use kitsune2_test_utils::{enable_tracing, iter_check};
 
     #[tokio::test]
     async fn two_way_agent_sync() {
@@ -1008,5 +1008,104 @@ mod test {
             .unwrap();
 
         assert!(meta.completed_rounds.unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn force_initiate() {
+        enable_tracing();
+
+        let space = TEST_SPACE_ID;
+        let factory = K2GossipFunctionalTestFactory::create(
+            space.clone(),
+            false,
+            Some(K2GossipConfig {
+                initial_initiate_interval_ms: 10,
+                initiate_interval_ms: 5000,
+                round_timeout_ms: 50,
+                ..K2GossipConfig::default()
+            }),
+        )
+        .await;
+
+        // The second harness has an empty arc set, so it will be lower priority for target
+        // selection in gossip initiate.
+        let harness_2 = factory.new_instance().await;
+        let agent_2 = harness_2.join_local_agent(DhtArc::Empty).await;
+
+        // Create some agent info to use with the first harness so it has to work through some
+        // unavailable agents.
+        let mut junk_agents = vec![];
+        for _ in 0..3 {
+            // Create a new harness and join an agent to it.
+            // We capture the agent info from this, but the harness is dropped immediately.
+            let junk_harness = factory.new_instance().await;
+            let junk_agent = junk_harness.join_local_agent(DhtArc::FULL).await;
+            let junk_agent = junk_harness
+                .force_storage_arc(junk_agent.agent.clone(), DhtArc::FULL)
+                .await;
+
+            println!("Created a junk agent: {:#?}", junk_agent);
+
+            junk_agents.push(junk_agent);
+
+            drop(junk_harness);
+        }
+
+        // The first harness is going to do our gossip initiation.
+        let harness_1 = factory.new_instance().await;
+        harness_1.join_local_agent(DhtArc::FULL).await;
+
+        // Let the first harness know about all the junk agents
+        harness_1
+            .space
+            .peer_store()
+            .insert(junk_agents.clone())
+            .await
+            .unwrap();
+
+        // Also let the first harness know about the second agent
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_2.clone()])
+            .await
+            .unwrap();
+
+        iter_check!(1000, 20, {
+            let mut all_tried = true;
+
+            for agent in &junk_agents {
+                all_tried &= harness_1
+                    .peer_meta_store
+                    .last_gossip_timestamp(agent.url.clone().unwrap())
+                    .await
+                    .unwrap()
+                    .is_some();
+            }
+
+            if all_tried {
+                break;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        });
+
+        let good_agent_url = agent_2.url.clone().unwrap();
+        iter_check!(1000, 20, {
+            if harness_1
+                .peer_meta_store
+                .last_gossip_timestamp(good_agent_url.clone())
+                .await
+                .unwrap()
+                .is_some()
+            {
+                break;
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        });
+
+        // Note that the total time elapsed by this point must be less than the initiate
+        // interval. So we must have force initiated after timeouts.
     }
 }

@@ -1,7 +1,7 @@
-use crate::gossip::{DropAbortHandle, GossipResponse, K2Gossip};
+use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{deserialize_gossip_message, GossipMessage};
-use crate::K2GossipConfig;
+use crate::{K2GossipConfig, MOD_NAME};
 use base64::Engine;
 use bytes::Bytes;
 use kitsune2_api::*;
@@ -16,7 +16,8 @@ use tokio::sync::RwLock;
 
 pub(crate) struct RespondTestHarness {
     pub(crate) gossip: K2Gossip,
-    pub(crate) response_rx: tokio::sync::mpsc::Receiver<GossipResponse>,
+    pub(crate) rx: tokio::sync::mpsc::Receiver<(Url, Bytes)>,
+    pub(crate) _transport: DynTransport,
 }
 
 impl RespondTestHarness {
@@ -38,19 +39,24 @@ impl RespondTestHarness {
             .await
             .unwrap();
 
-        #[derive(Debug)]
-        struct NoopHandler;
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let mut transport = MockTransport::new();
+        transport.expect_send_module().returning(
+            move |peer, space, module, data| {
+                assert_eq!(space, TEST_SPACE_ID);
+                assert_eq!(module.as_str(), MOD_NAME);
 
-        impl TxBaseHandler for NoopHandler {}
-        impl TxHandler for NoopHandler {}
-
-        let transport = builder
-            .transport
-            .create(builder.clone(), Arc::new(NoopHandler))
-            .await
-            .unwrap();
-
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
+                let tx = tx.clone();
+                Box::pin(async move {
+                    tx.send((peer, data)).await.unwrap();
+                    Ok(())
+                })
+            },
+        );
+        transport
+            .expect_register_module_handler()
+            .returning(|_, _, _| {});
+        let transport: DynTransport = Arc::new(transport);
 
         Self {
             gossip: K2Gossip {
@@ -83,21 +89,18 @@ impl RespondTestHarness {
                         builder.clone(),
                         TEST_SPACE_ID,
                         op_store.clone(),
-                        transport,
+                        transport.clone(),
                     )
                     .await
                     .unwrap(),
                 agent_verifier: builder.verifier.clone(),
-                response_tx: tx,
-                _response_task: Arc::new(DropAbortHandle {
-                    name: "response_task".to_string(),
-                    handle: tokio::spawn(async move {}).abort_handle(),
-                }),
+                transport: Arc::downgrade(&transport),
                 _initiate_task: Default::default(),
                 _timeout_task: Default::default(),
                 _dht_update_task: Default::default(),
             },
-            response_rx: rx,
+            rx,
+            _transport: transport,
         }
     }
 
@@ -127,13 +130,13 @@ impl RespondTestHarness {
     pub(crate) async fn wait_for_sent_response(&mut self) -> GossipMessage {
         let received = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            self.response_rx.recv(),
+            self.rx.recv(),
         )
         .await
         .unwrap()
         .unwrap();
 
-        deserialize_gossip_message(received.0).unwrap()
+        deserialize_gossip_message(received.1).unwrap()
     }
 }
 

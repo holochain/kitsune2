@@ -79,12 +79,10 @@ pub struct K2GossipConfig {
     /// The timeout for a gossip round.
     ///
     /// This will be loosely enforced on both sides. Kitsune periodically checks for timed out
-    /// rounds and will terminate them if they have been running for longer than this timeout.
+    /// rounds and will terminate them if they have been running for longer than this timeout. The
+    /// periodic check cannot be configured and runs every 5 seconds.
     ///
-    /// There is no point setting this lower than 5s because that is how often Kitsune checks for
-    /// timed out rounds.
-    ///
-    /// Default: 60,000 (1m)
+    /// Default: 15,000 (15s)
     pub round_timeout_ms: u32,
 
     /// The maximum number of concurrent accepted gossip rounds.
@@ -113,7 +111,7 @@ impl Default for K2GossipConfig {
             initiate_interval_ms: 120_000,
             initiate_jitter_ms: 10_000,
             min_initiate_interval_ms: 300_000,
-            round_timeout_ms: 60_000,
+            round_timeout_ms: 15_000,
             max_concurrent_accepted_rounds: 10,
         }
     }
