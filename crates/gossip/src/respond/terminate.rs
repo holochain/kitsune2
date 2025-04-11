@@ -305,6 +305,7 @@ mod tests {
                         .unwrap()
                         .encode(),
                     }),
+                    tie_breaker: 0,
                     new_since: 0,
                     max_op_data_bytes: 30_000,
                 }),
@@ -392,6 +393,7 @@ mod tests {
                         .unwrap()
                         .encode(),
                     }),
+                    tie_breaker: 0,
                     new_since: 0,
                     max_op_data_bytes: 30_000,
                 }),

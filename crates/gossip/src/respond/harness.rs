@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 
 pub(crate) struct RespondTestHarness {
     pub(crate) gossip: K2Gossip,
-    response_rx: tokio::sync::mpsc::Receiver<GossipResponse>,
+    pub(crate) response_rx: tokio::sync::mpsc::Receiver<GossipResponse>,
 }
 
 impl RespondTestHarness {

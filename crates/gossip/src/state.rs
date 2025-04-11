@@ -54,6 +54,7 @@ impl GossipRoundState {
             stage: RoundStage::Initiated(RoundStageInitiated {
                 our_agents,
                 our_arc_set,
+                tie_breaker: rand::thread_rng().next_u32().saturating_add(1),
             }),
         }
     }
@@ -94,6 +95,7 @@ pub(crate) enum RoundStage {
 pub(crate) struct RoundStageInitiated {
     pub our_agents: Vec<AgentId>,
     pub our_arc_set: ArcSet,
+    pub tie_breaker: u32,
 }
 
 #[derive(Debug, Clone)]
