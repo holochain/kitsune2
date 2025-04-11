@@ -106,6 +106,7 @@ async fn two_peer_fetch() {
         fetch: fetch_alice,
         op_store: op_store_alice,
         peer_url: peer_url_alice,
+        transport: _transport_alice,
         ..
     } = make_peer(None, true).await;
     let fetch_alice = fetch_alice.unwrap();
@@ -113,6 +114,7 @@ async fn two_peer_fetch() {
         fetch: fetch_bob,
         op_store: op_store_bob,
         peer_url: peer_url_bob,
+        transport: _transport_bob,
         ..
     } = make_peer(None, true).await;
     let fetch_bob = fetch_bob.unwrap();
@@ -242,7 +244,7 @@ async fn bob_comes_online_after_being_unresponsive() {
             builder_bob.clone(),
             TEST_SPACE_ID,
             op_store_bob.clone(),
-            transport_bob,
+            transport_bob.clone(),
         )
         .await
         .unwrap();

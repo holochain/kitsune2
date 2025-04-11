@@ -214,6 +214,8 @@ struct CoreSpace {
 
 impl Drop for CoreSpace {
     fn drop(&mut self) {
+        tracing::trace!("Dropping core space");
+
         self.task_check_agent_infos.abort();
     }
 }

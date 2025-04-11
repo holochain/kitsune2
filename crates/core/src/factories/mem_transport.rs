@@ -49,6 +49,8 @@ struct MemTransport {
 
 impl Drop for MemTransport {
     fn drop(&mut self) {
+        tracing::trace!("Dropping mem transport");
+
         self.task_list.lock().unwrap().abort_all();
     }
 }

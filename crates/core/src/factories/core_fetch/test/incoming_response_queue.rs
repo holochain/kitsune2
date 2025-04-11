@@ -22,6 +22,7 @@ struct TestCase {
     fetch: CoreFetch,
     op_store: DynOpStore,
     requests_sent: Arc<Mutex<RequestsSent>>,
+    _transport: DynTransport,
 }
 
 async fn setup_test() -> TestCase {
@@ -38,13 +39,14 @@ async fn setup_test() -> TestCase {
         CoreFetchConfig::default(),
         TEST_SPACE_ID.clone(),
         op_store.clone(),
-        mock_transport,
+        mock_transport.clone(),
     );
 
     TestCase {
         fetch,
         op_store,
         requests_sent,
+        _transport: mock_transport,
     }
 }
 
@@ -139,6 +141,7 @@ async fn requests_for_received_ops_are_removed_from_state() {
     let TestCase {
         fetch,
         requests_sent,
+        _transport,
         ..
     } = setup_test().await;
 
