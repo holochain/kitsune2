@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
-    DynPeerStore, DynVerifier, K2Result, Publish, Signer, SpaceHandler,
-    SpaceId, Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler, Url,
+    DynPeerStore, DynTransport, DynVerifier, K2Result, Publish, Signer,
+    SpaceHandler, SpaceId, Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler,
+    Url,
 };
 use kitsune2_test_utils::{
     agent::{TestLocalAgent, TestVerifier},
@@ -32,7 +33,14 @@ impl Signer for InvalidSigner {
 
 async fn setup_test(
     config: &CorePublishConfig,
-) -> (CorePublish, DynOpStore, DynPeerStore, DynVerifier, Url) {
+) -> (
+    CorePublish,
+    DynOpStore,
+    DynPeerStore,
+    DynVerifier,
+    Url,
+    DynTransport,
+) {
     let verifier = Arc::new(TestVerifier);
 
     let builder = Builder {
@@ -86,12 +94,13 @@ async fn setup_test(
             builder,
             fetch,
             peer_store.clone(),
-            transport,
+            transport.clone(),
         ),
         op_store,
         peer_store,
         verifier,
         url.unwrap(),
+        transport,
     )
 }
 
@@ -99,9 +108,9 @@ async fn setup_test(
 async fn published_ops_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _, _, _) =
+    let (core_publish_1, op_store_1, _, _, _, _transport) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, _, _, url_2) =
+    let (_core_publish2, op_store_2, _, _, url_2, _transport) =
         setup_test(&CorePublishConfig::default()).await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -143,9 +152,9 @@ async fn published_ops_can_be_retrieved() {
 async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _, _, _) =
+    let (core_publish_1, op_store_1, _, _, _, _transport) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, _, _, url_2) =
+    let (_core_publish2, op_store_2, _, _, url_2, _transport) =
         setup_test(&CorePublishConfig::default()).await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
@@ -195,9 +204,9 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
 async fn published_agent_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, _, _, _, _) =
+    let (core_publish_1, _, _, _, _, _transport) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, _, peer_store_2, _, url_2) =
+    let (_core_publish2, _, peer_store_2, _, url_2, _transport) =
         setup_test(&CorePublishConfig::default()).await;
 
     let agent_id: AgentId = bytes::Bytes::from_static(b"test-agent").into();
@@ -242,9 +251,9 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
 ) {
     enable_tracing();
 
-    let (core_publish_1, _, _, _, _) =
+    let (core_publish_1, _, _, _, _, _transport) =
         setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, _, peer_store_2, verifier_2, url_2) =
+    let (_core_publish2, _, peer_store_2, verifier_2, url_2, _transport) =
         setup_test(&CorePublishConfig::default()).await;
 
     let agent_id_invalid: AgentId =

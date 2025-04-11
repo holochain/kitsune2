@@ -22,6 +22,7 @@ struct TestCase {
     fetch: CoreFetch,
     op_store: DynOpStore,
     responses_sent: Arc<Mutex<ResponsesSent>>,
+    _transport: DynTransport,
 }
 
 async fn setup_test() -> TestCase {
@@ -46,6 +47,7 @@ async fn setup_test() -> TestCase {
         fetch,
         op_store,
         responses_sent,
+        _transport: mock_transport,
     }
 }
 
@@ -83,6 +85,7 @@ async fn respond_to_multiple_requests() {
         fetch,
         op_store,
         responses_sent,
+        _transport,
         ..
     } = setup_test().await;
 
@@ -176,6 +179,8 @@ async fn no_response_sent_when_no_ops_found() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fail_to_respond_once_then_succeed() {
+    enable_tracing();
+
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
     let op_store = MemOpStoreFactory::create()
@@ -219,8 +224,12 @@ async fn fail_to_respond_once_then_succeed() {
         .unwrap();
     let peer_url = Url::from_str("wss://127.0.0.1:1").unwrap();
 
-    let fetch =
-        CoreFetch::new(config.clone(), TEST_SPACE_ID, op_store, mock_transport);
+    let fetch = CoreFetch::new(
+        config.clone(),
+        TEST_SPACE_ID,
+        op_store,
+        mock_transport.clone(),
+    );
 
     // Receive incoming request.
     let data = serialize_request_message(vec![op.compute_op_id()]);
