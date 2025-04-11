@@ -5,7 +5,7 @@ use crate::{protocol::*, *};
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 /// This is the low-level backend transport handler designed to work
 /// with [DefaultTransport].
@@ -209,6 +209,15 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait-object [Transport].
 pub type DynTransport = Arc<dyn Transport>;
+
+/// A weak trait-object [Transport].
+///
+/// This is provided in the API as a suggestion for modules that store a reference to the transport
+/// for sending messages but also implement [`TxModuleHandler`]. When registering as a module
+/// handler, the transport keeps a reference to your module. If you then store an owned reference
+/// to the transport, you create a circular reference. By using a weak reference instead, you can
+/// create a well-behaved module that will be dropped when a space shuts down.
+pub type WeakDynTransport = Weak<dyn Transport>;
 
 /// A high-level wrapper around a low-level [DynTxImp] transport implementation.
 #[derive(Clone, Debug)]
