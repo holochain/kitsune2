@@ -44,7 +44,7 @@
 
 use kitsune2_api::*;
 use message_handler::PublishMessageHandler;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     task::AbortHandle,
@@ -224,7 +224,7 @@ impl CorePublish {
             tokio::task::spawn(CorePublish::outgoing_publish_ops_task(
                 outgoing_publish_ops_rx,
                 space_id.clone(),
-                transport.clone(),
+                Arc::downgrade(&transport),
             ))
             .abort_handle();
         tasks.push(outgoing_publish_ops_task);
@@ -243,7 +243,7 @@ impl CorePublish {
             tokio::task::spawn(CorePublish::outgoing_publish_agent_task(
                 outgoing_publish_agent_rx,
                 space_id.clone(),
-                transport.clone(),
+                Arc::downgrade(&transport),
             ))
             .abort_handle();
         tasks.push(outgoing_publish_agent_task);
@@ -280,11 +280,16 @@ impl CorePublish {
     async fn outgoing_publish_ops_task(
         mut outgoing_publish_ops_rx: Receiver<OutgoingPublishOps>,
         space_id: SpaceId,
-        transport: DynTransport,
+        transport: Weak<dyn Transport>,
     ) {
         while let Some((op_ids, peer_url)) =
             outgoing_publish_ops_rx.recv().await
         {
+            let Some(transport) = transport.upgrade() else {
+                tracing::warn!("Transport dropped, stopping publish ops task");
+                return;
+            };
+
             // Send ops publish message to peer.
             let data = serialize_publish_ops_message(op_ids.clone());
             if let Err(err) = transport
@@ -324,11 +329,18 @@ impl CorePublish {
     async fn outgoing_publish_agent_task(
         mut outgoing_publish_agent_rx: Receiver<OutgoingAgentInfo>,
         space_id: SpaceId,
-        transport: DynTransport,
+        transport: Weak<dyn Transport>,
     ) {
         while let Some((agent_info, peer_url)) =
             outgoing_publish_agent_rx.recv().await
         {
+            let Some(transport) = transport.upgrade() else {
+                tracing::warn!(
+                    "Transport dropped, stopping publish agent task"
+                );
+                return;
+            };
+
             // Send fetch request to peer.
             match serialize_publish_agent_message(&agent_info) {
                 Ok(data) => {

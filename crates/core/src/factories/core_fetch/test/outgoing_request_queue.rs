@@ -24,6 +24,7 @@ struct TestCase {
     fetch: CoreFetch,
     requests_sent: Arc<Mutex<RequestsSent>>,
     op_store: DynOpStore,
+    _transport: DynTransport,
 }
 
 async fn setup_test(
@@ -51,6 +52,7 @@ async fn setup_test(
         fetch,
         requests_sent,
         op_store,
+        _transport: mock_transport,
     }
 }
 
@@ -111,6 +113,7 @@ async fn outgoing_request_queue() {
     let TestCase {
         fetch,
         requests_sent,
+        _transport,
         ..
     } = setup_test(&config, false).await;
 
@@ -166,6 +169,7 @@ async fn happy_op_fetch_from_multiple_agents() {
     let TestCase {
         fetch,
         requests_sent,
+        _transport,
         ..
     } = setup_test(&config, false).await;
 
@@ -235,6 +239,7 @@ async fn filter_requests_for_held_ops() {
         fetch,
         requests_sent,
         op_store,
+        _transport,
     } = setup_test(&CoreFetchConfig::default(), false).await;
 
     let held_op_1 = make_op(vec![1; 64]);
@@ -272,6 +277,7 @@ async fn unresponsive_agents_are_put_on_back_off_list() {
     let TestCase {
         fetch,
         requests_sent,
+        _transport,
         ..
     } = setup_test(&CoreFetchConfig::default(), true).await;
 
@@ -321,6 +327,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     let TestCase {
         fetch,
         requests_sent,
+        _transport,
         ..
     } = setup_test(&config, false).await;
 
@@ -361,6 +368,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     let TestCase {
         fetch,
         requests_sent,
+        _transport,
         ..
     } = setup_test(&config, true).await;
 

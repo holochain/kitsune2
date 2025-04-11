@@ -2,6 +2,7 @@ use back_off::BackOffList;
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::collections::HashMap;
+use std::sync::Weak;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -244,7 +245,7 @@ impl CoreFetch {
                     outgoing_request_tx.clone(),
                     outgoing_request_rx.clone(),
                     space_id.clone(),
-                    transport.clone(),
+                    Arc::downgrade(&transport),
                     config.re_insert_outgoing_request_delay_ms,
                 ));
             tasks.push(request_task);
@@ -255,7 +256,7 @@ impl CoreFetch {
             tokio::task::spawn(CoreFetch::incoming_request_task(
                 incoming_request_rx,
                 op_store.clone(),
-                transport.clone(),
+                Arc::downgrade(&transport),
                 space_id.clone(),
             ));
         tasks.push(incoming_request_task);
@@ -295,12 +296,19 @@ impl CoreFetch {
         outgoing_request_tx: Sender<OutgoingRequest>,
         outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
         space_id: SpaceId,
-        transport: DynTransport,
+        transport: Weak<dyn Transport>,
         re_insert_outgoing_request_delay: u32,
     ) {
         while let Some((op_id, peer_url)) =
             outgoing_request_rx.lock().await.recv().await
         {
+            let Some(transport) = transport.upgrade() else {
+                tracing::info!(
+                    "Transport dropped, stopping outgoing request task"
+                );
+                break;
+            };
+
             let is_peer_on_back_off = {
                 let mut lock = state.lock().unwrap();
 
@@ -385,11 +393,18 @@ impl CoreFetch {
     async fn incoming_request_task(
         mut response_rx: Receiver<IncomingRequest>,
         op_store: DynOpStore,
-        transport: DynTransport,
+        transport: Weak<dyn Transport>,
         space_id: SpaceId,
     ) {
         while let Some((op_ids, peer)) = response_rx.recv().await {
             tracing::debug!(?peer, ?op_ids, "incoming request");
+
+            let Some(transport) = transport.upgrade() else {
+                tracing::info!(
+                    "Transport dropped, stopping incoming request task"
+                );
+                break;
+            };
 
             // Retrieve ops to send from store.
             let ops = match op_store.retrieve_ops(op_ids.clone()).await {
