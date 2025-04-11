@@ -296,3 +296,125 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
         }
     });
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn broadcast_new_agent_info_on_resign() {
+    #[derive(Debug)]
+    struct S;
+
+    impl SpaceHandler for S {}
+
+    #[derive(Debug)]
+    struct K;
+
+    impl KitsuneHandler for K {
+        fn create_space(
+            &self,
+            _space: SpaceId,
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
+            Box::pin(async move {
+                let s: DynSpaceHandler = Arc::new(S);
+                Ok(s)
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct PublishStub(Mutex<Vec<(Arc<AgentInfoSigned>, Url)>>);
+
+    impl Publish for PublishStub {
+        fn publish_ops(
+            &self,
+            _op_ids: Vec<OpId>,
+            _target: Url,
+        ) -> BoxFut<'_, K2Result<()>> {
+            unimplemented!()
+        }
+
+        fn publish_agent(
+            &self,
+            agent_info: Arc<AgentInfoSigned>,
+            target: Url,
+        ) -> BoxFut<'_, K2Result<()>> {
+            self.0.lock().unwrap().push((agent_info, target));
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[derive(Debug)]
+    struct PF(DynPublish);
+
+    impl PublishFactory for PF {
+        fn default_config(&self, _config: &mut Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn validate_config(&self, _config: &Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn create(
+            &self,
+            _builder: Arc<Builder>,
+            _space_id: SpaceId,
+            _fetch: DynFetch,
+            _peer_store: DynPeerStore,
+            _transport: DynTransport,
+        ) -> BoxFut<'static, K2Result<DynPublish>> {
+            let out: DynPublish = self.0.clone();
+            Box::pin(async move { Ok(out) })
+        }
+    }
+
+    let p = Arc::new(PublishStub(Mutex::new(Vec::new())));
+
+    let builder = Builder {
+        verifier: Arc::new(TestVerifier),
+        publish: Arc::new(PF(p.clone())),
+        ..crate::default_test_builder()
+    }
+    .with_default_config()
+    .unwrap();
+
+    builder
+        .config
+        .set_module_config(&super::CoreSpaceModConfig {
+            core_space: super::CoreSpaceConfig {
+                // check every 5 millis if we need to re-sign
+                re_sign_freq_ms: 5,
+                // setting this to a big number like 60 minutes makes
+                // it so we *always* re-sign agent infos, because the
+                // 20min+now expiry times are always within this time range
+                re_sign_expire_time_ms: 1000 * 60 * 60,
+            },
+        })
+        .unwrap();
+
+    let h: DynKitsuneHandler = Arc::new(K);
+    let k1 = builder.build().await.unwrap();
+    k1.register_handler(h).await.unwrap();
+
+    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
+
+    // Join alice to the space and then remove her from the local agent store.
+    // This is a quick way to create a new agent info into the peer store for alice.
+    let alice = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
+    s1.local_agent_join(alice.clone()).await.unwrap();
+    s1.local_agent_store()
+        .remove(alice.agent().clone())
+        .await
+        .unwrap();
+
+    let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
+    s1.local_agent_join(bob.clone()).await.unwrap();
+
+    iter_check!(1000, {
+        // see if we have done at least 5 broadcasts
+        if p.0.lock().unwrap().len() >= 5 {
+            break;
+        }
+    });
+
+    let broadcast = p.0.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(bob.agent(), &broadcast.0.agent);
+}
