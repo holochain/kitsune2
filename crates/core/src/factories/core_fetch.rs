@@ -2,7 +2,6 @@ use back_off::BackOffList;
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::collections::HashMap;
-use std::sync::Weak;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -296,7 +295,7 @@ impl CoreFetch {
         outgoing_request_tx: Sender<OutgoingRequest>,
         outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
         space_id: SpaceId,
-        transport: Weak<dyn Transport>,
+        transport: WeakDynTransport,
         re_insert_outgoing_request_delay: u32,
     ) {
         while let Some((op_id, peer_url)) =
@@ -393,7 +392,7 @@ impl CoreFetch {
     async fn incoming_request_task(
         mut response_rx: Receiver<IncomingRequest>,
         op_store: DynOpStore,
-        transport: Weak<dyn Transport>,
+        transport: WeakDynTransport,
         space_id: SpaceId,
     ) {
         while let Some((op_ids, peer)) = response_rx.recv().await {

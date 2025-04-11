@@ -44,7 +44,7 @@
 
 use kitsune2_api::*;
 use message_handler::PublishMessageHandler;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     task::AbortHandle,
@@ -280,7 +280,7 @@ impl CorePublish {
     async fn outgoing_publish_ops_task(
         mut outgoing_publish_ops_rx: Receiver<OutgoingPublishOps>,
         space_id: SpaceId,
-        transport: Weak<dyn Transport>,
+        transport: WeakDynTransport,
     ) {
         while let Some((op_ids, peer_url)) =
             outgoing_publish_ops_rx.recv().await
@@ -329,7 +329,7 @@ impl CorePublish {
     async fn outgoing_publish_agent_task(
         mut outgoing_publish_agent_rx: Receiver<OutgoingAgentInfo>,
         space_id: SpaceId,
-        transport: Weak<dyn Transport>,
+        transport: WeakDynTransport,
     ) {
         while let Some((agent_info, peer_url)) =
             outgoing_publish_agent_rx.recv().await
