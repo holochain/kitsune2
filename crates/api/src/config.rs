@@ -51,7 +51,6 @@ impl Default for ConfigMap {
 
 struct Inner {
     map: ConfigMap,
-    are_defaults_set: bool,
     did_validate: bool,
     is_runtime: bool,
 }
@@ -78,7 +77,6 @@ impl Default for Config {
     fn default() -> Self {
         Self(Mutex::new(Inner {
             map: ConfigMap::default(),
-            are_defaults_set: false,
             did_validate: false,
             is_runtime: false,
         }))
@@ -86,13 +84,6 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Once defaults are set, generate warnings for any values
-    /// set beyond this list. So that we can identify no-longer-used
-    /// config parameters.
-    pub fn mark_defaults_set(&self) {
-        self.0.lock().unwrap().are_defaults_set = true;
-    }
-
     /// Validate this config before using it in runtime.
     /// Returns the previous validation state.
     pub fn mark_validated(&self) -> bool {
@@ -130,13 +121,11 @@ impl Config {
         let mut updates = Vec::new();
         {
             let mut lock = self.0.lock().unwrap();
-            let are_defaults_set = lock.are_defaults_set;
             let is_runtime = lock.is_runtime;
             let old_map: &mut ConfigMap = &mut lock.map;
             let new_map: &ConfigMap = &in_map;
             fn apply_map(
                 debug_path: &str,
-                are_defaults_set: bool,
                 is_runtime: bool,
                 updates: &mut Vec<(ConfigUpdateCb, serde_json::Value)>,
                 old_map: &mut ConfigMap,
@@ -146,22 +135,10 @@ impl Config {
                     ConfigMap::ConfigMap(new_map) => match old_map {
                         ConfigMap::ConfigMap(old_map) => {
                             for (key, new_map) in new_map.iter() {
-                                if are_defaults_set
-                                    && !old_map.contains_key(key)
-                                {
-                                    tracing::warn!(
-                                        debug_path,
-                                        "this config parameter may be unused"
-                                    );
-                                }
                                 let old_map =
                                     old_map.entry(key.clone()).or_default();
                                 apply_map(
-                                    debug_path,
-                                    are_defaults_set,
-                                    is_runtime,
-                                    updates,
-                                    old_map,
+                                    debug_path, is_runtime, updates, old_map,
                                     new_map,
                                 )?;
                             }
@@ -206,14 +183,7 @@ impl Config {
                 }
                 Ok(())
             }
-            apply_map(
-                &debug_path,
-                are_defaults_set,
-                is_runtime,
-                &mut updates,
-                old_map,
-                new_map,
-            )?;
+            apply_map(&debug_path, is_runtime, &mut updates, old_map, new_map)?;
         }
         for (update_cb, value) in updates {
             update_cb(value);
@@ -272,23 +242,6 @@ impl Config {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn warns_unused() {
-        // this test will never fail,
-        // but we can check it traces correctly manually
-
-        kitsune2_test_utils::enable_tracing();
-
-        let c = Config::default();
-        c.set_module_config(&serde_json::json!({"apples": "red"}))
-            .unwrap();
-        c.mark_defaults_set();
-        c.set_module_config(&serde_json::json!({"apples": "green"}))
-            .unwrap();
-        c.set_module_config(&serde_json::json!({"bananas": 42}))
-            .unwrap();
-    }
 
     #[test]
     fn warns_no_runtime_cb() {

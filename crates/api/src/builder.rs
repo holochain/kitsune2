@@ -94,8 +94,6 @@ impl Builder {
             gossip.default_config(config)?;
             local_agent_store.default_config(config)?;
             publish.default_config(config)?;
-
-            config.mark_defaults_set();
         }
 
         Ok(self)
