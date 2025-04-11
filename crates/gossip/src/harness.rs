@@ -264,6 +264,56 @@ impl K2GossipFunctionalTestHarness {
         .await
         .expect("Timed out waiting for instances to sync");
     }
+
+    /// Force the storage arc of the given agent to be the given arc.
+    ///
+    /// This will publish a new agent info with the given arc, and wait for it to be available in
+    /// the peer store. The latest agent info will be returned.
+    pub async fn force_storage_arc(
+        &self,
+        agent_id: AgentId,
+        arc: DhtArc,
+    ) -> Arc<AgentInfoSigned> {
+        let local_agents =
+            self.space.local_agent_store().get_all().await.unwrap();
+        let local_agent = local_agents
+            .iter()
+            .find(|a| a.agent() == &agent_id)
+            .unwrap();
+
+        local_agent.set_cur_storage_arc(arc);
+        local_agent.invoke_cb();
+
+        // Wait for the agent info to be published
+        tokio::time::timeout(std::time::Duration::from_secs(5), {
+            let peer_store = self.space.peer_store().clone();
+            let agent_id = agent_id.clone();
+            async move {
+                loop {
+                    // Assume the agent was already present.
+                    let agent = peer_store.get(agent_id.clone()).await.unwrap();
+
+                    let Some(agent) = agent else {
+                        continue;
+                    };
+
+                    if agent.storage_arc == arc {
+                        break;
+                    }
+
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            }
+        }).await.expect("Timed out waiting for agent to be in peer store with the requested arc");
+
+        // Return the latest agent info
+        self.space
+            .peer_store()
+            .get(agent_id)
+            .await
+            .unwrap()
+            .unwrap()
+    }
 }
 
 /// Functional test factory for K2Gossip.

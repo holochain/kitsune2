@@ -6,15 +6,17 @@ use kitsune2_api::*;
 use kitsune2_api::{AgentId, DynLocalAgentStore, K2Result, Timestamp, Url};
 use rand::prelude::SliceRandom;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::task::AbortHandle;
 
 pub fn spawn_initiate_task(
     config: Arc<K2GossipConfig>,
-    gossip: K2Gossip,
-) -> AbortHandle {
+    gossip: Weak<K2Gossip>,
+) -> (tokio::sync::mpsc::Sender<()>, AbortHandle) {
     tracing::info!("Starting initiate task");
+
+    let (force_initiate, mut force_initiate_rx) = tokio::sync::mpsc::channel(1);
 
     let mut rush_to_first_initiated_round = true;
 
@@ -29,18 +31,33 @@ pub fn spawn_initiate_task(
     let initiate_interval = config.initiate_interval();
     let initiate_jitter_ms = config.initiate_jitter_ms as u64;
     let min_initiate_interval = config.min_initiate_interval();
-    tokio::task::spawn(async move {
+    let here_force_initiate = force_initiate.clone();
+    let abort_handle = tokio::task::spawn(async move {
         loop {
-            if rush_to_first_initiated_round {
-                tokio::time::sleep(rush_backoff.next().unwrap_or(initiate_interval)).await;
+            let delay = if rush_to_first_initiated_round {
+                tokio::time::sleep(rush_backoff.next().unwrap_or(initiate_interval))
             } else {
                 let jitter = if initiate_jitter_ms > 0 {
                     Duration::from_millis(rand::random::<u64>() % initiate_jitter_ms)
                 } else {
                     Duration::ZERO
                 };
-                tokio::time::sleep(initiate_interval + jitter).await;
+                tokio::time::sleep(initiate_interval + jitter)
+            };
+
+            tokio::select! {
+                _ = delay => {
+                    // Continue to the next iteration
+                }
+                _ = force_initiate_rx.recv() => {
+                    tracing::info!("Force initiate received, skipping the remaining delay and attempting initiation");
+                }
             }
+
+            let Some(gossip) = gossip.upgrade() else {
+                tracing::info!("Gossip instance dropped, stopping initiate task");
+                break;
+            };
 
             if gossip.initiated_round_state.lock().await.is_some() {
                 tracing::info!("Not initiating gossip because there is already an initiated round");
@@ -58,7 +75,7 @@ pub fn spawn_initiate_task(
                 Ok(Some(url)) => {
                     match gossip.initiate_gossip(url.clone()).await {
                         Ok(true) => {
-                            rush_to_first_initiated_round = true;
+                            rush_to_first_initiated_round = false;
                             tracing::info!("Initiated gossip with {}", url);
                         }
                         Ok(false) => {
@@ -66,6 +83,10 @@ pub fn spawn_initiate_task(
                         }
                         Err(e) => {
                             tracing::error!("Error initiating gossip: {:?}", e);
+
+                            if let Err(err) = here_force_initiate.try_send(()) {
+                                tracing::error!("Error sending force initiate: {:?}", err);
+                            }
                         }
                     }
                 }
@@ -78,7 +99,9 @@ pub fn spawn_initiate_task(
             }
         }
     })
-    .abort_handle()
+    .abort_handle();
+
+    (force_initiate, abort_handle)
 }
 
 async fn select_next_target(
@@ -368,7 +391,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(agent_2.url.clone().unwrap(), url.unwrap())
+        assert_eq!(agent_2.url.clone().unwrap(), url.unwrap());
     }
 
     #[tokio::test]

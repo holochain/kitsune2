@@ -25,13 +25,6 @@ impl K2Gossip {
         let (mut lock, initiated) =
             self.check_accept_state(&from_peer, &accept).await?;
 
-        // Only once the other peer has accepted should we record that we've tried to
-        // gossip with them. Otherwise, we risk lock each other out if we both record
-        // a last gossip timestamp and try to initiate at the same time.
-        self.peer_meta_store
-            .set_last_gossip_timestamp(from_peer.clone(), Timestamp::now())
-            .await?;
-
         let common_arc_set = Self::get_common_arc_set(&initiated, &accept)?;
 
         let missing_agents = self
