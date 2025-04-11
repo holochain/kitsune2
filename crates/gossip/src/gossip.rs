@@ -14,7 +14,7 @@ use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_dht::{Dht, DhtApi};
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, OnceLock};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 
@@ -115,7 +115,7 @@ pub(crate) struct K2Gossip {
     pub(crate) op_store: DynOpStore,
     pub(crate) fetch: DynFetch,
     pub(crate) agent_verifier: DynVerifier,
-    pub(crate) transport: Weak<dyn Transport>,
+    pub(crate) transport: WeakDynTransport,
     pub(crate) _initiate_task: Arc<OnceLock<Option<DropAbortHandle>>>,
     pub(crate) _timeout_task: Arc<OnceLock<Option<DropAbortHandle>>>,
     pub(crate) _dht_update_task: Arc<OnceLock<Option<DropAbortHandle>>>,
