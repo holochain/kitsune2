@@ -2,7 +2,7 @@ use super::test_utils::random_peer_url;
 use crate::{
     default_test_builder,
     factories::{
-        core_fetch::{CoreFetch, CoreFetchConfig},
+        core_fetch::{test::test_utils::make_op, CoreFetch, CoreFetchConfig},
         MemOpStoreFactory,
     },
 };
@@ -23,6 +23,7 @@ type RequestsSent = Vec<(OpId, Url)>;
 struct TestCase {
     fetch: CoreFetch,
     requests_sent: Arc<Mutex<RequestsSent>>,
+    op_store: DynOpStore,
 }
 
 async fn setup_test(
@@ -42,13 +43,14 @@ async fn setup_test(
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
-        op_store,
+        op_store.clone(),
         mock_transport.clone(),
     );
 
     TestCase {
         fetch,
         requests_sent,
+        op_store,
     }
 }
 
@@ -228,6 +230,44 @@ async fn happy_op_fetch_from_multiple_agents() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn filter_requests_for_held_ops() {
+    let TestCase {
+        fetch,
+        requests_sent,
+        op_store,
+    } = setup_test(&CoreFetchConfig::default(), false).await;
+
+    let held_op_1 = make_op(vec![1; 64]);
+    let held_op_id_1 = held_op_1.compute_op_id();
+    let held_op_2 = make_op(vec![2; 64]);
+    let held_op_id_2 = held_op_2.compute_op_id();
+    let peer_url = random_peer_url();
+
+    op_store
+        .process_incoming_ops(vec![held_op_1.into(), held_op_2.into()])
+        .await
+        .unwrap();
+
+    let new_op = make_op(vec![3; 64]);
+    let new_op_id = new_op.compute_op_id();
+    let op_list = vec![
+        held_op_id_1.clone(),
+        held_op_id_2.clone(),
+        new_op_id.clone(),
+    ];
+
+    fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
+    iter_check!(1000, 100, {
+        let lock = requests_sent.lock().unwrap();
+        if lock.contains(&(new_op_id.clone(), peer_url.clone())) {
+            assert!(!lock.contains(&(held_op_id_1.clone(), peer_url.clone())));
+            assert!(!lock.contains(&(held_op_id_2.clone(), peer_url.clone())));
+            break;
+        }
+    });
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn unresponsive_agents_are_put_on_back_off_list() {
     let TestCase {
         fetch,
@@ -281,6 +321,7 @@ async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
     let TestCase {
         fetch,
         requests_sent,
+        ..
     } = setup_test(&config, false).await;
 
     let op_list = create_op_id_list(1);
@@ -320,6 +361,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     let TestCase {
         fetch,
         requests_sent,
+        ..
     } = setup_test(&config, true).await;
 
     let op_list_1 = create_op_id_list(2);

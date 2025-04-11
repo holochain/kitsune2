@@ -145,6 +145,7 @@ struct CoreFetch {
     state: Arc<Mutex<State>>,
     outgoing_request_tx: Sender<OutgoingRequest>,
     tasks: Vec<JoinHandle<()>>,
+    op_store: DynOpStore,
     #[cfg(test)]
     message_handler: DynTxModuleHandler,
 }
@@ -166,20 +167,23 @@ impl Fetch for CoreFetch {
         op_ids: Vec<OpId>,
         source: Url,
     ) -> BoxFut<'_, K2Result<()>> {
-        // Add requests to set.
-        {
-            let requests = &mut self.state.lock().unwrap().requests;
-            requests.extend(
-                op_ids
-                    .clone()
-                    .into_iter()
-                    .map(|op_id| (op_id.clone(), source.clone())),
-            );
-        }
-
         Box::pin(async move {
+            // Filter out requests for ops that are already in the op store.
+            let new_op_ids =
+                self.op_store.filter_out_existing_ops(op_ids).await?;
+
+            // Add requests to set.
+            {
+                let requests = &mut self.state.lock().unwrap().requests;
+                requests.extend(
+                    new_op_ids
+                        .clone()
+                        .into_iter()
+                        .map(|op_id| (op_id.clone(), source.clone())),
+                );
+            }
             // Insert requests into fetch queue.
-            for op_id in op_ids {
+            for op_id in new_op_ids {
                 if let Err(err) =
                     self.outgoing_request_tx.send((op_id, source.clone())).await
                 {
@@ -260,7 +264,7 @@ impl CoreFetch {
         let incoming_response_task =
             tokio::task::spawn(CoreFetch::incoming_response_task(
                 incoming_response_rx,
-                op_store,
+                op_store.clone(),
                 state.clone(),
             ));
         tasks.push(incoming_response_task);
@@ -280,6 +284,7 @@ impl CoreFetch {
             state,
             outgoing_request_tx,
             tasks,
+            op_store,
             #[cfg(test)]
             message_handler,
         }

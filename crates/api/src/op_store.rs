@@ -102,6 +102,16 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         op_ids: Vec<OpId>,
     ) -> BoxFuture<'_, K2Result<Vec<MetaOp>>>;
 
+    /// Filter the passed in op ids by ops that exist in the store.
+    ///
+    /// # Returns
+    ///
+    /// The filtered list of op ids that do not exist in the store.
+    fn filter_out_existing_ops(
+        &self,
+        op_ids: Vec<OpId>,
+    ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
+
     /// Retrieve a size-bounded list of op ids that have been stored within the given `arc` since
     /// `start`.
     ///

@@ -90,6 +90,11 @@ message K2GossipInitiateMessage {
   // The DHT sectors covered by the union of the agents in the participating_agents list.
   ArcSetMessage arc_set = 11;
 
+  // A tie breaker so that conflicting initiates between a pair of peers can be resolved without a further message.
+  //
+  // This must be a random number, selected per gossip round.
+  uint32 tie_breaker = 12;
+
   // Request ops that are new since the given timestamp.
   int64 new_since = 20;
 

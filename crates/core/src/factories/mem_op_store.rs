@@ -253,6 +253,19 @@ impl OpStore for Kitsune2MemoryOpStore {
         })
     }
 
+    fn filter_out_existing_ops(
+        &self,
+        op_ids: Vec<OpId>,
+    ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
+        Box::pin(async move {
+            let self_lock = self.read().await;
+            Ok(op_ids
+                .into_iter()
+                .filter(|op_id| !self_lock.op_list.contains_key(op_id))
+                .collect())
+        })
+    }
+
     fn retrieve_op_ids_bounded(
         &self,
         arc: DhtArc,
