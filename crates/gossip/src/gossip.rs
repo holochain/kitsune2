@@ -503,7 +503,7 @@ mod test {
 
         let space = TEST_SPACE_ID;
         let factory =
-            K2GossipFunctionalTestFactory::create(space.clone(), true, None)
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
                 .await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
@@ -517,13 +517,20 @@ mod test {
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .space
             .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_2])
             .await
             .unwrap();
 
