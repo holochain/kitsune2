@@ -14,17 +14,24 @@ struct Args {
     #[arg(long, default_value = "https://dev-test-bootstrap2.holochain.org")]
     bootstrap_url: String,
 
+    /// Override the default network seed.
+    #[arg(long)]
+    network_seed: Option<String>,
+
     /// The nickname you'd like to use.
     nick: String,
 }
 
 const COMMAND_LIST: &[(&str, &str)] = &[
     ("/share", "[filename] share a file if under 1K"),
+    ("/stats", "print network statistics"),
     ("/list", "list files shared"),
     ("/fetch", "[filename] fetch a shared file"),
 ];
 
 fn main() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let args = <Args as clap::Parser>::parse();
     let nick = args.nick.clone();
 
@@ -56,7 +63,9 @@ async fn async_main(
 
     // loop over cli input lines either executing commands or sending chats
     while let Some(line) = line_recv.recv().await {
-        if line.starts_with("/") {
+        if line.starts_with("/stats") {
+            app.stats().await.unwrap();
+        } else if line.starts_with("/") {
             print.print_line("NOT IMPLEMENTED".into());
         } else {
             app.chat(Bytes::copy_from_slice(line.as_bytes()))

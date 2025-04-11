@@ -1513,7 +1513,10 @@ dependencies = [
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_transport_tx5",
+ "rustls",
  "rustyline",
+ "serde_json",
+ "sha2",
  "tokio",
 ]
 
