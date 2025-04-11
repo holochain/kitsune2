@@ -14,7 +14,7 @@ use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_dht::{Dht, DhtApi};
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::Instant;
 
@@ -116,9 +116,9 @@ pub(crate) struct K2Gossip {
     pub(crate) fetch: DynFetch,
     pub(crate) agent_verifier: DynVerifier,
     pub(crate) transport: Weak<dyn Transport>,
-    pub(crate) _initiate_task: Arc<std::sync::Mutex<Option<DropAbortHandle>>>,
-    pub(crate) _timeout_task: Arc<std::sync::Mutex<Option<DropAbortHandle>>>,
-    pub(crate) _dht_update_task: Arc<std::sync::Mutex<Option<DropAbortHandle>>>,
+    pub(crate) _initiate_task: Arc<OnceLock<Option<DropAbortHandle>>>,
+    pub(crate) _timeout_task: Arc<OnceLock<Option<DropAbortHandle>>>,
+    pub(crate) _dht_update_task: Arc<OnceLock<Option<DropAbortHandle>>>,
 }
 
 impl K2Gossip {
@@ -171,24 +171,33 @@ impl K2Gossip {
 
         let (force_initiate, initiate_task) =
             spawn_initiate_task(gossip.config.clone(), Arc::downgrade(&gossip));
-        *gossip._initiate_task.lock().unwrap() = Some(DropAbortHandle {
-            name: "Gossip initiate task".to_string(),
-            handle: initiate_task,
-        });
+        gossip
+            ._initiate_task
+            .set(Some(DropAbortHandle {
+                name: "Gossip initiate task".to_string(),
+                handle: initiate_task,
+            }))
+            .unwrap();
         let timeout_task = spawn_timeout_task(
             gossip.config.clone(),
             force_initiate,
             Arc::downgrade(&gossip),
         );
-        *gossip._timeout_task.lock().unwrap() = Some(DropAbortHandle {
-            name: "Gossip timeout task".to_string(),
-            handle: timeout_task,
-        });
+        gossip
+            ._timeout_task
+            .set(Some(DropAbortHandle {
+                name: "Gossip timeout task".to_string(),
+                handle: timeout_task,
+            }))
+            .unwrap();
         let dht_update_task = spawn_dht_update_task(gossip.dht.clone());
-        *gossip._dht_update_task.lock().unwrap() = Some(DropAbortHandle {
-            name: "Gossip DHT update task".to_string(),
-            handle: dht_update_task,
-        });
+        gossip
+            ._dht_update_task
+            .set(Some(DropAbortHandle {
+                name: "Gossip DHT update task".to_string(),
+                handle: dht_update_task,
+            }))
+            .unwrap();
 
         Ok(gossip)
     }
