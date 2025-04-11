@@ -5,7 +5,7 @@ use crate::protocol::{
     deserialize_gossip_message, encode_agent_ids, serialize_gossip_message,
     ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
 };
-use crate::state::GossipRoundState;
+use crate::state::{GossipRoundState, RoundStage};
 use crate::storage_arc::update_storage_arcs;
 use crate::timeout::spawn_timeout_task;
 use crate::update::spawn_dht_update_task;
@@ -259,6 +259,10 @@ impl K2Gossip {
             }),
             new_since: new_since.as_micros(),
             max_op_data_bytes: self.config.max_gossip_op_bytes,
+            tie_breaker: match &round_state.stage {
+                RoundStage::Initiated(i) => i.tie_breaker,
+                _ => unreachable!(),
+            },
         };
 
         // Before we send the initiate message, check whether the target has already
@@ -411,6 +415,7 @@ impl TxModuleHandler for K2Gossip {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct GossipResponse(pub(crate) Bytes, pub(crate) Url);
 
 pub(crate) fn send_gossip_message(

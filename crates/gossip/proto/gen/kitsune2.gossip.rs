@@ -143,6 +143,11 @@ pub struct K2GossipInitiateMessage {
     /// The DHT sectors covered by the union of the agents in the participating_agents list.
     #[prost(message, optional, tag = "11")]
     pub arc_set: ::core::option::Option<ArcSetMessage>,
+    /// A tie breaker so that conflicting initiates between a pair of peers can be resolved without a further message.
+    ///
+    /// This must be a random number, selected per gossip round.
+    #[prost(uint32, tag = "12")]
+    pub tie_breaker: u32,
     /// Request ops that are new since the given timestamp.
     #[prost(int64, tag = "20")]
     pub new_since: i64,

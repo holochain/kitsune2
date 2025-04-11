@@ -5,6 +5,7 @@ use crate::protocol::{
     encode_agent_ids, encode_op_ids, ArcSetMessage, GossipMessage,
     K2GossipAcceptMessage, K2GossipBusyMessage, K2GossipInitiateMessage,
 };
+use crate::state::RoundStage;
 use kitsune2_api::{K2Error, Timestamp, Url};
 use kitsune2_dht::ArcSet;
 
@@ -15,7 +16,13 @@ impl K2Gossip {
         initiate: K2GossipInitiateMessage,
     ) -> K2GossipResult<Option<GossipMessage>> {
         // Rate limit incoming gossip messages by peer
-        self.check_peer_initiate_rate(from_peer.clone()).await?;
+        if !self
+            .check_peer_initiate_rate(from_peer.clone(), &initiate)
+            .await?
+        {
+            tracing::info!(?initiate.session_id, "Dropping initiate from {:?}", from_peer);
+            return Ok(None);
+        }
 
         // If we've already accepted the maximum number of rounds, we can't accept another.
         // Send back a busy message to let the peer know.
@@ -126,7 +133,34 @@ impl K2Gossip {
     async fn check_peer_initiate_rate(
         &self,
         from_peer: Url,
-    ) -> K2GossipResult<()> {
+        initiate: &K2GossipInitiateMessage,
+    ) -> K2GossipResult<bool> {
+        let mut initiate_lock = self.initiated_round_state.lock().await;
+        if let Some(initiated) = initiate_lock.as_ref() {
+            // We've initiated with this peer, and we're now receiving an initiate message from them
+            if initiated.session_with_peer == from_peer {
+                match &initiated.stage {
+                    RoundStage::Initiated(i) => {
+                        if i.tie_breaker > initiate.tie_breaker {
+                            // We win, our initiation should be accepted by the peer, and we can drop this incoming message.
+                            return Ok(false);
+                        } else {
+                            // We lose, the other peer's initiation should be accepted, and we should drop our own initiation.
+                            *initiate_lock = None;
+                        };
+                    }
+                    _ => {
+                        // This would be odd. We've made it past the initial message exchange and
+                        // the peer is trying to initiate again. That definitely wouldn't be
+                        // following the protocol so treat this as a peer behaviour error
+                        return Err(K2GossipError::peer_behavior(
+                            "Attempted to initiate during a round",
+                        ));
+                    }
+                }
+            }
+        }
+
         if let Some(timestamp) = self
             .peer_meta_store
             .last_gossip_timestamp(from_peer.clone())
@@ -147,7 +181,7 @@ impl K2Gossip {
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -162,6 +196,7 @@ mod tests {
     use kitsune2_api::{DhtArc, LocalAgent, Timestamp, Url};
     use kitsune2_core::Ed25519LocalAgent;
     use kitsune2_dht::{ArcSet, SECTOR_SIZE};
+    use kitsune2_test_utils::enable_tracing;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -216,6 +251,7 @@ mod tests {
                         .unwrap()
                         .encode(),
                     }),
+                    tie_breaker: 0,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
                 },
@@ -313,6 +349,7 @@ mod tests {
                     arc_set: Some(ArcSetMessage {
                         value: arc_set.encode(),
                     }),
+                    tie_breaker: 0,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 0,
                 }),
@@ -351,6 +388,7 @@ mod tests {
                         arc_set: Some(ArcSetMessage {
                             value: arc_set.encode(),
                         }),
+                        tie_breaker: 0,
                         new_since: Timestamp::now().as_micros(),
                         max_op_data_bytes: 0,
                     }),
@@ -378,6 +416,7 @@ mod tests {
             arc_set: Some(ArcSetMessage {
                 value: arc_set.encode(),
             }),
+            tie_breaker: 0,
             new_since: Timestamp::now().as_micros(),
             max_op_data_bytes: 5_000,
         });
@@ -412,6 +451,7 @@ mod tests {
                     session_id: test_session_id(),
                     participating_agents: vec![],
                     arc_set: None,
+                    tie_breaker: 0,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
                 }),
@@ -420,5 +460,123 @@ mod tests {
             .unwrap_err();
 
         assert!(err.to_string().contains("no arc set in initiate message"));
+    }
+
+    #[tokio::test]
+    async fn resolve_tie_break_win() {
+        enable_tracing();
+
+        let mut harness = RespondTestHarness::create().await;
+
+        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+
+        // Initiate a session with the remote agent
+        let initiated = harness
+            .gossip
+            .initiate_gossip(remote_agent.url.clone().unwrap())
+            .await
+            .unwrap();
+        assert!(initiated);
+
+        // Wait for us to send the initiate message
+        let response = harness.wait_for_sent_response().await;
+        let initiate = match response {
+            GossipMessage::Initiate(initiate) => initiate,
+            other => panic!("Expected initiate message, got: {:?}", other),
+        };
+
+        assert!(initiate.tie_breaker > 0, "Expected tie breaker to be set");
+
+        // Send an initiate message. It doesn't need to be valid for this test, it just needs to
+        // have a lower tie-breaker.
+        harness
+            .gossip
+            .respond_to_msg(
+                remote_agent.url.clone().unwrap(),
+                GossipMessage::Initiate(K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: vec![],
+                    arc_set: None,
+                    tie_breaker: 0,
+                    new_since: 0,
+                    max_op_data_bytes: 0,
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Check that we didn't send a response
+        harness.response_rx.try_recv().unwrap_err();
+
+        // And that our initiated state is still set
+        {
+            let initiated_lock =
+                harness.gossip.initiated_round_state.lock().await;
+            assert!(initiated_lock.is_some());
+            let initiated = initiated_lock.as_ref().unwrap();
+            assert_eq!(
+                remote_agent.url.clone().unwrap(),
+                initiated.session_with_peer
+            );
+            assert!(matches!(initiated.stage, RoundStage::Initiated(_)));
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_tie_break_lose() {
+        enable_tracing();
+
+        let mut harness = RespondTestHarness::create().await;
+
+        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+
+        // Initiate a session with the remote agent
+        let initiated = harness
+            .gossip
+            .initiate_gossip(remote_agent.url.clone().unwrap())
+            .await
+            .unwrap();
+        assert!(initiated);
+
+        // Wait for us to send the initiate message
+        let response = harness.wait_for_sent_response().await;
+        let initiate = match response {
+            GossipMessage::Initiate(initiate) => initiate,
+            other => panic!("Expected initiate message, got: {:?}", other),
+        };
+
+        // Send an initiate message with a higher tie-breaker
+        let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+        harness
+            .gossip
+            .respond_to_msg(
+                remote_agent.url.clone().unwrap(),
+                GossipMessage::Initiate(K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: vec![],
+                    arc_set: Some(ArcSetMessage {
+                        value: arc_set.encode(),
+                    }),
+                    tie_breaker: initiate.tie_breaker.saturating_add(1),
+                    new_since: Timestamp::now().as_micros(),
+                    max_op_data_bytes: 5_000,
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Check that we accepted the session
+        let response = harness.wait_for_sent_response().await;
+        match response {
+            GossipMessage::Accept(accept) => accept,
+            other => panic!("Expected accept message, got: {:?}", other),
+        };
+
+        // Check that we removed our initiated state
+        {
+            let initiated_lock =
+                harness.gossip.initiated_round_state.lock().await;
+            assert!(initiated_lock.is_none());
+        }
     }
 }
