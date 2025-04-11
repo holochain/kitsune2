@@ -348,7 +348,8 @@ impl K2GossipFunctionalTestFactory {
                     K2GossipConfig {
                         initiate_interval_ms: 10,
                         min_initiate_interval_ms: 10,
-                        initiate_jitter_ms: 0,
+                        initial_initiate_interval_ms: 10,
+                        initiate_jitter_ms: 30,
                         ..Default::default()
                     }
                 },
