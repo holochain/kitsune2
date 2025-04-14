@@ -1095,8 +1095,6 @@ mod test {
             if all_tried {
                 break;
             }
-
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         });
 
         let good_agent_url = agent_2.url.clone().unwrap();
@@ -1110,8 +1108,6 @@ mod test {
             {
                 break;
             }
-
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         });
 
         // Note that the total time elapsed by this point must be less than the initiate
