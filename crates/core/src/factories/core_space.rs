@@ -1,7 +1,6 @@
 //! The core space implementation provided by Kitsune2.
 
 use kitsune2_api::*;
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
 /// CoreSpace configuration types.
@@ -53,6 +52,7 @@ mod config {
     }
 }
 
+use crate::get_all_remote_agents;
 pub use config::*;
 
 /// The core space implementation provided by Kitsune2.
@@ -509,20 +509,11 @@ async fn broadcast_agent_info(
     publish: DynPublish,
     agent_info_signed: Arc<AgentInfoSigned>,
 ) -> K2Result<()> {
-    let all_agents = peer_store.get_all().await?;
-    let all_local_agents = local_agent_store
-        .get_all()
-        .await?
-        .into_iter()
-        .map(|a| a.agent().clone())
-        .collect::<HashSet<_>>();
+    let all_remote_agents =
+        get_all_remote_agents(peer_store, local_agent_store).await?;
 
-    let all_remote_agents = all_agents
-        .into_iter()
-        .filter(|a| !all_local_agents.contains(&a.agent));
-
-    let results =
-        futures::future::join_all(all_remote_agents.filter_map(|a| {
+    let results = futures::future::join_all(
+        all_remote_agents.into_iter().filter_map(|a| {
             if let Some(url) = a.url.clone() {
                 let publish = publish.clone();
                 let agent_info_signed = agent_info_signed.clone();
@@ -532,8 +523,9 @@ async fn broadcast_agent_info(
             } else {
                 None
             }
-        }))
-        .await;
+        }),
+    )
+    .await;
 
     let ok = results.iter().filter(|r| r.is_ok()).count();
     tracing::info!("Broadcast new agent info to {} peers", ok);

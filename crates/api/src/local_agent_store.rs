@@ -17,6 +17,9 @@ pub trait LocalAgentStore: 'static + Send + Sync + std::fmt::Debug {
 
     /// Get a list of all local agents currently in the store.
     fn get_all(&self) -> BoxFut<'_, K2Result<Vec<DynLocalAgent>>>;
+
+    /// Check whether an agent is local.
+    fn is_agent_local(&self, agent: id::AgentId) -> BoxFut<'_, K2Result<bool>>;
 }
 
 /// Trait-object version of kitsune2 [LocalAgentStore].

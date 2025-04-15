@@ -171,6 +171,9 @@ pub fn default_test_builder() -> Builder {
 
 pub mod factories;
 
+mod common;
+pub use common::*;
+
 #[cfg(any(doc, docsrs))]
 pub mod doc;
 

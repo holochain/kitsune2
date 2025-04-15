@@ -1,6 +1,7 @@
 use super::*;
 use bytes::Bytes;
 use kitsune2_api::*;
+use kitsune2_core::get_all_remote_agents;
 use std::sync::Arc;
 
 // hard-coded random space
@@ -13,7 +14,7 @@ pub struct App {
     _k: DynKitsune,
     t: DynTransport,
     s: DynSpace,
-    a: Arc<kitsune2_core::Ed25519LocalAgent>,
+    _a: Arc<kitsune2_core::Ed25519LocalAgent>,
     p: readline::Print,
 }
 
@@ -112,7 +113,7 @@ impl App {
             _k: k,
             t,
             s,
-            a,
+            _a: a,
             p: print,
         })
     }
@@ -128,14 +129,14 @@ impl App {
 
         self.p
             .print_line("checking for peers to chat with...".into());
-        let peers = self
-            .s
-            .peer_store()
-            .get_all()
-            .await?
-            .into_iter()
-            .filter(|p| &p.agent != self.a.agent() && p.url.is_some())
-            .collect::<Vec<_>>();
+        let peers = get_all_remote_agents(
+            self.s.peer_store().clone(),
+            self.s.local_agent_store().clone(),
+        )
+        .await?
+        .into_iter()
+        .filter(|p| p.url.is_some())
+        .collect::<Vec<_>>();
         self.p
             .print_line(format!("sending to {} peers", peers.len()));
 

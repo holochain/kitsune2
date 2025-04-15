@@ -41,6 +41,12 @@ impl LocalAgentStore for CoreLocalAgentStore {
         let out = inner.values().cloned().collect();
         Box::pin(async { Ok(out) })
     }
+
+    fn is_agent_local(&self, agent: AgentId) -> BoxFut<'_, K2Result<bool>> {
+        let inner = self.inner.lock().unwrap();
+        let is_local = inner.contains_key(&agent);
+        Box::pin(async move { Ok(is_local) })
+    }
 }
 
 /// Factory for creating [CoreLocalAgentStore] instances.
