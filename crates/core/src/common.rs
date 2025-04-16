@@ -13,7 +13,7 @@ pub async fn get_all_remote_agents(
     local_agent_store: DynLocalAgentStore,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
     let all_agents = peer_store.get_all().await?;
-    remove_local_agents(local_agent_store, all_agents).await
+    filter_local_agents(local_agent_store, all_agents).await
 }
 
 /// Get remote agents by overlapping storage arc.
@@ -27,7 +27,7 @@ pub async fn get_remote_agents_by_overlapping_storage_arc(
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
     let by_overlapping_storage_arc =
         peer_store.get_by_overlapping_storage_arc(arc).await?;
-    remove_local_agents(local_agent_store, by_overlapping_storage_arc).await
+    filter_local_agents(local_agent_store, by_overlapping_storage_arc).await
 }
 
 /// Get remote agents near a specific location.
@@ -41,10 +41,10 @@ pub async fn get_remote_agents_near_location(
     limit: usize,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
     let near_location = peer_store.get_near_location(loc, limit).await?;
-    remove_local_agents(local_agent_store, near_location).await
+    filter_local_agents(local_agent_store, near_location).await
 }
 
-async fn remove_local_agents(
+async fn filter_local_agents(
     local_agent_store: DynLocalAgentStore,
     agent_list: Vec<Arc<AgentInfoSigned>>,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
