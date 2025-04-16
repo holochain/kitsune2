@@ -86,9 +86,12 @@ async fn remove_timed_out_rounds(
     let mut remove = HashSet::new();
     {
         for (url, state) in accepted_round_states.iter() {
-            let state_lock = state.lock().await;
+            let Ok(state_lock) = state.try_lock() else {
+                tracing::info!("Failed to lock state for url: {:?}", url);
+                continue;
+            };
             if state_lock.started_at.elapsed() > round_timeout {
-                tracing::warn!(?state_lock.session_id, "Accepted round timed out: {:?}", state);
+                tracing::warn!(?state_lock.session_id, "Accepted round timed out: {:?}", state_lock);
 
                 if let Err(e) =
                     peer_meta_store.incr_peer_timeout(url.clone()).await

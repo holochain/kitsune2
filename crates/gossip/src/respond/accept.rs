@@ -130,6 +130,8 @@ impl K2Gossip {
                     DhtSnapshotNextAction::NewSnapshot(snapshot) => {
                         match snapshot {
                             DhtSnapshot::DiscSectors { .. } => {
+                                tracing::info!(?accept.session_id, "Found a disc mismatch, starting to compare sectors");
+
                                 if let Some(state) = lock.as_mut() {
                                     state.stage = RoundStage::DiscSectorsDiff(
                                         RoundStageDiscSectorsDiff {
@@ -147,6 +149,8 @@ impl K2Gossip {
                                 )))
                             }
                             DhtSnapshot::RingSectorDetails { .. } => {
+                                tracing::info!(?accept.session_id, "Found a ring sector details mismatch, starting to compare ring sectors");
+
                                 if let Some(state) = lock.as_mut() {
                                     state.stage =
                                         RoundStage::RingSectorDetailsDiff(

@@ -3,7 +3,7 @@
 //! This test uses the default network transport and creates enough data to be realistic.
 
 use bytes::Bytes;
-use kitsune2_api::{DhtArc, Timestamp};
+use kitsune2_api::{DhtArc, StoredOp, Timestamp};
 use kitsune2_core::factories::MemoryOp;
 use kitsune2_gossip::harness::K2GossipFunctionalTestFactory;
 use kitsune2_gossip::K2GossipConfig;
@@ -27,6 +27,7 @@ async fn historical_load() {
     let factory = K2GossipFunctionalTestFactory::create(
         TEST_SPACE_ID,
         true,
+        true,
         Some(K2GossipConfig {
             initiate_interval_ms: 500,
             min_initiate_interval_ms: 500,
@@ -42,7 +43,7 @@ async fn historical_load() {
     // Start time set to roughly 1 year ago
     let mut time = (Timestamp::now() - Duration::from_secs(
         60 * 60 * 24 * 365,
-    )).expect("Please wait until your civilisation has completed its first hour of existence.");
+    )).expect("Please wait until your civilisation has completed its first year of existence.");
 
     // Stop time set to now
     let stop_time = Timestamp::now();
@@ -70,10 +71,31 @@ async fn historical_load() {
     );
 
     // Store the ops in the op store for this first agent.
-    harness_1
+    let op_ids = harness_1
         .space
         .op_store()
         .process_incoming_ops(ops)
+        .await
+        .unwrap();
+
+    let stored_ops = harness_1
+        .space
+        .op_store()
+        .retrieve_ops(op_ids)
+        .await
+        .unwrap();
+
+    harness_1
+        .space
+        .inform_ops_stored(
+            stored_ops
+                .into_iter()
+                .map(|o| StoredOp {
+                    op_id: o.op_id,
+                    created_at: MemoryOp::from(o.op_data).created_at,
+                })
+                .collect(),
+        )
         .await
         .unwrap();
 
@@ -95,12 +117,10 @@ async fn historical_load() {
         "Completed rounds with agent 2 should have a value"
     );
 
-    let required_rounds =
-        total_size / K2GossipConfig::default().max_gossip_op_bytes as usize + 1;
     assert!(
-        completed_rounds_with_agent_2.unwrap() <= required_rounds as u32,
-        "Completed rounds with agent 2 should be no more than {}",
-        required_rounds
+        completed_rounds_with_agent_2.unwrap() <= 30,
+        "Gossip took an unreasonable number of rounds to sync: {}",
+        completed_rounds_with_agent_2.unwrap()
     );
 
     // Ensure the data syncs too.

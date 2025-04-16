@@ -42,22 +42,26 @@ impl K2Gossip {
         from_peer: Url,
         no_diff: &K2GossipNoDiffMessage,
     ) -> K2GossipResult<()> {
-        let mut accepted_states = self.accepted_round_states.write().await;
-        if !accepted_states.contains_key(&from_peer) {
-            return Err(K2GossipError::peer_behavior(format!(
-                "Unsolicited NoDiff message from peer: {:?}",
-                from_peer
-            )));
-        }
+        let state = {
+            let accepted_states = self.accepted_round_states.read().await;
+            if !accepted_states.contains_key(&from_peer) {
+                return Err(K2GossipError::peer_behavior(format!(
+                    "Unsolicited NoDiff message from peer: {:?}",
+                    from_peer
+                )));
+            }
 
-        accepted_states[&from_peer]
+            accepted_states[&from_peer].clone()
+        };
+
+        state
             .lock()
             .await
             .validate_no_diff(from_peer.clone(), no_diff)?;
 
         // We're at the end of the round. We might send back an Agents message, but we shouldn't
         // get any further messages from the other peer.
-        accepted_states.remove(&from_peer);
+        self.accepted_round_states.write().await.remove(&from_peer);
 
         Ok(())
     }
