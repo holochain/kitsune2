@@ -1,7 +1,7 @@
 //! The core space implementation provided by Kitsune2.
 
 use kitsune2_api::*;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, RwLock, Weak};
 
 /// CoreSpace configuration types.
 mod config {
@@ -95,7 +95,7 @@ impl SpaceFactory for CoreSpaceFactory {
                 .await?;
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
-            let inner = Arc::new(Mutex::new(InnerData { current_url: None }));
+            let inner = Arc::new(RwLock::new(InnerData { current_url: None }));
             let op_store = builder
                 .op_store
                 .create(builder.clone(), space.clone())
@@ -142,7 +142,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     space.clone(),
                     Arc::new(TxHandlerTranslator(handler, this.clone())),
                 );
-                inner.lock().unwrap().current_url = current_url;
+                inner.write().unwrap().current_url = current_url;
                 CoreSpace::new(
                     config.core_space,
                     space,
@@ -208,7 +208,7 @@ struct CoreSpace {
     fetch: DynFetch,
     publish: DynPublish,
     gossip: DynGossip,
-    inner: Arc<Mutex<InnerData>>,
+    inner: Arc<RwLock<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
 }
 
@@ -238,7 +238,7 @@ impl CoreSpace {
         bootstrap: DynBootstrap,
         local_agent_store: DynLocalAgentStore,
         peer_meta_store: DynPeerMetaStore,
-        inner: Arc<Mutex<InnerData>>,
+        inner: Arc<RwLock<InnerData>>,
         op_store: DynOpStore,
         fetch: DynFetch,
         publish: DynPublish,
@@ -267,7 +267,7 @@ impl CoreSpace {
 
     pub async fn new_url(&self, this_url: Url) {
         {
-            let mut lock = self.inner.lock().unwrap();
+            let mut lock = self.inner.write().unwrap();
             lock.current_url = Some(this_url);
         }
 
@@ -308,6 +308,10 @@ impl Space for CoreSpace {
         &self.peer_meta_store
     }
 
+    fn current_url(&self) -> Option<Url> {
+        self.inner.read().unwrap().current_url.clone()
+    }
+
     fn local_agent_join(
         &self,
         local_agent: DynLocalAgent,
@@ -335,7 +339,7 @@ impl Space for CoreSpace {
                 let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    let url = inner.lock().unwrap().current_url.clone();
+                    let url = inner.read().unwrap().current_url.clone();
 
                     if let Some(url) = url {
                         // sign a new agent info
