@@ -102,7 +102,7 @@ impl From<MemoryOp> for Bytes {
 ///
 /// Test data should create [MemoryOp]s and not be aware of this type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct MemoryOpRecord {
+pub struct MemoryOpRecord {
     /// The id (hash) of the op
     pub op_id: OpId,
     /// The creation timestamp of this op
@@ -140,13 +140,17 @@ impl From<Op> for MemoryOp {
     }
 }
 
+/// The in-memory op store implementation for Kitsune2.
+///
+/// Intended for testing only, because it provides no persistence of op data.
 #[derive(Debug)]
-struct Kitsune2MemoryOpStore {
+pub struct Kitsune2MemoryOpStore {
     _space: SpaceId,
     inner: RwLock<Kitsune2MemoryOpStoreInner>,
 }
 
 impl Kitsune2MemoryOpStore {
+    /// Create a new [Kitsune2MemoryOpStore].
     pub fn new(space: SpaceId) -> Self {
         Self {
             _space: space,
@@ -163,10 +167,13 @@ impl std::ops::Deref for Kitsune2MemoryOpStore {
     }
 }
 
+/// The inner state of a [Kitsune2MemoryOpStore].
 #[derive(Debug, Default)]
-struct Kitsune2MemoryOpStoreInner {
-    op_list: HashMap<OpId, MemoryOpRecord>,
-    time_slice_hashes: TimeSliceHashStore,
+pub struct Kitsune2MemoryOpStoreInner {
+    /// The stored op data.
+    pub op_list: HashMap<OpId, MemoryOpRecord>,
+    /// The time slice hashes.
+    pub time_slice_hashes: TimeSliceHashStore,
 }
 
 impl OpStore for Kitsune2MemoryOpStore {
