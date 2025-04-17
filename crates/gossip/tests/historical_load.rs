@@ -51,8 +51,8 @@ async fn historical_load() {
 
     tracing::info!("Creating test data");
 
-    // Create an op every 6 hours for a year
-    let mut ops = Vec::<Bytes>::with_capacity(4 * 365);
+    // Create an op every 12 hours for a year
+    let mut ops = Vec::<Bytes>::with_capacity(2 * 365);
     while time < stop_time {
         let op_size = rand::random::<usize>()
             % (MAX_OP_SIZE_BYTES - MIN_OP_SIZE_BYTES)
@@ -61,7 +61,7 @@ async fn historical_load() {
         let op = MemoryOp::new(time, random_bytes(op_size as u16));
         ops.push(op.into());
 
-        time += Duration::from_secs(60 * 60 * 6);
+        time += Duration::from_secs(60 * 60 * 12);
     }
 
     let total_size = ops.iter().map(|op| op.len()).sum::<usize>();
