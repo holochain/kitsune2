@@ -215,11 +215,11 @@ impl K2GossipFunctionalTestHarness {
                     tracing::info!("Waiting for op ids to be discovered: {} != {}. Have stored {}/{} and {}/{}", our_op_ids.len(), other_op_ids.len(), our_stored_op_ids.len(), our_op_ids.len(), other_stored_op_ids.len(), other_op_ids.len());
                 }
 
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
         .await
-        .expect("Timed out waiting for instances to sync");
+        .expect("Timed out waiting for ops to be discovered");
     }
 
     /// Wait for two instances to sync their op stores.
