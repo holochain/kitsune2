@@ -451,13 +451,9 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = K2GossipFunctionalTestFactory::create(
-            space.clone(),
-            false,
-            false,
-            None,
-        )
-        .await;
+        let factory =
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
@@ -519,13 +515,9 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = K2GossipFunctionalTestFactory::create(
-            space.clone(),
-            true,
-            false,
-            None,
-        )
-        .await;
+        let factory =
+            K2GossipFunctionalTestFactory::create(space.clone(), true, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
@@ -562,13 +554,9 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = K2GossipFunctionalTestFactory::create(
-            space.clone(),
-            false,
-            false,
-            None,
-        )
-        .await;
+        let factory =
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
+                .await;
 
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
@@ -643,13 +631,9 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = K2GossipFunctionalTestFactory::create(
-            space.clone(),
-            false,
-            false,
-            None,
-        )
-        .await;
+        let factory =
+            K2GossipFunctionalTestFactory::create(space.clone(), false, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(
@@ -732,7 +716,6 @@ mod test {
         let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
             true,
-            false,
             Some(K2GossipConfig {
                 max_gossip_op_bytes: 3 * 128,
                 // Set the initiate interval low so that gossip will start quickly after
@@ -800,7 +783,6 @@ mod test {
         let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
             true,
-            false,
             Some(K2GossipConfig {
                 max_gossip_op_bytes: 7 * 128,
                 // Set the initiate interval low so that gossip will start quickly after
@@ -900,7 +882,6 @@ mod test {
         let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
             true,
-            false,
             Some(K2GossipConfig {
                 max_gossip_op_bytes: 7 * 128,
                 // Set the initiate interval low so that gossip will start quickly after
@@ -999,13 +980,9 @@ mod test {
         enable_tracing();
 
         let space = TEST_SPACE_ID;
-        let factory = K2GossipFunctionalTestFactory::create(
-            space.clone(),
-            true,
-            false,
-            None,
-        )
-        .await;
+        let factory =
+            K2GossipFunctionalTestFactory::create(space.clone(), true, None)
+                .await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
 
@@ -1049,7 +1026,6 @@ mod test {
         let space = TEST_SPACE_ID;
         let factory = K2GossipFunctionalTestFactory::create(
             space.clone(),
-            false,
             false,
             Some(K2GossipConfig {
                 initial_initiate_interval_ms: 10,

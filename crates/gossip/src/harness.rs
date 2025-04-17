@@ -1,22 +1,24 @@
 //! Functional test harness for K2Gossip.
 
+use crate::harness::op_store::K2GossipMemOpStoreFactory;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::{K2GossipConfig, K2GossipFactory, K2GossipModConfig};
-use bytes::Bytes;
 use kitsune2_api::{
-    AgentId, AgentInfoSigned, BoxFut, Builder, Config, DhtArc, DynGossip,
-    DynOpStore, DynSpace, K2Error, K2Result, LocalAgent, MetaOp, OpId, OpStore,
-    OpStoreFactory, SpaceHandler, SpaceId, StoredOp, Timestamp, TxBaseHandler,
-    TxHandler, TxSpaceHandler, UNIX_TIMESTAMP,
+    AgentId, AgentInfoSigned, DhtArc, DynGossip, DynSpace, LocalAgent, OpId,
+    SpaceHandler, SpaceId, StoredOp, TxBaseHandler, TxHandler, TxSpaceHandler,
+    UNIX_TIMESTAMP,
 };
-use kitsune2_core::factories::{
-    Kitsune2MemoryOpStore, MemoryOp, MemoryOpRecord,
-};
+use kitsune2_core::factories::MemoryOp;
 use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::task::AbortHandle;
+
+mod op_store;
+
+pub use op_store::{GossipOpStore, MemoryOpRecord};
 
 /// A functional test harness for K2Gossip.
 ///
@@ -27,8 +29,23 @@ pub struct K2GossipFunctionalTestHarness {
     pub gossip: DynGossip,
     /// The space instance.
     pub space: DynSpace,
+    /// The op store instance.
+    ///
+    /// This can be used to author data directly to the op store.
+    pub op_store: GossipOpStore,
     /// The peer meta store.
     pub peer_meta_store: Arc<K2PeerMetaStore>,
+    /// The abort handle for the process task.
+    ///
+    /// This simulates the process of checking incoming ops and adding them to the DHT model.
+    pub process_abort_handle: AbortHandle,
+}
+
+impl Drop for K2GossipFunctionalTestHarness {
+    fn drop(&mut self) {
+        // Abort the process task
+        self.process_abort_handle.abort();
+    }
 }
 
 impl K2GossipFunctionalTestHarness {
@@ -218,8 +235,8 @@ impl K2GossipFunctionalTestHarness {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         })
-        .await
-        .expect("Timed out waiting for ops to be discovered");
+            .await
+            .expect("Timed out waiting for ops to be discovered");
     }
 
     /// Wait for two instances to sync their op stores.
@@ -331,14 +348,10 @@ impl K2GossipFunctionalTestHarness {
 pub struct K2GossipFunctionalTestFactory {
     /// The space ID to use for the test.
     space_id: SpaceId,
-    /// The builder for creating new instances.
-    builder: Arc<Builder>,
-    /// A sender for ops stored events.
-    ///
-    /// This must not be used for sending. If it is provided then the K2 mem op store is in use
-    /// and that will send ops through this channel. Use the sender to create new listeners so
-    /// that each space can update its DHT.
-    ops_stored_sender: Option<tokio::sync::broadcast::Sender<Vec<StoredOp>>>,
+    /// Whether bootstrap is enabled.
+    bootstrap: bool,
+    /// The Kitsune2 configuration to use.
+    config: K2GossipModConfig,
 }
 
 impl K2GossipFunctionalTestFactory {
@@ -346,32 +359,12 @@ impl K2GossipFunctionalTestFactory {
     pub async fn create(
         space: SpaceId,
         bootstrap: bool,
-        gossip_mem_op_store: bool,
         config: Option<K2GossipConfig>,
     ) -> K2GossipFunctionalTestFactory {
-        let mut builder = default_test_builder().with_default_config().unwrap();
-        // Replace the core builder with a real gossip factory
-        builder.gossip = K2GossipFactory::create();
-
-        if !bootstrap {
-            builder.bootstrap = Arc::new(NoopBootstrapFactory);
-        }
-
-        let ops_stored_sender = if gossip_mem_op_store {
-            let (tx, _) =
-                tokio::sync::broadcast::channel::<Vec<StoredOp>>(5000);
-            builder.op_store = Arc::new(K2GossipMemOpStoreFactory {
-                ops_stored: tx.clone(),
-            });
-
-            Some(tx)
-        } else {
-            None
-        };
-
-        builder
-            .config
-            .set_module_config(&K2GossipModConfig {
+        K2GossipFunctionalTestFactory {
+            space_id: space,
+            bootstrap,
+            config: K2GossipModConfig {
                 k2_gossip: if let Some(config) = config {
                     config
                 } else {
@@ -383,15 +376,7 @@ impl K2GossipFunctionalTestFactory {
                         ..Default::default()
                     }
                 },
-            })
-            .unwrap();
-
-        let builder = Arc::new(builder);
-
-        K2GossipFunctionalTestFactory {
-            space_id: space,
-            builder,
-            ops_stored_sender,
+            },
         }
     }
 
@@ -404,18 +389,33 @@ impl K2GossipFunctionalTestFactory {
         impl TxSpaceHandler for NoopHandler {}
         impl SpaceHandler for NoopHandler {}
 
-        let transport = self
-            .builder
+        let mut builder = default_test_builder().with_default_config().unwrap();
+        // Replace the core builder with a real gossip factory
+        builder.gossip = K2GossipFactory::create();
+
+        if !self.bootstrap {
+            builder.bootstrap = Arc::new(NoopBootstrapFactory);
+        }
+
+        let op_store: GossipOpStore = Default::default();
+        builder.op_store = Arc::new(K2GossipMemOpStoreFactory {
+            store: op_store.clone(),
+        });
+
+        builder.config.set_module_config(&self.config).unwrap();
+
+        let builder = Arc::new(builder);
+
+        let transport = builder
             .transport
-            .create(self.builder.clone(), Arc::new(NoopHandler))
+            .create(builder.clone(), Arc::new(NoopHandler))
             .await
             .unwrap();
 
-        let space = self
-            .builder
+        let space = builder
             .space
             .create(
-                self.builder.clone(),
+                builder.clone(),
                 Arc::new(NoopHandler),
                 self.space_id.clone(),
                 transport.clone(),
@@ -426,197 +426,55 @@ impl K2GossipFunctionalTestFactory {
         let peer_meta_store =
             K2PeerMetaStore::new(space.peer_meta_store().clone());
 
-        if let Some(ref sender) = self.ops_stored_sender {
+        let process_abort_handle = tokio::task::spawn({
+            let op_store = op_store.clone();
             let space = space.clone();
-            let mut receiver = sender.subscribe();
-            tokio::spawn(async move {
-                tracing::info!("Starting ops stored space informer");
-                while let Ok(op_ids) = receiver.recv().await {
-                    space.inform_ops_stored(op_ids).await.unwrap();
-                }
 
-                tracing::info!("Ops stored sender closed");
-            });
-        }
+            async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+
+                    let new_ops = op_store
+                        .read()
+                        .await
+                        .op_list
+                        .iter()
+                        .filter_map(|(op_id, op)| {
+                            if !op.processed {
+                                Some(StoredOp {
+                                    op_id: op_id.clone(),
+                                    created_at: op.created_at,
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    if new_ops.is_empty() {
+                        continue;
+                    }
+
+                    space.inform_ops_stored(new_ops.clone()).await.unwrap();
+
+                    let mut write_lock = op_store.write().await;
+                    for op in new_ops {
+                        if let Some(op) = write_lock.op_list.get_mut(&op.op_id)
+                        {
+                            op.processed = true;
+                        }
+                    }
+                }
+            }
+        })
+        .abort_handle();
 
         K2GossipFunctionalTestHarness {
             gossip: space.gossip().clone(),
             space,
+            op_store,
             peer_meta_store: Arc::new(peer_meta_store),
+            process_abort_handle,
         }
-    }
-}
-
-/// A factory for creating [K2GossipMemOpStore] instances.
-#[derive(Debug)]
-pub struct K2GossipMemOpStoreFactory {
-    /// The sender for ops stored events.
-    pub ops_stored: tokio::sync::broadcast::Sender<Vec<StoredOp>>,
-}
-
-impl OpStoreFactory for K2GossipMemOpStoreFactory {
-    fn default_config(&self, _config: &mut Config) -> K2Result<()> {
-        Ok(())
-    }
-
-    fn validate_config(&self, _config: &Config) -> K2Result<()> {
-        Ok(())
-    }
-
-    fn create(
-        &self,
-        _builder: Arc<Builder>,
-        space: SpaceId,
-    ) -> BoxFut<'static, K2Result<DynOpStore>> {
-        let sender = self.ops_stored.clone();
-        Box::pin(async move {
-            let op_store: DynOpStore =
-                Arc::new(K2GossipMemOpStore::create(space, sender));
-            Ok(op_store)
-        })
-    }
-}
-
-/// A K2Gossip specialization of the [Kitsune2MemoryOpStore].
-///
-/// This implementation deliberately breaks the op store contract by storing ops with their
-/// "stored at" time set to the "create at" time of the op. This allows gossip tests to create
-/// historical data that won't immediately be synced by the "what's new" mechanism.
-///
-/// The other behaviour change is that this op store can automatically notify the space when ops
-/// are stored, os the DHT model can be updated immediately.
-#[derive(Debug)]
-pub struct K2GossipMemOpStore {
-    inner: Kitsune2MemoryOpStore,
-    ops_stored: tokio::sync::broadcast::Sender<Vec<StoredOp>>,
-}
-
-impl K2GossipMemOpStore {
-    /// Create a new K2GossipMemOpStore.
-    pub fn create(
-        space_id: SpaceId,
-        ops_stored: tokio::sync::broadcast::Sender<Vec<StoredOp>>,
-    ) -> Self {
-        Self {
-            inner: Kitsune2MemoryOpStore::new(space_id),
-            ops_stored,
-        }
-    }
-}
-
-impl OpStore for K2GossipMemOpStore {
-    fn process_incoming_ops(
-        &self,
-        op_list: Vec<Bytes>,
-    ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
-        Box::pin(async move {
-            let ops_to_add = op_list
-                .iter()
-                .map(|op| -> serde_json::Result<(OpId, MemoryOpRecord)> {
-                    let mut op = MemoryOpRecord::from(op.clone());
-
-                    // Behaviour difference from the inner implementation.
-                    op.stored_at = op.created_at;
-
-                    Ok((op.op_id.clone(), op))
-                })
-                .collect::<Result<Vec<_>, _>>().map_err(|e| {
-                K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
-            })?;
-
-            let mut op_ids = Vec::with_capacity(ops_to_add.len());
-            let mut newly_stored = Vec::with_capacity(ops_to_add.len());
-            let mut lock = self.inner.write().await;
-            for (op_id, record) in ops_to_add {
-                lock.op_list.entry(op_id.clone()).or_insert_with(|| {
-                    newly_stored.push(StoredOp {
-                        op_id: op_id.clone(),
-                        created_at: record.created_at,
-                    });
-                    record
-                });
-                op_ids.push(op_id);
-            }
-
-            // Notify the space that the ops have been stored.
-            // This is also a deviation from the inner implementation.
-            if !newly_stored.is_empty() {
-                if let Err(err) = self.ops_stored.send(newly_stored) {
-                    tracing::warn!(
-                        ?err,
-                        "Failed to send ops stored notification"
-                    );
-                }
-            }
-
-            Ok(op_ids)
-        })
-    }
-
-    fn retrieve_op_hashes_in_time_slice(
-        &self,
-        arc: DhtArc,
-        start: Timestamp,
-        end: Timestamp,
-    ) -> BoxFut<'_, K2Result<(Vec<OpId>, u32)>> {
-        self.inner.retrieve_op_hashes_in_time_slice(arc, start, end)
-    }
-
-    fn retrieve_ops(
-        &self,
-        op_ids: Vec<OpId>,
-    ) -> BoxFut<'_, K2Result<Vec<MetaOp>>> {
-        self.inner.retrieve_ops(op_ids)
-    }
-
-    fn filter_out_existing_ops(
-        &self,
-        op_ids: Vec<OpId>,
-    ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
-        self.inner.filter_out_existing_ops(op_ids)
-    }
-
-    fn retrieve_op_ids_bounded(
-        &self,
-        arc: DhtArc,
-        start: Timestamp,
-        limit_bytes: u32,
-    ) -> BoxFut<'_, K2Result<(Vec<OpId>, u32, Timestamp)>> {
-        self.inner.retrieve_op_ids_bounded(arc, start, limit_bytes)
-    }
-
-    fn earliest_timestamp_in_arc(
-        &self,
-        arc: DhtArc,
-    ) -> BoxFut<'_, K2Result<Option<Timestamp>>> {
-        self.inner.earliest_timestamp_in_arc(arc)
-    }
-
-    fn store_slice_hash(
-        &self,
-        arc: DhtArc,
-        slice_index: u64,
-        slice_hash: Bytes,
-    ) -> BoxFut<'_, K2Result<()>> {
-        self.inner.store_slice_hash(arc, slice_index, slice_hash)
-    }
-
-    fn slice_hash_count(&self, arc: DhtArc) -> BoxFut<'_, K2Result<u64>> {
-        self.inner.slice_hash_count(arc)
-    }
-
-    fn retrieve_slice_hash(
-        &self,
-        arc: DhtArc,
-        slice_index: u64,
-    ) -> BoxFut<'_, K2Result<Option<Bytes>>> {
-        self.inner.retrieve_slice_hash(arc, slice_index)
-    }
-
-    fn retrieve_slice_hashes(
-        &self,
-        arc: DhtArc,
-    ) -> BoxFut<'_, K2Result<Vec<(u64, Bytes)>>> {
-        self.inner.retrieve_slice_hashes(arc)
     }
 }
