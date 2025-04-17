@@ -8,7 +8,7 @@ use kitsune2_core::factories::MemoryOp;
 use kitsune2_gossip::harness::K2GossipFunctionalTestFactory;
 use kitsune2_gossip::K2GossipConfig;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
-use kitsune2_test_utils::{enable_tracing, random_bytes};
+use kitsune2_test_utils::{enable_tracing_with_default_level, random_bytes};
 use std::time::Duration;
 
 /// The minimum size of an op in bytes.
@@ -22,7 +22,8 @@ const MAX_OP_SIZE_BYTES: usize = 1024 * 1024;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn historical_load() {
-    enable_tracing();
+    // We want less logging in this test, it create a lot of output at debug level.
+    enable_tracing_with_default_level(tracing::Level::INFO);
 
     let factory = K2GossipFunctionalTestFactory::create(
         TEST_SPACE_ID,

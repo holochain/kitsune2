@@ -449,7 +449,8 @@ impl CoreFetch {
         state: Arc<Mutex<State>>,
     ) {
         while let Some(ops) = incoming_response_rx.recv().await {
-            tracing::debug!(?ops, "incoming op response");
+            let op_count = ops.len();
+            tracing::debug!(?op_count, "incoming op response");
             let ops_data = ops.clone().into_iter().map(|op| op.data).collect();
             match op_store.process_incoming_ops(ops_data).await {
                 Err(err) => {
@@ -459,7 +460,7 @@ impl CoreFetch {
                     continue;
                 }
                 Ok(processed_op_ids) => {
-                    tracing::info!(
+                    tracing::debug!(
                         "processed incoming ops with op ids {processed_op_ids:?}"
                     );
                     // Ops were processed successfully by op store. Op ids are returned.

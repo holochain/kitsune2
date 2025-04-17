@@ -477,7 +477,7 @@ impl DhtApi for Dht {
                                 .await?;
 
                             if (used_bytes + ub) as i32 <= max_op_data_bytes {
-                                tracing::info!(
+                                tracing::debug!(
                                     "Accepting op batch in sector: {}, ring: {}",
                                     sector_index,
                                     ring_index
