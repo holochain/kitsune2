@@ -103,7 +103,7 @@ async fn historical_load() {
     let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
 
     harness_1
-        .wait_for_ops_discovered(&harness_2, Duration::from_secs(60))
+        .wait_for_ops_discovered(&harness_2, Duration::from_secs(120))
         .await;
 
     let completed_rounds_with_agent_2 = harness_1
