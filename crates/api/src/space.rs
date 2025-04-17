@@ -57,7 +57,7 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// Get a reference to the peer meta store being used by this space.
     fn peer_meta_store(&self) -> &DynPeerMetaStore;
 
-    /// The URL that this space is current reachable at, if any.
+    /// The URL that this space is currently reachable at, if any.
     fn current_url(&self) -> Option<Url>;
 
     /// Indicate that an agent is now online, and should begin receiving
