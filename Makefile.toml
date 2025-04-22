@@ -13,7 +13,7 @@ args = ["clippy", "--all-targets", "--", "--deny=warnings"]
 
 [tasks.format-toml-check]
 description = "Check that all TOML files are formatted correctly"
-install_crate = true
+install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
 command = "taplo"
 args = ["format", "--check"]
 
@@ -53,7 +53,7 @@ cwd = "crates/tool_proto_build"
 
 [tasks.format-toml]
 workspace = false
-install_crate = true
+install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
 command = "taplo"
 args = ["format"]
 
