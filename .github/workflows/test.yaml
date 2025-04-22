@@ -12,7 +12,7 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: taplo-cli@0.9.3
+          tool: cargo-make@0.37.24
 
       - uses: Swatinem/rust-cache@v2
 
@@ -22,17 +22,8 @@ jobs:
         with:
           cmake-version: '3.31.x'
 
-      - name: Toml format
-        run: make static-toml
-
-      - name: Format
-        run: make fmt
-
-      - name: Lint
-        run: make clippy
-
-      - name: Doc
-        run: make doc
+      - name: Static
+        run: cargo make static
 
   test:
     needs: static
@@ -46,6 +37,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make@0.37.24
+
       - uses: Swatinem/rust-cache@v2
 
       # we cannot use cmake 4 until openssl-src is updated
@@ -54,11 +49,8 @@ jobs:
         with:
           cmake-version: '3.31.x'
 
-      - name: Build
-        run: make build
-
       - name: Test
-        run: make test
+        run: cargo make test
 
       - name: Examples
         run: cargo run --example schema --features schema
@@ -75,6 +67,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make@0.37.24
+
       - uses: Swatinem/rust-cache@v2
 
       # we cannot use cmake 4 until openssl-src is updated
@@ -90,15 +86,10 @@ jobs:
           manifest-dir: ${{ github.workspace }}/.github/manifest
           github-binarycache: true
 
-      - name: Build
-        run: |-
-          $env:SODIUM_LIB_DIR="$(pwd)\vcpkg\packages\libsodium_x64-windows-release\lib"
-          make build
-
       - name: Test
         run: |-
           $env:SODIUM_LIB_DIR="$(pwd)\vcpkg\packages\libsodium_x64-windows-release\lib"
-          make test
+          cargo make test
 
   nix-build:
     needs: static

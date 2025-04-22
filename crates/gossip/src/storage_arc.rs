@@ -79,7 +79,7 @@ pub(crate) fn update_storage_arcs(
             // TODO we might want to revisit this logic so that we pick an arc that starts from the
             //      agent's location.
             if let Some(new_arc) =
-                new_arcs.into_iter().max_by_key(|arc| arc.len())
+                new_arcs.into_iter().max_by_key(|arc| arc.arc_span())
             {
                 local_agent.set_cur_storage_arc(new_arc);
                 local_agent.invoke_cb();
@@ -89,7 +89,7 @@ pub(crate) fn update_storage_arcs(
             // ignored sectors that aren't in our target arc. We can find the largest overlapping
             // arc and that will contain our old storage arc with any new sectors added.
             if let Some(new_arc) = new_arcs.into_iter().find(|arc| {
-                arc.len() > current_storage_arc.arc_span()
+                arc.arc_span() > current_storage_arc.arc_span()
                     && arc.overlaps(&current_storage_arc)
             }) {
                 local_agent.set_cur_storage_arc(new_arc);
