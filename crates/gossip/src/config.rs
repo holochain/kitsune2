@@ -5,7 +5,7 @@
 /// This will be set as a default by the [K2GossipFactory](crate::K2GossipFactory).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct K2GossipConfig {
     /// The maximum number of bytes of op data to request in a single gossip round.
     ///
@@ -154,7 +154,7 @@ impl K2GossipConfig {
 /// Module-level configuration for K2Gossip.
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct K2GossipModConfig {
     /// CoreBootstrap configuration.
     pub k2_gossip: K2GossipConfig,

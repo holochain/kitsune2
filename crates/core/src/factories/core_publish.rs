@@ -63,13 +63,13 @@ mod config {
     /// Configuration parameters for [CorePublishFactory](super::CorePublishFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CorePublishConfig {}
 
     /// Module-level configuration for CorePublish.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CorePublishModConfig {
         /// CorePublish configuration.
         pub core_publish: CorePublishConfig,

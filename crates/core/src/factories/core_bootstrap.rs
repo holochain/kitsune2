@@ -8,7 +8,7 @@ pub mod config {
     /// Configuration parameters for [CoreBootstrapFactory](super::CoreBootstrapFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CoreBootstrapConfig {
         /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
         pub server_url: String,
@@ -51,7 +51,7 @@ pub mod config {
     /// Module-level configuration for CoreBootstrap.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CoreBootstrapModConfig {
         /// CoreBootstrap configuration.
         pub core_bootstrap: CoreBootstrapConfig,

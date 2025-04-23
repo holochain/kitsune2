@@ -8,7 +8,7 @@ mod config {
     /// Configuration parameters for [CoreSpaceFactory](super::CoreSpaceFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CoreSpaceConfig {
         /// The interval in millis at which we check for about to expire
         /// local agent infos.
@@ -49,7 +49,7 @@ mod config {
     /// Module-level configuration for CoreSpace.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CoreSpaceModConfig {
         /// CoreSpace configuration.
         pub core_space: CoreSpaceConfig,

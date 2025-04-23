@@ -43,7 +43,7 @@ pub mod config {
     /// Configuration parameters for [Tx5TransportFactory](super::Tx5TransportFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct Tx5TransportConfig {
         /// Allow connecting to plaintext (ws) signal server
         /// instead of the default requiring TLS (wss).
@@ -88,7 +88,7 @@ pub mod config {
     /// Module-level configuration for Tx5Transport.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct Tx5TransportModConfig {
         /// Tx5Transport configuration.
         pub tx5_transport: Tx5TransportConfig,
@@ -114,7 +114,7 @@ pub mod config {
         }
 
         #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "camelCase", deny_unknown_fields)]
+        #[schemars(rename_all = "camelCase")]
         struct IceServer {
             credential: Option<String>,
             credential_type: Option<String>,
@@ -138,7 +138,7 @@ pub mod config {
         }
 
         #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "camelCase", deny_unknown_fields)]
+        #[schemars(rename_all = "camelCase")]
         struct WebRtcConfig {
             bundle_policy: Option<BundlePolicy>,
             certificates: Option<Vec<serde_json::Value>>,

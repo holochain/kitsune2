@@ -8,7 +8,7 @@ mod config {
     /// Configuration parameters for [MemBootstrapFactory](super::MemBootstrapFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct MemBootstrapConfig {
         /// Since rust test runs multiple tests in the same process,
         /// we cannot just have a single global bootstrap test store.
@@ -37,7 +37,7 @@ mod config {
     /// Module-level configuration for MemBootstrap.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct MemBootstrapModConfig {
         /// MemBootstrap configuration.
         pub mem_bootstrap: MemBootstrapConfig,

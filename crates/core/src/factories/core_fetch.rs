@@ -26,7 +26,7 @@ mod config {
     /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CoreFetchConfig {
         /// How many parallel op fetch requests can be made at once.
         ///
@@ -71,7 +71,7 @@ mod config {
     /// Module-level configuration for CoreFetch.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct CoreFetchModConfig {
         /// CoreFetch configuration.
         pub core_fetch: CoreFetchConfig,

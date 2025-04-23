@@ -9,7 +9,7 @@ mod config {
     /// Configuration parameters for [MemPeerStoreFactory](super::MemPeerStoreFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct MemPeerStoreConfig {
         /// The interval in seconds at which expired infos will be pruned.
         ///
@@ -36,7 +36,7 @@ mod config {
     /// Module-level configuration for MemPeerStore.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    #[serde(rename_all = "camelCase")]
     pub struct MemPeerStoreModConfig {
         /// MemPeerStore configuration.
         pub mem_peer_store: MemPeerStoreConfig,
