@@ -42,24 +42,35 @@ impl SigUrlExt for &str {
 pub mod config {
     /// Configuration parameters for [Tx5TransportFactory](super::Tx5TransportFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Tx5TransportConfig {
         /// Allow connecting to plaintext (ws) signal server
         /// instead of the default requiring TLS (wss).
         ///
         /// Default: false.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub signal_allow_plain_text: bool,
 
         /// The url of the sbd signal server. E.g. `wss://sbd.kitsu.ne`.
         pub server_url: String,
 
         /// The internal time in seconds to use as a maximum for operations,
-        /// connecting, and idleing. (Default: 60s).
+        /// connecting, and idleing.
+        ///
+        /// Default: 60s.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub timeout_s: u32,
 
         /// WebRTC peer connection config.
         ///
         /// Passed directly to the current WebRTC backend without further processing.
+        ///
+        /// Default: `{}`.
+        #[cfg_attr(
+            feature = "schema",
+            schemars(default, schema_with = "webrtc_schema")
+        )]
         pub webrtc_config: serde_json::Value,
     }
 
@@ -76,10 +87,74 @@ pub mod config {
 
     /// Module-level configuration for Tx5Transport.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Tx5TransportModConfig {
         /// Tx5Transport configuration.
         pub tx5_transport: Tx5TransportConfig,
+    }
+
+    /// Schema for WebRTC configuration.
+    ///
+    /// This follows this [WebRTC reference](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/RTCPeerConnection#bundlepolicy)
+    /// and may not be up-to-date.
+    ///
+    /// It is also not guaranteed that all options are supported.
+    #[cfg(feature = "schema")]
+    #[allow(dead_code)]
+    fn webrtc_schema(
+        generator: &mut schemars::SchemaGenerator,
+    ) -> schemars::schema::Schema {
+        #[derive(schemars::JsonSchema)]
+        #[schemars(rename_all = "kebab-case")]
+        enum BundlePolicy {
+            Balanced,
+            MaxCompat,
+            MaxBundle,
+        }
+
+        #[derive(schemars::JsonSchema)]
+        #[schemars(rename_all = "camelCase", deny_unknown_fields)]
+        struct IceServer {
+            credential: Option<String>,
+            credential_type: Option<String>,
+            urls: Vec<String>,
+            username: Option<String>,
+        }
+
+        #[derive(schemars::JsonSchema)]
+        #[schemars(rename_all = "kebab-case")]
+        enum IceTransportPolicy {
+            All,
+            Public,
+            Relay,
+        }
+
+        #[derive(schemars::JsonSchema)]
+        #[schemars(rename_all = "kebab-case")]
+        enum RtcpMuxPolicy {
+            Negotiate,
+            Require,
+        }
+
+        #[derive(schemars::JsonSchema)]
+        #[schemars(rename_all = "camelCase", deny_unknown_fields)]
+        struct WebRtcConfig {
+            bundle_policy: Option<BundlePolicy>,
+            certificates: Option<Vec<serde_json::Value>>,
+            #[schemars(default)]
+            ice_candidate_pool_size: u16,
+            ice_servers: Option<Vec<IceServer>>,
+            ice_transport_policy: Option<IceTransportPolicy>,
+            peer_identity: Option<String>,
+            rtcp_mux_policy: Option<RtcpMuxPolicy>,
+        }
+
+        let root = schemars::schema_for!(WebRtcConfig);
+        for def in root.definitions {
+            generator.definitions_mut().insert(def.0, def.1);
+        }
+        schemars::schema::Schema::Object(root.schema)
     }
 }
 

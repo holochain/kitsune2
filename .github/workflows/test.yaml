@@ -60,6 +60,9 @@ jobs:
       - name: Test
         run: make test
 
+      - name: Examples
+        run: cargo run --example schema --features schema
+
   test-windows:
     needs: static
     strategy:

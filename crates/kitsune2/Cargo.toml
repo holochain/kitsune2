@@ -10,12 +10,21 @@ keywords.workspace = true
 categories.workspace = true
 edition.workspace = true
 
+[[example]]
+name = "schema"
+required-features = ["schema"]
+
 [dependencies]
 bytes = { workspace = true }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_gossip = { workspace = true }
 kitsune2_transport_tx5 = { workspace = true }
+serde = { version = "1.0.219", features = ["derive"] }
+
+# Feature: schema
+schemars = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures = { workspace = true }
@@ -23,8 +32,17 @@ kitsune2_gossip = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 sbd-server = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+jsonschema = { workspace = true }
 
 [features]
 default = ["datachannel-vendored"]
 
 datachannel-vendored = ["kitsune2_transport_tx5/datachannel-vendored"]
+
+schema = [
+  "dep:schemars",
+  "dep:serde_json",
+  "kitsune2_core/schema",
+  "kitsune2_gossip/schema",
+  "kitsune2_transport_tx5/schema",
+]

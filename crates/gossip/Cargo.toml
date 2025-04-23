@@ -25,6 +25,10 @@ rand = { workspace = true }
 thiserror = { workspace = true }
 backon = { workspace = true }
 
+# Feature: schema
+schemars = { workspace = true, optional = true }
+
+# Feature: test-utils
 kitsune2_test_utils = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -42,3 +46,5 @@ base64 = { workspace = true }
 sharding = []
 
 test-utils = ["dep:kitsune2_test_utils"]
+
+schema = ["dep:schemars", "kitsune2_core/schema"]

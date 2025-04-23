@@ -23,6 +23,9 @@ tx5 = { workspace = true, default-features = false, features = [
 ] }
 url = { workspace = true }
 
+# Feature: schema
+schemars = { workspace = true, optional = true }
+
 [dev-dependencies]
 kitsune2_core = { workspace = true }
 kitsune2_test_utils = { workspace = true }
@@ -33,3 +36,5 @@ tokio = { workspace = true, features = ["full"] }
 default = ["datachannel-vendored"]
 
 datachannel-vendored = ["tx5/datachannel-vendored"]
+
+schema = ["dep:schemars"]

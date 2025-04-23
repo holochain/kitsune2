@@ -7,17 +7,22 @@ use std::sync::Arc;
 pub mod config {
     /// Configuration parameters for [CoreBootstrapFactory](super::CoreBootstrapFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct CoreBootstrapConfig {
         /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
         pub server_url: String,
 
         /// Minimum backoff in ms to use for both push and poll retry loops.
+        ///
         /// Default: 5 seconds.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub backoff_min_ms: u32,
 
         /// Maximum backoff in ms to use for both push and poll retry loops.
+        ///
         /// Default: 5 minutes.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub backoff_max_ms: u32,
     }
 
@@ -45,7 +50,8 @@ pub mod config {
 
     /// Module-level configuration for CoreBootstrap.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct CoreBootstrapModConfig {
         /// CoreBootstrap configuration.
         pub core_bootstrap: CoreBootstrapConfig,

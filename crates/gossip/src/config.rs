@@ -4,7 +4,8 @@
 ///
 /// This will be set as a default by the [K2GossipFactory](crate::K2GossipFactory).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct K2GossipConfig {
     /// The maximum number of bytes of op data to request in a single gossip round.
     ///
@@ -16,6 +17,7 @@ pub struct K2GossipConfig {
     /// for at least 100 ops to be requested in a single round.
     ///
     /// Default: 100MB
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub max_gossip_op_bytes: u32,
 
     /// The maximum value that this instance will accept for the `max_gossip_op_bytes` parameter
@@ -27,6 +29,7 @@ pub struct K2GossipConfig {
     /// discover all the op ids they'd need to request from us.
     ///
     /// Default: 100MB
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub max_request_gossip_op_bytes: u32,
 
     /// The initial interval in milliseconds between initiating gossip rounds.
@@ -38,6 +41,7 @@ pub struct K2GossipConfig {
     /// continues to be used as the upper bound for the backoff.
     ///
     /// Default: 5000 (5s)
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub initial_initiate_interval_ms: u32,
 
     /// The interval in milliseconds between initiating gossip rounds.
@@ -50,6 +54,7 @@ pub struct K2GossipConfig {
     /// for a while.
     ///
     /// Default: 120,000 (2m)
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub initiate_interval_ms: u32,
 
     /// How much jitter to add to the `initiate_interval_ms`.
@@ -65,6 +70,7 @@ pub struct K2GossipConfig {
     /// This parameter can be set to `0` to disable jitter.
     ///
     /// Default: 10,000 (10s)
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub initiate_jitter_ms: u32,
 
     /// The minimum amount of time that must be allowed to pass before a gossip round can be
@@ -74,6 +80,7 @@ pub struct K2GossipConfig {
     /// be respected when initiating too.
     ///
     /// Default: 300,000 (5m)
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub min_initiate_interval_ms: u32,
 
     /// The timeout for a gossip round.
@@ -83,6 +90,7 @@ pub struct K2GossipConfig {
     /// periodic check cannot be configured and runs every 5 seconds.
     ///
     /// Default: 15,000 (15s)
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub round_timeout_ms: u32,
 
     /// The maximum number of concurrent accepted gossip rounds.
@@ -99,6 +107,7 @@ pub struct K2GossipConfig {
     /// serve data if it is overwhelmed.
     ///
     /// Default: 10
+    #[cfg_attr(feature = "schema", schemars(default))]
     pub max_concurrent_accepted_rounds: u32,
 }
 
@@ -144,7 +153,8 @@ impl K2GossipConfig {
 
 /// Module-level configuration for K2Gossip.
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct K2GossipModConfig {
     /// CoreBootstrap configuration.
     pub k2_gossip: K2GossipConfig,

@@ -8,10 +8,13 @@ use std::sync::{Arc, Mutex};
 mod config {
     /// Configuration parameters for [MemPeerStoreFactory](super::MemPeerStoreFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct MemPeerStoreConfig {
         /// The interval in seconds at which expired infos will be pruned.
+        ///
         /// Default: 10s.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub prune_interval_s: u32,
     }
 
@@ -32,7 +35,8 @@ mod config {
 
     /// Module-level configuration for MemPeerStore.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct MemPeerStoreModConfig {
         /// MemPeerStore configuration.
         pub mem_peer_store: MemPeerStoreConfig,

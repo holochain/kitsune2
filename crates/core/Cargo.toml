@@ -27,9 +27,17 @@ tracing = { workspace = true }
 ureq = { workspace = true }
 url = { workspace = true }
 
+# Feature: schema
+schemars = { workspace = true, optional = true }
+
 [dev-dependencies]
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 kitsune2_api = { workspace = true, features = ["mockall"] }
 kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+
+[features]
+default = []
+
+schema = ["dep:schemars"]

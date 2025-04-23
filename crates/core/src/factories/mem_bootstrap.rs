@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 mod config {
     /// Configuration parameters for [MemBootstrapFactory](super::MemBootstrapFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct MemBootstrapConfig {
         /// Since rust test runs multiple tests in the same process,
         /// we cannot just have a single global bootstrap test store.
@@ -18,7 +19,9 @@ mod config {
         pub test_id: String,
 
         /// How often in ms to update the peer store with bootstrap infos.
-        /// Defaults to 5s.
+        ///
+        /// Default: 5s.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub poll_freq_ms: u32,
     }
 
@@ -33,7 +36,8 @@ mod config {
 
     /// Module-level configuration for MemBootstrap.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct MemBootstrapModConfig {
         /// MemBootstrap configuration.
         pub mem_bootstrap: MemBootstrapConfig,

@@ -25,18 +25,33 @@ pub const MOD_NAME: &str = "Fetch";
 mod config {
     /// Configuration parameters for [CoreFetchFactory](super::CoreFetchFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct CoreFetchConfig {
-        /// How many parallel op fetch requests can be made at once. Default: 2.
+        /// How many parallel op fetch requests can be made at once.
+        ///
+        /// Default: 2.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub parallel_request_count: u8,
         /// Delay before re-inserting ops to request back into the outgoing request queue.
+        ///
         /// Default: 2 s.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub re_insert_outgoing_request_delay_ms: u32,
-        /// Duration of first interval to back off an unresponsive peer. Default: 20 s.
+        /// Duration of first interval to back off an unresponsive peer.
+        ///
+        /// Default: 20 s.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub first_back_off_interval_ms: u32,
-        /// Duration of last interval to back off an unresponsive peer. Default: 10 min.
+        /// Duration of last interval to back off an unresponsive peer.
+        ///
+        /// Default: 10 min.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub last_back_off_interval_ms: u32,
-        /// Number of back off intervals. Default: 4.
+        /// Number of back off intervals.
+        ///
+        /// Default: 4.
+        #[cfg_attr(feature = "schema", schemars(default))]
         pub num_back_off_intervals: usize,
     }
 
@@ -55,7 +70,8 @@ mod config {
 
     /// Module-level configuration for CoreFetch.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct CoreFetchModConfig {
         /// CoreFetch configuration.
         pub core_fetch: CoreFetchConfig,
