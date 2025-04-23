@@ -13,7 +13,8 @@ args = ["clippy", "--all-targets", "--", "--deny=warnings"]
 
 [tasks.format-toml-check]
 description = "Check that all TOML files are formatted correctly"
-install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
+workspace = false
+dependencies = ["install-taplo"]
 command = "taplo"
 args = ["format", "--check"]
 
@@ -54,7 +55,7 @@ cwd = "crates/tool_proto_build"
 
 [tasks.format-toml]
 workspace = false
-install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
+dependencies = ["install-taplo"]
 command = "taplo"
 args = ["format"]
 
@@ -81,6 +82,15 @@ dependencies = ["format", "proto", "format-toml"]
 
 [tasks.default]
 alias = "verify"
+
+#
+# Other
+#
+
+[tasks.install-taplo]
+workspace = false
+description = "Install taplo-cli"
+install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
 
 [config]
 # Require at least this cargo-make version
