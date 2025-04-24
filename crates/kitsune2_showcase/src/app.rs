@@ -2,6 +2,7 @@ use super::*;
 use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_core::get_all_remote_agents;
+use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
 use std::sync::Arc;
 
 // hard-coded random space
@@ -89,12 +90,16 @@ impl App {
                     signal_allow_plain_text: true,
                     server_url: args.signal_url,
                     timeout_s: 10,
-                    webrtc_config: serde_json::json!({
-                      "iceServers": [
-                        { "urls": ["stun:stun-0.main.infra.holo.host:443"] },
-                        { "urls": ["stun:stun-1.main.infra.holo.host:443"] }
-                      ]
-                    }),
+                    webrtc_config: WebRtcConfig {
+                        ice_servers: vec![IceServers {
+                            urls: vec![
+                                "stun:stun-0.main.infra.holo.host:443"
+                                    .to_string(),
+                                "stun:stun-1.main.infra.holo.host:443"
+                                    .to_string(),
+                            ],
+                        }],
+                    },
                 },
             },
         )?;

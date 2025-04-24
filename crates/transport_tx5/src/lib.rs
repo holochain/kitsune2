@@ -40,6 +40,8 @@ impl SigUrlExt for &str {
 
 /// Tx5Transport configuration types.
 pub mod config {
+    use tx5::WebRtcConfig;
+
     /// Configuration parameters for [Tx5TransportFactory](super::Tx5TransportFactory).
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -64,14 +66,14 @@ pub mod config {
 
         /// WebRTC peer connection config.
         ///
-        /// Passed directly to the current WebRTC backend without further processing.
+        /// Configuration passed to the selected networking implementation.
         ///
-        /// Default: `{}`.
-        #[cfg_attr(
-            feature = "schema",
-            schemars(default, schema_with = "webrtc_schema")
-        )]
-        pub webrtc_config: serde_json::Value,
+        /// Although the default configuration for this is empty, and that is a valid configuration,
+        /// it is recommended to provide ICE servers.
+        ///
+        /// Default: empty configuration
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub webrtc_config: WebRtcConfig,
     }
 
     impl Default for Tx5TransportConfig {
@@ -80,7 +82,9 @@ pub mod config {
                 signal_allow_plain_text: false,
                 server_url: "<wss://your.sbd.url>".into(),
                 timeout_s: 60,
-                webrtc_config: serde_json::json!({}),
+                webrtc_config: WebRtcConfig {
+                    ice_servers: vec![],
+                },
             }
         }
     }
@@ -93,72 +97,10 @@ pub mod config {
         /// Tx5Transport configuration.
         pub tx5_transport: Tx5TransportConfig,
     }
-
-    /// Schema for WebRTC configuration.
-    ///
-    /// This follows this [WebRTC reference](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/RTCPeerConnection#bundlepolicy)
-    /// and may not be up-to-date.
-    ///
-    /// It is also not guaranteed that all options are supported.
-    #[cfg(feature = "schema")]
-    #[allow(dead_code)]
-    fn webrtc_schema(
-        generator: &mut schemars::SchemaGenerator,
-    ) -> schemars::schema::Schema {
-        #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "kebab-case")]
-        enum BundlePolicy {
-            Balanced,
-            MaxCompat,
-            MaxBundle,
-        }
-
-        #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "camelCase")]
-        struct IceServer {
-            credential: Option<String>,
-            credential_type: Option<String>,
-            urls: Vec<String>,
-            username: Option<String>,
-        }
-
-        #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "kebab-case")]
-        enum IceTransportPolicy {
-            All,
-            Public,
-            Relay,
-        }
-
-        #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "kebab-case")]
-        enum RtcpMuxPolicy {
-            Negotiate,
-            Require,
-        }
-
-        #[derive(schemars::JsonSchema)]
-        #[schemars(rename_all = "camelCase")]
-        struct WebRtcConfig {
-            bundle_policy: Option<BundlePolicy>,
-            certificates: Option<Vec<serde_json::Value>>,
-            #[schemars(default)]
-            ice_candidate_pool_size: u16,
-            ice_servers: Option<Vec<IceServer>>,
-            ice_transport_policy: Option<IceTransportPolicy>,
-            peer_identity: Option<String>,
-            rtcp_mux_policy: Option<RtcpMuxPolicy>,
-        }
-
-        let root = schemars::schema_for!(WebRtcConfig);
-        for def in root.definitions {
-            generator.definitions_mut().insert(def.0, def.1);
-        }
-        schemars::schema::Schema::Object(root.schema)
-    }
 }
 
 pub use config::*;
+pub use tx5::{IceServers, WebRtcConfig};
 
 /// Provides a Kitsune2 transport module based on the Tx5 crate.
 #[derive(Debug)]
@@ -281,10 +223,7 @@ impl Tx5Transport {
             backend_module_config: Some(
                 tx5::backend::BackendModule::LibDataChannel.default_config(),
             ),
-            initial_webrtc_config: serde_json::to_string(&config.webrtc_config)
-                .map_err(|e| {
-                    K2Error::other_src("failed to serialize webrtc config", e)
-                })?,
+            initial_webrtc_config: config.webrtc_config,
             ..Default::default()
         });
 

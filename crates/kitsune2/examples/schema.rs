@@ -68,8 +68,6 @@ const CURRENT_VALUE: &str = r#"
         "signalAllowPlainText": false,
         "timeoutS": 10,
         "webrtcConfig": {
-            "bundlePolicy": "max-bundle",
-            "iceCandidatePoolSize": 30,
             "iceServers": [
                 {
                     "urls": [
@@ -77,8 +75,7 @@ const CURRENT_VALUE: &str = r#"
                         "stun:b.stun.server"
                     ]
                 }
-            ],
-            "rtcpMuxPolicy": "negotiate"
+            ]
         }
     },
     "extensionModule": {
