@@ -84,6 +84,7 @@ pub mod config {
                 timeout_s: 60,
                 webrtc_config: WebRtcConfig {
                     ice_servers: vec![],
+                    ice_transport_policy: Default::default(),
                 },
             }
         }
