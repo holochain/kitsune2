@@ -37,7 +37,4 @@ default = ["datachannel-vendored"]
 
 datachannel-vendored = ["tx5/datachannel-vendored"]
 
-schema = [
-  "dep:schemars",
-  "tx5/schema",
-]
+schema = ["dep:schemars", "tx5/schema"]

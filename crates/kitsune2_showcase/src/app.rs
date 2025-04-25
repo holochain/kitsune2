@@ -98,7 +98,11 @@ impl App {
                                 "stun:stun-1.main.infra.holo.host:443"
                                     .to_string(),
                             ],
+                            username: None,
+                            credential: None,
+                            credential_type: None,
                         }],
+                        ice_transport_policy: Default::default(),
                     },
                 },
             },

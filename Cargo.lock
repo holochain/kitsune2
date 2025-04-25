@@ -3372,7 +3372,9 @@ dependencies = [
 
 [[package]]
 name = "tx5"
-version = "0.3.4"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91f84fd225371150c55da756ee40260bd6c3481e951e5e9afc89732a209c29c8"
 dependencies = [
  "base64",
  "futures",
@@ -3388,7 +3390,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-connection"
-version = "0.3.4"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67f69d4fd6868cf8d751762b69f1ba3ac05bdc8331b1729061c846f2c5037fdd"
 dependencies = [
  "bit_field",
  "datachannel",
@@ -3404,7 +3408,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-core"
-version = "0.3.4"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89c76968f7b5c6d26f36f9067044e3b3be0c45b49cd3ce58e4ca55a9fe61576"
 dependencies = [
  "base64",
  "once_cell",
@@ -3417,7 +3423,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-signal"
-version = "0.3.4"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f126665f54e5a69b2738edb8fa05f619f2c06ca68315dc943d018fcc6bc5b003"
 dependencies = [
  "rand",
  "sbd-e2e-crypto-client",
