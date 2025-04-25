@@ -67,6 +67,7 @@ mod tests {
     use crate::default_test_builder;
     use kitsune2_api::DynLocalAgent;
     use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
+    use kitsune2_test_utils::space::TEST_SPACE_ID;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -83,8 +84,11 @@ mod tests {
         let builder =
             Arc::new(default_test_builder().with_default_config().unwrap());
 
-        let peer_store =
-            builder.peer_store.create(builder.clone()).await.unwrap();
+        let peer_store = builder
+            .peer_store
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let local_agent_store = builder
             .local_agent_store
             .create(builder.clone())
@@ -130,8 +134,11 @@ mod tests {
         let builder =
             Arc::new(default_test_builder().with_default_config().unwrap());
 
-        let peer_store =
-            builder.peer_store.create(builder.clone()).await.unwrap();
+        let peer_store = builder
+            .peer_store
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let local_agent_store = builder
             .local_agent_store
             .create(builder.clone())
@@ -182,8 +189,11 @@ mod tests {
         let builder =
             Arc::new(default_test_builder().with_default_config().unwrap());
 
-        let peer_store =
-            builder.peer_store.create(builder.clone()).await.unwrap();
+        let peer_store = builder
+            .peer_store
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let local_agent_store = builder
             .local_agent_store
             .create(builder.clone())

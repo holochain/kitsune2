@@ -33,7 +33,22 @@ impl TxImpHnd {
     /// Call this when you receive or bind a new address at which
     /// this local node can be reached by peers
     pub fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        self.handler.new_listening_address(this_url)
+        let handler = self.handler.clone();
+        let space_map = self
+            .space_map
+            .clone()
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        Box::pin(async move {
+            handler.new_listening_address(this_url.clone()).await;
+            for s in space_map {
+                s.new_listening_address(this_url.clone()).await;
+            }
+        })
     }
 
     /// Call this when you establish an outgoing connection and

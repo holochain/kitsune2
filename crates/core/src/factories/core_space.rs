@@ -92,7 +92,10 @@ impl SpaceFactory for CoreSpaceFactory {
         Box::pin(async move {
             let config: CoreSpaceModConfig =
                 builder.config.get_module_config()?;
-            let peer_store = builder.peer_store.create(builder.clone()).await?;
+            let peer_store = builder
+                .peer_store
+                .create(builder.clone(), space.clone())
+                .await?;
             let bootstrap = builder
                 .bootstrap
                 .create(builder.clone(), peer_store.clone(), space.clone())

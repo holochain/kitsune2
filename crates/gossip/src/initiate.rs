@@ -263,6 +263,7 @@ mod tests {
     use kitsune2_dht::SECTOR_SIZE;
     use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
     use kitsune2_test_utils::enable_tracing;
+    use kitsune2_test_utils::space::TEST_SPACE_ID;
     use std::sync::Arc;
 
     struct Harness {
@@ -279,7 +280,7 @@ mod tests {
             Harness {
                 peer_store: builder
                     .peer_store
-                    .create(builder.clone())
+                    .create(builder.clone(), TEST_SPACE_ID)
                     .await
                     .unwrap(),
                 local_agent_store: builder

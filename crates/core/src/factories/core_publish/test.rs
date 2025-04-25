@@ -82,7 +82,11 @@ async fn setup_test(
         .await
         .unwrap();
 
-    let peer_store = builder.peer_store.create(builder.clone()).await.unwrap();
+    let peer_store = builder
+        .peer_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
 
     let url =
         transport.register_space_handler(TEST_SPACE_ID, Arc::new(NoopHandler));

@@ -29,7 +29,11 @@ async fn create_gossip_instance() {
         .create(
             builder.clone(),
             space_id.clone(),
-            builder.peer_store.create(builder.clone()).await.unwrap(),
+            builder
+                .peer_store
+                .create(builder.clone(), space_id.clone())
+                .await
+                .unwrap(),
             builder
                 .local_agent_store
                 .create(builder.clone())

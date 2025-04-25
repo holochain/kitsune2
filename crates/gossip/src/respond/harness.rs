@@ -67,7 +67,7 @@ impl RespondTestHarness {
                 space_id: TEST_SPACE_ID,
                 peer_store: builder
                     .peer_store
-                    .create(builder.clone())
+                    .create(builder.clone(), TEST_SPACE_ID)
                     .await
                     .unwrap(),
                 local_agent_store: builder
