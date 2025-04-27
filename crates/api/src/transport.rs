@@ -122,7 +122,9 @@ impl TxImpHnd {
                         .unwrap()
                         .get(&(space.clone(), module.clone()))
                     {
-                        h.recv_module_msg(peer, space, module, data)?;
+                        h.recv_module_msg(peer, space, module.clone(), data).inspect_err(|e| {
+                            tracing::warn!(?module, "Error in recv_module_msg, peer connection will be closed: {e}");
+                        })?;
                     }
                 }
                 Ok(())
