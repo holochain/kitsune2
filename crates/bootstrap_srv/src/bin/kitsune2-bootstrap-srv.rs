@@ -82,6 +82,11 @@ pub struct Args {
     /// Note that this is an SBD option, but when SBD is enabled, this applies to all connections.
     #[arg(long)]
     pub sbd_disable_rate_limiting: bool,
+
+    /// The authentication "Hook Server" as defined by
+    /// <https://github.com/holochain/sbd/blob/main/spec-auth.md>
+    #[arg(long)]
+    pub authentication_hook_server: Option<String>,
 }
 
 fn main() {
@@ -145,6 +150,7 @@ fn main() {
     if args.sbd_disable_rate_limiting {
         config.sbd.disable_rate_limiting = true;
     }
+    config.sbd.authentication_hook_server = args.authentication_hook_server;
 
     tracing::info!(?config);
 
