@@ -1633,6 +1633,8 @@ dependencies = [
  "kitsune2_bootstrap_srv",
  "kitsune2_core",
  "kitsune2_test_utils",
+ "serde",
+ "serde_json",
  "tracing",
  "ureq",
  "url",
