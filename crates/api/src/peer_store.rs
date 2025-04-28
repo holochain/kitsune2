@@ -8,18 +8,17 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     /// Insert agents into the store.
     fn insert(
         &self,
-        agent_list: Vec<Arc<agent::AgentInfoSigned>>,
+        agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> BoxFut<'_, K2Result<()>>;
 
     /// Get an agent from the store.
     fn get(
         &self,
         agent: AgentId,
-    ) -> BoxFut<'_, K2Result<Option<Arc<agent::AgentInfoSigned>>>>;
+    ) -> BoxFut<'_, K2Result<Option<Arc<AgentInfoSigned>>>>;
 
     /// Get all agents from the store.
-    fn get_all(&self)
-        -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
+    fn get_all(&self) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
 
     /// Get the complete list of agents we know about that
     /// claim storage_arcs that overlap the provided storage arc.
@@ -31,7 +30,7 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     fn get_by_overlapping_storage_arc(
         &self,
         arc: DhtArc,
-    ) -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
+    ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
 
     /// Get a list of agents sorted by nearness to a target basis location.
     /// Offline (tombstoned) agents, and agents with zero arcs are not
@@ -40,7 +39,7 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
         &self,
         loc: u32,
         limit: usize,
-    ) -> BoxFut<'_, K2Result<Vec<Arc<agent::AgentInfoSigned>>>>;
+    ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
 }
 
 /// Trait-object [PeerStore].
@@ -50,15 +49,15 @@ pub type DynPeerStore = Arc<dyn PeerStore>;
 pub trait PeerStoreFactory: 'static + Send + Sync + std::fmt::Debug {
     /// Help the builder construct a default config from the chosen
     /// module factories.
-    fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
+    fn default_config(&self, config: &mut Config) -> K2Result<()>;
 
     /// Validate configuration.
-    fn validate_config(&self, config: &config::Config) -> K2Result<()>;
+    fn validate_config(&self, config: &Config) -> K2Result<()>;
 
     /// Construct a peer store instance.
     fn create(
         &self,
-        builder: Arc<builder::Builder>,
+        builder: Arc<Builder>,
     ) -> BoxFut<'static, K2Result<DynPeerStore>>;
 }
 
