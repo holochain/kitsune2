@@ -157,6 +157,10 @@ fn main() {
 
     let srv = BootstrapSrv::new(config);
 
+    if let Ok(ref server) = srv{
+        server.print_addrs();
+    }
+
     let _ = recv.recv();
 
     tracing::info!("Terminating...");
