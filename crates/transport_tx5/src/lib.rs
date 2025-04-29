@@ -74,6 +74,19 @@ pub mod config {
         /// Default: empty configuration
         #[cfg_attr(feature = "schema", schemars(default))]
         pub webrtc_config: WebRtcConfig,
+
+        /// If true, tracing logs from the backend webrtc library will be
+        /// included.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub tracing_enabled: bool,
+
+        /// The minimum ephemeral udp port to bind.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub ephemeral_udp_port_min: Option<u16>,
+
+        /// The maximum ephemeral udp port to bind.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub ephemeral_udp_port_max: Option<u16>,
     }
 
     impl Default for Tx5TransportConfig {
@@ -86,6 +99,9 @@ pub mod config {
                     ice_servers: vec![],
                     ice_transport_policy: Default::default(),
                 },
+                tracing_enabled: false,
+                ephemeral_udp_port_min: None,
+                ephemeral_udp_port_max: None,
             }
         }
     }
@@ -147,6 +163,23 @@ impl TransportFactory for Tx5TransportFactory {
         Box::pin(async move {
             let config: Tx5TransportModConfig =
                 builder.config.get_module_config()?;
+
+            let mut tx5_init_config = tx5_core::Tx5InitConfig {
+                tracing_enabled: config.tx5_transport.tracing_enabled,
+                ..Default::default()
+            };
+
+            if let Some(port) = config.tx5_transport.ephemeral_udp_port_min {
+                tx5_init_config.ephemeral_udp_port_min = port;
+            }
+
+            if let Some(port) = config.tx5_transport.ephemeral_udp_port_max {
+                tx5_init_config.ephemeral_udp_port_max = port;
+            }
+
+            // Ignore errors. Only the first call of this can succeed.
+            let _ = tx5_init_config.set_as_global_default();
+
             let handler = TxImpHnd::new(handler);
             let imp =
                 Tx5Transport::create(config.tx5_transport, handler.clone())

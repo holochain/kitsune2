@@ -17,6 +17,7 @@ kitsune2_api = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tracing = { workspace = true }
+tx5-core = { workspace = true }
 tx5 = { workspace = true, default-features = false, features = [
   "backend-libdatachannel",
 ] }
