@@ -157,7 +157,7 @@ fn main() {
 
     let srv = BootstrapSrv::new(config);
 
-    if let Ok(ref server) = srv{
+    if let Ok(ref server) = srv {
         server.print_addrs();
     }
 
