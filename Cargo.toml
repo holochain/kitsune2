@@ -101,6 +101,8 @@ sbd-server = { version = "0.1.0" }
 tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
 schemars = { version = "0.8.22", features = ["preserve_order"] }
+# Used in the showcase CLI
+rustyline = { version = "15.0.0" }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.

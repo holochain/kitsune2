@@ -18,7 +18,6 @@ kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_transport_tx5 = { workspace = true }
 rustls = { workspace = true }
-rustyline = { version = "15.0.0", features = ["derive"] }
-serde_json = { workspace = true }
+rustyline = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
