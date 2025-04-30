@@ -20,9 +20,12 @@ ureq = { workspace = true, features = ["tls"] }
 url = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true }
+axum-server = { workspace = true }
+bytes = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 kitsune2_bootstrap_srv = { workspace = true }
-
 # cannot use workspace here because it includes the version
 # and makes publishing fail.
 kitsune2_core = { path = "../core" }
+tokio = { workspace = true, features = ["full"] }

@@ -27,6 +27,11 @@ impl AuthMaterial {
         }
     }
 
+    /// This is mainly a testing api.
+    pub fn danger_access_token(&self) -> &Mutex<Option<String>> {
+        &self.auth_token
+    }
+
     fn priv_authenticate(
         &self,
         auth_url: &str,
@@ -57,18 +62,6 @@ impl AuthMaterial {
 
         Ok(())
     }
-}
-
-/// Send the agent info, for the given space, to the bootstrap server.
-///
-/// Note the `blocking_` prefix. This is a hint to the caller that if the
-/// function is used in an async context, it should be treated as a blocking
-/// operation.
-pub fn blocking_put(
-    server_url: Url,
-    agent_info: &AgentInfoSigned,
-) -> K2Result<()> {
-    blocking_put_auth(server_url, agent_info, None)
 }
 
 enum Res<T> {
@@ -117,6 +110,18 @@ impl<T> From<Res<T>> for K2Result<T> {
 /// Note the `blocking_` prefix. This is a hint to the caller that if the
 /// function is used in an async context, it should be treated as a blocking
 /// operation.
+pub fn blocking_put(
+    server_url: Url,
+    agent_info: &AgentInfoSigned,
+) -> K2Result<()> {
+    blocking_put_auth(server_url, agent_info, None)
+}
+
+/// Send the agent info, for the given space, to the bootstrap server.
+///
+/// Note the `blocking_` prefix. This is a hint to the caller that if the
+/// function is used in an async context, it should be treated as a blocking
+/// operation.
 pub fn blocking_put_auth(
     mut server_url: Url,
     agent_info: &AgentInfoSigned,
@@ -148,7 +153,7 @@ pub fn blocking_put_auth(
         if let Some(auth_material) = auth_material {
             let token =
                 auth_material.auth_token.lock().unwrap().clone().unwrap();
-            req = req.set("Authenticate", &format!("Bearer {token}"));
+            req = req.set("Authorization", &format!("Bearer {token}"));
         }
 
         req.send_string(encoded).map(|_| ()).into()
@@ -212,7 +217,7 @@ pub fn blocking_get_auth(
         if let Some(auth_material) = auth_material {
             let token =
                 auth_material.auth_token.lock().unwrap().clone().unwrap();
-            req = req.set("Authenticate", &format!("Bearer {token}"));
+            req = req.set("Authorization", &format!("Bearer {token}"));
         }
 
         match req.call() {

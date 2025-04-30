@@ -1677,13 +1677,17 @@ dependencies = [
 name = "kitsune2_bootstrap_client"
 version = "0.2.2"
 dependencies = [
+ "axum 0.7.9",
+ "axum-server",
  "base64",
+ "bytes",
  "kitsune2_api",
  "kitsune2_bootstrap_srv",
  "kitsune2_core",
  "kitsune2_test_utils",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "ureq",
  "url",
@@ -2886,6 +2890,7 @@ dependencies = [
  "slab",
  "tokio",
  "tokio-rustls",
+ "tracing",
  "ureq",
 ]
 

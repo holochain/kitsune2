@@ -301,6 +301,8 @@ async fn handle_auth(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> axum::response::Response {
+    use sbd_server::AuthenticateTokenError::*;
+
     match sbd_server::process_authenticate_token(
         &state.sbd_config,
         &state.token_tracker,
@@ -313,10 +315,27 @@ async fn handle_auth(
                 "authToken": *token,
             }),
         )),
-        Err(_) => axum::response::IntoResponse::into_response((
-            axum::http::StatusCode::UNAUTHORIZED,
-            "Unauthorized",
-        )),
+        Err(Unauthorized) => {
+            tracing::debug!("/authenticate: UNAUTHORIZED");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ))
+        }
+        Err(HookServerError(err)) => {
+            tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("BAD_GATEWAY: {err:?}"),
+            ))
+        }
+        Err(OtherError(err)) => {
+            tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("INTERNAL_SERVER_ERROR: {err:?}"),
+            ))
+        }
     }
 }
 
@@ -365,7 +384,7 @@ async fn handle_boot_get(
     extract::State(state): extract::State<AppState>,
 ) -> response::Response {
     let token: Option<Arc<str>> = headers
-        .get("Authenticate")
+        .get("Authorization")
         .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
 
     if !state
@@ -392,7 +411,7 @@ async fn handle_boot_put(
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
     let token: Option<Arc<str>> = headers
-        .get("Authenticate")
+        .get("Authorization")
         .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
 
     if !state

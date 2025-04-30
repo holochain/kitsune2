@@ -284,7 +284,7 @@ fn invalid_auth() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
-        .set("Authenticate", "Bearer bob")
+        .set("Authorization", "Bearer bob")
         .call()
         .unwrap_err();
     assert!(format!("{res:?}").contains("Unauthorized"));
@@ -300,13 +300,11 @@ fn valid_auth() {
         .into_string()
         .unwrap();
 
-    let token = String::from_utf8_lossy(
-        &token.as_bytes()[14..57],
-    );
+    let token = String::from_utf8_lossy(&token.as_bytes()[14..57]);
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
-        .set("Authenticate", &format!("Bearer {token}"))
+        .set("Authorization", &format!("Bearer {token}"))
         .call()
         .unwrap()
         .into_string()
