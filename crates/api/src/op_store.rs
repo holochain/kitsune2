@@ -84,8 +84,8 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// # Returns
     ///
-    /// - As many op ids as can be returned within the `limit_bytes` limit, within the arc and time
-    ///   bounds.
+    /// - The op ids that are stored in the given arc and time range. Where the start time is
+    ///   inclusive and the end time is exclusive.
     /// - The total size of the op data that is pointed to by the returned op ids.
     fn retrieve_op_hashes_in_time_slice(
         &self,

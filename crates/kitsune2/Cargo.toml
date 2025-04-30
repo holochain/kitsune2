@@ -20,14 +20,13 @@ kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_gossip = { workspace = true }
 kitsune2_transport_tx5 = { workspace = true }
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 
 # Feature: schema
 schemars = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
-futures = { workspace = true }
 kitsune2_gossip = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 sbd-server = { workspace = true }

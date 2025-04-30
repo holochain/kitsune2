@@ -78,11 +78,6 @@ impl BootstrapSrv {
         // get the address that was assigned
         let addrs = server.server_addrs().to_vec();
         tracing::info!(?addrs, "Listening");
-        for addr in addrs.iter() {
-            // print these incase someone wants to parse for them
-            println!("#kitsune2_bootstrap_srv#listening#{addr:?}#");
-        }
-        println!("#kitsune2_bootstrap_srv#running#");
 
         // spawn our worker threads
         let mut workers = Vec::with_capacity(config.worker_thread_count + 1);
@@ -138,6 +133,15 @@ impl BootstrapSrv {
     /// Get the bound listening addresses of this server.
     pub fn listen_addrs(&self) -> &[std::net::SocketAddr] {
         self.addrs.as_slice()
+    }
+
+    /// Print the address server started on
+    pub fn print_addrs(&self) {
+        println!("#kitsune2_bootstrap_srv#running#");
+        for addr in self.addrs.iter() {
+            // print these incase someone wants to parse for them
+            println!("#kitsune2_bootstrap_srv#listening#{addr:?}#");
+        }
     }
 }
 
