@@ -90,7 +90,7 @@ url = "2.5.4"
 # to receive these logs.
 tracing = "0.1"
 # for init config
-tx5-core = "0.4.0"
+tx5-core = "0.3.4"
 # for the transport_tx5 crate
 tx5 = { version = "0.3.4", default-features = false }
 # TLS support for the bootstrap server
