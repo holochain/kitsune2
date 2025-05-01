@@ -18,6 +18,12 @@ pub struct AuthMaterial {
     auth_token: Mutex<Option<String>>,
 }
 
+impl std::fmt::Debug for AuthMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AuthMaterial")
+    }
+}
+
 impl AuthMaterial {
     /// Provide authentication material.
     pub fn new(auth_material: Vec<u8>) -> Self {

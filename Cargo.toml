@@ -98,7 +98,7 @@ axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
 # embedded in the bootstrap server and to test the tx5 integration
-sbd-server = { version = "0.1.1" }
+sbd-server = { version = "0.2.0" }
 # axum-server integration with the SBD server
 tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
@@ -122,7 +122,7 @@ kitsune2_core = { version = "0.2.1", path = "crates/core" }
 kitsune2_test_utils = { version = "0.2.1", path = "crates/test_utils" }
 
 # used to test the bootstrap server with SBD enabled
-sbd-client = "0.1.1"
+sbd-client = "0.2.0"
 
 # used to hash op data
 sha2 = "0.10.8"
@@ -133,6 +133,9 @@ rcgen = "0.13"
 # Used in the schema example
 jsonschema = "0.30.0"
 
-#[patch.crates-io]
-#sbd-server = { path = "../sbd/rust/sbd-server" }
-#sbd-client = { path = "../sbd/rust/sbd-client" }
+[patch.crates-io]
+sbd-server = { path = "../sbd/rust/sbd-server" }
+sbd-client = { path = "../sbd/rust/sbd-client" }
+sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
+tx5-core = { path = "../tx5/crates/tx5-core" }
+tx5 = { path = "../tx5/crates/tx5" }

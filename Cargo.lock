@@ -2839,9 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "sbd-client"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "935a05ea3f6f877edb17f8365d5690f5a4385fd432c03b4ce237a3cd1966ec20"
+version = "0.2.0"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -2862,9 +2860,7 @@ dependencies = [
 
 [[package]]
 name = "sbd-e2e-crypto-client"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f922e29a871643512de302ed4be29255d4d19f9739e438970af0d26baac99bec"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "sbd-client",
@@ -2875,9 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "sbd-server"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4b78fbd5c54413b75b8c0112f702a10a7c132ddf34299cc74e6d9fbd3b51d7f"
+version = "0.2.0"
 dependencies = [
  "anstyle",
  "axum 0.8.4",
@@ -3571,8 +3565,6 @@ dependencies = [
 [[package]]
 name = "tx5"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f84fd225371150c55da756ee40260bd6c3481e951e5e9afc89732a209c29c8"
 dependencies = [
  "base64",
  "futures",
@@ -3589,8 +3581,6 @@ dependencies = [
 [[package]]
 name = "tx5-connection"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67f69d4fd6868cf8d751762b69f1ba3ac05bdc8331b1729061c846f2c5037fdd"
 dependencies = [
  "bit_field",
  "datachannel",
@@ -3607,8 +3597,6 @@ dependencies = [
 [[package]]
 name = "tx5-core"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d89c76968f7b5c6d26f36f9067044e3b3be0c45b49cd3ce58e4ca55a9fe61576"
 dependencies = [
  "app_dirs2",
  "base64",
@@ -3625,8 +3613,6 @@ dependencies = [
 [[package]]
 name = "tx5-signal"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f126665f54e5a69b2738edb8fa05f619f2c06ca68315dc943d018fcc6bc5b003"
 dependencies = [
  "rand 0.8.5",
  "sbd-e2e-crypto-client",
