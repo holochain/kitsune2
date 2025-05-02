@@ -38,7 +38,7 @@ kitsune2_api = { workspace = true, features = ["mockall"] }
 kitsune2_core = { workspace = true }
 kitsune2_dht = { workspace = true, features = ["mockall"] }
 
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 base64 = { workspace = true }
 
 [features]
