@@ -1731,6 +1731,7 @@ dependencies = [
  "futures",
  "kitsune2_api",
  "kitsune2_bootstrap_client",
+ "kitsune2_bootstrap_srv",
  "kitsune2_test_utils",
  "prost",
  "rand 0.8.5",
