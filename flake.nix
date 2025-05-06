@@ -42,6 +42,14 @@
           packages = {
             inherit bootstrap-srv;
           };
+
+          devShells = {
+            default = pkgs.mkShell {
+              packages = [
+                rust
+              ];
+            };
+          };
         };
     };
 }
