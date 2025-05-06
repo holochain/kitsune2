@@ -623,7 +623,7 @@ impl BandwidthTracker {
     /// # Arguments
     ///
     /// * `space` - The unique identifier for the space.
-    /// * `module` - Optional module identifier.
+    /// * `module` - Optional module identifier. Use `Some(module_id)` for module-specific messages, or `None` for space-level messages.
     /// * `bytes` - Number of bytes sent.
     pub fn track_sent(
         &self,
@@ -653,8 +653,8 @@ impl BandwidthTracker {
     /// # Arguments
     ///
     /// * `space` - The unique identifier for the space.
-    /// * `module` - Optional module identifier.
-    /// * `bytes` - Number of bytes received.
+    /// * `module` - Optional module identifier. Use `Some(module_id)` for module-specific messages, or `None` for space-level messages.
+    /// * `bytes` - Number of bytes sent.
     pub fn track_received(
         &self,
         space: SpaceId,
