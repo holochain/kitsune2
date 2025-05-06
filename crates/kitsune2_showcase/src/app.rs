@@ -104,6 +104,7 @@ impl App {
                         }],
                         ice_transport_policy: Default::default(),
                     },
+                    tracing_enabled: true,
                     ..Default::default()
                 },
             },

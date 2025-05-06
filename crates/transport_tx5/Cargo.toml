@@ -18,10 +18,9 @@ serde = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tracing = { workspace = true }
 tx5-core = { workspace = true }
-tx5 = { workspace = true, default-features = false, features = [
-  "backend-libdatachannel",
-] }
+tx5 = { workspace = true, default-features = false }
 url = { workspace = true }
+cfg-if = { workspace = true }
 
 # Feature: schema
 schemars = { workspace = true, optional = true }
@@ -33,8 +32,11 @@ sbd-server = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [features]
-default = ["datachannel-vendored"]
+default = ["backend-datachannel", "datachannel-vendored"]
 
+backend-datachannel = ["tx5/backend-libdatachannel"]
 datachannel-vendored = ["tx5/datachannel-vendored"]
+
+backend-go-pion = ["tx5/backend-go-pion"]
 
 schema = ["dep:schemars", "tx5/schema"]

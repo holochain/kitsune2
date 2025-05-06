@@ -13,11 +13,28 @@ edition.workspace = true
 [dependencies]
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
-kitsune2 = { workspace = true }
+kitsune2 = { workspace = true, default-features = false }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
-kitsune2_transport_tx5 = { workspace = true }
+kitsune2_transport_tx5 = { workspace = true, default-features = false }
 rustls = { workspace = true }
 rustyline = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true , features = ["env-filter"] }
+
+[features]
+default = [
+    "backend-datachannel"
+]
+
+backend-datachannel = [
+    "kitsune2/backend-datachannel",
+    "kitsune2_transport_tx5/backend-datachannel"
+]
+
+backend-go-pion = [
+    "kitsune2/backend-go-pion",
+    "kitsune2_transport_tx5/backend-go-pion"
+]

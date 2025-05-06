@@ -34,9 +34,12 @@ tokio = { workspace = true, features = ["test-util"] }
 jsonschema = { workspace = true }
 
 [features]
-default = ["datachannel-vendored"]
+default = ["backend-datachannel", "datachannel-vendored"]
 
+backend-datachannel = ["kitsune2_transport_tx5/backend-datachannel"]
 datachannel-vendored = ["kitsune2_transport_tx5/datachannel-vendored"]
+
+backend-go-pion = ["kitsune2_transport_tx5/backend-go-pion"]
 
 schema = [
   "dep:schemars",

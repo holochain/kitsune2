@@ -253,10 +253,28 @@ impl Tx5Transport {
                 }),
             )),
             timeout: std::time::Duration::from_secs(config.timeout_s as u64),
-            backend_module: tx5::backend::BackendModule::LibDataChannel,
-            backend_module_config: Some(
-                tx5::backend::BackendModule::LibDataChannel.default_config(),
-            ),
+            backend_module: {
+                cfg_if::cfg_if! {
+                    if #[cfg(feature = "backend-datachannel")] {
+                        tx5::backend::BackendModule::LibDataChannel
+                    } else if #[cfg(feature = "backend-go-pion")] {
+                        tx5::backend::BackendModule::GoPion
+                    } else {
+                        unreachable!()
+                    }
+                }
+            },
+            backend_module_config: {
+                cfg_if::cfg_if! {
+                    if #[cfg(feature = "backend-datachannel")] {
+                        Some(tx5::backend::BackendModule::LibDataChannel.default_config())
+                    } else if #[cfg(feature = "backend-go-pion")] {
+                        Some(tx5::backend::BackendModule::GoPion.default_config())
+                    } else {
+                        unreachable!()
+                    }
+                }
+            },
             initial_webrtc_config: config.webrtc_config,
             ..Default::default()
         });

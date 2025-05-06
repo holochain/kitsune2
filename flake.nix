@@ -50,6 +50,7 @@
                 perl
                 cmake
                 openssl
+                go
               ];
 
               LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
