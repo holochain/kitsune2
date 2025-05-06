@@ -284,6 +284,7 @@ impl CoreSpace {
             }
         }
     }
+
     pub fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker> {
         self.tx.get_bandwidth_tracker()
     }
