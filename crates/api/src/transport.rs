@@ -231,6 +231,7 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+
     /// Get Bandwidth Tracker
     fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker>;
 }
