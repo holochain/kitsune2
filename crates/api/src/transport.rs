@@ -1,13 +1,11 @@
 //! Kitsune2 transport related types.
 
 use crate::{protocol::*, *};
-use futures::FutureExt;
 #[cfg(feature = "mockall")]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::AtomicU64;
 use std::sync::RwLock;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -715,5 +713,11 @@ impl BandwidthTracker {
         } else {
             None
         }
+    }
+}
+
+impl Default for BandwidthTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
