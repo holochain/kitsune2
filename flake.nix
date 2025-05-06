@@ -45,9 +45,14 @@
 
           devShells = {
             default = pkgs.mkShell {
-              packages = [
+              packages = with pkgs; [
                 rust
+                perl
+                cmake
+                openssl
               ];
+
+              LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             };
           };
         };
