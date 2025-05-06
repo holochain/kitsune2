@@ -15,10 +15,8 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
-      perSystem = { self', inputs', pkgs, system, ... }:
+      perSystem = { pkgs, system, ... }:
         let
-          inherit (pkgs) lib;
-
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
           craneLib = (crane.mkLib pkgs).overrideToolchain rust;
