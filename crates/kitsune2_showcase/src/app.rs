@@ -93,10 +93,7 @@ impl App {
                     webrtc_config: WebRtcConfig {
                         ice_servers: vec![IceServers {
                             urls: vec![
-                                "stun:stun-0.main.infra.holo.host:443"
-                                    .to_string(),
-                                "stun:stun-1.main.infra.holo.host:443"
-                                    .to_string(),
+                                "stun://stun.l.google.com:19302".to_string()
                             ],
                             username: None,
                             credential: None,
