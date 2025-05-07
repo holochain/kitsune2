@@ -629,12 +629,11 @@ impl BandwidthTracker {
         module: Option<String>,
         bytes: u64,
     ) {
-        if let Ok(mut space_stats) = self.space_stats.write() {
-            space_stats
-                .entry(space.clone())
-                .or_insert_with(BandwidthStats::new)
-                .add_sent(bytes);
-        }
+        self.space_stats.write()
+            .unwrap()
+            .entry(space.clone())
+            .or_insert_with(BandwidthStats::new)
+            .add_sent(bytes);
 
         if let Some(module_id) = module {
             if let Ok(mut module_stats) = self.module_stats.write() {
