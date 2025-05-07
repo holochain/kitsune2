@@ -256,7 +256,9 @@ impl Kitsune for CoreKitsune {
                     let to_remove = our_peers.read().unwrap().clone();
                     for (_, info) in to_remove {
                         if let Some(url) = &info.url {
-                            tracing::info!("Disconnecting peer {url} from transport");
+                            tracing::info!(
+                                "Disconnecting peer {url} from transport"
+                            );
                             transport
                                 .disconnect(
                                     url.clone(),
