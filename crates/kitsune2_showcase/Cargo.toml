@@ -22,19 +22,17 @@ rustyline = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true , features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
-default = [
-    "backend-datachannel"
-]
+default = ["backend-datachannel"]
 
 backend-datachannel = [
-    "kitsune2/backend-datachannel",
-    "kitsune2_transport_tx5/backend-datachannel"
+  "kitsune2/backend-datachannel",
+  "kitsune2_transport_tx5/backend-datachannel",
 ]
 
 backend-go-pion = [
-    "kitsune2/backend-go-pion",
-    "kitsune2_transport_tx5/backend-go-pion"
+  "kitsune2/backend-go-pion",
+  "kitsune2_transport_tx5/backend-go-pion",
 ]
