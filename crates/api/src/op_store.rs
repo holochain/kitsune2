@@ -5,8 +5,6 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::future::BoxFuture;
-#[cfg(feature = "mockall")]
-use mockall::automock;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
@@ -66,7 +64,7 @@ impl PartialOrd for StoredOp {
 }
 
 /// The API that a kitsune2 host must implement to provide data persistence for kitsune2.
-#[cfg_attr(any(test, feature = "mockall"), automock)]
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// Process incoming ops.
     ///
