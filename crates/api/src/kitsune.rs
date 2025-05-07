@@ -84,6 +84,12 @@ pub trait Kitsune: 'static + Send + Sync + std::fmt::Debug {
         space: SpaceId,
     ) -> BoxFut<'_, Option<space::DynSpace>>;
 
+    /// Remove a space, if it exists.
+    ///
+    /// This will remove the space from the list of active spaces. The space will only shutdown
+    /// cleanly if all modules are careful about not holding references to the space and transport.
+    fn remove_space(&self, space: SpaceId) -> BoxFut<'_, K2Result<()>>;
+
     /// Get the transport handle.
     fn transport(&self) -> BoxFut<'_, K2Result<DynTransport>>;
 }

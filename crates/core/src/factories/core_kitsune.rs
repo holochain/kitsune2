@@ -1,8 +1,8 @@
 //! The core kitsune implementation provided by Kitsune2.
 
 use kitsune2_api::*;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 
 /// The core kitsune implementation provided by Kitsune2.
 /// You probably will have no reason to use something other than this.
@@ -167,6 +167,113 @@ impl Kitsune for CoreKitsune {
         Box::pin(async move {
             let fut = self.map.lock().unwrap().get(&space)?.clone();
             fut.await.ok()
+        })
+    }
+
+    fn remove_space(&self, space: SpaceId) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let fut = self.map.lock().unwrap().get(&space).cloned();
+            if let Some(fut) = fut {
+                if let Ok(s) = fut.await {
+                    // Just a point in time check, try to help the user out if they accidentally
+                    // try to remove a space with active local agents.
+                    // Those agents need to leave the space before it should be removed.
+                    if !s.local_agent_store().get_all().await?.is_empty() {
+                        return Err(K2Error::other(
+                            "Cannot remove space with local agents",
+                        ));
+                    }
+
+                    // Checks passed, remove our reference to the space.
+                    self.map.lock().unwrap().remove(&space);
+
+                    // Unregister the space and its module handlers from the transport.
+                    self.transport().await?.unregister_space(space).await;
+
+                    // Close any connections that were only used by this space.
+                    let connected_peer_ids = self
+                        .transport()
+                        .await?
+                        .dump_network_stats()
+                        .await?
+                        .connections
+                        .into_iter()
+                        .map(|c| c.pub_key)
+                        .collect::<HashSet<_>>();
+                    let mut our_peers = s.peer_store().get_all().await?;
+                    our_peers.retain(|a| {
+                        if let Some(url) =
+                            a.url.as_ref().and_then(|u| u.peer_id())
+                        {
+                            connected_peer_ids.contains(url)
+                        } else {
+                            false
+                        }
+                    });
+                    let our_peers = Arc::new(RwLock::new(
+                        our_peers
+                            .into_iter()
+                            .map(|a| (a.agent.clone(), a))
+                            .collect::<HashMap<_, _>>(),
+                    ));
+
+                    // Check if the peer is being used in any other space.
+                    let spaces = self
+                        .map
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|s| s.1.clone())
+                        .collect::<Vec<_>>();
+                    futures::future::join_all(spaces.into_iter().map(
+                        |fut| -> BoxFut<'_, K2Result<()>> {
+                            let our_peers = our_peers.clone();
+                            Box::pin(async move {
+                                if let Ok(s) = fut.await {
+                                    let check_our_peers =
+                                        our_peers.read().unwrap().clone();
+                                    for (agent, _) in check_our_peers {
+                                        if s.peer_store()
+                                            .get(agent.clone())
+                                            .await?
+                                            .is_some()
+                                        {
+                                            our_peers
+                                                .write()
+                                                .unwrap()
+                                                .remove(&agent);
+                                        }
+                                    }
+                                }
+
+                                Ok(())
+                            })
+                        },
+                    ))
+                    .await;
+
+                    let transport = self.transport().await?;
+                    let to_remove = our_peers.read().unwrap().clone();
+                    for (_, info) in to_remove {
+                        if let Some(url) = &info.url {
+                            tracing::info!("Disconnecting peer {url} from transport");
+                            transport
+                                .disconnect(
+                                    url.clone(),
+                                    Some("Space is being removed".to_string()),
+                                )
+                                .await;
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Space exists, but failed to get a handle to it"
+                    );
+                }
+            } else {
+                tracing::info!("Space {space:?} not found");
+            }
+            Ok(())
         })
     }
 
