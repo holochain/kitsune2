@@ -101,6 +101,7 @@ impl TxImpHnd {
             data,
             ..
         } = data;
+        let len = data.len() as u64;
 
         match ty {
             K2WireType::Unspecified => Ok(()),
@@ -112,9 +113,9 @@ impl TxImpHnd {
                     let space = SpaceId::from(space);
                     if let Some(h) = self.space_map.lock().unwrap().get(&space)
                     {
-                        let len = data.len() as u64;
-                        h.recv_space_notify(peer, space.clone(), data)?;
-                        self.tracker.track_received(space, None, len)
+                        h.recv_space_notify(peer, space.clone(), data).inspect(
+                            |_| self.tracker.track_received(space, None, len),
+                        )?
                     }
                 }
                 Ok(())
@@ -128,11 +129,9 @@ impl TxImpHnd {
                         .unwrap()
                         .get(&(space.clone(), module.clone()))
                     {
-                        let len = data.len() as u64;
                         h.recv_module_msg(peer, space.clone(), module.clone(), data).inspect_err(|e| {
                             tracing::warn!(?module, "Error in recv_module_msg, peer connection will be closed: {e}");
-                        })?;
-                        self.tracker.track_received(space, Some(module), len)
+                        }).inspect(|_| self.tracker.track_received(space, Some(module), len))?
                     }
                 }
                 Ok(())
@@ -197,6 +196,7 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         module: String,
         handler: DynTxModuleHandler,
     );
+
     /// Make a best effort to notify a peer that we are disconnecting and why.
     /// After a short time out, the connection will be closed even if the
     /// disconnect reason message is still pending.
@@ -230,7 +230,10 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 
-    /// Get Bandwidth Tracker
+    /// Returns a reference-counted handle to the [`BandwidthTracker`] used to track bandwidth usage.
+    ///
+    /// This tracker keeps track of the number of bytes sent and received,
+    /// both per space and per (space, module) pair, for this transport instance.
     fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker>;
 }
 
@@ -346,13 +349,10 @@ impl Transport for DefaultTransport {
                 module: None,
             })
             .encode()?;
-            match self.imp.send(peer, enc).await {
-                Ok(()) => {
-                    self.tracker.track_sent(space, None, len);
-                    K2Result::Ok(())
-                }
-                Err(err) => K2Result::Err(err),
-            }
+            self.imp
+                .send(peer, enc)
+                .await
+                .inspect(|_| self.tracker.track_sent(space, None, len))
         })
     }
 
@@ -372,13 +372,10 @@ impl Transport for DefaultTransport {
                 module: Some(module.clone()),
             })
             .encode()?;
-            match self.imp.send(peer, enc).await {
-                Ok(()) => {
-                    self.tracker.track_sent(space, Some(module), len);
-                    K2Result::Ok(())
-                }
-                Err(err) => K2Result::Err(err),
-            }
+            self.imp
+                .send(peer, enc)
+                .await
+                .inspect(|_| self.tracker.track_sent(space, Some(module), len))
         })
     }
 
@@ -629,19 +626,19 @@ impl BandwidthTracker {
         module: Option<String>,
         bytes: u64,
     ) {
-        self.space_stats.write()
-            .unwrap()
-            .entry(space.clone())
-            .or_insert_with(BandwidthStats::new)
-            .add_sent(bytes);
-
         if let Some(module_id) = module {
-            if let Ok(mut module_stats) = self.module_stats.write() {
-                module_stats
-                    .entry((space.clone(), module_id))
-                    .or_insert_with(BandwidthStats::new)
-                    .add_sent(bytes);
-            }
+            let mut module_stats = self.module_stats.write().unwrap();
+            module_stats
+                .entry((space.clone(), module_id))
+                .or_insert_with(BandwidthStats::new)
+                .add_sent(bytes);
+        } else {
+            self.space_stats
+                .write()
+                .unwrap()
+                .entry(space.clone())
+                .or_insert_with(BandwidthStats::new)
+                .add_sent(bytes);
         }
     }
 
@@ -658,20 +655,18 @@ impl BandwidthTracker {
         module: Option<String>,
         bytes: u64,
     ) {
-        if let Ok(mut space_stats) = self.space_stats.write() {
+        if let Some(module_id) = module {
+            let mut module_stats = self.module_stats.write().unwrap();
+            module_stats
+                .entry((space.clone(), module_id))
+                .or_insert_with(BandwidthStats::new)
+                .add_received(bytes);
+        } else {
+            let mut space_stats = self.space_stats.write().unwrap();
             space_stats
                 .entry(space.clone())
                 .or_insert_with(BandwidthStats::new)
                 .add_received(bytes);
-        }
-
-        if let Some(module_id) = module {
-            if let Ok(mut module_stats) = self.module_stats.write() {
-                module_stats
-                    .entry((space.clone(), module_id))
-                    .or_insert_with(BandwidthStats::new)
-                    .add_received(bytes);
-            }
         }
     }
 
@@ -685,11 +680,8 @@ impl BandwidthTracker {
     ///
     /// An `Option<BandwidthStats>` containing the stats if they exist.
     pub fn get_space_stats(&self, space: SpaceId) -> Option<BandwidthStats> {
-        if let Ok(stats) = self.space_stats.read() {
-            stats.get(&space).cloned()
-        } else {
-            None
-        }
+        let stats = self.space_stats.read().unwrap();
+        stats.get(&space).cloned()
     }
 
     /// Retrieves bandwidth statistics for a specific space and module combination.
@@ -707,11 +699,8 @@ impl BandwidthTracker {
         space: SpaceId,
         module: String,
     ) -> Option<BandwidthStats> {
-        if let Ok(stats) = self.module_stats.read() {
-            stats.get(&(space, module)).cloned()
-        } else {
-            None
-        }
+        let stats = self.module_stats.read().unwrap();
+        stats.get(&(space, module)).cloned()
     }
 }
 

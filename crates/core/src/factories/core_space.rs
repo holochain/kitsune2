@@ -284,11 +284,6 @@ impl CoreSpace {
             }
         }
     }
-
-    #[allow(dead_code)]
-    pub fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker> {
-        self.tx.get_bandwidth_tracker()
-    }
 }
 
 impl Space for CoreSpace {
@@ -473,6 +468,10 @@ impl Space for CoreSpace {
         ops: Vec<StoredOp>,
     ) -> BoxFut<'_, K2Result<()>> {
         self.gossip.inform_ops_stored(ops)
+    }
+
+    fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker> {
+        self.tx.get_bandwidth_tracker()
     }
 }
 

@@ -59,7 +59,7 @@ mod test {
     use crate::default_builder;
     use bytes::Bytes;
     use kitsune2_api::{
-        BoxFut, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, K2Result,
+        BoxFut, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, Id, K2Result,
         KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId, Timestamp,
     };
     use kitsune2_core::{
@@ -114,6 +114,7 @@ mod test {
     async fn make_kitsune_node(
         signal_server_url: &str,
         bootstrap_server_url: &str,
+        space_id: SpaceId,
     ) -> (DynSpace, DynKitsune) {
         let kitsune_builder = default_builder().with_default_config().unwrap();
         kitsune_builder
@@ -155,7 +156,7 @@ mod test {
             .register_handler(kitsune_handler.clone())
             .await
             .unwrap();
-        let space = kitsune.space(TEST_SPACE_ID).await.unwrap();
+        let space = kitsune.space(space_id).await.unwrap();
 
         // Create an agent.
         let local_agent = Arc::new(Ed25519LocalAgent::default());
@@ -196,10 +197,18 @@ mod test {
         let bootstrap_server_url = bootstrap_server.addr().to_string();
 
         // Create 2 Kitsune instances and 1 space with 1 joined agent each.
-        let (space_1, _kitsune_1) =
-            make_kitsune_node(&signal_server_url, &bootstrap_server_url).await;
-        let (space_2, _kitsune_2) =
-            make_kitsune_node(&signal_server_url, &bootstrap_server_url).await;
+        let (space_1, _kitsune_1) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            TEST_SPACE_ID,
+        )
+        .await;
+        let (space_2, _kitsune_2) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            TEST_SPACE_ID,
+        )
+        .await;
 
         // Wait for Windows runner to catch up with establishing the connection.
         #[cfg(target_os = "windows")]
@@ -248,5 +257,246 @@ mod test {
                 );
             }
         });
+    }
+
+    #[tokio::test]
+    async fn track_sent_bytes_same_space() {
+        use std::time::Duration;
+        use tokio::time::sleep;
+
+        // Create a signaling server to help nodes discover each other
+        let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
+            bind: vec!["127.0.0.1:0".to_string()],
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+        let signal_server_url =
+            format!("ws://{}", signal_server.bind_addrs()[0]);
+
+        // Create a bootstrap server for node discovery
+        let bootstrap_server = TestBootstrapSrv::new(false).await;
+        let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+        // Create two nodes in the same space
+        let (space_1, _kitsune_1) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            TEST_SPACE_ID,
+        )
+        .await;
+        let (space_2, _kitsune_2) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            TEST_SPACE_ID,
+        )
+        .await;
+
+        let tracker1 = space_1.get_bandwidth_tracker();
+        let tracker2 = space_2.get_bandwidth_tracker();
+
+        // Prepare a 10-byte payload
+        let payload =
+            bytes::Bytes::from_static(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        // Send 2 messages from space_1 to space_2 (2 * 10 bytes = 20)
+        let _ = space_1
+            .send_notify(space_2.current_url().unwrap(), payload.clone())
+            .await;
+        let _ = space_1
+            .send_notify(space_2.current_url().unwrap(), payload.clone())
+            .await;
+
+        // Send 1 message from space_2 to space_1 (1 * 10 bytes = 10)
+        let _ = space_2
+            .send_notify(space_1.current_url().unwrap(), payload.clone())
+            .await;
+
+        // Allow time for all messages to be processed
+        sleep(Duration::from_secs(2)).await;
+
+        // Validate bandwidth usage after 3 messages
+        assert_eq!(
+            20,
+            tracker1
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_sent()
+        );
+        assert_eq!(
+            10,
+            tracker2
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_sent()
+        );
+        assert_eq!(
+            10,
+            tracker1
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_received()
+        );
+        assert_eq!(
+            20,
+            tracker2
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_received()
+        );
+
+        // Send one more message from space_1 to space_2
+        let _ = space_1
+            .send_notify(space_2.current_url().unwrap(), payload.clone())
+            .await;
+
+        // Wait again for processing
+        sleep(Duration::from_secs(2)).await;
+
+        // Final expected bandwidth stats:
+        // space_1: sent 30 (3 messages), received 10 (1 message)
+        // space_2: sent 10 (1 message), received 30 (3 messages)
+        assert_eq!(
+            30,
+            tracker1
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_sent()
+        );
+        assert_eq!(
+            30,
+            tracker2
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_received()
+        );
+        assert_eq!(
+            10,
+            tracker1
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_received()
+        );
+        assert_eq!(
+            10,
+            tracker2
+                .get_space_stats(TEST_SPACE_ID)
+                .unwrap()
+                .bytes_sent()
+        );
+    }
+
+    #[tokio::test]
+    async fn track_sent_bytes_different_space() {
+        use std::time::Duration;
+        use tokio::time::sleep;
+
+        // Create signaling and bootstrap servers
+        let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
+            bind: vec!["127.0.0.1:0".to_string()],
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+        let signal_server_url =
+            format!("ws://{}", signal_server.bind_addrs()[0]);
+        let bootstrap_server = TestBootstrapSrv::new(false).await;
+        let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+        // Create three nodes in different spaces
+        let space_id1 = SpaceId(Id(Bytes::from_static(b"space1")));
+        let space_id2 = SpaceId(Id(Bytes::from_static(b"space2")));
+        let space_id3 = SpaceId(Id(Bytes::from_static(b"space3")));
+        let (space_1, _kitsune_1) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            space_id1.clone(),
+        )
+        .await;
+        let (space_2, _kitsune_2) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            space_id2.clone(),
+        )
+        .await;
+        let (space_3, _kitsune_3) = make_kitsune_node(
+            &signal_server_url,
+            &bootstrap_server_url,
+            space_id3.clone(),
+        )
+        .await;
+
+        let tracker1 = space_1.get_bandwidth_tracker();
+        let tracker2 = space_2.get_bandwidth_tracker();
+        let tracker3 = space_3.get_bandwidth_tracker();
+
+        // Create a 10-byte payload
+        let payload =
+            bytes::Bytes::from_static(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        // Send 10 bytes from:
+        // - space_1 → space_3
+        // - space_2 → space_3
+        // - space_3 → space_2
+        let _ = space_1
+            .send_notify(space_3.current_url().unwrap(), payload.clone())
+            .await;
+        let _ = space_2
+            .send_notify(space_3.current_url().unwrap(), payload.clone())
+            .await;
+        let _ = space_3
+            .send_notify(space_2.current_url().unwrap(), payload.clone())
+            .await;
+
+        // Wait to ensure delivery and processing
+        sleep(Duration::from_secs(5)).await;
+
+        // Expected:
+        // space_1: sent 10, received 0
+        // space_2: sent 10, received 10
+        // space_3: sent 10, received 20
+        assert_eq!(
+            10,
+            tracker1
+                .get_space_stats(space_id1.clone())
+                .unwrap()
+                .bytes_sent()
+        );
+        assert_eq!(
+            10,
+            tracker2
+                .get_space_stats(space_id2.clone())
+                .unwrap()
+                .bytes_sent()
+        );
+        assert_eq!(
+            10,
+            tracker3
+                .get_space_stats(space_id3.clone())
+                .unwrap()
+                .bytes_sent()
+        );
+
+        assert_eq!(
+            0,
+            tracker1
+                .get_space_stats(space_id1)
+                .unwrap()
+                .bytes_received()
+        );
+        assert_eq!(
+            0,
+            tracker2
+                .get_space_stats(space_id2)
+                .unwrap()
+                .bytes_received()
+        );
+        assert_eq!(
+            0,
+            tracker3
+                .get_space_stats(space_id3)
+                .unwrap()
+                .bytes_received()
+        );
     }
 }
