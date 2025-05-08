@@ -47,8 +47,9 @@ struct Test {
 }
 
 impl Test {
-    pub async fn new(server: &str) -> Self {
+    pub async fn new(server: &str, auth_material: Option<Vec<u8>>) -> Self {
         let builder = Builder {
+            auth_material,
             verifier: Arc::new(TestCrypto),
             bootstrap: super::CoreBootstrapFactory::create(),
             ..crate::default_test_builder()
@@ -161,8 +162,8 @@ async fn bootstrap_delayed_online() {
 
     println!("addr: {}", srv.addr());
 
-    let t1 = Test::new(srv.addr()).await;
-    let t2 = Test::new(srv.addr()).await;
+    let t1 = Test::new(srv.addr(), None).await;
+    let t2 = Test::new(srv.addr(), None).await;
 
     let a1 = t1.push_agent().await;
     let a2 = t2.push_agent().await;
@@ -186,6 +187,40 @@ async fn bootstrap_delayed_online() {
     //                  now the poll retry loop will successfully pull agents
 
     srv.set_halt(false);
+
+    for _ in 0..5 {
+        println!("checking...");
+        if t1.check_agent(a2.clone()).await.is_ok()
+            && t2.check_agent(a1.clone()).await.is_ok()
+        {
+            println!("found!");
+            return;
+        }
+        println!("not found :(");
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    panic!("failed to bootstrap both created agents in time");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bootstrap_auth() {
+    let config = kitsune2_bootstrap_srv::Config {
+        listen_address_list: vec![([127, 0, 0, 1], 0).into()],
+        ..kitsune2_bootstrap_srv::Config::testing()
+    };
+    let s = tokio::task::block_in_place(move || {
+        kitsune2_bootstrap_srv::BootstrapSrv::new(config).unwrap()
+    });
+    let addr = format!("http://{:?}", s.listen_addrs()[0]);
+    println!("{addr}");
+
+    let t1 = Test::new(&addr, Some(b"hello".into())).await;
+    let t2 = Test::new(&addr, Some(b"hello".into())).await;
+
+    let a1 = t1.push_agent().await;
+    let a2 = t2.push_agent().await;
 
     for _ in 0..5 {
         println!("checking...");

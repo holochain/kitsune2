@@ -22,7 +22,7 @@ struct Test {
 }
 
 impl Test {
-    pub async fn new() -> Self {
+    pub async fn new(auth_material: Option<Vec<u8>>) -> Self {
         let mut this = Self {
             srv: None,
             port: 0,
@@ -34,6 +34,7 @@ impl Test {
         this.restart().await;
 
         let builder = Builder {
+            auth_material,
             transport: Tx5TransportFactory::create(),
             ..kitsune2_core::default_test_builder()
         };
@@ -243,7 +244,7 @@ fn validate_plain_server_url() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_addr() {
-    let mut test = Test::new().await;
+    let mut test = Test::new(None).await;
 
     let addr = Arc::new(Mutex::new(Vec::new()));
     let addr2 = addr.clone();
@@ -278,7 +279,7 @@ async fn restart_addr() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "disconnects currently broken in tx5"]
 async fn peer_connect_disconnect() {
-    let test = Test::new().await;
+    let test = Test::new(None).await;
 
     let u1 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
     let u1_2 = u1.clone();
@@ -359,7 +360,59 @@ async fn peer_connect_disconnect() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn message_send_recv() {
-    let test = Test::new().await;
+    let test = Test::new(None).await;
+
+    let h1 = Arc::new(CbHandler {
+        ..Default::default()
+    });
+    let t1 = test.build_transport(h1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
+    t1.register_module_handler(TEST_SPACE_ID, "mod".into(), h1.clone());
+
+    let (s_send, mut s_recv) = tokio::sync::mpsc::unbounded_channel();
+    let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let u2_2 = u2.clone();
+    let h2 = Arc::new(CbHandler {
+        new_addr: Arc::new(move |url| {
+            *u2_2.lock().unwrap() = url;
+        }),
+        space: Arc::new(move |url, space, data| {
+            let _ = s_send.send((url, space, data));
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let t2 = test.build_transport(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
+    t2.register_module_handler(TEST_SPACE_ID, "mod".into(), h2.clone());
+
+    let u2: Url = u2.lock().unwrap().clone();
+    println!("got u2: {}", u2);
+
+    // checks that send works
+    t1.send_space_notify(
+        u2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+
+    // checks that recv works
+    let r = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        s_recv.recv().await
+    })
+    .await
+    .unwrap()
+    .unwrap();
+
+    println!("{r:?}");
+    assert_eq!(b"hello", r.2.as_ref());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_send_recv_auth() {
+    let test = Test::new(Some(b"hello".into())).await;
 
     let h1 = Arc::new(CbHandler {
         ..Default::default()
@@ -412,7 +465,7 @@ async fn message_send_recv() {
 #[tokio::test(flavor = "multi_thread")]
 async fn preflight_send_recv() {
     use std::sync::atomic::*;
-    let test = Test::new().await;
+    let test = Test::new(None).await;
 
     let r1 = Arc::new(AtomicBool::new(false));
     let r1_2 = r1.clone();
@@ -474,7 +527,7 @@ async fn preflight_send_recv() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dump_network_stats() {
-    let test = Test::new().await;
+    let test = Test::new(None).await;
 
     let h1 = Arc::new(CbHandler {
         ..Default::default()

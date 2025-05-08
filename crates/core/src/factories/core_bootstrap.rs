@@ -140,12 +140,20 @@ impl CoreBootstrap {
         peer_store: DynPeerStore,
         space: SpaceId,
     ) -> Self {
+        let auth_material =
+            Arc::new(builder.auth_material.as_ref().map(|auth_material| {
+                kitsune2_bootstrap_client::AuthMaterial::new(
+                    auth_material.clone(),
+                )
+            }));
+
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
 
         let push_task = tokio::task::spawn(push_task(
             config.clone(),
             push_send.clone(),
             push_recv,
+            auth_material.clone(),
         ));
 
         let poll_task = tokio::task::spawn(poll_task(
@@ -153,6 +161,7 @@ impl CoreBootstrap {
             config,
             space.clone(),
             peer_store,
+            auth_material,
         ));
 
         Self {
@@ -186,6 +195,7 @@ async fn push_task(
     config: CoreBootstrapConfig,
     push_send: PushSend,
     mut push_recv: PushRecv,
+    auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
 ) {
     // Already checked to be a valid URL by the config validation.
     let server_url =
@@ -195,9 +205,16 @@ async fn push_task(
 
     while let Some(info) = push_recv.recv().await {
         match tokio::task::spawn_blocking({
+            let auth_material = auth_material.clone();
             let server_url = server_url.clone();
             let info = info.clone();
-            move || kitsune2_bootstrap_client::blocking_put(server_url, &info)
+            move || {
+                kitsune2_bootstrap_client::blocking_put_auth(
+                    server_url,
+                    &info,
+                    auth_material.as_ref().as_ref(),
+                )
+            }
         })
         .await
         {
@@ -245,6 +262,7 @@ async fn poll_task(
     config: CoreBootstrapConfig,
     space: SpaceId,
     peer_store: DynPeerStore,
+    auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
 ) {
     // Already checked to be a valid URL by the config validation.
     let server_url =
@@ -254,14 +272,16 @@ async fn poll_task(
 
     loop {
         match tokio::task::spawn_blocking({
+            let auth_material = auth_material.clone();
             let server_url = server_url.clone();
             let space = space.clone();
             let verifier = builder.verifier.clone();
             move || {
-                kitsune2_bootstrap_client::blocking_get(
+                kitsune2_bootstrap_client::blocking_get_auth(
                     server_url,
                     space.clone(),
                     verifier,
+                    auth_material.as_ref().as_ref(),
                 )
             }
         })

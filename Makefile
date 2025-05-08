@@ -1,6 +1,9 @@
 # A Makefile for bumping versions and publishing all crates.
 
-.PHONY: publish-all bump
+.PHONY: default publish-all bump
+
+default:
+	@echo This Makefile no longer has a default target.
 
 publish-all:
 	cargo publish -p kitsune2_api

@@ -181,9 +181,12 @@ impl TransportFactory for Tx5TransportFactory {
             let _ = tx5_init_config.set_as_global_default();
 
             let handler = TxImpHnd::new(handler);
-            let imp =
-                Tx5Transport::create(config.tx5_transport, handler.clone())
-                    .await?;
+            let imp = Tx5Transport::create(
+                config.tx5_transport,
+                handler.clone(),
+                builder.auth_material.clone(),
+            )
+            .await?;
             Ok(DefaultTransport::create(&handler, imp))
         })
     }
@@ -211,12 +214,14 @@ impl Tx5Transport {
     pub async fn create(
         config: Tx5TransportConfig,
         handler: Arc<TxImpHnd>,
+        auth_material: Option<Vec<u8>>,
     ) -> K2Result<DynTxImp> {
         let (pre_send, pre_recv) = tokio::sync::mpsc::channel::<PreCheck>(1024);
 
         let preflight_send_handler = handler.clone();
         let tx5_config = Arc::new(tx5::Config {
             signal_allow_plain_text: config.signal_allow_plain_text,
+            signal_auth_material: auth_material,
             preflight: Some((
                 Arc::new(move |peer_url| {
                     // gather any preflight data, and send to remote

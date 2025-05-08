@@ -128,6 +128,8 @@ struct Ready {
 #[derive(Clone)]
 pub struct AppState {
     pub h_send: HSend,
+    pub token_tracker: sbd_server::AuthTokenTracker,
+    pub sbd_config: Arc<sbd_server::Config>,
     pub sbd_state: Option<crate::sbd::SbdState>,
 }
 
@@ -173,6 +175,7 @@ fn tokio_thread(
             };
 
             let app = Router::<AppState>::new()
+                .route("/authenticate", routing::put(handle_auth))
                 .route("/health", routing::get(handle_health_get))
                 .route("/bootstrap/:space", routing::get(handle_boot_get))
                 .route(
@@ -190,6 +193,8 @@ fn tokio_thread(
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
                     h_send: h_send.clone(),
+                    token_tracker: sbd_server::AuthTokenTracker::default(),
+                    sbd_config: sbd_config.clone(),
                     sbd_state: if !config.no_sbd {
                         Some(crate::sbd::SbdState {
                             config: sbd_config.clone(),
@@ -292,6 +297,48 @@ fn tokio_thread(
         });
 }
 
+async fn handle_auth(
+    extract::State(state): extract::State<AppState>,
+    body: bytes::Bytes,
+) -> axum::response::Response {
+    use sbd_server::AuthenticateTokenError::*;
+
+    match sbd_server::process_authenticate_token(
+        &state.sbd_config,
+        &state.token_tracker,
+        body,
+    )
+    .await
+    {
+        Ok(token) => axum::response::IntoResponse::into_response(axum::Json(
+            serde_json::json!({
+                "authToken": *token,
+            }),
+        )),
+        Err(Unauthorized) => {
+            tracing::debug!("/authenticate: UNAUTHORIZED");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ))
+        }
+        Err(HookServerError(err)) => {
+            tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("BAD_GATEWAY: {err:?}"),
+            ))
+        }
+        Err(OtherError(err)) => {
+            tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("INTERNAL_SERVER_ERROR: {err:?}"),
+            ))
+        }
+    }
+}
+
 async fn handle_dispatch(
     h_send: &HSend,
     req: HttpRequest,
@@ -324,13 +371,32 @@ async fn handle_dispatch(
 async fn handle_health_get(
     extract::State(state): extract::State<AppState>,
 ) -> response::Response {
+    // NOTE - This health call is currently not protected by auth token.
+    //        Perhaps in the future, this should be configurable so
+    //        infrastructure maintainers can weigh the trade-offs.
+
     handle_dispatch(&state.h_send, HttpRequest::HealthGet).await
 }
 
 async fn handle_boot_get(
     extract::Path(space): extract::Path<String>,
+    headers: axum::http::HeaderMap,
     extract::State(state): extract::State<AppState>,
 ) -> response::Response {
+    let token: Option<Arc<str>> = headers
+        .get("Authorization")
+        .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
+
+    if !state
+        .token_tracker
+        .check_is_token_valid(&state.sbd_config, token)
+    {
+        return axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Unauthorized",
+        ));
+    }
+
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
         Err(err) => return err,
@@ -340,9 +406,24 @@ async fn handle_boot_get(
 
 async fn handle_boot_put(
     extract::Path((space, agent)): extract::Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
+    let token: Option<Arc<str>> = headers
+        .get("Authorization")
+        .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
+
+    if !state
+        .token_tracker
+        .check_is_token_valid(&state.sbd_config, token)
+    {
+        return axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Unauthorized",
+        ));
+    }
+
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
         Err(err) => return err,

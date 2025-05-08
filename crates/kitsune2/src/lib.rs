@@ -40,6 +40,7 @@ pub fn default_builder() -> Builder {
     Builder {
         config: Config::default(),
         verifier: std::sync::Arc::new(Ed25519Verifier),
+        auth_material: None,
         kitsune: factories::CoreKitsuneFactory::create(),
         space: factories::CoreSpaceFactory::create(),
         peer_store: factories::MemPeerStoreFactory::create(),

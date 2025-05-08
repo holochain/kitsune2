@@ -15,6 +15,10 @@ pub struct Builder {
     /// The [Verifier] to use for this Kitsune2 instance.
     pub verifier: DynVerifier,
 
+    /// Any auth_material required to connect to
+    /// sbd/signal and bootstrap services.
+    pub auth_material: Option<Vec<u8>>,
+
     /// The [KitsuneFactory] to be used for creating
     /// [Kitsune] module instances.
     pub kitsune: DynKitsuneFactory,
@@ -70,6 +74,7 @@ impl Builder {
             let Self {
                 config,
                 verifier: _,
+                auth_material: _,
                 kitsune,
                 space,
                 peer_store,
