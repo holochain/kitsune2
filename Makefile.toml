@@ -29,14 +29,9 @@ install_crate = false
 # Tests
 #
 
-[tasks.test-unit]
+[tasks.test]
 command = "cargo"
-args = ["test", "--lib"]
-
-[tasks.test-integration]
-description = "Run integration tests"
-# This task is a placeholder, it will be overridden by the Makefile.toml in the crate
-workspace = true
+args = ["test"]
 
 #
 # Tasks that modify content and are not run on CI
@@ -66,10 +61,6 @@ args = ["format"]
 [tasks.static]
 description = "Run all static checks"
 dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
-
-[tasks.test]
-description = "Run all tests"
-dependencies = ["test-unit", "test-integration"]
 
 [tasks.verify]
 description = "Run all static checks and tests"

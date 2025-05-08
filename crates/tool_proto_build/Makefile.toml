@@ -1,9 +1,5 @@
 extend = "../../Makefile.toml"
 
-[tasks.test-unit]
+[tasks.test]
 clear = true
 script = "echo No unit tests"
-
-[tasks.test-integration]
-clear = true
-script = "echo No integration tests"
