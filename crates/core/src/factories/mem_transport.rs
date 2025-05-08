@@ -130,6 +130,12 @@ impl TxImp for MemTransport {
         })
     }
 
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+        // The memory transport is always connected to everyone but doesn't
+        // expose who is connected here.
+        Box::pin(async move { Ok(vec![]) })
+    }
+
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
             Ok(TransportStats {

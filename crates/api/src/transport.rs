@@ -155,6 +155,9 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// peer, opening a connection if needed.
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>>;
 
+    /// Get the list of connected peers.
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>>;
+
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 }
@@ -217,6 +220,9 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         module: String,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Get the list of connected peers.
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>>;
 
     /// Unregister a space handler and all module handlers for that space.
     fn unregister_space(&self, space: SpaceId) -> BoxFut<'_, ()>;
@@ -350,6 +356,10 @@ impl Transport for DefaultTransport {
             .encode()?;
             self.imp.send(peer, enc).await
         })
+    }
+
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+        self.imp.get_connected_peers()
     }
 
     fn unregister_space(&self, space: SpaceId) -> BoxFut<'_, ()> {
