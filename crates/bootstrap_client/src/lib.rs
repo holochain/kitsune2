@@ -7,8 +7,13 @@ use kitsune2_api::{AgentInfoSigned, DynVerifier, K2Error, K2Result, SpaceId};
 use std::sync::{Arc, Mutex};
 use url::Url;
 
+/// Determine how we should handle an internal request for authorization
+/// on the [AuthMaterial].
 enum AuthType {
+    /// Only authenticate if we don't currently have any token at all.
     IfUninit,
+
+    /// Authenticate even if we have a token. Basically, the token has expired.
     Force,
 }
 

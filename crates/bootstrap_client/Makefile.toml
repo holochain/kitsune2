@@ -2,4 +2,4 @@ extend = "../../Makefile.toml"
 
 [tasks.test-integration]
 command = "cargo"
-args = ["test", "--test", "connect"]
+args = ["test", "--test", "integration"]
