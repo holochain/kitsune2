@@ -330,8 +330,8 @@ impl TxImp for Tx5Transport {
             Ok(self
                 .ep
                 .get_connected_peer_addresses()
-                .into_iter()
-                .filter_map(|u| Url::from_str(u.as_ref()).ok())
+                .iter()
+                .filter_map(|u| Url::from_str(u).ok())
                 .collect())
         })
     }

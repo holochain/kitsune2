@@ -190,7 +190,7 @@ impl Kitsune for CoreKitsune {
                     // Unregister the space and its module handlers from the transport.
                     self.transport().await?.unregister_space(space).await;
 
-                    // Close any connections that were only used by this space.
+                    // Get all the peer URLs of connected peers.
                     let connected_peer_urls = Arc::new(RwLock::new(
                         self.transport()
                             .await?
@@ -238,6 +238,8 @@ impl Kitsune for CoreKitsune {
                     ))
                     .await;
 
+                    // Disconnect from any remaining peers. I.e. those that aren't in use by
+                    // another space.
                     let transport = self.transport().await?;
                     let to_remove = connected_peer_urls.read().unwrap().clone();
                     for url in to_remove {
