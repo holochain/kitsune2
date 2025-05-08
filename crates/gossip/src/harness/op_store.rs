@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// The inner state for the [K2GossipMemoryOpStore].
+/// The inner state for the K2GossipMemoryOpStore.
 ///
 /// This can be treated as the single op store for a Kitsune2 instance.
 pub type GossipOpStore = Arc<RwLock<Kitsune2MemoryOpStoreInner>>;

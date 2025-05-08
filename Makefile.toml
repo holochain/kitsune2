@@ -1,0 +1,108 @@
+#
+# Static checks
+#
+
+[tasks.format-check]
+workspace = false
+command = "cargo"
+args = ["fmt", "--", "--check"]
+
+[tasks.clippy]
+command = "cargo"
+args = ["clippy", "--all-targets", "--", "--deny=warnings"]
+
+[tasks.format-toml-check]
+description = "Check that all TOML files are formatted correctly"
+workspace = false
+dependencies = ["install-taplo"]
+command = "taplo"
+args = ["format", "--check"]
+
+[tasks.doc-check]
+description = "Check documetation generation, similarly to how docs.rs will do it"
+command = "cargo"
+args = ["+nightly", "doc", "--all-features", "--no-deps"]
+env = { RUSTDOCFLAGS = "--cfg docsrs --deny=warnings" }
+install_crate = false
+
+#
+# Tests
+#
+
+[tasks.test-unit]
+command = "cargo"
+args = ["test", "--lib"]
+
+[tasks.test-integration]
+description = "Run integration tests"
+# This task is a placeholder, it will be overridden by the Makefile.toml in the crate
+workspace = true
+
+#
+# Tasks that modify content and are not run on CI
+#
+
+[tasks.format]
+workspace = false
+command = "cargo"
+args = ["fmt"]
+
+[tasks.proto]
+workspace = false
+command = "cargo"
+args = ["run", "--package", "tool_proto_build"]
+cwd = "crates/tool_proto_build"
+
+[tasks.format-toml]
+workspace = false
+dependencies = ["install-taplo"]
+command = "taplo"
+args = ["format"]
+
+#
+# Helper tasks
+#
+
+[tasks.static]
+description = "Run all static checks"
+dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
+
+[tasks.test]
+description = "Run all tests"
+dependencies = ["test-unit", "test-integration"]
+
+[tasks.verify]
+description = "Run all static checks and tests"
+dependencies = ["static", "test"]
+
+[tasks.fix]
+description = "Run all tasks to format, generate and tidy"
+workspace = false
+dependencies = ["format", "proto", "format-toml"]
+
+[tasks.default]
+alias = "verify"
+
+#
+# Other
+#
+
+[tasks.install-taplo]
+workspace = false
+description = "Install taplo-cli"
+install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
+
+[config]
+# Require at least this cargo-make version
+min_version = "0.37.24"
+
+#
+# Improve performance by disabling features we don't need
+#
+
+# Skip loading of all core tasks which saves up a bit on toml parsing and task creation
+skip_core_tasks = true
+# Skips loading Git related environment variables
+skip_git_env_info = true
+# Skips loading rust related environment variables
+skip_rust_env_info = true
