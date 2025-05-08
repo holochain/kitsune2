@@ -133,7 +133,7 @@ rcgen = "0.13"
 # Used in the schema example
 jsonschema = "0.30.0"
 
-#[patch.crates-io]
+[patch.crates-io]
 #sbd-server = { path = "../sbd/rust/sbd-server" }
 #sbd-client = { path = "../sbd/rust/sbd-client" }
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
