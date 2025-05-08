@@ -120,7 +120,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build
-        run: docker buildx build -f docker/kitsune2_bootstrap_srv .
+        run: docker buildx build -f docker/kitsune2_bootstrap_srv/Dockerfile .
 
   docker-build-bootstrap-auth-test:
     needs: static
@@ -130,7 +130,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build
-        run: docker buildx build -f docker/kitsune2_bootstrap_srv_auth_test .
+        run: docker buildx build -f docker/kitsune2_bootstrap_srv_auth_test/Dockerfile .
 
   ci_pass:
     if: ${{ always() }}
