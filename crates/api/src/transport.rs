@@ -670,37 +670,68 @@ impl BandwidthTracker {
         }
     }
 
-    /// Retrieves bandwidth statistics for a given space.
+    /// Retrieves bandwidth statistics for a specific space, or aggregates across all if `None` is provided.
     ///
     /// # Arguments
     ///
-    /// * `space` - The unique identifier for the space.
+    /// * `space` - Optional unique identifier for a space. Use `Some(space_id)` for stats of a specific space,
+    ///             or `None` to get the total across all spaces.
     ///
     /// # Returns
     ///
     /// An `Option<BandwidthStats>` containing the stats if they exist.
-    pub fn get_space_stats(&self, space: SpaceId) -> Option<BandwidthStats> {
-        let stats = self.space_stats.read().unwrap();
-        stats.get(&space).cloned()
+    /// Returns `None` only if the space is specified and not found.
+    pub fn get_space_stats(
+        &self,
+        space: Option<SpaceId>,
+    ) -> Option<BandwidthStats> {
+        if let Some(space) = space {
+            let stats = self.space_stats.read().unwrap();
+            stats.get(&space).cloned()
+        } else {
+            let (bytes_sent, bytes_received) = {
+                let stats = self.space_stats.read().unwrap();
+                stats.iter().fold((0, 0), |(sent, recv), (_, v)| {
+                    (sent + v.bytes_sent, recv + v.bytes_received)
+                })
+            };
+            Some(BandwidthStats {
+                bytes_sent,
+                bytes_received,
+            })
+        }
     }
 
-    /// Retrieves bandwidth statistics for a specific space and module combination.
+    /// Retrieves bandwidth statistics for a specific space and module combination, or aggregates across all if module is `None`.
     ///
     /// # Arguments
     ///
     /// * `space` - The unique identifier for the space.
-    /// * `module` - The module identifier.
+    /// * `module` - Optional module identifier. Use `Some(module_id)` for module-specific stats, or `None` to aggregate over all modules in all spaces.
     ///
     /// # Returns
     ///
     /// An `Option<BandwidthStats>` containing the stats if they exist.
     pub fn get_module_stats(
         &self,
-        space: SpaceId,
-        module: String,
+        space: Option<SpaceId>,
+        module: Option<String>,
     ) -> Option<BandwidthStats> {
-        let stats = self.module_stats.read().unwrap();
-        stats.get(&(space, module)).cloned()
+        if let (Some(space), Some(module)) = (space, module) {
+            let stats = self.module_stats.read().unwrap();
+            stats.get(&(space, module)).cloned()
+        } else {
+            let (bytes_sent, bytes_received) = {
+                let stats = self.module_stats.read().unwrap();
+                stats.iter().fold((0, 0), |(sent, recv), (_, v)| {
+                    (sent + v.bytes_sent, recv + v.bytes_received)
+                })
+            };
+            Some(BandwidthStats {
+                bytes_sent,
+                bytes_received,
+            })
+        }
     }
 }
 

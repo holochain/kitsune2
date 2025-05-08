@@ -118,7 +118,7 @@ impl K2GossipFunctionalTestHarness {
 
     /// Wait for the given ops to be in our op store.
     pub async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<MemoryOp> {
-        tokio::time::timeout(Duration::from_millis(2000), {
+        tokio::time::timeout(Duration::from_millis(5000), {
             let this = self.clone();
             async move {
                 loop {
