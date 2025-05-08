@@ -450,7 +450,22 @@ impl Space for CoreSpace {
                 }
 
                 // also send the tombstone to the bootstrap server
-                self.bootstrap.put(info);
+                self.bootstrap.put(info.clone());
+
+                // and send it to our peers.
+                if let Err(err) = broadcast_agent_info(
+                    self.peer_store.clone(),
+                    self.local_agent_store.clone(),
+                    self.publish.clone(),
+                    info,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        ?err,
+                        "Failed to broadcast agent info tombstone"
+                    )
+                }
             }
         })
     }

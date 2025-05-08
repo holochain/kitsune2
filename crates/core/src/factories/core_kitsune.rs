@@ -191,33 +191,16 @@ impl Kitsune for CoreKitsune {
                     self.transport().await?.unregister_space(space).await;
 
                     // Close any connections that were only used by this space.
-                    let connected_peer_ids = self
-                        .transport()
-                        .await?
-                        .dump_network_stats()
-                        .await?
-                        .connections
-                        .into_iter()
-                        .map(|c| c.pub_key)
-                        .collect::<HashSet<_>>();
-                    let mut our_peers = s.peer_store().get_all().await?;
-                    our_peers.retain(|a| {
-                        if let Some(url) =
-                            a.url.as_ref().and_then(|u| u.peer_id())
-                        {
-                            connected_peer_ids.contains(url)
-                        } else {
-                            false
-                        }
-                    });
-                    let our_peers = Arc::new(RwLock::new(
-                        our_peers
+                    let connected_peer_urls = Arc::new(RwLock::new(
+                        self.transport()
+                            .await?
+                            .get_connected_peers()
+                            .await?
                             .into_iter()
-                            .map(|a| (a.agent.clone(), a))
-                            .collect::<HashMap<_, _>>(),
+                            .collect::<HashSet<_>>(),
                     ));
 
-                    // Check if the peer is being used in any other space.
+                    // Remove any peer URLs that are connected for another space.
                     let spaces = self
                         .map
                         .lock()
@@ -227,21 +210,24 @@ impl Kitsune for CoreKitsune {
                         .collect::<Vec<_>>();
                     futures::future::join_all(spaces.into_iter().map(
                         |fut| -> BoxFut<'_, K2Result<()>> {
-                            let our_peers = our_peers.clone();
+                            let connected_peer_urls =
+                                connected_peer_urls.clone();
                             Box::pin(async move {
                                 if let Ok(s) = fut.await {
-                                    let check_our_peers =
-                                        our_peers.read().unwrap().clone();
-                                    for (agent, _) in check_our_peers {
-                                        if s.peer_store()
-                                            .get(agent.clone())
-                                            .await?
-                                            .is_some()
-                                        {
-                                            our_peers
-                                                .write()
-                                                .unwrap()
-                                                .remove(&agent);
+                                    let check_our_peers = connected_peer_urls
+                                        .read()
+                                        .unwrap()
+                                        .clone();
+                                    let space_agent_infos =
+                                        s.peer_store().get_all().await?;
+                                    for info in space_agent_infos {
+                                        if let Some(url) = &info.url {
+                                            if check_our_peers.contains(url) {
+                                                connected_peer_urls
+                                                    .write()
+                                                    .unwrap()
+                                                    .remove(url);
+                                            }
                                         }
                                     }
                                 }
@@ -253,19 +239,17 @@ impl Kitsune for CoreKitsune {
                     .await;
 
                     let transport = self.transport().await?;
-                    let to_remove = our_peers.read().unwrap().clone();
-                    for (_, info) in to_remove {
-                        if let Some(url) = &info.url {
-                            tracing::info!(
-                                "Disconnecting peer {url} from transport"
-                            );
-                            transport
-                                .disconnect(
-                                    url.clone(),
-                                    Some("Space is being removed".to_string()),
-                                )
-                                .await;
-                        }
+                    let to_remove = connected_peer_urls.read().unwrap().clone();
+                    for url in to_remove {
+                        tracing::info!(
+                            "Disconnecting peer {url} from transport"
+                        );
+                        transport
+                            .disconnect(
+                                url.clone(),
+                                Some("Space is being removed".to_string()),
+                            )
+                            .await;
                     }
                 } else {
                     tracing::warn!(
