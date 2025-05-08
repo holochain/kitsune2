@@ -44,8 +44,8 @@ tokio-rustls = { workspace = true }
 
 [dev-dependencies]
 ureq = { workspace = true, features = ["tls"] }
+rand = { workspace = true }
 rcgen = { workspace = true }
-
 sbd-client = { workspace = true }
 
 [features]

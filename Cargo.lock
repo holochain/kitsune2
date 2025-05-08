@@ -1707,6 +1707,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "num_cpus",
+ "rand 0.8.5",
  "rcgen",
  "rustls",
  "sbd-client",
