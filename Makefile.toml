@@ -83,6 +83,9 @@ workspace = false
 description = "Install taplo-cli"
 install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
 
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
 [config]
 # Require at least this cargo-make version
 min_version = "0.37.24"
