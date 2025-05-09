@@ -325,6 +325,17 @@ impl TxImp for Tx5Transport {
         })
     }
 
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+        Box::pin(async {
+            Ok(self
+                .ep
+                .get_connected_peer_addresses()
+                .iter()
+                .filter_map(|u| Url::from_str(u).ok())
+                .collect())
+        })
+    }
+
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
             let tx5_stats = self.ep.get_stats();
