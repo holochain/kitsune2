@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   SRV_IMAGE_NAME: holochain/kitsune2_bootstrap_srv
-  AUTH_TEST_IMAGE_NAME: holochain/kitsune2_bootstrap_srv_auth_test
+  AUTH_TEST_IMAGE_NAME: holochain/kitsune2_test_auth_hook_server
 
 jobs:
   docker-build-kitsune2-bootstrap-srv:
@@ -66,7 +66,7 @@ jobs:
         id: push
         uses: docker/build-push-action@v6
         with:
-          file: docker/kitsune2_bootstrap_srv_auth_test/Dockerfile
+          file: docker/kitsune2_test_auth_hook_server/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

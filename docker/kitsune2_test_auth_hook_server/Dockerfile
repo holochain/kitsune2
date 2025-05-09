@@ -9,19 +9,16 @@ ADD crates ./crates
 
 # Build the bootstrap server
 RUN cargo install --path ./crates/bootstrap_srv --example test-auth-hook-server
-RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv
 
 FROM debian:bookworm-slim
 
-EXPOSE 443
+EXPOSE 80
 
 # Copy the built binary into the runtime container
 COPY --from=builder /usr/local/cargo/bin/test-auth-hook-server /usr/local/bin/
-COPY --from=builder /usr/local/cargo/bin/kitsune2-bootstrap-srv /usr/local/bin/
-COPY docker/kitsune2_bootstrap_srv_auth_test/start-cmd.sh /usr/local/bin
 
 # Create a directory to store the TLS certificate and key
 RUN mkdir -p /etc/bootstrap_srv
 
 # Run the bootstrap server with production settings
-CMD ["/bin/sh", "/usr/local/bin/start-cmd.sh"]
+CMD ["test-auth-hook-server", "80"]
