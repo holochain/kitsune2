@@ -289,9 +289,12 @@ async fn shutdown_space() {
 
     // Attempt to shut down a space while there are still agents joined.
     let err = kitsune_1.remove_space(TEST_SPACE_ID).await.unwrap_err();
-    assert!(err.to_string().contains("Cannot remove space with local agents"), 
-        "Got error: {err}");
-    
+    assert!(
+        err.to_string()
+            .contains("Cannot remove space with local agents"),
+        "Got error: {err}"
+    );
+
     // Leave the spaces.
     for local_agent in space_1.local_agent_store().get_all().await.unwrap() {
         space_1.local_agent_leave(local_agent.agent().clone()).await;
