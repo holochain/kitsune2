@@ -1,5 +1,1 @@
 extend = "../../Makefile.toml"
-
-[tasks.test-integration]
-command = "cargo"
-args = ["test", "--test", "historical_load"]

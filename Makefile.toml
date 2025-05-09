@@ -29,14 +29,9 @@ install_crate = false
 # Tests
 #
 
-[tasks.test-unit]
+[tasks.test]
 command = "cargo"
-args = ["test", "--lib"]
-
-[tasks.test-integration]
-description = "Run integration tests"
-# This task is a placeholder, it will be overridden by the Makefile.toml in the crate
-workspace = true
+args = ["test"]
 
 #
 # Tasks that modify content and are not run on CI
@@ -67,10 +62,6 @@ args = ["format"]
 description = "Run all static checks"
 dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
 
-[tasks.test]
-description = "Run all tests"
-dependencies = ["test-unit", "test-integration"]
-
 [tasks.verify]
 description = "Run all static checks and tests"
 dependencies = ["static", "test"]
@@ -91,6 +82,9 @@ alias = "verify"
 workspace = false
 description = "Install taplo-cli"
 install_crate = { crate_name = "taplo-cli", version = "0.9.3", binary = "taplo", test_arg = "--help" }
+
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
 
 [config]
 # Require at least this cargo-make version
