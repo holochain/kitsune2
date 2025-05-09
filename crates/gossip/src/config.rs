@@ -109,50 +109,6 @@ pub struct K2GossipConfig {
     /// Default: 10
     #[cfg_attr(feature = "schema", schemars(default))]
     pub max_concurrent_accepted_rounds: u32,
-
-    /// Redundancy target: the number of peers the node should aim to gossip with in each round.
-    ///
-    /// Default: 2
-    #[cfg_attr(feature = "schema", schemars(default))]
-    pub redundancy_target: u64,
-
-    /// Burst ratio: factor that allows short-term spikes in data transfer relative to sustained limits.
-    ///
-    /// For example, a burst ratio of 10 with a 100 Mbps limit allows temporary throughput of up to 1000 Mbps.
-    ///
-    /// Default: 100
-    #[cfg_attr(feature = "schema", schemars(default))]
-    pub burst_ratio: u64,
-
-    /// Enables dynamic arcs for adaptive sharding of the DHT space.
-    ///
-    /// Set to `true` to allow nodes to adjust their coverage based on network conditions.
-    ///
-    /// Default: false
-    #[cfg_attr(feature = "schema", schemars(default))]
-    pub dynamic_arcs: bool,
-
-    /// Disable recent gossip syncing.
-    ///
-    /// Useful for debugging or focusing solely on historical data.
-    ///
-    /// Default: false
-    #[cfg_attr(feature = "schema", schemars(default))]
-    pub disable_recent_gossip: bool,
-
-    /// Disable historical gossip syncing.
-    ///
-    /// Useful for debugging or focusing solely on recent data.
-    ///
-    /// Default: false
-    #[cfg_attr(feature = "schema", schemars(default))]
-    pub disable_historical_gossip: bool,
-
-    /// The gossip strategy to be used by the node (e.g., "sharded-gossip").
-    ///
-    /// Default: "sharded-gossip"
-    #[cfg_attr(feature = "schema", schemars(default))]
-    pub gossip_strategy: String,
 }
 
 impl Default for K2GossipConfig {
@@ -166,12 +122,6 @@ impl Default for K2GossipConfig {
             min_initiate_interval_ms: 300_000,
             round_timeout_ms: 15_000,
             max_concurrent_accepted_rounds: 10,
-            burst_ratio: 100,
-            redundancy_target: 2,
-            disable_historical_gossip: false,
-            disable_recent_gossip: false,
-            dynamic_arcs: false,
-            gossip_strategy: "sharded-gossip".to_string(),
         }
     }
 }

@@ -109,11 +109,9 @@ impl App {
             },
         )?;
 
-        builder
-            .config
-            .set_module_config(&kitsune2_gossip::K2GossipConfig {
-                ..Default::default()
-            })?;
+        builder.config.set_module_config(&BandwidthModConfig {
+            bandwidth: BandwidthConfig::default(),
+        })?;
 
         let h: DynKitsuneHandler = Arc::new(K(print.clone()));
         let k = builder.build().await?;

@@ -59,8 +59,9 @@ mod test {
     use crate::default_builder;
     use bytes::Bytes;
     use kitsune2_api::{
-        BoxFut, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, Id, K2Result,
-        KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId, Timestamp,
+        BandwidthConfig, BandwidthModConfig, BoxFut, DhtArc, DynKitsune,
+        DynSpace, DynSpaceHandler, Id, K2Result, KitsuneHandler, LocalAgent,
+        OpId, SpaceHandler, SpaceId, Timestamp,
     };
     use kitsune2_core::{
         factories::{
@@ -69,7 +70,6 @@ mod test {
         },
         Ed25519LocalAgent,
     };
-    use kitsune2_gossip::{K2GossipConfig, K2GossipModConfig};
     use kitsune2_test_utils::space::{MODULE_GOSSIP, MODULE_PUBLISH};
     use kitsune2_test_utils::{
         bootstrap::TestBootstrapSrv, iter_check, random_bytes,
@@ -141,12 +141,8 @@ mod test {
             .unwrap();
         kitsune_builder
             .config
-            .set_module_config(&K2GossipModConfig {
-                k2_gossip: K2GossipConfig {
-                    initiate_interval_ms: 100,
-                    min_initiate_interval_ms: 75,
-                    initiate_jitter_ms: 10,
-                    round_timeout_ms: 10_000,
+            .set_module_config(&BandwidthModConfig {
+                bandwidth: BandwidthConfig {
                     ..Default::default()
                 },
             })
@@ -629,10 +625,16 @@ mod test {
                 TEST_SPACE_ID.into(),
                 Some(MODULE_PUBLISH.to_string()),
             );
+            let publish_stats_2 = tracker2.get_module_stats(
+                TEST_SPACE_ID.into(),
+                Some(MODULE_PUBLISH.to_string()),
+            );
 
             // Exit the loop once we confirm that publish bytes have been sent
-            if let Some(stats) = publish_stats_1 {
-                if stats.bytes_sent() > 0 {
+            if let (Some(stats1), Some(stats2)) =
+                (publish_stats_1, publish_stats_2)
+            {
+                if stats1.bytes_sent() > 0 || stats2.bytes_sent() > 0 {
                     break;
                 }
             }
@@ -669,5 +671,8 @@ mod test {
                 break;
             }
         });
+
+        println!("{:?}", tracker1);
+        println!("{:?}", tracker2);
     }
 }

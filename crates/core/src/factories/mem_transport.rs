@@ -33,9 +33,19 @@ impl TransportFactory for MemTransportFactory {
         handler: DynTxHandler,
     ) -> BoxFut<'static, K2Result<DynTransport>> {
         Box::pin(async move {
-            let handler = TxImpHnd::new(handler);
+            let bandwidth_config: Arc<BandwidthModConfig> = Arc::new(
+                _builder
+                    .config
+                    .get_module_config()
+                    .unwrap_or_else(|_| BandwidthModConfig::default()),
+            );
+            let handler = TxImpHnd::new(handler, bandwidth_config.clone());
             let imp = MemTransport::create(handler.clone()).await;
-            Ok(DefaultTransport::create(&handler, imp))
+            Ok(DefaultTransport::create(
+                &handler,
+                imp,
+                bandwidth_config.clone(),
+            ))
         })
     }
 }

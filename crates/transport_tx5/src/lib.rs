@@ -164,6 +164,13 @@ impl TransportFactory for Tx5TransportFactory {
             let config: Tx5TransportModConfig =
                 builder.config.get_module_config()?;
 
+            let bandwidth_config: Arc<BandwidthModConfig> = Arc::new(
+                builder
+                    .config
+                    .get_module_config()
+                    .unwrap_or_else(|_| BandwidthModConfig::default()),
+            );
+
             let mut tx5_init_config = tx5_core::Tx5InitConfig {
                 tracing_enabled: config.tx5_transport.tracing_enabled,
                 ..Default::default()
@@ -179,12 +186,15 @@ impl TransportFactory for Tx5TransportFactory {
 
             // Ignore errors. Only the first call of this can succeed.
             let _ = tx5_init_config.set_as_global_default();
-
-            let handler = TxImpHnd::new(handler);
+            let handler = TxImpHnd::new(handler, bandwidth_config.clone());
             let imp =
                 Tx5Transport::create(config.tx5_transport, handler.clone())
                     .await?;
-            Ok(DefaultTransport::create(&handler, imp))
+            Ok(DefaultTransport::create(
+                &handler,
+                imp,
+                bandwidth_config.clone(),
+            ))
         })
     }
 }

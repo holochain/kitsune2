@@ -19,18 +19,23 @@ pub struct TxImpHnd {
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
     tracker: Arc<BandwidthTracker>,
+    config: Arc<BandwidthModConfig>,
 }
 
 impl TxImpHnd {
     /// When constructing a [Transport] from a [TransportFactory],
     /// you need a [TxImpHnd] for calling transport events.
     /// Pass the handler into here to construct one.
-    pub fn new(handler: DynTxHandler) -> Arc<Self> {
+    pub fn new(
+        handler: DynTxHandler,
+        config: Arc<BandwidthModConfig>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             handler,
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
             tracker: Arc::new(BandwidthTracker::new()),
+            config,
         })
     }
 
@@ -102,7 +107,7 @@ impl TxImpHnd {
             ..
         } = data;
         let len = data.len() as u64;
-
+        println!("Bandwidth config {:?}", self.config);
         match ty {
             K2WireType::Unspecified => Ok(()),
             K2WireType::Preflight => {
@@ -256,6 +261,7 @@ pub struct DefaultTransport {
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
     tracker: Arc<BandwidthTracker>,
+    config: Arc<BandwidthModConfig>,
 }
 
 impl DefaultTransport {
@@ -264,12 +270,17 @@ impl DefaultTransport {
     /// to produce the [Transport] struct.
     ///
     /// [DefaultTransport] is built to be used with the provided [TxImpHnd].
-    pub fn create(hnd: &TxImpHnd, imp: DynTxImp) -> DynTransport {
+    pub fn create(
+        hnd: &TxImpHnd,
+        imp: DynTxImp,
+        config: Arc<BandwidthModConfig>,
+    ) -> DynTransport {
         let out: DynTransport = Arc::new(DefaultTransport {
             imp,
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
             tracker: hnd.tracker.clone(),
+            config,
         });
         out
     }
@@ -372,6 +383,7 @@ impl Transport for DefaultTransport {
                 module: Some(module.clone()),
             })
             .encode()?;
+            println!("Bandwidth config {:?}", self.config);
             self.imp
                 .send(peer, enc)
                 .await
@@ -739,4 +751,98 @@ impl Default for BandwidthTracker {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Configuration for managing peer-to-peer (P2P) bandwidth usage, session timing,
+/// concurrency limits, and data propagation behavior. This struct is protocol-agnostic
+/// and can be reused across various networked modules.
+///
+/// ### Default behavior:
+/// - Allows up to 1MB per transmission or request.
+/// - Uses jittered intervals for communication to avoid synchronization.
+/// - Permits up to 4 concurrent sessions.
+/// - Disables recent/historical data filtering by default.
+/// - Disables adaptive behavior by default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BandwidthConfig {
+    /// Maximum number of bytes allowed to be sent in a single data exchange.
+    /// Default: 1_000_000 bytes (1 MB).
+    pub max_send_bytes: usize,
+
+    /// Maximum number of bytes allowed to be received in a single peer request.
+    /// Default: 1_000_000 bytes (1 MB).
+    pub max_receive_bytes: usize,
+
+    /// Initial delay (in milliseconds) before starting the first communication round.
+    /// Default: 200 ms.
+    pub initial_transmit_interval_ms: u64,
+
+    /// Base interval (in milliseconds) between communication rounds.
+    /// Default: 1000 ms.
+    pub transmit_interval_ms: u64,
+
+    /// Random jitter (in milliseconds) added to intervals to reduce synchronization artifacts.
+    /// Default: 200 ms.
+    pub transmit_jitter_ms: u64,
+
+    /// Minimum interval (in milliseconds) allowed between two consecutive transmission rounds.
+    /// Default: 50 ms.
+    pub min_transmit_interval_ms: u64,
+
+    /// Timeout (in milliseconds) for completing a communication round.
+    /// Default: 4000 ms.
+    pub round_timeout_ms: u64,
+
+    /// Maximum number of concurrent communication sessions accepted from peers.
+    /// Default: 4.
+    pub max_concurrent_sessions: usize,
+
+    /// Factor controlling data redundancy during propagation (how many peers a message reaches).
+    /// Default: 2.0 (each item is expected to reach 2 peers).
+    pub redundancy_factor: f64,
+
+    /// Multiplier allowing burst traffic before throttling kicks in.
+    /// Default: 100.0.
+    pub burst_factor: f64,
+
+    /// Whether to enable adaptive behavior (e.g., automatic resource scaling).
+    /// Default: false.
+    pub adaptive_mode: bool,
+
+    /// Whether to disable transmission of recent data (e.g., to prevent duplicate sends).
+    /// Default: false.
+    pub disable_recent_data: bool,
+
+    /// Whether to disable transmission of older/historical data.
+    /// Default: false.
+    pub disable_historical_data: bool,
+}
+
+impl Default for BandwidthConfig {
+    fn default() -> Self {
+        Self {
+            max_send_bytes: 1_000_000,
+            max_receive_bytes: 1_000_000,
+            initial_transmit_interval_ms: 200,
+            transmit_interval_ms: 1000,
+            transmit_jitter_ms: 200,
+            min_transmit_interval_ms: 50,
+            round_timeout_ms: 4000,
+            max_concurrent_sessions: 4,
+            redundancy_factor: 2.0,
+            burst_factor: 100.0,
+            adaptive_mode: false,
+            disable_recent_data: false,
+            disable_historical_data: false,
+        }
+    }
+}
+
+/// Module-level configuration for Bandwidth
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BandwidthModConfig {
+    /// Bandwidth Configuration
+    pub bandwidth: BandwidthConfig,
 }
