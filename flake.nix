@@ -46,7 +46,7 @@
           devShells = {
             default = pkgs.mkShell {
               packages = with pkgs; [
-                rust
+                rustup
                 cargo-make
                 taplo
                 perl
@@ -55,6 +55,11 @@
               ];
 
               LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+
+              shellHook = ''
+                ${pkgs.rustup}/bin/rustup toolchain install ${rust.version}
+                ${pkgs.rustup}/bin/rustup toolchain install nightly
+              '';
             };
           };
         };
