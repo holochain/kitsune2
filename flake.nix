@@ -48,6 +48,7 @@
               packages = with pkgs; [
                 rust
                 cargo-make
+                taplo
                 perl
                 cmake
                 openssl
