@@ -109,6 +109,12 @@ impl App {
             },
         )?;
 
+        builder
+            .config
+            .set_module_config(&kitsune2_gossip::K2GossipConfig {
+                ..Default::default()
+            })?;
+
         let h: DynKitsuneHandler = Arc::new(K(print.clone()));
         let k = builder.build().await?;
         k.register_handler(h).await?;
