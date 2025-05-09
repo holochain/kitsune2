@@ -220,16 +220,24 @@ impl Kitsune for CoreKitsune {
                                         .clone();
                                     let space_agent_infos =
                                         s.peer_store().get_all().await?;
-                                    for info in space_agent_infos {
-                                        if let Some(url) = &info.url {
-                                            if check_our_peers.contains(url) {
-                                                connected_peer_urls
-                                                    .write()
-                                                    .unwrap()
-                                                    .remove(url);
+
+                                    let to_remove = space_agent_infos
+                                        .into_iter()
+                                        .filter_map(|a| {
+                                            if let Some(url) = &a.url {
+                                                check_our_peers
+                                                    .contains(url)
+                                                    .then_some(url.clone())
+                                            } else {
+                                                None
                                             }
-                                        }
-                                    }
+                                        })
+                                        .collect::<HashSet<_>>();
+
+                                    connected_peer_urls
+                                        .write()
+                                        .unwrap()
+                                        .retain(|u| !to_remove.contains(u));
                                 }
 
                                 Ok(())

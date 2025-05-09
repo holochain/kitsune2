@@ -133,16 +133,18 @@ impl TxImp for MemTransport {
     fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
         // The memory transport is always connected to everyone but doesn't
         // expose who is connected here.
-        Box::pin(async move { Ok(vec![]) })
+        Box::pin(async move {
+            Err(K2Error::other(
+                "get_connected_peers is not implemented for the mem transport",
+            ))
+        })
     }
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
-            Ok(TransportStats {
-                backend: "kitsune2-core-mem".to_string(),
-                peer_urls: Vec::with_capacity(0),
-                connections: Vec::with_capacity(0),
-            })
+            Err(K2Error::other(
+                "dump_network_stats is not implemented for the mem transport",
+            ))
         })
     }
 }
