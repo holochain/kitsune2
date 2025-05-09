@@ -106,6 +106,12 @@ impl App {
             },
         )?;
 
+        builder
+            .config
+            .set_module_config(&kitsune2_gossip::K2GossipConfig {
+                ..Default::default()
+            })?;
+
         let h: DynKitsuneHandler = Arc::new(K(print.clone()));
         let k = builder.build().await?;
         k.register_handler(h).await?;
@@ -127,6 +133,8 @@ impl App {
 
     pub async fn stats(&self) -> K2Result<()> {
         let stats = self.t.dump_network_stats().await?;
+        let tracker = self.t.get_bandwidth_tracker();
+        self.p.print_line(format!("{tracker:#?}"));
         self.p.print_line(format!("{stats:#?}"));
         Ok(())
     }

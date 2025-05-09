@@ -97,6 +97,12 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// available briefly.
     fn inform_ops_stored(&self, ops: Vec<StoredOp>)
         -> BoxFut<'_, K2Result<()>>;
+
+    /// Returns a reference-counted handle to the [`BandwidthTracker`] used to track bandwidth usage.
+    ///
+    /// This tracker keeps track of the number of bytes sent and received,
+    /// both per space and per (space, module) pair, for this transport instance.
+    fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker>;
 }
 
 /// Trait-object [Space].

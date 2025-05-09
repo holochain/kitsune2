@@ -469,6 +469,10 @@ impl Space for CoreSpace {
     ) -> BoxFut<'_, K2Result<()>> {
         self.gossip.inform_ops_stored(ops)
     }
+
+    fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker> {
+        self.tx.get_bandwidth_tracker()
+    }
 }
 
 async fn check_agent_infos(

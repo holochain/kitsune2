@@ -17,6 +17,7 @@ kitsune2 = { workspace = true }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_transport_tx5 = { workspace = true }
+kitsune2_gossip = { workspace = true }
 rustls = { workspace = true }
 rustyline = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
