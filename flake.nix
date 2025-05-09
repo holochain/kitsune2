@@ -47,6 +47,7 @@
             default = pkgs.mkShell {
               packages = with pkgs; [
                 rust
+                cargo-make
                 perl
                 cmake
                 openssl
