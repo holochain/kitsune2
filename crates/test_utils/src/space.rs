@@ -8,5 +8,5 @@ pub const TEST_SPACE_ID: SpaceId =
     SpaceId(Id(Bytes::from_static(b"test_space")));
 /// Publish module
 pub const MODULE_PUBLISH: &str = "Publish";
-/// Publish Gossip
+/// Gossip module
 pub const MODULE_GOSSIP: &str = "k2gossip";
