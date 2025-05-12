@@ -155,6 +155,9 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// peer, opening a connection if needed.
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>>;
 
+    /// Get the list of connected peers.
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>>;
+
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 }
@@ -217,6 +220,12 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         module: String,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Get the list of connected peers.
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>>;
+
+    /// Unregister a space handler and all module handlers for that space.
+    fn unregister_space(&self, space: SpaceId) -> BoxFut<'_, ()>;
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
@@ -346,6 +355,21 @@ impl Transport for DefaultTransport {
             })
             .encode()?;
             self.imp.send(peer, enc).await
+        })
+    }
+
+    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+        self.imp.get_connected_peers()
+    }
+
+    fn unregister_space(&self, space: SpaceId) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            // Remove the space handler.
+            self.space_map.lock().unwrap().remove(&space);
+
+            // Remove all module handlers for this space.
+            // Done by keeping all module handlers that are not for this space.
+            self.mod_map.lock().unwrap().retain(|(s, _), _| s != &space);
         })
     }
 

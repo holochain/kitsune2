@@ -1,8 +1,8 @@
 //! The core kitsune implementation provided by Kitsune2.
 
 use kitsune2_api::*;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 
 /// The core kitsune implementation provided by Kitsune2.
 /// You probably will have no reason to use something other than this.
@@ -167,6 +167,109 @@ impl Kitsune for CoreKitsune {
         Box::pin(async move {
             let fut = self.map.lock().unwrap().get(&space)?.clone();
             fut.await.ok()
+        })
+    }
+
+    fn remove_space(&self, space: SpaceId) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let fut = self.map.lock().unwrap().get(&space).cloned();
+            if let Some(fut) = fut {
+                if let Ok(s) = fut.await {
+                    // Just a point in time check, try to help the user out if they accidentally
+                    // try to remove a space with active local agents.
+                    // Those agents need to leave the space before it should be removed.
+                    if !s.local_agent_store().get_all().await?.is_empty() {
+                        return Err(K2Error::other(
+                            "Cannot remove space with local agents",
+                        ));
+                    }
+
+                    // Checks passed, remove our reference to the space.
+                    self.map.lock().unwrap().remove(&space);
+
+                    // Unregister the space and its module handlers from the transport.
+                    self.transport().await?.unregister_space(space).await;
+
+                    // Get all the peer URLs of connected peers.
+                    let connected_peer_urls = Arc::new(RwLock::new(
+                        self.transport()
+                            .await?
+                            .get_connected_peers()
+                            .await?
+                            .into_iter()
+                            .collect::<HashSet<_>>(),
+                    ));
+
+                    // Remove any peer URLs that are connected for another space.
+                    let spaces = self
+                        .map
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|s| s.1.clone())
+                        .collect::<Vec<_>>();
+                    futures::future::join_all(spaces.into_iter().map(
+                        |fut| -> BoxFut<'_, K2Result<()>> {
+                            let connected_peer_urls =
+                                connected_peer_urls.clone();
+                            Box::pin(async move {
+                                if let Ok(s) = fut.await {
+                                    let check_our_peers = connected_peer_urls
+                                        .read()
+                                        .unwrap()
+                                        .clone();
+                                    let space_agent_infos =
+                                        s.peer_store().get_all().await?;
+
+                                    let to_remove = space_agent_infos
+                                        .into_iter()
+                                        .filter_map(|a| {
+                                            if let Some(url) = &a.url {
+                                                check_our_peers
+                                                    .contains(url)
+                                                    .then_some(url.clone())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect::<HashSet<_>>();
+
+                                    connected_peer_urls
+                                        .write()
+                                        .unwrap()
+                                        .retain(|u| !to_remove.contains(u));
+                                }
+
+                                Ok(())
+                            })
+                        },
+                    ))
+                    .await;
+
+                    // Disconnect from any remaining peers. I.e. those that aren't in use by
+                    // another space.
+                    let transport = self.transport().await?;
+                    let to_remove = connected_peer_urls.read().unwrap().clone();
+                    for url in to_remove {
+                        tracing::info!(
+                            "Disconnecting peer {url} from transport"
+                        );
+                        transport
+                            .disconnect(
+                                url.clone(),
+                                Some("Space is being removed".to_string()),
+                            )
+                            .await;
+                    }
+                } else {
+                    tracing::warn!(
+                        "Space exists, but failed to get a handle to it"
+                    );
+                }
+            } else {
+                tracing::info!("Space {space:?} not found");
+            }
+            Ok(())
         })
     }
 
