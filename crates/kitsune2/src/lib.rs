@@ -141,11 +141,7 @@ mod test {
             .unwrap();
         kitsune_builder
             .config
-            .set_module_config(&BandwidthModConfig {
-                bandwidth: BandwidthConfig {
-                    ..Default::default()
-                },
-            })
+            .set_module_config(&BandwidthModConfig::default())
             .unwrap();
 
         let kitsune_handler = Arc::new(TestKitsuneHandler);
