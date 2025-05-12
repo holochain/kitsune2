@@ -109,9 +109,9 @@ impl App {
             },
         )?;
 
-        builder.config.set_module_config(&BandwidthModConfig {
-            bandwidth: BandwidthConfig::default(),
-        })?;
+        builder
+            .config
+            .set_module_config(&BandwidthModConfig::default())?;
 
         let h: DynKitsuneHandler = Arc::new(K(print.clone()));
         let k = builder.build().await?;
