@@ -165,10 +165,7 @@ impl TransportFactory for Tx5TransportFactory {
                 builder.config.get_module_config()?;
 
             let bandwidth_config: Arc<BandwidthModConfig> = Arc::new(
-                builder
-                    .config
-                    .get_module_config()
-                    .unwrap_or_else(|_| BandwidthModConfig::default()),
+                builder.config.get_module_config().unwrap_or_default(),
             );
 
             let mut tx5_init_config = tx5_core::Tx5InitConfig {
