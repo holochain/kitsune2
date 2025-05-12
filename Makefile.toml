@@ -88,7 +88,7 @@ CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
 
 [config]
 # Require at least this cargo-make version
-min_version = "0.37.24"
+min_version = "0.37.23"
 
 #
 # Improve performance by disabling features we don't need
