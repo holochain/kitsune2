@@ -20,6 +20,7 @@ kitsune2_transport_tx5 = { workspace = true }
 rustls = { workspace = true }
 rustyline = { workspace = true, features = ["derive"] }
 sha2 = { workspace = true }
+strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-appender = "0.2.3"

@@ -1,5 +1,20 @@
 use std::borrow::Cow;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+
+use strum::{
+    EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
+};
+
+#[derive(IntoStaticStr, EnumMessage, EnumIter, EnumString)]
+#[strum(serialize_all = "lowercase", prefix = "/")]
+enum Command {
+    #[strum(message = "print this help")]
+    Help,
+
+    #[strum(message = "quit this program")]
+    Exit,
+}
 
 type DynPrinter = Box<dyn FnMut(String) + 'static + Send>;
 type SyncPrinter = Arc<Mutex<Option<DynPrinter>>>;
@@ -30,17 +45,18 @@ impl Default for Print {
     }
 }
 
-const COMMAND_LIST: &[(&str, &str)] =
-    &[("/help", "print this help"), ("/exit", "quit this program")];
-
 /// Print out command help.
 fn help(command_list: &[(&str, &str)]) {
     println!("\n# Kitsune2 Showcase chat and file sharing app\n");
     for (cmd, help) in command_list {
         println!("{cmd} - {help}");
     }
-    for (cmd, help) in COMMAND_LIST {
-        println!("{cmd} - {help}");
+    for cmd in Command::iter() {
+        println!(
+            "{} - {}",
+            Into::<&str>::into(&cmd),
+            cmd.get_message().unwrap_or_default()
+        );
     }
 }
 
@@ -72,15 +88,17 @@ pub fn readline(
 
     // loop over input lines
     while let Ok(line) = line_editor.readline(&prompt) {
-        if line.starts_with("/help") {
-            help(command_list);
-            continue;
-        } else if line.starts_with("/exit") {
-            break;
-        }
-
-        if lines.blocking_send(line).is_err() {
-            break;
+        match line
+            .strip_prefix("/")
+            .and_then(|s| Command::from_str(s).ok())
+        {
+            Some(Command::Help) => help(command_list),
+            Some(Command::Exit) => break,
+            None => {
+                if lines.blocking_send(line).is_err() {
+                    break;
+                }
+            }
         }
     }
 }
@@ -131,7 +149,7 @@ impl rustyline::hint::Hinter for H {
                 return Some(Hint(c.trim_start_matches(line)));
             }
         }
-        for (c, _) in COMMAND_LIST {
+        for c in Command::iter().map(Into::<&'static str>::into) {
             if c.starts_with(line) {
                 return Some(Hint(c.trim_start_matches(line)));
             }
@@ -170,7 +188,7 @@ impl rustyline::completion::Completer for H {
                 out.push(Candidate(c.trim_start_matches(line)));
             }
         }
-        for (c, _) in COMMAND_LIST {
+        for c in Command::iter().map(Into::<&'static str>::into) {
             if c.starts_with(line) {
                 out.push(Candidate(c.trim_start_matches(line)));
             }
