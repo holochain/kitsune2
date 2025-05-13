@@ -2821,9 +2821,9 @@ dependencies = [
 
 [[package]]
 name = "sbd-client"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b452ee98b4f998c06974eb8d76adb15c8ee690eee909502d97320b137004500"
+checksum = "b6fbb93bf789bd1a24deed43931e46d1280c1b97d343eba7e5db28890e2c419c"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -2844,9 +2844,9 @@ dependencies = [
 
 [[package]]
 name = "sbd-e2e-crypto-client"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80c29c3ca89b21e2ce97249cd0976ddd9190ebbb41b5ac7d97aad96c0bf493e5"
+checksum = "0d97d0056c4c2826c48b8bbd94b65e35234800cda25c3a636d9cd81b28e4a102"
 dependencies = [
  "bytes",
  "sbd-client",
@@ -2857,9 +2857,9 @@ dependencies = [
 
 [[package]]
 name = "sbd-server"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a04b28404386ab199a7a588eae490eefcdead523779db5b65e05562f1128123"
+checksum = "66c65a7965b49c516a8a779bbad378ad1077cfd631b56ed1340623f2158214f8"
 dependencies = [
  "anstyle",
  "axum 0.8.4",
@@ -2872,6 +2872,7 @@ dependencies = [
  "rand 0.8.5",
  "rustls",
  "rustls-pemfile",
+ "serde",
  "serde_json",
  "slab",
  "tokio",
@@ -3552,9 +3553,9 @@ dependencies = [
 
 [[package]]
 name = "tx5"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ccd157ac19af148d622c5db1c28932f51e88429d608e5722dc7f5075e0c9101"
+checksum = "64e30ac79e042ea8342a28ba7bc191bea03823a22d8c74cb266cea46e72bec57"
 dependencies = [
  "base64",
  "futures",
@@ -3570,9 +3571,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-connection"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a74eef5d805227321dd68030141d7373b4d22dc018aadf84d1fe761550d1cb72"
+checksum = "0920d5196e386dc2f99573b25a3c5023054446975a0f19bde99d5ae812ea482d"
 dependencies = [
  "bit_field",
  "datachannel",
@@ -3588,9 +3589,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-core"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29768572a247f1bcd6048cf6d34b808408b01a4b0610a08c2bf4e3c9eb2c29f0"
+checksum = "c7168c24343e244c9513089d03116aecdf96eda95cb9edc4de81dc72d1bd933d"
 dependencies = [
  "app_dirs2",
  "base64",
@@ -3606,9 +3607,9 @@ dependencies = [
 
 [[package]]
 name = "tx5-signal"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22399b41623c926953f95c53e09d49f0d0054f1169a333c18647f59c3cf0d54"
+checksum = "5a8b450b2b8b76f7e8ce4a30804a82dd9a3e30e04fc4ca14768ea393d07e20e8"
 dependencies = [
  "rand 0.8.5",
  "sbd-e2e-crypto-client",

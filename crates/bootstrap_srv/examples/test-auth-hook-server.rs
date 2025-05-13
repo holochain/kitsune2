@@ -3,12 +3,13 @@ use rand::Rng;
 
 #[tokio::main]
 async fn main() {
-    const USAGE: &str = "usage: test-auth-hook-server <port>";
+    const USAGE: &str = "usage: test-auth-hook-server <0.0.0.0:0>";
     let mut arg_iter = std::env::args();
     arg_iter.next().expect(USAGE);
-    let port: u16 = arg_iter.next().expect(USAGE).parse().expect(USAGE);
+    let bind: std::net::SocketAddr =
+        arg_iter.next().expect(USAGE).parse().expect(USAGE);
 
-    println!("#STARTUP_PORT#{port}#");
+    println!("#STARTUP_AT#{bind}#");
 
     async fn handle_auth(body: bytes::Bytes) -> axum::response::Response {
         if &body[..] != b"valid" {
@@ -34,7 +35,7 @@ async fn main() {
     let h2 = h.clone();
 
     let task = tokio::task::spawn(async move {
-        axum_server::bind(([127, 0, 0, 1], port).into())
+        axum_server::bind(bind)
             .handle(h2)
             .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .await
