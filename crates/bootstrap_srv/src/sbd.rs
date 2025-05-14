@@ -155,7 +155,7 @@ pub async fn handle_sbd(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let token: Option<Arc<str>> = headers
-        .get("Authenticate")
+        .get("Authorization")
         .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
 
     let maybe_auth = Some((token.clone(), state.token_tracker.clone()));
