@@ -161,16 +161,15 @@ impl rustyline::completion::Completer for Helper {
         pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        let mut out = Vec::new();
-        for cmd in Command::iter().map(Into::<&'static str>::into) {
-            if cmd.starts_with(line) {
-                let candidate = Self::Candidate {
-                    display: cmd.to_string(),
-                    replacement: cmd.trim_start_matches(line).to_string(),
-                };
-                out.push(candidate);
-            }
-        }
-        Ok((pos, out))
+        let candidates = Command::iter()
+            .map(Into::<&'static str>::into)
+            .filter(|c| c.starts_with(line))
+            .map(|c| Self::Candidate {
+                display: c.to_string(),
+                replacement: c.trim_start_matches(line).to_string(),
+            })
+            .collect();
+
+        Ok((pos, candidates))
     }
 }
