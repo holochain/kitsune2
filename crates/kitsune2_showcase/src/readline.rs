@@ -2,10 +2,13 @@ use std::borrow::Cow;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+use bytes::Bytes;
 use rustyline::error::ReadlineError;
 use strum::{
     EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
 };
+
+use crate::app::App;
 
 #[derive(IntoStaticStr, EnumMessage, EnumIter, EnumString)]
 #[strum(serialize_all = "lowercase", prefix = "/")]
@@ -71,11 +74,7 @@ fn help() {
 }
 
 /// Blocking loop waiting for user input / handling commands.
-pub fn readline(
-    nick: String,
-    print: Print,
-    lines: tokio::sync::mpsc::Sender<String>,
-) {
+pub async fn readline(nick: String, print: Print, app: App) {
     // print command help
     help();
 
@@ -96,9 +95,21 @@ pub fn readline(
     });
     *print.0.lock().unwrap() = Some(p);
 
-    // loop over input lines
+    let line_editor = Arc::new(Mutex::new(line_editor));
+
     loop {
-        match line_editor.readline(&prompt) {
+        let line_editor_2 = line_editor.clone();
+        let prompt = prompt.clone();
+        let line = tokio::task::spawn_blocking(move || {
+            line_editor_2
+                .lock()
+                .expect("failed to get lock for line_editor")
+                .readline(&prompt)
+        })
+        .await
+        .expect("Failed to spawn blocking task to read stdin");
+
+        match line {
             Err(ReadlineError::Eof) => break,
             Err(ReadlineError::Interrupted) => println!("^C"),
             Err(err) => {
@@ -106,7 +117,11 @@ pub fn readline(
                 break;
             }
             Ok(line) if !line.trim().is_empty() => {
-                line_editor.add_history_entry(line.clone()).unwrap();
+                line_editor
+                    .lock()
+                    .expect("failed to get lock for line_editor")
+                    .add_history_entry(line.clone())
+                    .unwrap();
                 if let Some(cmd_str) = line.strip_prefix("/") {
                     match Command::from_str(cmd_str) {
                         Ok(Command::Help) => help(),
@@ -114,11 +129,7 @@ pub fn readline(
                         Ok(Command::Share | Command::List | Command::Fetch) => {
                             println!("NOT IMPLEMENTED");
                         }
-                        Ok(Command::Stats) => {
-                            if lines.blocking_send(line).is_err() {
-                                break;
-                            }
-                        }
+                        Ok(Command::Stats) => app.stats().await.unwrap(),
                         Err(_) => {
                             eprintln!("Invalid Command. Valid commands are:");
                             Command::iter().for_each(|cmd| {
@@ -130,8 +141,13 @@ pub fn readline(
                             });
                         }
                     }
-                } else if lines.blocking_send(line).is_err() {
-                    break;
+                } else {
+                    // Not a command so send as chat message
+                    app.chat(Bytes::copy_from_slice(line.as_bytes()))
+                        .await
+                        .unwrap_or_else(|err| {
+                            println!("Failed to send chat message: {err}")
+                        });
                 }
             }
             _ => {}

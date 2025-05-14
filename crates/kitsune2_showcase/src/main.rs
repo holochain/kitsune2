@@ -1,5 +1,3 @@
-use bytes::Bytes;
-
 mod app;
 mod readline;
 
@@ -22,7 +20,8 @@ struct Args {
     nick: String,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let pid = std::process::id();
     let file_appender = tracing_appender::rolling::never(
         "./logs",
@@ -37,41 +36,8 @@ fn main() {
     let nick = args.nick.clone();
 
     let print = readline::Print::default();
-    let (line_send, line_recv) = tokio::sync::mpsc::channel(2);
 
-    // spawn a new thread for tokio runtime, all kitsune stuff
-    // will be in tokio task threads
-    let print2 = print.clone();
-    std::thread::spawn(move || {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async_main(print2, args, line_recv));
-    });
-
-    // readline on the main thread
-    readline::readline(nick, print, line_send);
-}
-
-async fn async_main(
-    print: readline::Print,
-    args: Args,
-    mut line_recv: tokio::sync::mpsc::Receiver<String>,
-) {
-    // create the kitsune connection
     let app = app::App::new(print.clone(), args).await.unwrap();
 
-    // loop over cli input lines either executing commands or sending chats
-    while let Some(line) = line_recv.recv().await {
-        if line.starts_with("/stats") {
-            app.stats().await.unwrap();
-        } else if line.starts_with("/") {
-            print.print_line("NOT IMPLEMENTED".into());
-        } else {
-            app.chat(Bytes::copy_from_slice(line.as_bytes()))
-                .await
-                .unwrap();
-        }
-    }
+    readline::readline(nick, print, app).await;
 }
