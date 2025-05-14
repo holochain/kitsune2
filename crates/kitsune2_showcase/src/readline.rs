@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+use rustyline::error::ReadlineError;
 use strum::{
     EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
 };
@@ -96,20 +97,34 @@ pub fn readline(
     *print.0.lock().unwrap() = Some(p);
 
     // loop over input lines
-    while let Ok(line) = line_editor.readline(&prompt) {
-        line_editor.add_history_entry(line.clone()).unwrap();
-        match line
-            .strip_prefix("/")
-            .and_then(|s| Command::from_str(s).ok())
-        {
-            Some(Command::Help) => help(),
-            Some(Command::Exit) => break,
-            Some(Command::Share | Command::List | Command::Fetch) => {
-                println!("NOT IMPLEMENTED");
+    loop {
+        match line_editor.readline(&prompt) {
+            Err(ReadlineError::Eof) => break,
+            Err(ReadlineError::Interrupted) => {
+                println!("^C");
+                continue;
             }
-            Some(Command::Stats) | None => {
-                if lines.blocking_send(line).is_err() {
-                    break;
+            Err(ReadlineError::WindowResized) => continue,
+            Err(err) => {
+                eprintln!("Failed to read line: {err}");
+                break;
+            }
+            Ok(line) => {
+                line_editor.add_history_entry(line.clone()).unwrap();
+                match line
+                    .strip_prefix("/")
+                    .and_then(|s| Command::from_str(s).ok())
+                {
+                    Some(Command::Help) => help(),
+                    Some(Command::Exit) => break,
+                    Some(Command::Share | Command::List | Command::Fetch) => {
+                        println!("NOT IMPLEMENTED");
+                    }
+                    Some(Command::Stats) | None => {
+                        if lines.blocking_send(line).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         }
