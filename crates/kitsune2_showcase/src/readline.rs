@@ -111,20 +111,31 @@ pub fn readline(
             }
             Ok(line) => {
                 line_editor.add_history_entry(line.clone()).unwrap();
-                match line
-                    .strip_prefix("/")
-                    .and_then(|s| Command::from_str(s).ok())
-                {
-                    Some(Command::Help) => help(),
-                    Some(Command::Exit) => break,
-                    Some(Command::Share | Command::List | Command::Fetch) => {
-                        println!("NOT IMPLEMENTED");
-                    }
-                    Some(Command::Stats) | None => {
-                        if lines.blocking_send(line).is_err() {
-                            break;
+                if let Some(cmd_str) = line.strip_prefix("/") {
+                    match Command::from_str(cmd_str) {
+                        Ok(Command::Help) => help(),
+                        Ok(Command::Exit) => break,
+                        Ok(Command::Share | Command::List | Command::Fetch) => {
+                            println!("NOT IMPLEMENTED");
+                        }
+                        Ok(Command::Stats) => {
+                            if lines.blocking_send(line).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("Invalid Command. Valid commands are:");
+                            Command::iter().for_each(|cmd| {
+                                eprintln!(
+                                    "{} - {}",
+                                    Into::<&str>::into(&cmd),
+                                    cmd.get_message().unwrap_or_default()
+                                );
+                            });
                         }
                     }
+                } else if lines.blocking_send(line).is_err() {
+                    break;
                 }
             }
         }
