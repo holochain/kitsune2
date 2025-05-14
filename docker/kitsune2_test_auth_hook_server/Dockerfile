@@ -21,4 +21,4 @@ COPY --from=builder /usr/local/cargo/bin/test-auth-hook-server /usr/local/bin/
 RUN mkdir -p /etc/bootstrap_srv
 
 # Run the bootstrap server with production settings
-CMD ["test-auth-hook-server", "80"]
+CMD ["test-auth-hook-server", "0.0.0.0:80"]
