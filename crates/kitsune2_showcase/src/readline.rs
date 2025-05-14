@@ -145,12 +145,10 @@ impl rustyline::hint::Hinter for Helper {
         if line.len() < 2 {
             return None;
         }
-        for c in Command::iter().map(Into::<&'static str>::into) {
-            if c.starts_with(line) {
-                return Some(c.trim_start_matches(line).to_string());
-            }
-        }
-        None
+        Command::iter()
+            .map(Into::<&'static str>::into)
+            .find(|c| c.starts_with(line))
+            .map(|c| c.trim_start_matches(line).to_string())
     }
 }
 
