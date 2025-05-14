@@ -145,7 +145,7 @@ impl rustyline::hint::Hinter for Helper {
         pos: usize,
         ctx: &rustyline::Context<'_>,
     ) -> Option<Self::Hint> {
-        if line.len() < 2 {
+        if line.is_empty() {
             return None;
         }
         self.history_hinter.hint(line, pos, ctx).or_else(|| {
