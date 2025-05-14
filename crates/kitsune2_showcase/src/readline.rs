@@ -14,6 +14,18 @@ enum Command {
 
     #[strum(message = "quit this program")]
     Exit,
+
+    #[strum(message = "[filename] share a file if under 1K")]
+    Share,
+
+    #[strum(message = "print network statistics")]
+    Stats,
+
+    #[strum(message = "list files shared")]
+    List,
+
+    #[strum(message = "[filename] fetch a shared file")]
+    Fetch,
 }
 
 type DynPrinter = Box<dyn FnMut(String) + 'static + Send>;
@@ -46,11 +58,8 @@ impl Default for Print {
 }
 
 /// Print out command help.
-fn help(command_list: &[(&str, &str)]) {
+fn help() {
     println!("\n# Kitsune2 Showcase chat and file sharing app\n");
-    for (cmd, help) in command_list {
-        println!("{cmd} - {help}");
-    }
     for cmd in Command::iter() {
         println!(
             "{} - {}",
@@ -63,12 +72,11 @@ fn help(command_list: &[(&str, &str)]) {
 /// Blocking loop waiting for user input / handling commands.
 pub fn readline(
     nick: String,
-    command_list: &'static [(&'static str, &'static str)],
     print: Print,
     lines: tokio::sync::mpsc::Sender<String>,
 ) {
     // print command help
-    help(command_list);
+    help();
 
     let prompt = format!("{nick}> ");
 
@@ -78,7 +86,7 @@ pub fn readline(
             rustyline::history::MemHistory::new(),
         )
         .unwrap();
-    line_editor.set_helper(Some(H(command_list)));
+    line_editor.set_helper(Some(H));
     let mut p = line_editor.create_external_printer().unwrap();
     let p: DynPrinter = Box::new(move |s| {
         use rustyline::ExternalPrinter;
@@ -92,9 +100,12 @@ pub fn readline(
             .strip_prefix("/")
             .and_then(|s| Command::from_str(s).ok())
         {
-            Some(Command::Help) => help(command_list),
+            Some(Command::Help) => help(),
             Some(Command::Exit) => break,
-            None => {
+            Some(Command::Share | Command::List | Command::Fetch) => {
+                println!("NOT IMPLEMENTED");
+            }
+            Some(Command::Stats) | None => {
                 if lines.blocking_send(line).is_err() {
                     break;
                 }
@@ -104,7 +115,7 @@ pub fn readline(
 }
 
 #[derive(rustyline::Helper, rustyline::Validator)]
-struct H(&'static [(&'static str, &'static str)]);
+struct H;
 
 impl rustyline::highlight::Highlighter for H {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
@@ -144,11 +155,6 @@ impl rustyline::hint::Hinter for H {
         if line.len() < 2 {
             return None;
         }
-        for (c, _) in self.0 {
-            if c.starts_with(line) {
-                return Some(Hint(c.trim_start_matches(line)));
-            }
-        }
         for c in Command::iter().map(Into::<&'static str>::into) {
             if c.starts_with(line) {
                 return Some(Hint(c.trim_start_matches(line)));
@@ -182,11 +188,6 @@ impl rustyline::completion::Completer for H {
         let mut out = Vec::new();
         if line.len() < 2 {
             return Ok((pos, out));
-        }
-        for (c, _) in self.0 {
-            if c.starts_with(line) {
-                out.push(Candidate(c.trim_start_matches(line)));
-            }
         }
         for c in Command::iter().map(Into::<&'static str>::into) {
             if c.starts_with(line) {
