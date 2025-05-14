@@ -87,7 +87,7 @@ pub fn readline(
         rustyline::history::MemHistory::new(),
     )
     .unwrap();
-    line_editor.set_helper(Some(Helper));
+    line_editor.set_helper(Some(Helper::default()));
     let mut p = line_editor.create_external_printer().unwrap();
     let p: DynPrinter = Box::new(move |s| {
         use rustyline::ExternalPrinter;
@@ -116,8 +116,11 @@ pub fn readline(
     }
 }
 
-#[derive(rustyline::Helper, rustyline::Validator)]
-struct Helper;
+#[derive(Default, rustyline::Helper, rustyline::Validator)]
+struct Helper {
+    #[rustyline(rustyline::Hinter)]
+    history_hinter: rustyline::hint::HistoryHinter,
+}
 
 impl rustyline::highlight::Highlighter for Helper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
@@ -139,16 +142,18 @@ impl rustyline::hint::Hinter for Helper {
     fn hint(
         &self,
         line: &str,
-        _pos: usize,
-        _ctx: &rustyline::Context<'_>,
+        pos: usize,
+        ctx: &rustyline::Context<'_>,
     ) -> Option<Self::Hint> {
         if line.len() < 2 {
             return None;
         }
-        Command::iter()
-            .map(Into::<&'static str>::into)
-            .find(|c| c.starts_with(line))
-            .map(|c| c.trim_start_matches(line).to_string())
+        self.history_hinter.hint(line, pos, ctx).or_else(|| {
+            Command::iter()
+                .map(Into::<&'static str>::into)
+                .find(|c| c.starts_with(line))
+                .map(|c| c.trim_start_matches(line).to_string())
+        })
     }
 }
 
