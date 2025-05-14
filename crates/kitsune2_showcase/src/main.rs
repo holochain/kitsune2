@@ -22,13 +22,6 @@ struct Args {
     nick: String,
 }
 
-const COMMAND_LIST: &[(&str, &str)] = &[
-    ("/share", "[filename] share a file if under 1K"),
-    ("/stats", "print network statistics"),
-    ("/list", "list files shared"),
-    ("/fetch", "[filename] fetch a shared file"),
-];
-
 fn main() {
     let pid = std::process::id();
     let file_appender = tracing_appender::rolling::never(
@@ -58,7 +51,7 @@ fn main() {
     });
 
     // readline on the main thread
-    readline::readline(nick, COMMAND_LIST, print, line_send);
+    readline::readline(nick, print, line_send);
 }
 
 async fn async_main(
