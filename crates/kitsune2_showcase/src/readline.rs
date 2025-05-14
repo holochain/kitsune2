@@ -189,9 +189,9 @@ impl rustyline::completion::Completer for Helper {
         if line.len() < 2 {
             return Ok((pos, out));
         }
-        for c in Command::iter().map(Into::<&'static str>::into) {
-            if c.starts_with(line) {
-                out.push(Candidate(c.trim_start_matches(line)));
+        for cmd in Command::iter().map(Into::<&'static str>::into) {
+            if cmd.starts_with(line) {
+                out.push(Candidate(cmd.trim_start_matches(line)));
             }
         }
         Ok((pos, out))
