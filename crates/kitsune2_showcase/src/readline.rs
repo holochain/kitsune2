@@ -164,20 +164,8 @@ impl rustyline::hint::Hinter for Helper {
     }
 }
 
-pub struct Candidate(&'static str);
-
-impl rustyline::completion::Candidate for Candidate {
-    fn display(&self) -> &str {
-        self.0
-    }
-
-    fn replacement(&self) -> &str {
-        self.0
-    }
-}
-
 impl rustyline::completion::Completer for Helper {
-    type Candidate = Candidate;
+    type Candidate = rustyline::completion::Pair;
 
     fn complete(
         &self,
@@ -191,7 +179,11 @@ impl rustyline::completion::Completer for Helper {
         }
         for cmd in Command::iter().map(Into::<&'static str>::into) {
             if cmd.starts_with(line) {
-                out.push(Candidate(cmd.trim_start_matches(line)));
+                let candidate = Self::Candidate {
+                    display: cmd.to_string(),
+                    replacement: cmd.trim_start_matches(line).to_string(),
+                };
+                out.push(candidate);
             }
         }
         Ok((pos, out))
