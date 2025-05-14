@@ -80,13 +80,12 @@ pub fn readline(
 
     let prompt = format!("{nick}> ");
 
-    let mut line_editor =
-        <rustyline::Editor<H, rustyline::history::MemHistory>>::with_history(
-            rustyline::Config::builder().build(),
-            rustyline::history::MemHistory::new(),
-        )
-        .unwrap();
-    line_editor.set_helper(Some(H));
+    let mut line_editor = rustyline::Editor::with_history(
+        rustyline::Config::builder().build(),
+        rustyline::history::MemHistory::new(),
+    )
+    .unwrap();
+    line_editor.set_helper(Some(Helper));
     let mut p = line_editor.create_external_printer().unwrap();
     let p: DynPrinter = Box::new(move |s| {
         use rustyline::ExternalPrinter;
@@ -115,9 +114,9 @@ pub fn readline(
 }
 
 #[derive(rustyline::Helper, rustyline::Validator)]
-struct H;
+struct Helper;
 
-impl rustyline::highlight::Highlighter for H {
+impl rustyline::highlight::Highlighter for Helper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
         &'s self,
         prompt: &'p str,
@@ -143,7 +142,7 @@ impl rustyline::hint::Hint for Hint {
     }
 }
 
-impl rustyline::hint::Hinter for H {
+impl rustyline::hint::Hinter for Helper {
     type Hint = Hint;
 
     fn hint(
@@ -176,7 +175,7 @@ impl rustyline::completion::Candidate for Candidate {
     }
 }
 
-impl rustyline::completion::Completer for H {
+impl rustyline::completion::Completer for Helper {
     type Candidate = Candidate;
 
     fn complete(
