@@ -95,6 +95,7 @@ pub fn readline(
 
     // loop over input lines
     while let Ok(line) = line_editor.readline(&prompt) {
+        line_editor.add_history_entry(line.clone()).unwrap();
         match line
             .strip_prefix("/")
             .and_then(|s| Command::from_str(s).ok())
