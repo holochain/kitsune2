@@ -12,15 +12,15 @@ const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
 ])));
 
 pub struct App {
-    _k: DynKitsune,
-    t: DynTransport,
-    s: DynSpace,
-    _a: Arc<kitsune2_core::Ed25519LocalAgent>,
-    p: readline::Print,
+    _kitsune: DynKitsune,
+    transport: DynTransport,
+    space: DynSpace,
+    _agent: Arc<kitsune2_core::Ed25519LocalAgent>,
+    printer: readline::Print,
 }
 
 impl App {
-    pub async fn new(print: readline::Print, args: Args) -> K2Result<Self> {
+    pub async fn new(printer: readline::Print, args: Args) -> K2Result<Self> {
         let space = if let Some(seed) = args.network_seed {
             use sha2::Digest;
             let mut hasher = sha2::Sha256::new();
@@ -106,57 +106,56 @@ impl App {
             },
         )?;
 
-        let h: DynKitsuneHandler = Arc::new(K(print.clone()));
-        let k = builder.build().await?;
-        k.register_handler(h).await?;
-        let t = k.transport().await?;
-        let s = k.space(space).await?;
+        let h: DynKitsuneHandler = Arc::new(K(printer.clone()));
+        let kitsune = builder.build().await?;
+        kitsune.register_handler(h).await?;
+        let transport = kitsune.transport().await?;
+        let space = kitsune.space(space).await?;
 
-        let a = Arc::new(kitsune2_core::Ed25519LocalAgent::default());
+        let agent = Arc::new(kitsune2_core::Ed25519LocalAgent::default());
 
-        s.local_agent_join(a.clone()).await?;
+        space.local_agent_join(agent.clone()).await?;
 
         Ok(Self {
-            _k: k,
-            t,
-            s,
-            _a: a,
-            p: print,
+            _kitsune: kitsune,
+            transport,
+            space,
+            _agent: agent,
+            printer,
         })
     }
 
     pub async fn stats(&self) -> K2Result<()> {
-        let stats = self.t.dump_network_stats().await?;
-        self.p.print_line(format!("{stats:#?}"));
+        let stats = self.transport.dump_network_stats().await?;
+        self.printer.print_line(format!("{stats:#?}"));
         Ok(())
     }
 
     pub async fn chat(&self, msg: Bytes) -> K2Result<()> {
         // this is a very naive chat impl, just sending to peers we know about
 
-        self.p
+        self.printer
             .print_line("checking for peers to chat with...".into());
         let peers = get_all_remote_agents(
-            self.s.peer_store().clone(),
-            self.s.local_agent_store().clone(),
+            self.space.peer_store().clone(),
+            self.space.local_agent_store().clone(),
         )
         .await?
         .into_iter()
         .filter(|p| p.url.is_some())
         .collect::<Vec<_>>();
-        self.p
+        self.printer
             .print_line(format!("sending to {} peers", peers.len()));
 
         for peer in peers {
-            let p = self.p.clone();
-            let s = self.s.clone();
-            let m = msg.clone();
+            let printer = self.printer.clone();
+            let space = self.space.clone();
+            let msg = msg.clone();
             tokio::task::spawn(async move {
-                match s.send_notify(peer.url.clone().unwrap(), m).await {
-                    Ok(_) => {
-                        p.print_line(format!("chat to {} success", &peer.agent))
-                    }
-                    Err(err) => p.print_line(format!(
+                match space.send_notify(peer.url.clone().unwrap(), msg).await {
+                    Ok(_) => printer
+                        .print_line(format!("chat to {} success", &peer.agent)),
+                    Err(err) => printer.print_line(format!(
                         "chat to {} failed: {err:?}",
                         &peer.agent
                     )),
