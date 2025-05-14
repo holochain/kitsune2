@@ -174,9 +174,6 @@ impl rustyline::completion::Completer for Helper {
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let mut out = Vec::new();
-        if line.len() < 2 {
-            return Ok((pos, out));
-        }
         for cmd in Command::iter().map(Into::<&'static str>::into) {
             if cmd.starts_with(line) {
                 let candidate = Self::Candidate {
