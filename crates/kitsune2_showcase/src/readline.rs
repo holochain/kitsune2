@@ -100,11 +100,7 @@ pub fn readline(
     loop {
         match line_editor.readline(&prompt) {
             Err(ReadlineError::Eof) => break,
-            Err(ReadlineError::Interrupted) => {
-                println!("^C");
-                continue;
-            }
-            Err(ReadlineError::WindowResized) => continue,
+            Err(ReadlineError::Interrupted) => println!("^C"),
             Err(err) => {
                 eprintln!("Failed to read line: {err}");
                 break;
