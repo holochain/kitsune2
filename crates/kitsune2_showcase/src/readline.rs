@@ -81,7 +81,9 @@ pub fn readline(
     let prompt = format!("{nick}> ");
 
     let mut line_editor = rustyline::Editor::with_history(
-        rustyline::Config::builder().build(),
+        rustyline::Config::builder()
+            .completion_type(rustyline::CompletionType::List)
+            .build(),
         rustyline::history::MemHistory::new(),
     )
     .unwrap();
