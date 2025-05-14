@@ -133,20 +133,8 @@ impl rustyline::highlight::Highlighter for Helper {
     }
 }
 
-struct Hint(&'static str);
-
-impl rustyline::hint::Hint for Hint {
-    fn display(&self) -> &str {
-        self.0
-    }
-
-    fn completion(&self) -> Option<&str> {
-        Some(self.0)
-    }
-}
-
 impl rustyline::hint::Hinter for Helper {
-    type Hint = Hint;
+    type Hint = String;
 
     fn hint(
         &self,
@@ -159,7 +147,7 @@ impl rustyline::hint::Hinter for Helper {
         }
         for c in Command::iter().map(Into::<&'static str>::into) {
             if c.starts_with(line) {
-                return Some(Hint(c.trim_start_matches(line)));
+                return Some(c.trim_start_matches(line).to_string());
             }
         }
         None
