@@ -105,7 +105,7 @@ pub fn readline(
                 eprintln!("Failed to read line: {err}");
                 break;
             }
-            Ok(line) => {
+            Ok(line) if !line.trim().is_empty() => {
                 line_editor.add_history_entry(line.clone()).unwrap();
                 if let Some(cmd_str) = line.strip_prefix("/") {
                     match Command::from_str(cmd_str) {
@@ -134,6 +134,7 @@ pub fn readline(
                     break;
                 }
             }
+            _ => {}
         }
     }
 }
