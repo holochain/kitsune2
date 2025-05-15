@@ -1,12 +1,15 @@
 use bytes::Bytes;
 use chrono::{DateTime, Local};
+use file_data::FileData;
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
-use std::{fmt::Debug, sync::Arc, time::SystemTime};
+use std::{fmt::Debug, path::Path, sync::Arc, time::SystemTime};
 use tokio::sync::mpsc;
 
 use crate::Args;
+
+mod file_data;
 
 // hard-coded random space
 const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
@@ -189,13 +192,18 @@ impl App {
         Ok(())
     }
 
-    pub async fn share(&self, data: String) -> K2Result<()> {
+    pub async fn share(&self, file_path: &Path) -> K2Result<()> {
         self.printer_tx
-            .send(format!("Sending data '{data}'"))
+            .send(format!("Storing contents of '{}'", file_path.display()))
             .await
             .unwrap();
 
-        let op = MemoryOp::new(Timestamp::now(), data.into());
+        let data = serde_json::to_string(&FileData {
+            name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
+        })
+        .unwrap();
+
+        let op = MemoryOp::new(Timestamp::now(), data.into_bytes());
         let op_id = op.compute_op_id();
 
         self.space
@@ -234,7 +242,7 @@ impl App {
 
         if !stored_ops.is_empty() {
             self.printer_tx
-                .send("ID\t\t\t\t\t\tCREATED AT".to_string())
+                .send("NAME\t\t\t\t\t\tCREATED AT\t\t\t\tID".to_string())
                 .await
                 .unwrap();
 
@@ -243,8 +251,14 @@ impl App {
                 let created_at = DateTime::<Local>::from(SystemTime::from(
                     mem_op.created_at,
                 ));
+                let file_data =
+                    serde_json::from_slice::<FileData>(&mem_op.op_data)
+                        .unwrap();
                 self.printer_tx
-                    .send(format!("{}\t{:?}", op.op_id, created_at))
+                    .send(format!(
+                        "{:40}\t{:?}\t{}",
+                        file_data.name, created_at, op.op_id
+                    ))
                     .await
                     .unwrap();
             }
