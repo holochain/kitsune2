@@ -1823,6 +1823,8 @@ dependencies = [
  "kitsune2_transport_tx5",
  "rustls",
  "rustyline",
+ "serde",
+ "serde_json",
  "sha2",
  "strum",
  "tokio",

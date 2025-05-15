@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -108,7 +109,7 @@ pub async fn readline(
                         Ok(Command::Exit) => break,
                         Ok(Command::Stats) => app.stats().await.unwrap(),
                         Ok(Command::Share) => {
-                            app.share(rest.to_string()).await.unwrap()
+                            app.share(Path::new(rest)).await.unwrap()
                         }
                         Ok(Command::List) => app.list().await.unwrap(),
                         Ok(Command::Fetch) => {
