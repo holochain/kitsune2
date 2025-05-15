@@ -226,6 +226,44 @@ impl App {
             .await
             .unwrap();
 
+        let peers = get_all_remote_agents(
+            self.space.peer_store().clone(),
+            self.space.local_agent_store().clone(),
+        )
+        .await?
+        .into_iter()
+        .filter(|p| p.url.is_some())
+        .collect::<Vec<_>>();
+        self.printer_tx
+            .send(format!("Publishing op to {} peers", peers.len()))
+            .await
+            .unwrap();
+
+        for peer in peers {
+            let printer_tx = self.printer_tx.clone();
+            let space = self.space.clone();
+            let op_id = op_id.clone();
+            if let Some(url) = peer.url.clone() {
+                tokio::task::spawn(async move {
+                    match space.publish().publish_ops(vec![op_id], url).await {
+                        Ok(_) => {
+                            printer_tx
+                                .send(format!("Published to {}", &peer.agent))
+                                .await
+                        }
+                        Err(err) => {
+                            printer_tx
+                                .send(format!(
+                                    "Failed to publish to {}: {err:?}",
+                                    &peer.agent
+                                ))
+                                .await
+                        }
+                    }
+                });
+            }
+        }
+
         Ok(())
     }
 
