@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use kitsune2_api::*;
-use kitsune2_core::get_all_remote_agents;
+use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 use tokio::sync::mpsc;
 
 use crate::Args;
@@ -184,6 +184,55 @@ impl App {
                 }
             });
         }
+
+        Ok(())
+    }
+
+    pub async fn share(&self, data: String) -> K2Result<()> {
+        self.printer_tx
+            .send(format!("Sending data '{data}'"))
+            .await
+            .unwrap();
+
+        let op = MemoryOp::new(Timestamp::now(), data.into());
+        let op_id = op.compute_op_id();
+
+        self.space
+            .op_store()
+            .process_incoming_ops(vec![op.clone().into()])
+            .await
+            .unwrap();
+
+        self.space.inform_ops_stored(vec![op.into()]).await.unwrap();
+
+        let stored_ops = self
+            .space
+            .op_store()
+            .retrieve_ops(vec![op_id])
+            .await
+            .unwrap();
+
+        self.printer_tx
+            .send(format!("Stored ops: {stored_ops:?}"))
+            .await
+            .unwrap();
+
+        let op_ids = self
+            .space
+            .op_store()
+            .retrieve_op_ids_bounded(
+                DhtArc::FULL,
+                Timestamp::from_micros(0),
+                1000,
+            )
+            .await
+            .unwrap()
+            .0;
+
+        self.printer_tx
+            .send(format!("Op IDs: {op_ids:?}"))
+            .await
+            .unwrap();
 
         Ok(())
     }
