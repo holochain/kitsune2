@@ -4,9 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use rustyline::error::ReadlineError;
+use rustyline::ExternalPrinter;
 use strum::{
     EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
 };
+use tokio::sync::mpsc::Receiver;
 
 use crate::app::App;
 
@@ -32,35 +34,6 @@ enum Command {
     Fetch,
 }
 
-type DynPrinter = Box<dyn FnMut(String) + 'static + Send>;
-type SyncPrinter = Arc<Mutex<Option<DynPrinter>>>;
-
-/// Ability to print to stdout while readline is happening.
-#[derive(Clone)]
-pub struct Print(SyncPrinter);
-
-impl std::fmt::Debug for Print {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Print").finish()
-    }
-}
-
-impl Print {
-    /// Print out a line.
-    pub fn print_line(&self, line: String) {
-        match self.0.lock().unwrap().as_mut() {
-            Some(printer) => printer(line),
-            None => println!("{line}"),
-        }
-    }
-}
-
-impl Default for Print {
-    fn default() -> Self {
-        Self(Arc::new(Mutex::new(None)))
-    }
-}
-
 /// Print out command help.
 fn help() {
     println!("\n# Kitsune2 Showcase chat and file sharing app\n");
@@ -74,7 +47,11 @@ fn help() {
 }
 
 /// Blocking loop waiting for user input / handling commands.
-pub async fn readline(nick: String, print: Print, app: App) {
+pub async fn readline(
+    nick: String,
+    mut printer_rx: Receiver<String>,
+    app: App,
+) {
     // print command help
     help();
 
@@ -88,12 +65,13 @@ pub async fn readline(nick: String, print: Print, app: App) {
     )
     .unwrap();
     line_editor.set_helper(Some(Helper::default()));
-    let mut p = line_editor.create_external_printer().unwrap();
-    let p: DynPrinter = Box::new(move |s| {
-        use rustyline::ExternalPrinter;
-        p.print(s).unwrap();
+    let mut printer = line_editor.create_external_printer().unwrap();
+
+    tokio::spawn(async move {
+        while let Some(msg) = printer_rx.recv().await {
+            printer.print(format!("{msg}\n")).ok();
+        }
     });
-    *print.0.lock().unwrap() = Some(p);
 
     let line_editor = Arc::new(Mutex::new(line_editor));
 
