@@ -100,14 +100,19 @@ pub async fn readline(
                     .expect("failed to get lock for line_editor")
                     .add_history_entry(line.clone())
                     .unwrap();
-                if let Some(cmd_str) = line.strip_prefix("/") {
+                if let Some(cmd_line) = line.strip_prefix("/") {
+                    let (cmd_str, rest) =
+                        cmd_line.split_once(" ").unwrap_or((cmd_line, ""));
                     match Command::from_str(cmd_str) {
                         Ok(Command::Help) => help(),
                         Ok(Command::Exit) => break,
-                        Ok(Command::Share | Command::List | Command::Fetch) => {
+                        Ok(Command::Stats) => app.stats().await.unwrap(),
+                        Ok(Command::Share) => {
+                            app.share(rest.to_string()).await.unwrap()
+                        }
+                        Ok(Command::List | Command::Fetch) => {
                             println!("NOT IMPLEMENTED");
                         }
-                        Ok(Command::Stats) => app.stats().await.unwrap(),
                         Err(_) => {
                             eprintln!("Invalid Command. Valid commands are:");
                             Command::iter().for_each(|cmd| {
