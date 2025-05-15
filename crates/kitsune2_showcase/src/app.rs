@@ -204,34 +204,8 @@ impl App {
             .await
             .unwrap();
 
-        self.space.inform_ops_stored(vec![op.into()]).await.unwrap();
-
-        let stored_ops = self
-            .space
-            .op_store()
-            .retrieve_ops(vec![op_id])
-            .await
-            .unwrap();
-
         self.printer_tx
-            .send(format!("Stored ops: {stored_ops:?}"))
-            .await
-            .unwrap();
-
-        let op_ids = self
-            .space
-            .op_store()
-            .retrieve_op_ids_bounded(
-                DhtArc::FULL,
-                Timestamp::from_micros(0),
-                1000,
-            )
-            .await
-            .unwrap()
-            .0;
-
-        self.printer_tx
-            .send(format!("Op IDs: {op_ids:?}"))
+            .send(format!("Op '{op_id}' successfully stored"))
             .await
             .unwrap();
 
