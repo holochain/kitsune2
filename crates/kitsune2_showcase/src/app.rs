@@ -1,8 +1,9 @@
 use bytes::Bytes;
+use chrono::{DateTime, Local};
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc, time::SystemTime};
 use tokio::sync::mpsc;
 
 use crate::Args;
@@ -233,6 +234,52 @@ impl App {
             .send(format!("Op IDs: {op_ids:?}"))
             .await
             .unwrap();
+
+        Ok(())
+    }
+
+    pub async fn list(&self) -> K2Result<()> {
+        let op_ids = self
+            .space
+            .op_store()
+            .retrieve_op_hashes_in_time_slice(
+                DhtArc::FULL,
+                Timestamp::from_micros(0),
+                Timestamp::now(),
+            )
+            .await
+            .unwrap()
+            .0;
+
+        let stored_ops = self
+            .space
+            .op_store()
+            .retrieve_ops(op_ids.to_vec())
+            .await
+            .unwrap();
+
+        if !stored_ops.is_empty() {
+            self.printer_tx
+                .send("ID\t\t\t\t\t\tCREATED AT".to_string())
+                .await
+                .unwrap();
+
+            for op in stored_ops {
+                let mem_op = MemoryOp::from(op.op_data);
+                let created_at = DateTime::<Local>::from(SystemTime::from(
+                    mem_op.created_at,
+                ));
+                self.printer_tx
+                    .send(format!("{}\t{:?}", op.op_id, created_at))
+                    .await
+                    .unwrap();
+            }
+        } else {
+            self.printer_tx
+                .send("No ops found".to_string())
+                .await
+                .unwrap();
+        }
 
         Ok(())
     }
