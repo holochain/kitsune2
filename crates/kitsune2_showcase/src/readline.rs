@@ -112,9 +112,7 @@ pub async fn readline(
                             app.share(Path::new(rest)).await.unwrap()
                         }
                         Ok(Command::List) => app.list().await.unwrap(),
-                        Ok(Command::Fetch) => {
-                            println!("NOT IMPLEMENTED");
-                        }
+                        Ok(Command::Fetch) => app.fetch(rest).await.unwrap(),
                         Err(_) => {
                             eprintln!("Invalid Command. Valid commands are:");
                             Command::iter().for_each(|cmd| {
