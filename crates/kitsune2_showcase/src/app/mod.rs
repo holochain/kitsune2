@@ -4,7 +4,13 @@ use file_data::FileData;
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
-use std::{fmt::Debug, path::Path, sync::Arc, time::SystemTime};
+use std::{
+    fmt::Debug,
+    fs::{self, read_to_string},
+    path::Path,
+    sync::Arc,
+    time::SystemTime,
+};
 use tokio::sync::mpsc;
 
 use crate::Args;
@@ -198,8 +204,11 @@ impl App {
             .await
             .unwrap();
 
+        let contents = read_to_string(file_path).unwrap();
+
         let data = serde_json::to_string(&FileData {
             name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
+            contents,
         })
         .unwrap();
 
@@ -293,7 +302,7 @@ impl App {
             .unwrap();
 
         if !stored_ops.is_empty() {
-            if let Some(_file_data) = stored_ops
+            if let Some(file_data) = stored_ops
                 .into_iter()
                 .map(|op| {
                     let mem_op = MemoryOp::from(op.op_data);
@@ -301,6 +310,8 @@ impl App {
                 })
                 .find(|file_data| file_data.name == file_name)
             {
+                fs::write(file_name, file_data.contents).unwrap();
+
                 self.printer_tx
                     .send(format!("Fetched file '{file_name}'"))
                     .await
