@@ -110,7 +110,8 @@ pub async fn readline(
                         Ok(Command::Share) => {
                             app.share(rest.to_string()).await.unwrap()
                         }
-                        Ok(Command::List | Command::Fetch) => {
+                        Ok(Command::List) => app.list().await.unwrap(),
+                        Ok(Command::Fetch) => {
                             println!("NOT IMPLEMENTED");
                         }
                         Err(_) => {
