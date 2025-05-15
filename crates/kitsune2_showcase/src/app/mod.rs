@@ -271,4 +271,53 @@ impl App {
 
         Ok(())
     }
+
+    pub async fn fetch(&self, file_name: &str) -> K2Result<()> {
+        let op_ids = self
+            .space
+            .op_store()
+            .retrieve_op_hashes_in_time_slice(
+                DhtArc::FULL,
+                Timestamp::from_micros(0),
+                Timestamp::now(),
+            )
+            .await
+            .unwrap()
+            .0;
+
+        let stored_ops = self
+            .space
+            .op_store()
+            .retrieve_ops(op_ids.to_vec())
+            .await
+            .unwrap();
+
+        if !stored_ops.is_empty() {
+            if let Some(_file_data) = stored_ops
+                .into_iter()
+                .map(|op| {
+                    let mem_op = MemoryOp::from(op.op_data);
+                    serde_json::from_slice::<FileData>(&mem_op.op_data).unwrap()
+                })
+                .find(|file_data| file_data.name == file_name)
+            {
+                self.printer_tx
+                    .send(format!("Fetched file '{file_name}'"))
+                    .await
+                    .unwrap();
+            } else {
+                self.printer_tx
+                    .send(format!("File with name '{file_name}' not found"))
+                    .await
+                    .unwrap();
+            }
+        } else {
+            self.printer_tx
+                .send("No ops found".to_string())
+                .await
+                .unwrap();
+        }
+
+        Ok(())
+    }
 }
