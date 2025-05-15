@@ -142,6 +142,9 @@ pub async fn readline(
 struct Helper {
     #[rustyline(rustyline::Hinter)]
     history_hinter: rustyline::hint::HistoryHinter,
+
+    #[rustyline(rustyline::Completer)]
+    file_name_completer: rustyline::completion::FilenameCompleter,
 }
 
 impl rustyline::highlight::Highlighter for Helper {
@@ -188,15 +191,33 @@ impl rustyline::completion::Completer for Helper {
         pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        let candidates = Command::iter()
-            .map(Into::<&'static str>::into)
-            .filter(|c| c.starts_with(line))
-            .map(|c| Self::Candidate {
-                display: c.to_string(),
-                replacement: c.trim_start_matches(line).to_string(),
+        match line
+            .strip_prefix("/")
+            .and_then(|stripped| {
+                stripped.split_once(" ").map(|(cmd_str, args)| {
+                    Command::from_str(cmd_str).map(|cmd| (cmd, args)).ok()
+                })
             })
-            .collect();
+            .flatten()
+        {
+            Some((Command::Share, args)) => {
+                let candidates =
+                    self.file_name_completer.complete_path(args, args.len())?.1;
 
-        Ok((pos, candidates))
+                Ok((pos - args.len(), candidates))
+            }
+            _ => {
+                let candidates = Command::iter()
+                    .map(Into::<&'static str>::into)
+                    .filter(|c| c.starts_with(line))
+                    .map(|c| Self::Candidate {
+                        display: c.to_string(),
+                        replacement: c.trim_start_matches(line).to_string(),
+                    })
+                    .collect();
+
+                Ok((pos, candidates))
+            }
+        }
     }
 }
