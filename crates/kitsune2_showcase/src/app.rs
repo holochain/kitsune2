@@ -1,9 +1,11 @@
-use super::*;
 use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_core::get_all_remote_agents;
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
 use std::sync::Arc;
+use tokio::sync::mpsc;
+
+use crate::Args;
 
 // hard-coded random space
 const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
@@ -16,11 +18,14 @@ pub struct App {
     transport: DynTransport,
     space: DynSpace,
     _agent: Arc<kitsune2_core::Ed25519LocalAgent>,
-    printer: readline::Print,
+    printer_tx: mpsc::Sender<String>,
 }
 
 impl App {
-    pub async fn new(printer: readline::Print, args: Args) -> K2Result<Self> {
+    pub async fn new(
+        printer_tx: mpsc::Sender<String>,
+        args: Args,
+    ) -> K2Result<Self> {
         let space = if let Some(seed) = args.network_seed {
             use sha2::Digest;
             let mut hasher = sha2::Sha256::new();
@@ -31,7 +36,7 @@ impl App {
         };
 
         #[derive(Debug)]
-        struct S(readline::Print);
+        struct S(mpsc::Sender<String>);
 
         impl SpaceHandler for S {
             fn recv_notify(
@@ -40,16 +45,19 @@ impl App {
                 _space: SpaceId,
                 data: Bytes,
             ) -> K2Result<()> {
-                let print = self.0.clone();
+                let printer_tx = self.0.clone();
                 tokio::task::spawn(async move {
-                    print.print_line(String::from_utf8_lossy(&data).into());
+                    printer_tx
+                        .send(String::from_utf8_lossy(&data).into())
+                        .await
+                        .unwrap();
                 });
                 Ok(())
             }
         }
 
         #[derive(Debug)]
-        struct K(readline::Print);
+        struct K(mpsc::Sender<String>);
 
         impl KitsuneHandler for K {
             fn create_space(
@@ -66,9 +74,12 @@ impl App {
                 &self,
                 this_url: Url,
             ) -> BoxFut<'static, ()> {
-                let print = self.0.clone();
+                let printer_tx = self.0.clone();
                 Box::pin(async move {
-                    print.print_line(format!("Online at: {this_url}"));
+                    printer_tx
+                        .send(format!("Online at: {this_url}"))
+                        .await
+                        .unwrap();
                 })
             }
         }
@@ -106,7 +117,7 @@ impl App {
             },
         )?;
 
-        let h: DynKitsuneHandler = Arc::new(K(printer.clone()));
+        let h: DynKitsuneHandler = Arc::new(K(printer_tx.clone()));
         let kitsune = builder.build().await?;
         kitsune.register_handler(h).await?;
         let transport = kitsune.transport().await?;
@@ -121,21 +132,23 @@ impl App {
             transport,
             space,
             _agent: agent,
-            printer,
+            printer_tx,
         })
     }
 
     pub async fn stats(&self) -> K2Result<()> {
         let stats = self.transport.dump_network_stats().await?;
-        self.printer.print_line(format!("{stats:#?}"));
+        self.printer_tx.send(format!("{stats:#?}")).await.unwrap();
         Ok(())
     }
 
     pub async fn chat(&self, msg: Bytes) -> K2Result<()> {
         // this is a very naive chat impl, just sending to peers we know about
 
-        self.printer
-            .print_line("checking for peers to chat with...".into());
+        self.printer_tx
+            .send("checking for peers to chat with...".into())
+            .await
+            .unwrap();
         let peers = get_all_remote_agents(
             self.space.peer_store().clone(),
             self.space.local_agent_store().clone(),
@@ -144,21 +157,30 @@ impl App {
         .into_iter()
         .filter(|p| p.url.is_some())
         .collect::<Vec<_>>();
-        self.printer
-            .print_line(format!("sending to {} peers", peers.len()));
+        self.printer_tx
+            .send(format!("sending to {} peers", peers.len()))
+            .await
+            .unwrap();
 
         for peer in peers {
-            let printer = self.printer.clone();
+            let printer_tx = self.printer_tx.clone();
             let space = self.space.clone();
             let msg = msg.clone();
             tokio::task::spawn(async move {
                 match space.send_notify(peer.url.clone().unwrap(), msg).await {
-                    Ok(_) => printer
-                        .print_line(format!("chat to {} success", &peer.agent)),
-                    Err(err) => printer.print_line(format!(
-                        "chat to {} failed: {err:?}",
-                        &peer.agent
-                    )),
+                    Ok(_) => {
+                        printer_tx
+                            .send(format!("chat to {} success", &peer.agent))
+                            .await
+                    }
+                    Err(err) => {
+                        printer_tx
+                            .send(format!(
+                                "chat to {} failed: {err:?}",
+                                &peer.agent
+                            ))
+                            .await
+                    }
                 }
             });
         }

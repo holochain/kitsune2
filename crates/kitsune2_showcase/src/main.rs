@@ -1,3 +1,5 @@
+use tokio::sync::mpsc;
+
 mod app;
 mod readline;
 
@@ -35,9 +37,8 @@ async fn main() {
     let args = <Args as clap::Parser>::parse();
     let nick = args.nick.clone();
 
-    let print = readline::Print::default();
+    let (printer_tx, printer_rx) = mpsc::channel(10);
+    let app = app::App::new(printer_tx, args).await.unwrap();
 
-    let app = app::App::new(print.clone(), args).await.unwrap();
-
-    readline::readline(nick, print, app).await;
+    readline::readline(nick, printer_rx, app).await;
 }
