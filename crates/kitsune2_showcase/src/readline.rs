@@ -16,6 +16,9 @@ use crate::app::App;
 #[derive(IntoStaticStr, EnumMessage, EnumIter, EnumString)]
 #[strum(serialize_all = "lowercase", prefix = "/")]
 enum Command {
+    #[strum(disabled)]
+    Invalid,
+
     #[strum(message = "print this help")]
     Help,
 
@@ -45,6 +48,18 @@ fn help() {
             cmd.get_message().unwrap_or_default()
         );
     }
+}
+
+/// Parse the first part as a [`Command`] and return it with the rest.
+///
+/// Returns [`Command::Invalid`] if not a valid [`Command`].
+/// Returns [`None`] if input does not start with the command prefix.
+fn split_on_command(line: &str) -> Option<(Command, &str)> {
+    line.strip_prefix("/")
+        .map(|s| s.split_once(" ").unwrap_or((s, "")))
+        .map(|(cmd_str, rest)| {
+            (Command::from_str(cmd_str).unwrap_or(Command::Invalid), rest)
+        })
 }
 
 /// Blocking loop waiting for user input / handling commands.
@@ -101,19 +116,17 @@ pub async fn readline(
                     .expect("failed to get lock for line_editor")
                     .add_history_entry(line.clone())
                     .unwrap();
-                if let Some(cmd_line) = line.strip_prefix("/") {
-                    let (cmd_str, rest) =
-                        cmd_line.split_once(" ").unwrap_or((cmd_line, ""));
-                    match Command::from_str(cmd_str) {
-                        Ok(Command::Help) => help(),
-                        Ok(Command::Exit) => break,
-                        Ok(Command::Stats) => app.stats().await.unwrap(),
-                        Ok(Command::Share) => {
+                if let Some((cmd, rest)) = split_on_command(&line) {
+                    match cmd {
+                        Command::Help => help(),
+                        Command::Exit => break,
+                        Command::Stats => app.stats().await.unwrap(),
+                        Command::Share => {
                             app.share(Path::new(rest)).await.unwrap()
                         }
-                        Ok(Command::List) => app.list().await.unwrap(),
-                        Ok(Command::Fetch) => app.fetch(rest).await.unwrap(),
-                        Err(_) => {
+                        Command::List => app.list().await.unwrap(),
+                        Command::Fetch => app.fetch(rest).await.unwrap(),
+                        Command::Invalid => {
                             eprintln!("Invalid Command. Valid commands are:");
                             Command::iter().for_each(|cmd| {
                                 eprintln!(
@@ -195,15 +208,7 @@ impl rustyline::completion::Completer for Helper {
         pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        match line
-            .strip_prefix("/")
-            .and_then(|stripped| {
-                stripped.split_once(" ").map(|(cmd_str, args)| {
-                    Command::from_str(cmd_str).map(|cmd| (cmd, args)).ok()
-                })
-            })
-            .flatten()
-        {
+        match split_on_command(line) {
             Some((Command::Share, args)) => {
                 let candidates =
                     self.file_name_completer.complete_path(args, args.len())?.1;
