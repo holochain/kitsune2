@@ -111,21 +111,37 @@ pub async fn readline(
                 break;
             }
             Ok(line) if !line.trim().is_empty() => {
-                line_editor
+                if let Err(err) = line_editor
                     .lock()
                     .expect("failed to get lock for line_editor")
                     .add_history_entry(line.clone())
-                    .unwrap();
+                {
+                    eprintln!("Failed to add line to history: {err}");
+                }
                 if let Some((cmd, rest)) = split_on_command(&line) {
                     match cmd {
                         Command::Help => help(),
                         Command::Exit => break,
-                        Command::Stats => app.stats().await.unwrap(),
-                        Command::Share => {
-                            app.share(Path::new(rest)).await.unwrap()
+                        Command::Stats => {
+                            if let Err(err) = app.stats().await {
+                                eprintln!("Failed to get stats: {err}");
+                            }
                         }
-                        Command::List => app.list().await.unwrap(),
-                        Command::Fetch => app.fetch(rest).await.unwrap(),
+                        Command::Share => {
+                            if let Err(err) = app.share(Path::new(rest)).await {
+                                eprintln!("Failed to share file: {err}");
+                            }
+                        }
+                        Command::List => {
+                            if let Err(err) = app.list().await {
+                                eprintln!("Failed to list shared files: {err}");
+                            }
+                        }
+                        Command::Fetch => {
+                            if let Err(err) = app.fetch(rest).await {
+                                eprintln!("Failed to fetch file: {err}");
+                            }
+                        }
                         Command::Invalid => {
                             eprintln!("Invalid Command. Valid commands are:");
                             Command::iter().for_each(|cmd| {
@@ -137,13 +153,11 @@ pub async fn readline(
                             });
                         }
                     }
-                } else {
-                    // Not a command so send as chat message
-                    app.chat(Bytes::copy_from_slice(line.as_bytes()))
-                        .await
-                        .unwrap_or_else(|err| {
-                            println!("Failed to send chat message: {err}")
-                        });
+                // Not a command so send as chat message
+                } else if let Err(err) =
+                    app.chat(Bytes::copy_from_slice(line.as_bytes())).await
+                {
+                    println!("Failed to send chat message: {err}")
                 }
             }
             _ => {}
