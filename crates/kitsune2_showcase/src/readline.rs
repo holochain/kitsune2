@@ -140,10 +140,8 @@ pub async fn readline(
 
 #[derive(Default, rustyline::Helper, rustyline::Validator)]
 struct Helper {
-    #[rustyline(rustyline::Hinter)]
     history_hinter: rustyline::hint::HistoryHinter,
 
-    #[rustyline(rustyline::Completer)]
     file_name_completer: rustyline::completion::FilenameCompleter,
 }
 
