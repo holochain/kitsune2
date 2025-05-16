@@ -5,6 +5,7 @@ use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
 use std::{
+    ffi::OsStr,
     fmt::Debug,
     fs::{self, read_to_string},
     path::Path,
@@ -217,16 +218,23 @@ impl App {
             )
         })?;
 
+        let file_name = file_path.file_name().and_then(OsStr::to_str).ok_or(
+            K2Error::other(format!(
+                "Invalid file name: {}",
+                file_path.display()
+            )),
+        )?;
+
+        let data = serde_json::to_string(&FileData {
+            name: file_name.to_string(),
+            contents,
+        })
+        .unwrap();
+
         self.printer_tx
             .send(format!("Storing contents of '{}'", file_path.display()))
             .await
             .expect("Failed to print message");
-
-        let data = serde_json::to_string(&FileData {
-            name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
-            contents,
-        })
-        .unwrap();
 
         let op = MemoryOp::new(Timestamp::now(), data.into_bytes());
         let op_id = op.compute_op_id();
