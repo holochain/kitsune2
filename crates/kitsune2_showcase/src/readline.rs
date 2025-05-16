@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use rustyline::error::ReadlineError;
@@ -9,7 +9,7 @@ use rustyline::ExternalPrinter;
 use strum::{
     EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
 };
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::app::App;
 
@@ -79,14 +79,12 @@ pub async fn readline(
     loop {
         let line_editor_2 = line_editor.clone();
         let prompt = prompt.clone();
-        let line = tokio::task::spawn_blocking(move || {
-            line_editor_2
-                .lock()
-                .expect("failed to get lock for line_editor")
-                .readline(&prompt)
+        let line = tokio::task::spawn_blocking(async move || {
+            line_editor_2.lock().await.readline(&prompt)
         })
         .await
-        .expect("Failed to spawn blocking task to read stdin");
+        .expect("Failed to spawn blocking task to read stdin")
+        .await;
 
         match line {
             Err(ReadlineError::Eof) => break,
@@ -98,7 +96,7 @@ pub async fn readline(
             Ok(line) if !line.trim().is_empty() => {
                 line_editor
                     .lock()
-                    .expect("failed to get lock for line_editor")
+                    .await
                     .add_history_entry(line.clone())
                     .unwrap();
                 if let Some(cmd_line) = line.strip_prefix("/") {
