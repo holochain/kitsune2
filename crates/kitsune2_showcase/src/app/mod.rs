@@ -247,8 +247,7 @@ impl App {
         self.space
             .op_store()
             .process_incoming_ops(vec![op.clone().into()])
-            .await
-            .unwrap();
+            .await?;
 
         self.printer_tx
             .send(format!("Op '{op_id}' successfully stored"))
@@ -303,16 +302,11 @@ impl App {
                 Timestamp::from_micros(0),
                 Timestamp::now(),
             )
-            .await
-            .unwrap()
+            .await?
             .0;
 
-        let stored_ops = self
-            .space
-            .op_store()
-            .retrieve_ops(op_ids.to_vec())
-            .await
-            .unwrap();
+        let stored_ops =
+            self.space.op_store().retrieve_ops(op_ids.to_vec()).await?;
 
         if !stored_ops.is_empty() {
             self.printer_tx
@@ -355,16 +349,11 @@ impl App {
                 Timestamp::from_micros(0),
                 Timestamp::now(),
             )
-            .await
-            .unwrap()
+            .await?
             .0;
 
-        let stored_ops = self
-            .space
-            .op_store()
-            .retrieve_ops(op_ids.to_vec())
-            .await
-            .unwrap();
+        let stored_ops =
+            self.space.op_store().retrieve_ops(op_ids.to_vec()).await?;
 
         if !stored_ops.is_empty() {
             if let Some(file_data) = stored_ops
