@@ -177,28 +177,33 @@ impl App {
             .expect("Failed to print message");
 
         for peer in peers {
-            let printer_tx = self.printer_tx.clone();
-            let space = self.space.clone();
-            let msg = msg.clone();
-            tokio::task::spawn(async move {
-                match space.send_notify(peer.url.clone().unwrap(), msg).await {
-                    Ok(_) => {
-                        printer_tx
-                            .send(format!("chat to {} success", &peer.agent))
-                            .await
-                            .expect("Failed to print message");
+            if let Some(url) = peer.url.clone() {
+                let printer_tx = self.printer_tx.clone();
+                let space = self.space.clone();
+                let msg = msg.clone();
+                tokio::task::spawn(async move {
+                    match space.send_notify(url, msg).await {
+                        Ok(_) => {
+                            printer_tx
+                                .send(format!(
+                                    "chat to {} success",
+                                    &peer.agent
+                                ))
+                                .await
+                                .expect("Failed to print message");
+                        }
+                        Err(err) => {
+                            printer_tx
+                                .send(format!(
+                                    "chat to {} failed: {err:?}",
+                                    &peer.agent
+                                ))
+                                .await
+                                .expect("Failed to print message");
+                        }
                     }
-                    Err(err) => {
-                        printer_tx
-                            .send(format!(
-                                "chat to {} failed: {err:?}",
-                                &peer.agent
-                            ))
-                            .await
-                            .expect("Failed to print message");
-                    }
-                }
-            });
+                });
+            }
         }
 
         Ok(())
