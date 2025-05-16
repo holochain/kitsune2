@@ -210,12 +210,17 @@ impl App {
     }
 
     pub async fn share(&self, file_path: &Path) -> K2Result<()> {
+        let contents = read_to_string(file_path).map_err(|err| {
+            K2Error::other_src(
+                format!("with path: '{}'", file_path.display()),
+                err,
+            )
+        })?;
+
         self.printer_tx
             .send(format!("Storing contents of '{}'", file_path.display()))
             .await
             .expect("Failed to print message");
-
-        let contents = read_to_string(file_path).unwrap();
 
         let data = serde_json::to_string(&FileData {
             name: file_path.file_name().unwrap().to_str().unwrap().to_string(),
