@@ -60,7 +60,7 @@ impl App {
                     printer_tx
                         .send(String::from_utf8_lossy(&data).into())
                         .await
-                        .unwrap();
+                        .expect("Failed to print message");
                 });
                 Ok(())
             }
@@ -89,7 +89,7 @@ impl App {
                     printer_tx
                         .send(format!("Online at: {this_url}"))
                         .await
-                        .unwrap();
+                        .expect("Failed to print message");
                 })
             }
         }
@@ -149,7 +149,10 @@ impl App {
 
     pub async fn stats(&self) -> K2Result<()> {
         let stats = self.transport.dump_network_stats().await?;
-        self.printer_tx.send(format!("{stats:#?}")).await.unwrap();
+        self.printer_tx
+            .send(format!("{stats:#?}"))
+            .await
+            .expect("Failed to print message");
         Ok(())
     }
 
@@ -159,7 +162,7 @@ impl App {
         self.printer_tx
             .send("checking for peers to chat with...".into())
             .await
-            .unwrap();
+            .expect("Failed to print message");
         let peers = get_all_remote_agents(
             self.space.peer_store().clone(),
             self.space.local_agent_store().clone(),
@@ -171,7 +174,7 @@ impl App {
         self.printer_tx
             .send(format!("sending to {} peers", peers.len()))
             .await
-            .unwrap();
+            .expect("Failed to print message");
 
         for peer in peers {
             let printer_tx = self.printer_tx.clone();
@@ -183,6 +186,7 @@ impl App {
                         printer_tx
                             .send(format!("chat to {} success", &peer.agent))
                             .await
+                            .expect("Failed to print message");
                     }
                     Err(err) => {
                         printer_tx
@@ -191,6 +195,7 @@ impl App {
                                 &peer.agent
                             ))
                             .await
+                            .expect("Failed to print message");
                     }
                 }
             });
@@ -203,7 +208,7 @@ impl App {
         self.printer_tx
             .send(format!("Storing contents of '{}'", file_path.display()))
             .await
-            .unwrap();
+            .expect("Failed to print message");
 
         let contents = read_to_string(file_path).unwrap();
 
@@ -225,7 +230,7 @@ impl App {
         self.printer_tx
             .send(format!("Op '{op_id}' successfully stored"))
             .await
-            .unwrap();
+            .expect("Failed to print message");
 
         let peers = get_all_remote_agents(
             self.space.peer_store().clone(),
@@ -238,7 +243,7 @@ impl App {
         self.printer_tx
             .send(format!("Publishing op to {} peers", peers.len()))
             .await
-            .unwrap();
+            .expect("Failed to print message");
 
         for peer in peers {
             let printer_tx = self.printer_tx.clone();
@@ -247,19 +252,17 @@ impl App {
             if let Some(url) = peer.url.clone() {
                 tokio::task::spawn(async move {
                     match space.publish().publish_ops(vec![op_id], url).await {
-                        Ok(_) => {
-                            printer_tx
-                                .send(format!("Published to {}", &peer.agent))
-                                .await
-                        }
-                        Err(err) => {
-                            printer_tx
-                                .send(format!(
-                                    "Failed to publish to {}: {err:?}",
-                                    &peer.agent
-                                ))
-                                .await
-                        }
+                        Ok(_) => printer_tx
+                            .send(format!("Published to {}", &peer.agent))
+                            .await
+                            .expect("Failed to print message"),
+                        Err(err) => printer_tx
+                            .send(format!(
+                                "Failed to publish to {}: {err:?}",
+                                &peer.agent
+                            ))
+                            .await
+                            .expect("Failed to print message"),
                     }
                 });
             }
@@ -292,7 +295,7 @@ impl App {
             self.printer_tx
                 .send("NAME\t\t\t\t\t\tCREATED AT\t\t\t\tID".to_string())
                 .await
-                .unwrap();
+                .expect("Failed to print message");
 
             for op in stored_ops {
                 let mem_op = MemoryOp::from(op.op_data);
@@ -308,13 +311,13 @@ impl App {
                         file_data.name, created_at, op.op_id
                     ))
                     .await
-                    .unwrap();
+                    .expect("Failed to print message");
             }
         } else {
             self.printer_tx
                 .send("No ops found".to_string())
                 .await
-                .unwrap();
+                .expect("Failed to print message");
         }
 
         Ok(())
@@ -354,18 +357,18 @@ impl App {
                 self.printer_tx
                     .send(format!("Fetched file '{file_name}'"))
                     .await
-                    .unwrap();
+                    .expect("Failed to print message");
             } else {
                 self.printer_tx
                     .send(format!("File with name '{file_name}' not found"))
                     .await
-                    .unwrap();
+                    .expect("Failed to print message");
             }
         } else {
             self.printer_tx
                 .send("No ops found".to_string())
                 .await
-                .unwrap();
+                .expect("Failed to print message");
         }
 
         Ok(())
