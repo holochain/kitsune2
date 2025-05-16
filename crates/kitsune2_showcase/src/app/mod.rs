@@ -134,6 +134,7 @@ impl App {
         let space = kitsune.space(space).await?;
 
         let agent = Arc::new(kitsune2_core::Ed25519LocalAgent::default());
+        agent.set_tgt_storage_arc_hint(DhtArc::FULL);
 
         space.local_agent_join(agent.clone()).await?;
 
