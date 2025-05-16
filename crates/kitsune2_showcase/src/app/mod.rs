@@ -229,7 +229,12 @@ impl App {
             name: file_name.to_string(),
             contents,
         })
-        .unwrap();
+        .map_err(|err| {
+            K2Error::other_src(
+                format!("with path: '{}'", file_path.display()),
+                err,
+            )
+        })?;
 
         self.printer_tx
             .send(format!("Storing contents of '{}'", file_path.display()))
