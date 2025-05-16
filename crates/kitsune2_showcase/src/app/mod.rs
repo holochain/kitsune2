@@ -365,7 +365,9 @@ impl App {
                 })
                 .find(|file_data| file_data.name == file_name)
             {
-                fs::write(file_name, file_data.contents).unwrap();
+                fs::write(file_name, file_data.contents).map_err(|err| {
+                    K2Error::other_src(format!("file name: '{file_name}'"), err)
+                })?;
 
                 self.printer_tx
                     .send(format!("Fetched file '{file_name}'"))
