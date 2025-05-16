@@ -319,13 +319,14 @@ impl App {
                 let created_at = DateTime::<Local>::from(SystemTime::from(
                     mem_op.created_at,
                 ));
-                let file_data =
+                let file_name =
                     serde_json::from_slice::<FileData>(&mem_op.op_data)
-                        .unwrap();
+                        .map(|f| f.name)
+                        .unwrap_or("<CORRUPTED FILE DATA>".to_string());
                 self.printer_tx
                     .send(format!(
                         "{:40}\t{:?}\t{}",
-                        file_data.name, created_at, op.op_id
+                        file_name, created_at, op.op_id
                     ))
                     .await
                     .expect("Failed to print message");
