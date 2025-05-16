@@ -359,9 +359,9 @@ impl App {
         if !stored_ops.is_empty() {
             if let Some(file_data) = stored_ops
                 .into_iter()
-                .map(|op| {
+                .filter_map(|op| {
                     let mem_op = MemoryOp::from(op.op_data);
-                    serde_json::from_slice::<FileData>(&mem_op.op_data).unwrap()
+                    serde_json::from_slice::<FileData>(&mem_op.op_data).ok()
                 })
                 .find(|file_data| file_data.name == file_name)
             {
