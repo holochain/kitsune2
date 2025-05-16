@@ -140,8 +140,14 @@ pub async fn readline(
 
 #[derive(Default, rustyline::Helper, rustyline::Validator)]
 struct Helper {
+    /// Used to show hints of previous entries as you type.
+    ///
+    /// Note: Use the right-arrow key to accept the hint.
     history_hinter: rustyline::hint::HistoryHinter,
 
+    /// Used to auto-complete file paths when using the [`Command::Share`] command.
+    ///
+    /// Note: Use the tab key to complete the path.
     file_name_completer: rustyline::completion::FilenameCompleter,
 }
 
