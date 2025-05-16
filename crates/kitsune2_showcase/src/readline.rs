@@ -221,7 +221,7 @@ impl rustyline::completion::Completer for Helper {
                     .filter(|c| c.starts_with(line))
                     .map(|c| Self::Candidate {
                         display: c.to_string(),
-                        replacement: c.trim_start_matches(line).to_string(),
+                        replacement: format!("{} ", c.trim_start_matches(line)),
                     })
                     .collect();
 
