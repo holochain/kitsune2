@@ -79,9 +79,11 @@ pub async fn readline(
             .build(),
         rustyline::history::MemHistory::new(),
     )
-    .unwrap();
+    .expect("Failed to create rustyline line editor");
     line_editor.set_helper(Some(Helper::default()));
-    let mut printer = line_editor.create_external_printer().unwrap();
+    let mut printer = line_editor
+        .create_external_printer()
+        .expect("Failed to get rustyline external printer");
 
     tokio::spawn(async move {
         while let Some(msg) = printer_rx.recv().await {
