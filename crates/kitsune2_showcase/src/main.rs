@@ -38,7 +38,9 @@ async fn main() {
     let nick = args.nick.clone();
 
     let (printer_tx, printer_rx) = mpsc::channel(10);
-    let app = app::App::new(printer_tx, args).await.unwrap();
+    let app = app::App::new(printer_tx, args)
+        .await
+        .expect("Failed to create the App");
 
     readline::readline(nick, printer_rx, app).await;
 }
