@@ -28,6 +28,7 @@ impl Verifier for TestCrypto {
 }
 
 const S1: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space-1")));
+const S2: SpaceId = SpaceId(Id(bytes::Bytes::from_static(b"space-2")));
 
 struct Test {
     peer_store: DynPeerStore,
@@ -35,7 +36,7 @@ struct Test {
 }
 
 impl Test {
-    pub async fn new() -> Self {
+    pub async fn new(space: SpaceId) -> Self {
         let builder = Arc::new(
             Builder {
                 verifier: Arc::new(TestCrypto),
@@ -48,20 +49,20 @@ impl Test {
 
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), S1.clone())
+            .create(builder.clone(), space.clone())
             .await
             .unwrap();
 
         let boot = builder
             .bootstrap
-            .create(builder.clone(), peer_store.clone(), S1.clone())
+            .create(builder.clone(), peer_store.clone(), space.clone())
             .await
             .unwrap();
 
         Self { peer_store, boot }
     }
 
-    pub async fn push_agent(&self) -> AgentId {
+    pub async fn push_agent(&self, space: SpaceId) -> AgentId {
         use std::sync::atomic::*;
 
         static NXT: AtomicU64 = AtomicU64::new(1);
@@ -76,7 +77,7 @@ impl Test {
             &TestCrypto,
             AgentInfo {
                 agent: agent.clone(),
-                space: S1.clone(),
+                space,
                 created_at: Timestamp::now(),
                 expires_at: Timestamp::now()
                     + std::time::Duration::from_secs(60 * 20),
@@ -109,11 +110,11 @@ impl Test {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mem_bootstrap_sanity() {
-    let t1 = Test::new().await;
-    let t2 = Test::new().await;
+    let t1 = Test::new(S1.clone()).await;
+    let t2 = Test::new(S1.clone()).await;
 
-    let a1 = t1.push_agent().await;
-    let a2 = t2.push_agent().await;
+    let a1 = t1.push_agent(S1.clone()).await;
+    let a2 = t2.push_agent(S1.clone()).await;
 
     for _ in 0..5 {
         super::MemBootstrapFactory::trigger_immediate_poll();
@@ -123,6 +124,36 @@ async fn mem_bootstrap_sanity() {
             && t2.check_agent(a1.clone()).await.is_ok()
         {
             println!("found!");
+            return;
+        }
+        println!("not found :(");
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    panic!("failed to bootstrap both created agents in time");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mem_bootstrap_no_crossover() {
+    let t1 = Test::new(S1.clone()).await;
+    let t2 = Test::new(S2.clone()).await;
+
+    let a1 = t1.push_agent(S1.clone()).await;
+    let a2 = t2.push_agent(S2.clone()).await;
+
+    for _ in 0..5 {
+        super::MemBootstrapFactory::trigger_immediate_poll();
+
+        println!("checking...");
+        if t1.check_agent(a1.clone()).await.is_ok()
+            && t2.check_agent(a2.clone()).await.is_ok()
+        {
+            println!("found!");
+
+            assert!(t1.check_agent(a2.clone()).await.is_err());
+            assert!(t2.check_agent(a1.clone()).await.is_err());
+
             return;
         }
         println!("not found :(");

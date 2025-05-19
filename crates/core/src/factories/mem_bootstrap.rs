@@ -77,13 +77,16 @@ impl BootstrapFactory for MemBootstrapFactory {
         &self,
         builder: Arc<Builder>,
         peer_store: DynPeerStore,
-        _space: SpaceId,
+        space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
             let config: MemBootstrapModConfig =
                 builder.config.get_module_config()?;
-            let out: DynBootstrap =
-                Arc::new(MemBootstrap::new(config.mem_bootstrap, peer_store));
+            let out: DynBootstrap = Arc::new(MemBootstrap::new(
+                space,
+                config.mem_bootstrap,
+                peer_store,
+            ));
             Ok(out)
         })
     }
@@ -91,6 +94,7 @@ impl BootstrapFactory for MemBootstrapFactory {
 
 #[derive(Debug)]
 struct MemBootstrap {
+    space: SpaceId,
     test_id: Arc<str>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -102,14 +106,19 @@ impl Drop for MemBootstrap {
 }
 
 impl MemBootstrap {
-    pub fn new(config: MemBootstrapConfig, peer_store: DynPeerStore) -> Self {
+    pub fn new(
+        space: SpaceId,
+        config: MemBootstrapConfig,
+        peer_store: DynPeerStore,
+    ) -> Self {
         let test_id: Arc<str> = config.test_id.into_boxed_str().into();
         let test_id2 = test_id.clone();
         let poll_freq =
             std::time::Duration::from_millis(config.poll_freq_ms as u64);
+        let space2 = space.clone();
         let task = tokio::task::spawn(async move {
             loop {
-                let info_list = stat_process(test_id2.clone(), None);
+                let info_list = stat_process(test_id2.clone(), &space2, None);
                 peer_store.insert(info_list).await.unwrap();
                 tokio::select! {
                     _ = tokio::time::sleep(poll_freq) => (),
@@ -117,13 +126,17 @@ impl MemBootstrap {
                 }
             }
         });
-        Self { test_id, task }
+        Self {
+            space,
+            test_id,
+            task,
+        }
     }
 }
 
 impl Bootstrap for MemBootstrap {
     fn put(&self, info: Arc<AgentInfoSigned>) {
-        let _ = stat_process(self.test_id.clone(), Some(info));
+        let _ = stat_process(self.test_id.clone(), &self.space, Some(info));
     }
 }
 
@@ -134,6 +147,7 @@ type Map = std::collections::HashMap<Arc<str>, Store>;
 static STAT: std::sync::OnceLock<Mutex<Map>> = std::sync::OnceLock::new();
 fn stat_process(
     id: Arc<str>,
+    _space: &SpaceId,
     info: Option<Arc<AgentInfoSigned>>,
 ) -> Vec<Arc<AgentInfoSigned>> {
     let mut lock = STAT.get_or_init(Default::default).lock().unwrap();
