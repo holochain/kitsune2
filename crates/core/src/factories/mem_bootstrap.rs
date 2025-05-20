@@ -95,7 +95,7 @@ impl BootstrapFactory for MemBootstrapFactory {
 #[derive(Debug)]
 struct MemBootstrap {
     space: SpaceId,
-    test_id: Arc<str>,
+    test_id: TestId,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -111,7 +111,7 @@ impl MemBootstrap {
         config: MemBootstrapConfig,
         peer_store: DynPeerStore,
     ) -> Self {
-        let test_id: Arc<str> = config.test_id.into_boxed_str().into();
+        let test_id: TestId = config.test_id.into_boxed_str().into();
         let test_id2 = test_id.clone();
         let poll_freq =
             std::time::Duration::from_millis(config.poll_freq_ms as u64);
@@ -142,16 +142,19 @@ impl Bootstrap for MemBootstrap {
 
 static NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
+type TestId = Arc<str>;
 type Store = Vec<Arc<AgentInfoSigned>>;
-type Map = std::collections::HashMap<Arc<str>, Store>;
-static STAT: std::sync::OnceLock<Mutex<Map>> = std::sync::OnceLock::new();
+type SpaceMap = std::collections::HashMap<SpaceId, Store>;
+type TestMap = std::collections::HashMap<TestId, SpaceMap>;
+static STAT: std::sync::OnceLock<Mutex<TestMap>> = std::sync::OnceLock::new();
 fn stat_process(
-    id: Arc<str>,
-    _space: &SpaceId,
+    test_id: TestId,
+    space: &SpaceId,
     info: Option<Arc<AgentInfoSigned>>,
 ) -> Vec<Arc<AgentInfoSigned>> {
     let mut lock = STAT.get_or_init(Default::default).lock().unwrap();
-    let store = lock.entry(id).or_default();
+    let map = lock.entry(test_id).or_default();
+    let store = map.entry(space.clone()).or_default();
     let now = Timestamp::now();
     store.retain(|a| {
         if let Some(info) = info.as_ref() {
