@@ -300,10 +300,24 @@ async fn transport_disconnect() {
 
     h2.check_connect(&u1).unwrap();
 
+    let mut s1 = t1.dump_network_stats().await.unwrap();
+    println!("before disconnect: {s1:#?}");
+
+    assert_eq!("kitsune2-core-mem", s1.backend);
+    assert!(!s1.connections.is_empty());
+    let c1 = s1.connections.remove(0);
+    assert!(c1.send_message_count > 0);
+    assert!(c1.send_bytes > 0);
+
     t1.disconnect(u2.clone(), Some("test-reason".into())).await;
 
     h1.check_disconnect(&u2, Some("test-reason")).unwrap();
     h2.check_disconnect(&u1, Some("test-reason")).unwrap();
+
+    let s1 = t1.dump_network_stats().await.unwrap();
+    println!("after disconnect: {s1:#?}");
+
+    assert!(s1.connections.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
