@@ -81,7 +81,31 @@ pub struct K2GossipConfig {
     ///
     /// Default: 300,000 (5m)
     #[cfg_attr(feature = "schema", schemars(default))]
+    // #[deprecated(
+    //     since = "0.1.9",
+    //     note = "This is being replaced by a burst mechanism instead."
+    // )]
     pub min_initiate_interval_ms: u32,
+
+    /// A factor applied to the default gossip initiation rate to permit a burst of gossip rounds
+    /// to be accepted.
+    ///
+    /// This is a rate-limiting mechanism that permits nodes that are joining the network and
+    /// needing to sync, to initiate gossip faster than usual.
+    ///
+    /// Default: 3
+    #[cfg_attr(feature = "schema", schemars(default))]
+    pub initiate_burst_factor: u32,
+
+    /// The number of initiation windows that the burst is calculated over.
+    ///
+    /// For example, if this is set to `5`, the initiate interval is set to `1m` and the burst
+    /// factor is set to `3` then in 3 minutes, then in a given 3-minute window, 15 gossip rounds
+    /// can be accepted.
+    ///
+    /// Default: 5
+    #[cfg_attr(feature = "schema", schemars(default))]
+    pub initiate_burst_window_count: u32,
 
     /// The timeout for a gossip round.
     ///
@@ -120,6 +144,8 @@ impl Default for K2GossipConfig {
             initiate_interval_ms: 120_000,
             initiate_jitter_ms: 10_000,
             min_initiate_interval_ms: 300_000,
+            initiate_burst_factor: 3,
+            initiate_burst_window_count: 5,
             round_timeout_ms: 15_000,
             max_concurrent_accepted_rounds: 10,
         }
@@ -141,6 +167,10 @@ impl K2GossipConfig {
 
     /// The minimum amount of time that must be allowed to pass before a gossip round can be
     /// initiated by a given peer.
+    // #[deprecated(
+    //     since = "0.1.9",
+    //     note = "This is being replaced by a burst mechanism instead."
+    // )]
     pub(crate) fn min_initiate_interval(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.min_initiate_interval_ms as u64)
     }
