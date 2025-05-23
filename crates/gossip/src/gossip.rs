@@ -1,3 +1,4 @@
+use crate::burst::AcceptBurstTracker;
 use crate::error::K2GossipError;
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
@@ -116,6 +117,7 @@ pub(crate) struct K2Gossip {
     pub(crate) fetch: DynFetch,
     pub(crate) agent_verifier: DynVerifier,
     pub(crate) transport: WeakDynTransport,
+    pub(crate) burst: AcceptBurstTracker,
     pub(crate) _initiate_task: Arc<OnceLock<Option<DropAbortHandle>>>,
     pub(crate) _timeout_task: Arc<OnceLock<Option<DropAbortHandle>>>,
     pub(crate) _dht_update_task: Arc<OnceLock<Option<DropAbortHandle>>>,
@@ -143,8 +145,9 @@ impl K2Gossip {
             Dht::try_from_store(Timestamp::now(), op_store.clone()).await?;
         tracing::info!("DHT model initialised in {:?}", start.elapsed());
 
+        let config = Arc::new(config);
         let gossip = K2Gossip {
-            config: Arc::new(config),
+            config: config.clone(),
             initiated_round_state: Default::default(),
             accepted_round_states: Default::default(),
             dht: Arc::new(RwLock::new(dht)),
@@ -156,6 +159,7 @@ impl K2Gossip {
             fetch,
             agent_verifier,
             transport: Arc::downgrade(&transport),
+            burst: AcceptBurstTracker::new(config),
             _initiate_task: Default::default(),
             _timeout_task: Default::default(),
             _dht_update_task: Default::default(),
