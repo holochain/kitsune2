@@ -1,3 +1,4 @@
+use crate::burst::AcceptBurstTracker;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{deserialize_gossip_message, GossipMessage};
@@ -58,9 +59,10 @@ impl RespondTestHarness {
             .returning(|_, _, _| {});
         let transport: DynTransport = Arc::new(transport);
 
+        let config = Arc::new(config);
         Self {
             gossip: K2Gossip {
-                config: Arc::new(config),
+                config: config.clone(),
                 initiated_round_state: Default::default(),
                 accepted_round_states: Default::default(),
                 dht: Arc::new(RwLock::new(dht)),
@@ -95,6 +97,7 @@ impl RespondTestHarness {
                     .unwrap(),
                 agent_verifier: builder.verifier.clone(),
                 transport: Arc::downgrade(&transport),
+                burst: AcceptBurstTracker::new(config),
                 _initiate_task: Default::default(),
                 _timeout_task: Default::default(),
                 _dht_update_task: Default::default(),

@@ -25,5 +25,6 @@ mod summary;
 mod timeout;
 mod update;
 
+mod burst;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod harness;

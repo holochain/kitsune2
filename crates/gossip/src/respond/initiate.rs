@@ -162,24 +162,8 @@ impl K2Gossip {
             }
         }
 
-        if let Some(timestamp) = self
-            .peer_meta_store
-            .last_gossip_timestamp(from_peer.clone())
-            .await?
-        {
-            let elapsed = (Timestamp::now() - timestamp).map_err(|_| {
-                K2Error::other("could not calculate elapsed time")
-            })?;
-
-            if elapsed < self.config.min_initiate_interval() {
-                tracing::info!(
-                    "Peer [{:?}] attempted to initiate too soon: {:?} < {:?}",
-                    from_peer,
-                    elapsed,
-                    self.config.min_initiate_interval()
-                );
-                return Err(K2GossipError::peer_behavior("initiate too soon"));
-            }
+        if !self.burst.check_accept(&from_peer, Timestamp::now()) {
+            return Err(K2GossipError::peer_behavior("initiate too soon"));
         }
 
         Ok(true)
@@ -188,8 +172,10 @@ impl K2Gossip {
 
 #[cfg(test)]
 mod tests {
+    use crate::burst::AcceptBurstTracker;
     use crate::protocol::{
-        encode_agent_ids, ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
+        encode_agent_ids, ArcSetMessage, GossipMessage,
+        K2GossipInitiateMessage, K2GossipTerminateMessage,
     };
     use crate::respond::harness::{test_session_id, RespondTestHarness};
     use crate::state::{GossipRoundState, RoundStage};
@@ -406,13 +392,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn initiate_twice_from_same_peer() {
+    async fn initiate_exceed_burst_limit() {
         let harness = RespondTestHarness::create().await;
 
         let other_peer_url = Url::from_str("ws://test-host:80/1").unwrap();
         let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+        let session_id = test_session_id();
         let message = GossipMessage::Initiate(K2GossipInitiateMessage {
-            session_id: test_session_id(),
+            session_id: session_id.clone(),
             participating_agents: vec![],
             arc_set: Some(ArcSetMessage {
                 value: arc_set.encode(),
@@ -421,11 +408,31 @@ mod tests {
             new_since: Timestamp::now().as_micros(),
             max_op_data_bytes: 5_000,
         });
-        harness
-            .gossip
-            .respond_to_msg(other_peer_url.clone(), message.clone())
-            .await
-            .unwrap();
+
+        let terminate_message =
+            GossipMessage::Terminate(K2GossipTerminateMessage {
+                session_id,
+                reason: "testing burst".to_string(),
+            });
+
+        let max_burst = AcceptBurstTracker::max_burst(&harness.gossip.config);
+
+        for _ in 0..max_burst {
+            harness
+                .gossip
+                .respond_to_msg(other_peer_url.clone(), message.clone())
+                .await
+                .unwrap();
+
+            harness
+                .gossip
+                .respond_to_msg(
+                    other_peer_url.clone(),
+                    terminate_message.clone(),
+                )
+                .await
+                .unwrap()
+        }
 
         let err = harness
             .gossip
