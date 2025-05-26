@@ -4,15 +4,11 @@ use file_data::FileData;
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
-use std::{
-    ffi::OsStr,
-    fmt::Debug,
+use std::{ffi::OsStr, fmt::Debug, path::Path, sync::Arc, time::SystemTime};
+use tokio::{
     fs::{self, read_to_string},
-    path::Path,
-    sync::Arc,
-    time::SystemTime,
+    sync::mpsc,
 };
-use tokio::sync::mpsc;
 
 use crate::Args;
 
@@ -211,7 +207,7 @@ impl App {
     }
 
     pub async fn share(&self, file_path: &Path) -> K2Result<()> {
-        let contents = read_to_string(file_path).map_err(|err| {
+        let contents = read_to_string(file_path).await.map_err(|err| {
             K2Error::other_src(
                 format!("with path: '{}'", file_path.display()),
                 err,
@@ -365,9 +361,14 @@ impl App {
                 })
                 .find(|file_data| file_data.name == file_name)
             {
-                fs::write(file_name, file_data.contents).map_err(|err| {
-                    K2Error::other_src(format!("file name: '{file_name}'"), err)
-                })?;
+                fs::write(file_name, file_data.contents).await.map_err(
+                    |err| {
+                        K2Error::other_src(
+                            format!("file name: '{file_name}'"),
+                            err,
+                        )
+                    },
+                )?;
 
                 self.printer_tx
                     .send(format!("Fetched file '{file_name}'"))
