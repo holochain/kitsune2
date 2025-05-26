@@ -6,7 +6,8 @@ use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
 use std::{ffi::OsStr, fmt::Debug, path::Path, sync::Arc, time::SystemTime};
 use tokio::{
-    fs::{self, read_to_string},
+    fs::{self, File},
+    io::AsyncReadExt,
     sync::mpsc,
 };
 
@@ -207,7 +208,28 @@ impl App {
     }
 
     pub async fn share(&self, file_path: &Path) -> K2Result<()> {
-        let contents = read_to_string(file_path).await.map_err(|err| {
+        const MAX_FILE_SIZE: usize = 1024;
+
+        let mut file = File::open(file_path).await.map_err(|err| {
+            K2Error::other_src(
+                format!("with path: '{}'", file_path.display()),
+                err,
+            )
+        })?;
+
+        let size = file
+            .metadata()
+            .await
+            .map(|m| m.len() as usize)
+            .unwrap_or_default();
+
+        if size > MAX_FILE_SIZE {
+            return Err(K2Error::other(format!("'{}' is larger than the allowed {MAX_FILE_SIZE} bytes. Actual size {size}", file_path.display())));
+        }
+
+        let mut contents = String::with_capacity(size);
+
+        file.read_to_string(&mut contents).await.map_err(|err| {
             K2Error::other_src(
                 format!("with path: '{}'", file_path.display()),
                 err,
