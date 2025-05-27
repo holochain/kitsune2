@@ -141,7 +141,7 @@ mod tests {
     #[tokio::test]
     async fn accept_continuous() {
         let config = Arc::new(K2GossipConfig {
-            initiate_interval_ms: 15,
+            initiate_interval_ms: 50,
             ..K2GossipConfig::default()
         });
         let tracker = AcceptBurstTracker::new(config.clone());
