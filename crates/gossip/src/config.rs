@@ -100,7 +100,7 @@ pub struct K2GossipConfig {
     /// The number of initiation windows that the burst is calculated over.
     ///
     /// For example, if this is set to `5`, the initiate interval is set to `1m` and the burst
-    /// factor is set to `3` then in 3 minutes, then in a given 3-minute window, 15 gossip rounds
+    /// factor is set to `3`, then in a given 3-minute window, 15 gossip rounds
     /// can be accepted.
     ///
     /// Default: 5

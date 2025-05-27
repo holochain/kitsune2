@@ -33,7 +33,7 @@ impl AcceptBurstTracker {
         let state_weak = Arc::downgrade(&state);
         let handle = tokio::task::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(5 * 60 * 1000)).await;
+                tokio::time::sleep(Duration::from_secs(5 * 60)).await;
 
                 if let Some(state) = state_weak.upgrade() {
                     Self::cleanup(&state, &task_config);
@@ -141,7 +141,7 @@ mod tests {
     #[tokio::test]
     async fn accept_continuous() {
         let config = Arc::new(K2GossipConfig {
-            initiate_interval_ms: 5,
+            initiate_interval_ms: 15,
             ..K2GossipConfig::default()
         });
         let tracker = AcceptBurstTracker::new(config.clone());
