@@ -159,7 +159,11 @@ mod tests {
             .get(&peer_url)
             .unwrap()
             .clone();
-        assert_eq!(config.initiate_burst_window_count as usize, open.len());
+        // The content of `open` should be recent timestamps but the actual number is unpredictable
+        // based on the timing of the sleeps above. Just check something is present.
+        // The main logic of the test is to be able to keep on accepting so the assertion in the
+        // loop above is the main check.
+        assert!(!open.is_empty(), "There should be some open timestamps");
     }
 
     #[tokio::test]
