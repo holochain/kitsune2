@@ -96,6 +96,14 @@ pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
         source: Url,
     ) -> BoxFut<'_, K2Result<()>>;
 
+    /// Request a notification when the fetch module has drained all pending requests.
+    ///
+    /// If the queue is empty then the notification is sent immediately.
+    ///
+    /// Note that this is exposed on the public API but is intended to be used by Kitsune2 itself,
+    /// as a hint that the fetch module is ready to be given more work.
+    fn notify_on_drained(&self, notify: futures::channel::oneshot::Sender<()>);
+
     /// Get a state summary from the fetch module.
     fn get_state_summary(&self) -> BoxFut<'_, K2Result<FetchStateSummary>>;
 }
