@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use chrono::{DateTime, Local};
 use file_data::FileData;
+use file_op_store::FileOpStoreFactory;
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
@@ -14,6 +15,7 @@ use tokio::{
 use crate::Args;
 
 mod file_data;
+mod file_op_store;
 
 // hard-coded random space
 const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
@@ -92,7 +94,7 @@ impl App {
             }
         }
 
-        let builder = kitsune2::default_builder().with_default_config()?;
+        let mut builder = kitsune2::default_builder().with_default_config()?;
 
         builder.config.set_module_config(
             &kitsune2_core::factories::CoreBootstrapModConfig {
@@ -124,6 +126,8 @@ impl App {
                 },
             },
         )?;
+
+        builder.op_store = FileOpStoreFactory::create();
 
         let h: DynKitsuneHandler = Arc::new(K(printer_tx.clone()));
         let kitsune = builder.build().await?;
