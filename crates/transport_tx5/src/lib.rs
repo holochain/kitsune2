@@ -319,9 +319,14 @@ impl TxImp for Tx5Transport {
             let peer = peer.to_peer_url()?;
             // this would be more efficient if we retool tx5 to use bytes
             self.ep
-                .send(peer, data.to_vec())
+                .send(peer.clone(), data.to_vec())
                 .await
-                .map_err(|e| K2Error::other_src("tx5 send error", e))
+                .map_err(|e| {
+                    K2Error::other_src(
+                        format!("tx5 send error to peer at url {peer}"),
+                        e,
+                    )
+                })
         })
     }
 
