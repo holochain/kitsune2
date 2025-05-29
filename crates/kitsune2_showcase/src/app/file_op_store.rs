@@ -70,6 +70,7 @@ impl OpStore for FileOpStore {
         op_list: Vec<Bytes>,
     ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
         Box::pin(async move {
+            // Get a list of file names from the provided ops
             let file_names = op_list
                 .iter()
                 .map(|op| {
@@ -81,9 +82,12 @@ impl OpStore for FileOpStore {
                 K2Error::other_src("Failed to deserialize op data, are you using Kitsune2's `MemoryOp`?", e)
             })?;
 
+            // Process the ops and add them the to in-memory op store,
+            // returning the computed IDs of the passed ops
             let op_ids =
                 self.mem_op_store.process_incoming_ops(op_list).await?;
 
+            // Add the file names and their corresponding op IDs to the lookup
             self.file_store_lookup
                 .lock()
                 .expect("failed to get lock for file_store_lookup")
