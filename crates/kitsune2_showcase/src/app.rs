@@ -24,7 +24,6 @@ const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
 ])));
 
 pub struct App {
-    _kitsune: DynKitsune,
     transport: DynTransport,
     space: DynSpace,
     _agent: Arc<kitsune2_core::Ed25519LocalAgent>,
@@ -144,7 +143,6 @@ impl App {
         space.local_agent_join(agent.clone()).await?;
 
         Ok(Self {
-            _kitsune: kitsune,
             transport,
             space,
             _agent: agent,
