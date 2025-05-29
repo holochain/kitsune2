@@ -24,9 +24,19 @@ const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
 ])));
 
 pub struct App {
+    /// Wrapper around the transport layer implementation, used to get network stats
     transport: DynTransport,
+
+    /// The unique DHT space used to communicate with peers
+    ///
+    /// This [`App`] only uses a single space with an ID derived from the provided network seed or
+    /// the hard-coded [`DEF_SPACE`] if no network seed is provided.
     space: DynSpace,
+
+    /// The channel used to send messages to print to the user
     printer_tx: mpsc::Sender<String>,
+
+    /// A lookup to find an operation's [`OpId`] from a file name
     file_store_lookup: FileStoreLookup,
 }
 
