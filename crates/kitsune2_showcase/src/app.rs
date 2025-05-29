@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use chrono::{DateTime, Local};
 use file_data::FileData;
-use file_op_store::FileOpStoreFactory;
+use file_op_store::{FileOpStoreFactory, FileStoreLookup};
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
@@ -29,6 +29,7 @@ pub struct App {
     space: DynSpace,
     _agent: Arc<kitsune2_core::Ed25519LocalAgent>,
     printer_tx: mpsc::Sender<String>,
+    file_store_lookup: FileStoreLookup,
 }
 
 impl App {
@@ -127,7 +128,9 @@ impl App {
             },
         )?;
 
-        builder.op_store = FileOpStoreFactory::create();
+        let file_store_lookup = FileStoreLookup::default();
+        builder.op_store =
+            FileOpStoreFactory::create(file_store_lookup.clone());
 
         let h: DynKitsuneHandler = Arc::new(K(printer_tx.clone()));
         let kitsune = builder.build().await?;
@@ -146,6 +149,7 @@ impl App {
             space,
             _agent: agent,
             printer_tx,
+            file_store_lookup,
         })
     }
 
@@ -364,19 +368,16 @@ impl App {
     }
 
     pub async fn fetch(&self, file_name: &str) -> K2Result<()> {
-        let op_ids = self
-            .space
-            .op_store()
-            .retrieve_op_hashes_in_time_slice(
-                DhtArc::FULL,
-                Timestamp::from_micros(0),
-                Timestamp::now(),
-            )
-            .await?
-            .0;
+        let op_id = self
+            .file_store_lookup
+            .lock()
+            .expect("failed to lock the file_store_lookup")
+            .get(file_name)
+            .ok_or(K2Error::other("file name not in store"))?
+            .clone();
 
         let stored_ops =
-            self.space.op_store().retrieve_ops(op_ids.to_vec()).await?;
+            self.space.op_store().retrieve_ops(vec![op_id]).await?;
 
         if !stored_ops.is_empty() {
             if let Some(file_data) = stored_ops

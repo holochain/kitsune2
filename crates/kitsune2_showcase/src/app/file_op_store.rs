@@ -1,21 +1,30 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use bytes::Bytes;
 use kitsune2_api::{
-    BoxFut, Builder, Config, DhtArc, DynOpStore, DynOpStoreFactory, K2Result,
-    MetaOp, OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
+    BoxFut, Builder, Config, DhtArc, DynOpStore, DynOpStoreFactory, K2Error,
+    K2Result, MetaOp, OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
 };
-use kitsune2_core::factories::MemOpStoreFactory;
+use kitsune2_core::factories::{MemOpStoreFactory, MemoryOpRecord};
+
+use super::file_data::FileData;
+
+pub type FileStoreLookup = Arc<Mutex<HashMap<String, OpId>>>;
 
 #[derive(Debug)]
 pub struct FileOpStoreFactory {
     mem_op_store_factory: Arc<MemOpStoreFactory>,
+    file_store_lookup: FileStoreLookup,
 }
 
 impl FileOpStoreFactory {
-    pub fn create() -> DynOpStoreFactory {
+    pub fn create(file_store_lookup: FileStoreLookup) -> DynOpStoreFactory {
         let out: DynOpStoreFactory = Arc::new(FileOpStoreFactory {
             mem_op_store_factory: Arc::new(MemOpStoreFactory {}),
+            file_store_lookup,
         });
         out
     }
@@ -36,11 +45,13 @@ impl OpStoreFactory for FileOpStoreFactory {
         space: SpaceId,
     ) -> BoxFut<'static, K2Result<DynOpStore>> {
         let mem_op_store_factory = self.mem_op_store_factory.clone();
+        let file_store_lookup = self.file_store_lookup.clone();
         Box::pin(async move {
             let out: DynOpStore = Arc::new(FileOpStore {
                 mem_op_store: mem_op_store_factory
                     .create(builder, space)
                     .await?,
+                file_store_lookup,
             });
             Ok(out)
         })
@@ -50,6 +61,7 @@ impl OpStoreFactory for FileOpStoreFactory {
 #[derive(Debug)]
 struct FileOpStore {
     mem_op_store: DynOpStore,
+    file_store_lookup: FileStoreLookup,
 }
 
 impl OpStore for FileOpStore {
@@ -57,7 +69,28 @@ impl OpStore for FileOpStore {
         &self,
         op_list: Vec<Bytes>,
     ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
-        self.mem_op_store.process_incoming_ops(op_list)
+        Box::pin(async move {
+            let file_names = op_list
+                .iter()
+                .map(|op| {
+                    let mem_op = MemoryOpRecord::from(op.clone());
+                     serde_json::from_slice::<FileData>(&mem_op.op_data)
+                        .map(|f| f.name)
+                })
+                .collect::<Result<Vec<_>, _>>().map_err(|e| {
+                K2Error::other_src("Failed to deserialize op data, are you using Kitsune2's `MemoryOp`?", e)
+            })?;
+
+            let op_ids =
+                self.mem_op_store.process_incoming_ops(op_list).await?;
+
+            self.file_store_lookup
+                .lock()
+                .expect("failed to get lock for file_store_lookup")
+                .extend(file_names.into_iter().zip(op_ids.clone()));
+
+            Ok(op_ids)
+        })
     }
 
     fn retrieve_op_hashes_in_time_slice(
