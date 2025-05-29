@@ -517,4 +517,6 @@ async fn fetch_queue_notify_on_last_op_fetched() {
         .await
         .expect("Timed out")
         .unwrap();
+
+    assert!(fetch.state.lock().unwrap().requests.is_empty());
 }
