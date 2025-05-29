@@ -26,7 +26,6 @@ const DEF_SPACE: SpaceId = SpaceId(Id(Bytes::from_static(&[
 pub struct App {
     transport: DynTransport,
     space: DynSpace,
-    _agent: Arc<kitsune2_core::Ed25519LocalAgent>,
     printer_tx: mpsc::Sender<String>,
     file_store_lookup: FileStoreLookup,
 }
@@ -145,7 +144,6 @@ impl App {
         Ok(Self {
             transport,
             space,
-            _agent: agent,
             printer_tx,
             file_store_lookup,
         })
