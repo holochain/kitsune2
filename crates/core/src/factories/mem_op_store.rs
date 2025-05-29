@@ -102,7 +102,7 @@ impl From<MemoryOp> for Bytes {
 ///
 /// Test data should create [MemoryOp]s and not be aware of this type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct MemoryOpRecord {
+pub struct MemoryOpRecord {
     /// The id (hash) of the op
     pub op_id: OpId,
     /// The creation timestamp of this op
