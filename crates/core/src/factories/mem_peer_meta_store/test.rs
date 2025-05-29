@@ -119,16 +119,17 @@ async fn store_unresponsive_peer() {
 
     let peer = Url::from_str("ws://test-host:80/1").unwrap();
 
-    let is_peer_unresponsive =
-        store.is_peer_unresponsive(peer.clone()).await.unwrap();
-    assert!(!is_peer_unresponsive);
+    let when_marked_unresponsive =
+        store.get_unresponsive_url(peer.clone()).await.unwrap();
+    assert!(when_marked_unresponsive.is_none());
 
+    let when = Timestamp::now();
     store
-        .mark_peer_unresponsive(peer.clone(), Timestamp::now())
+        .mark_peer_unresponsive(peer.clone(), Timestamp::now(), when)
         .await
         .unwrap();
 
-    let is_peer_unresponsive =
-        store.is_peer_unresponsive(peer.clone()).await.unwrap();
-    assert!(is_peer_unresponsive);
+    let when_marked_unresponsive =
+        store.get_unresponsive_url(peer.clone()).await.unwrap();
+    assert_eq!(when_marked_unresponsive, Some(when));
 }

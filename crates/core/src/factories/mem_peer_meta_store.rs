@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::*;
 use std::collections::HashMap;
@@ -61,20 +60,31 @@ impl PeerMetaStore for MemPeerMetaStore {
         &self,
         peer: Url,
         expiry: Timestamp,
+        when: Timestamp,
     ) -> BoxFuture<'_, K2Result<()>> {
         self.put(
             peer,
             format!("{KEY_PREFIX}:unresponsive"),
-            Bytes::new(),
+            serde_json::to_vec(&when)
+                .expect("expected Timestamp")
+                .into(),
             Some(expiry),
         )
     }
 
-    fn is_peer_unresponsive(&self, peer: Url) -> BoxFuture<'_, K2Result<bool>> {
+    fn get_unresponsive_url(
+        &self,
+        peer: Url,
+    ) -> BoxFuture<'_, K2Result<Option<Timestamp>>> {
         Box::pin(async move {
             self.get(peer, format!("{KEY_PREFIX}:unresponsive"))
                 .await
-                .map(|r| r.is_some())
+                .map(|maybe_value| {
+                    maybe_value.map(|value| {
+                        serde_json::from_slice::<Timestamp>(&value)
+                            .expect("expected Timestamp")
+                    })
+                })
         })
     }
 

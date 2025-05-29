@@ -25,16 +25,24 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
 
     /// Mark a peer url unresponsive with an expiration timestamp.
     ///
+    /// The value that will be stored with the peer key is the passed in timestamp
+    /// from when the URL became unresponsive.
+    ///
     /// After the expiry timestamp has passed, the peer url is supposed to be removed
     /// from the store.
     fn mark_peer_unresponsive(
         &self,
         peer: Url,
         expiry: Timestamp,
+        when: Timestamp,
     ) -> BoxFuture<'_, K2Result<()>>;
 
-    /// Check if a peer is marked unresponsive in the store.
-    fn is_peer_unresponsive(&self, peer: Url) -> BoxFuture<'_, K2Result<bool>>;
+    /// Get the timestamp of when a peer URL was marked unresponsive, if it is present in the
+    /// store.
+    fn get_unresponsive_url(
+        &self,
+        peer: Url,
+    ) -> BoxFuture<'_, K2Result<Option<Timestamp>>>;
 
     /// Delete a key-value pair for a given space and peer.
     fn delete(&self, peer: Url, key: String) -> BoxFuture<'_, K2Result<()>>;
