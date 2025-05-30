@@ -105,6 +105,8 @@ tokio-rustls = "0.26"
 schemars = { version = "0.8.22", features = ["preserve_order"] }
 # Used in the showcase CLI
 rustyline = { version = "15.0.0" }
+# Used in showcase app for the commands
+strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.

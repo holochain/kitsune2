@@ -23,7 +23,7 @@ rustyline = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
+strum = { workspace = true, features = ["derive", "strum_macros"] }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-appender = "0.2.3"
