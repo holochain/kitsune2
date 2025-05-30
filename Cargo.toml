@@ -91,6 +91,8 @@ url = "2.5.4"
 tracing = "0.1"
 # Used in the showcase app to log events to a file
 tracing-appender = "0.2.3"
+# Used in testing and the showcase app to output tracing
+tracing-subscriber = "0.3"
 # for init config
 tx5-core = "0.4.3"
 # for the transport_tx5 crate
@@ -130,8 +132,6 @@ sbd-client = "0.3.1"
 
 # used to hash op data
 sha2 = "0.10.8"
-# used in testing to output tracing
-tracing-subscriber = "0.3"
 # Generating test certificates in the bootstrap_srv
 rcgen = "0.13"
 # Used in the schema example
