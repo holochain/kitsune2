@@ -1,94 +1,184 @@
+use crate::app::App;
+use bytes::Bytes;
+use rustyline::error::ReadlineError;
+use rustyline::ExternalPrinter;
 use std::borrow::Cow;
+use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use strum::{
+    EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
+};
+use tokio::sync::mpsc::Receiver;
 
-type DynPrinter = Box<dyn FnMut(String) + 'static + Send>;
-type SyncPrinter = Arc<Mutex<Option<DynPrinter>>>;
+#[derive(IntoStaticStr, EnumMessage, EnumIter, EnumString)]
+#[strum(serialize_all = "lowercase", prefix = "/")]
+enum Command {
+    #[strum(disabled)]
+    Invalid,
 
-/// Ability to print to stdout while readline is happening.
-#[derive(Clone)]
-pub struct Print(SyncPrinter);
+    #[strum(message = "print this help")]
+    Help,
 
-impl std::fmt::Debug for Print {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Print").finish()
-    }
+    #[strum(message = "quit this program")]
+    Exit,
+
+    #[strum(message = "[filename] share a file if under 1K")]
+    Share,
+
+    #[strum(message = "print network statistics")]
+    Stats,
+
+    #[strum(message = "list files shared")]
+    List,
+
+    #[strum(message = "[filename] fetch a shared file")]
+    Fetch,
 }
-
-impl Print {
-    /// Print out a line.
-    pub fn print_line(&self, line: String) {
-        match self.0.lock().unwrap().as_mut() {
-            Some(printer) => printer(line),
-            None => println!("{line}"),
-        }
-    }
-}
-
-impl Default for Print {
-    fn default() -> Self {
-        Self(Arc::new(Mutex::new(None)))
-    }
-}
-
-const COMMAND_LIST: &[(&str, &str)] =
-    &[("/help", "print this help"), ("/exit", "quit this program")];
 
 /// Print out command help.
-fn help(command_list: &[(&str, &str)]) {
+fn help() {
     println!("\n# Kitsune2 Showcase chat and file sharing app\n");
-    for (cmd, help) in command_list {
-        println!("{cmd} - {help}");
+    for cmd in Command::iter() {
+        println!(
+            "{} - {}",
+            Into::<&str>::into(&cmd),
+            cmd.get_message().unwrap_or_default()
+        );
     }
-    for (cmd, help) in COMMAND_LIST {
-        println!("{cmd} - {help}");
-    }
+}
+
+/// Parse the first part as a [`Command`] and return it with the rest.
+///
+/// Returns [`Command::Invalid`] if not a valid [`Command`].
+/// Returns [`None`] if input does not start with the command prefix.
+fn split_on_command(line: &str) -> Option<(Command, &str)> {
+    line.strip_prefix("/")
+        .map(|s| s.split_once(" ").unwrap_or((s, "")))
+        .map(|(cmd_str, rest)| {
+            (Command::from_str(cmd_str).unwrap_or(Command::Invalid), rest)
+        })
 }
 
 /// Blocking loop waiting for user input / handling commands.
-pub fn readline(
+pub async fn readline(
     nick: String,
-    command_list: &'static [(&'static str, &'static str)],
-    print: Print,
-    lines: tokio::sync::mpsc::Sender<String>,
+    mut printer_rx: Receiver<String>,
+    app: App,
 ) {
     // print command help
-    help(command_list);
+    help();
 
     let prompt = format!("{nick}> ");
 
-    let mut line_editor =
-        <rustyline::Editor<H, rustyline::history::MemHistory>>::with_history(
-            rustyline::Config::builder().build(),
-            rustyline::history::MemHistory::new(),
-        )
-        .unwrap();
-    line_editor.set_helper(Some(H(command_list)));
-    let mut p = line_editor.create_external_printer().unwrap();
-    let p: DynPrinter = Box::new(move |s| {
-        use rustyline::ExternalPrinter;
-        p.print(s).unwrap();
-    });
-    *print.0.lock().unwrap() = Some(p);
+    let mut line_editor = rustyline::Editor::with_history(
+        rustyline::Config::builder()
+            .completion_type(rustyline::CompletionType::List)
+            .build(),
+        rustyline::history::MemHistory::new(),
+    )
+    .expect("Failed to create rustyline line editor");
+    line_editor.set_helper(Some(Helper::default()));
+    let mut printer = line_editor
+        .create_external_printer()
+        .expect("Failed to get rustyline external printer");
 
-    // loop over input lines
-    while let Ok(line) = line_editor.readline(&prompt) {
-        if line.starts_with("/help") {
-            help(command_list);
-            continue;
-        } else if line.starts_with("/exit") {
-            break;
+    tokio::spawn(async move {
+        while let Some(msg) = printer_rx.recv().await {
+            printer.print(format!("{msg}\n")).ok();
         }
+    });
 
-        if lines.blocking_send(line).is_err() {
-            break;
+    let line_editor = Arc::new(Mutex::new(line_editor));
+
+    loop {
+        let line_editor_2 = line_editor.clone();
+        let prompt = prompt.clone();
+        let line = tokio::task::spawn_blocking(move || {
+            line_editor_2
+                .lock()
+                .expect("failed to get lock for line_editor")
+                .readline(&prompt)
+        })
+        .await
+        .expect("Failed to spawn blocking task to read stdin");
+
+        match line {
+            Err(ReadlineError::Eof) => break,
+            Err(ReadlineError::Interrupted) => println!("^C"),
+            Err(err) => {
+                eprintln!("Failed to read line: {err}");
+                break;
+            }
+            Ok(line) if !line.trim().is_empty() => {
+                if let Err(err) = line_editor
+                    .lock()
+                    .expect("failed to get lock for line_editor")
+                    .add_history_entry(line.clone())
+                {
+                    eprintln!("Failed to add line to history: {err}");
+                }
+                if let Some((cmd, rest)) = split_on_command(&line) {
+                    match cmd {
+                        Command::Help => help(),
+                        Command::Exit => break,
+                        Command::Stats => {
+                            if let Err(err) = app.stats().await {
+                                eprintln!("Failed to get stats: {err}");
+                            }
+                        }
+                        Command::Share => {
+                            if let Err(err) = app.share(Path::new(rest)).await {
+                                eprintln!("Failed to share file: {err}");
+                            }
+                        }
+                        Command::List => {
+                            if let Err(err) = app.list().await {
+                                eprintln!("Failed to list shared files: {err}");
+                            }
+                        }
+                        Command::Fetch => {
+                            if let Err(err) = app.fetch(rest).await {
+                                eprintln!("Failed to fetch file: {err}");
+                            }
+                        }
+                        Command::Invalid => {
+                            eprintln!("Invalid Command. Valid commands are:");
+                            Command::iter().for_each(|cmd| {
+                                eprintln!(
+                                    "{} - {}",
+                                    Into::<&str>::into(&cmd),
+                                    cmd.get_message().unwrap_or_default()
+                                );
+                            });
+                        }
+                    }
+                // Not a command so send as chat message
+                } else if let Err(err) =
+                    app.chat(Bytes::copy_from_slice(line.as_bytes())).await
+                {
+                    println!("Failed to send chat message: {err}")
+                }
+            }
+            _ => {}
         }
     }
 }
 
-#[derive(rustyline::Helper, rustyline::Validator)]
-struct H(&'static [(&'static str, &'static str)]);
+#[derive(Default, rustyline::Helper, rustyline::Validator)]
+struct Helper {
+    /// Used to show hints of previous entries as you type.
+    ///
+    /// Note: Use the right-arrow key to accept the hint.
+    history_hinter: rustyline::hint::HistoryHinter,
 
-impl rustyline::highlight::Highlighter for H {
+    /// Used to auto-complete file paths when using the [`Command::Share`] command.
+    ///
+    /// Note: Use the tab key to complete the path.
+    file_name_completer: rustyline::completion::FilenameCompleter,
+}
+
+impl rustyline::highlight::Highlighter for Helper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
         &'s self,
         prompt: &'p str,
@@ -102,58 +192,29 @@ impl rustyline::highlight::Highlighter for H {
     }
 }
 
-struct Hint(&'static str);
-
-impl rustyline::hint::Hint for Hint {
-    fn display(&self) -> &str {
-        self.0
-    }
-
-    fn completion(&self) -> Option<&str> {
-        Some(self.0)
-    }
-}
-
-impl rustyline::hint::Hinter for H {
-    type Hint = Hint;
+impl rustyline::hint::Hinter for Helper {
+    type Hint = String;
 
     fn hint(
         &self,
         line: &str,
-        _pos: usize,
-        _ctx: &rustyline::Context<'_>,
+        pos: usize,
+        ctx: &rustyline::Context<'_>,
     ) -> Option<Self::Hint> {
-        if line.len() < 2 {
+        if line.is_empty() {
             return None;
         }
-        for (c, _) in self.0 {
-            if c.starts_with(line) {
-                return Some(Hint(c.trim_start_matches(line)));
-            }
-        }
-        for (c, _) in COMMAND_LIST {
-            if c.starts_with(line) {
-                return Some(Hint(c.trim_start_matches(line)));
-            }
-        }
-        None
+        self.history_hinter.hint(line, pos, ctx).or_else(|| {
+            Command::iter()
+                .map(Into::<&'static str>::into)
+                .find(|c| c.starts_with(line))
+                .map(|c| c.trim_start_matches(line).to_string())
+        })
     }
 }
 
-pub struct Candidate(&'static str);
-
-impl rustyline::completion::Candidate for Candidate {
-    fn display(&self) -> &str {
-        self.0
-    }
-
-    fn replacement(&self) -> &str {
-        self.0
-    }
-}
-
-impl rustyline::completion::Completer for H {
-    type Candidate = Candidate;
+impl rustyline::completion::Completer for Helper {
+    type Candidate = rustyline::completion::Pair;
 
     fn complete(
         &self,
@@ -161,20 +222,25 @@ impl rustyline::completion::Completer for H {
         pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        let mut out = Vec::new();
-        if line.len() < 2 {
-            return Ok((pos, out));
-        }
-        for (c, _) in self.0 {
-            if c.starts_with(line) {
-                out.push(Candidate(c.trim_start_matches(line)));
+        match split_on_command(line) {
+            Some((Command::Share, args)) => {
+                let candidates =
+                    self.file_name_completer.complete_path(args, args.len())?.1;
+
+                Ok((pos - args.len(), candidates))
+            }
+            _ => {
+                let candidates = Command::iter()
+                    .map(Into::<&'static str>::into)
+                    .filter(|c| c.starts_with(line))
+                    .map(|c| Self::Candidate {
+                        display: c.to_string(),
+                        replacement: format!("{} ", c.trim_start_matches(line)),
+                    })
+                    .collect();
+
+                Ok((pos, candidates))
             }
         }
-        for (c, _) in COMMAND_LIST {
-            if c.starts_with(line) {
-                out.push(Candidate(c.trim_start_matches(line)));
-            }
-        }
-        Ok((pos, out))
     }
 }

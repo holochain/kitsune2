@@ -12,6 +12,7 @@ edition.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
 kitsune2 = { workspace = true }
 kitsune2_api = { workspace = true }
@@ -19,5 +20,11 @@ kitsune2_core = { workspace = true }
 kitsune2_transport_tx5 = { workspace = true }
 rustls = { workspace = true }
 rustyline = { workspace = true, features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
+strum = { workspace = true, features = ["derive", "strum_macros"] }
 tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
