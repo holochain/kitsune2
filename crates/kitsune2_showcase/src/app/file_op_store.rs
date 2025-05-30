@@ -1,16 +1,14 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
+use super::file_data::FileData;
 use bytes::Bytes;
 use kitsune2_api::{
     BoxFut, Builder, Config, DhtArc, DynOpStore, DynOpStoreFactory, K2Error,
     K2Result, MetaOp, OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
 };
 use kitsune2_core::factories::{MemOpStoreFactory, MemoryOpRecord};
-
-use super::file_data::FileData;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 pub type FileStoreLookup = Arc<Mutex<HashMap<String, OpId>>>;
 

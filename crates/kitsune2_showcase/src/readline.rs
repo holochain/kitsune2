@@ -1,17 +1,15 @@
+use crate::app::App;
+use bytes::Bytes;
+use rustyline::error::ReadlineError;
+use rustyline::ExternalPrinter;
 use std::borrow::Cow;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-
-use bytes::Bytes;
-use rustyline::error::ReadlineError;
-use rustyline::ExternalPrinter;
 use strum::{
     EnumIter, EnumMessage, EnumString, IntoEnumIterator, IntoStaticStr,
 };
 use tokio::sync::mpsc::Receiver;
-
-use crate::app::App;
 
 #[derive(IntoStaticStr, EnumMessage, EnumIter, EnumString)]
 #[strum(serialize_all = "lowercase", prefix = "/")]
