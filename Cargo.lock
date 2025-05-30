@@ -1792,9 +1792,9 @@ dependencies = [
 name = "kitsune2_gossip"
 version = "0.2.7"
 dependencies = [
- "backon",
  "base64",
  "bytes",
+ "futures",
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_dht",

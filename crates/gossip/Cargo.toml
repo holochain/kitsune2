@@ -23,7 +23,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
-backon = { workspace = true }
+futures = { workspace = true }
 
 # Feature: schema
 schemars = { workspace = true, optional = true }
