@@ -89,6 +89,8 @@ url = "2.5.4"
 # kitsune2 uses tracing to log events. A consumer can choose any subscriber
 # to receive these logs.
 tracing = "0.1"
+# Used in the showcase app to log events to a file
+tracing-appender = "0.2.3"
 # for init config
 tx5-core = "0.4.3"
 # for the transport_tx5 crate
