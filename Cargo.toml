@@ -52,6 +52,8 @@ base64 = "0.22.1"
 # shallow-clone byte arrays is a solved problem.
 # bytes is the crate that solves it.
 bytes = { version = "1.8.0", features = ["serde"] }
+# Used to pretty-print the timestamps in the showcase app
+chrono = "0.4.41"
 # bootstrap_srv for cli param parsing
 clap = "4.5.21"
 # bootstrap_srv uses this to make a best-effort to clean up tempfiles

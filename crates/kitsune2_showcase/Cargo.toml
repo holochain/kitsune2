@@ -12,7 +12,7 @@ edition.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
-chrono = "0.4.41"
+chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
 kitsune2 = { workspace = true }
 kitsune2_api = { workspace = true }
