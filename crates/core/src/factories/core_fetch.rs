@@ -130,7 +130,7 @@ type IncomingResponse = Vec<Op>;
 struct State {
     requests: HashSet<OutgoingRequest>,
     back_off_list: BackOffList,
-    drained_notify: Vec<futures::channel::oneshot::Sender<()>>,
+    notify_when_drained_senders: Vec<futures::channel::oneshot::Sender<()>>,
 }
 
 impl State {
@@ -221,7 +221,7 @@ impl Fetch for CoreFetch {
                 tracing::warn!(?err, "Failed to send notification on drained");
             }
         } else {
-            lock.drained_notify.push(notify);
+            lock.notify_when_drained_senders.push(notify);
         }
     }
 
@@ -260,7 +260,7 @@ impl CoreFetch {
                 config.last_back_off_interval_ms,
                 config.num_back_off_intervals,
             ),
-            drained_notify: vec![],
+            notify_when_drained_senders: vec![],
         }));
 
         let mut tasks =
@@ -400,6 +400,24 @@ impl CoreFetch {
                 }
             }
 
+            // After processing this request, check if the fetch queue is drained.
+            //
+            // Note that using flow control above could skip this step, so please only `continue`
+            // if it is safe to do so.
+            {
+                let mut lock = state.lock().expect("poisoned");
+                if lock.requests.is_empty() {
+                    // Notify all listeners that the fetch queue is drained.
+                    for notify in lock.notify_when_drained_senders.drain(..) {
+                        if notify.send(()).is_err() {
+                            tracing::warn!(
+                                "Failed to send notification on drained"
+                            );
+                        }
+                    }
+                }
+            }
+
             // Re-insert the fetch request into the queue after a delay.
             let outgoing_request_tx = outgoing_request_tx.clone();
 
@@ -425,24 +443,6 @@ impl CoreFetch {
                     }
                 }
             });
-
-            // After processing this request, check if the fetch queue is drained.
-            //
-            // Note that using flow control above could skip this step, so please only `continue`
-            // if it is safe to do so.
-            {
-                let mut lock = state.lock().expect("poisoned");
-                if lock.requests.is_empty() {
-                    // Notify all listeners that the fetch queue is drained.
-                    for notify in lock.drained_notify.drain(..) {
-                        if notify.send(()).is_err() {
-                            tracing::warn!(
-                                "Failed to send notification on drained"
-                            );
-                        }
-                    }
-                }
-            }
         }
     }
 
