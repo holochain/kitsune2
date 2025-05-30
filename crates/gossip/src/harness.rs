@@ -4,9 +4,9 @@ use crate::harness::op_store::K2GossipMemOpStoreFactory;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::{K2GossipConfig, K2GossipFactory, K2GossipModConfig};
 use kitsune2_api::{
-    AgentId, AgentInfoSigned, DhtArc, DynGossip, DynSpace, LocalAgent, OpId,
-    SpaceHandler, SpaceId, StoredOp, TxBaseHandler, TxHandler, TxSpaceHandler,
-    UNIX_TIMESTAMP,
+    AgentId, AgentInfoSigned, DhtArc, DynGossip, DynSpace,
+    GossipStateSummaryRequest, LocalAgent, OpId, SpaceHandler, SpaceId,
+    StoredOp, TxBaseHandler, TxHandler, TxSpaceHandler, UNIX_TIMESTAMP,
 };
 use kitsune2_core::factories::MemoryOp;
 use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
@@ -291,6 +291,35 @@ impl K2GossipFunctionalTestHarness {
         })
         .await
         .expect("Timed out waiting for instances to sync");
+    }
+
+    /// Wait for all remote agents to declare a full arc to us.
+    pub async fn wait_for_full_arc_for_all(&self, timeout: Duration) {
+        let this = self.clone();
+
+        tokio::time::timeout(timeout, async move {
+            loop {
+                let summary = this
+                    .gossip
+                    .get_state_summary(GossipStateSummaryRequest {
+                        include_dht_summary: false,
+                    })
+                    .await
+                    .unwrap();
+
+                if summary
+                    .peer_meta
+                    .values()
+                    .all(|meta| meta.storage_arc == DhtArc::FULL)
+                {
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("Timed out waiting for peers to declare full arc");
     }
 
     /// Force the storage arc of the given agent to be the given arc.

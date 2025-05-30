@@ -390,6 +390,10 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .await
         .unwrap();
 
+    // Check that when the requests are dropped, the queue is treated as drained.
+    let (tx, rx) = futures::channel::oneshot::channel();
+    fetch.notify_on_drained(tx);
+
     // Back off agent the maximum possible number of times.
     let last_back_off_interval = {
         let mut lock = fetch.state.lock().unwrap();
@@ -404,7 +408,7 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     };
 
     // Wait for back off interval to expire. Afterwards the request should fail again and all
-    // of the agent's requests should be removed from the set.
+    // the agent's requests should be removed from the set.
     tokio::time::sleep(Duration::from_millis(last_back_off_interval as u64))
         .await;
 
@@ -444,4 +448,75 @@ async fn requests_are_dropped_when_max_back_off_expired() {
         .requests
         .iter()
         .all(|(_, peer_url)| *peer_url != peer_url_1),);
+
+    // Check that the drop has happened.
+    tokio::time::timeout(Duration::from_secs(5), rx)
+        .await
+        .expect("Timed out waiting for drained notification")
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_fetch_queue_notifies_drained() {
+    let config = CoreFetchConfig {
+        first_back_off_interval_ms: 10,
+        last_back_off_interval_ms: 10,
+        re_insert_outgoing_request_delay_ms: 10,
+        ..Default::default()
+    };
+    let TestCase {
+        fetch, _transport, ..
+    } = setup_test(&config, true).await;
+
+    let (tx, mut rx) = futures::channel::oneshot::channel();
+    fetch.notify_on_drained(tx);
+
+    // The fetch queue should be immediately empty, so the notification should be sent
+    // immediately.
+    assert!(rx.try_recv().unwrap().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fetch_queue_notify_on_last_op_fetched() {
+    let config = CoreFetchConfig {
+        first_back_off_interval_ms: 10,
+        last_back_off_interval_ms: 10,
+        re_insert_outgoing_request_delay_ms: 10,
+        ..Default::default()
+    };
+    let TestCase {
+        fetch, _transport, ..
+    } = setup_test(&config, true).await;
+
+    let op_list = create_op_id_list(10);
+    let peer_url = random_peer_url();
+
+    let mut expected_requests = Vec::new();
+    op_list
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_requests.push((op_id, peer_url.clone())));
+    let mut expected_ops = Vec::new();
+    op_list
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_ops.push((op_id, peer_url.clone())));
+
+    fetch
+        .request_ops(op_list.clone(), peer_url.clone())
+        .await
+        .unwrap();
+
+    let (tx, mut rx) = futures::channel::oneshot::channel();
+    fetch.notify_on_drained(tx);
+
+    // The queue should still be working, so the notification should not be sent yet.
+    assert!(rx.try_recv().unwrap().is_none());
+
+    tokio::time::timeout(Duration::from_secs(5), rx)
+        .await
+        .expect("Timed out")
+        .unwrap();
+
+    assert!(fetch.state.lock().unwrap().requests.is_empty());
 }

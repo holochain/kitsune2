@@ -4,8 +4,8 @@ use crate::fetch::DynFetch;
 use crate::peer_store::DynPeerStore;
 use crate::transport::DynTransport;
 use crate::{
-    builder, config, BoxFut, DynLocalAgentStore, DynOpStore, DynPeerMetaStore,
-    K2Result, SpaceId, StoredOp, Timestamp, Url,
+    builder, config, BoxFut, DhtArc, DynLocalAgentStore, DynOpStore,
+    DynPeerMetaStore, K2Result, SpaceId, StoredOp, Timestamp, Url,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -96,6 +96,10 @@ pub struct PeerMeta {
     pub completed_rounds: Option<u32>,
     /// The number of peer timeouts.
     pub peer_timeouts: Option<u32>,
+    /// Whether this peer has declared itself as offline.
+    pub is_offline: bool,
+    /// The storage arc that this peer is declaring.
+    pub storage_arc: DhtArc,
 }
 
 /// Gossip round state summary.
