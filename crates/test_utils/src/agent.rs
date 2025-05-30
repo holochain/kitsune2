@@ -131,6 +131,26 @@ pub struct AgentBuilder {
 }
 
 impl AgentBuilder {
+    /// Create a new agent builder that uses an existing agent as the starting point.
+    ///
+    /// This can be used to produce a new agent that is based on an existing agent's
+    /// information, such as its agent id, space id, and other properties.
+    ///
+    /// Useful if you want to generate a new agent info with some changed settings, such as new
+    /// expiry, setting a tombstone or an updated storage arc. Though in most cases you would
+    /// want to let the space manage that for you. This is a unit testing helper and is likely to
+    /// cause confusing problems if used in integration tests!
+    pub fn update_for(existing_agent: Arc<AgentInfoSigned>) -> Self {
+        AgentBuilder {
+            agent: Some(existing_agent.agent.clone()),
+            space: Some(existing_agent.space.clone()),
+            is_tombstone: Some(existing_agent.is_tombstone),
+            url: Some(existing_agent.url.clone()),
+            storage_arc: Some(existing_agent.storage_arc),
+            ..Default::default()
+        }
+    }
+
     /// Set the peer URL for the agent.
     pub fn with_url(mut self, url: Option<Url>) -> Self {
         self.url = Some(url);
@@ -140,6 +160,15 @@ impl AgentBuilder {
     /// Set the storage arc for the agent.
     pub fn with_storage_arc(mut self, arc: DhtArc) -> Self {
         self.storage_arc = Some(arc);
+        self
+    }
+
+    /// Set the tombstone flag for the agent.
+    ///
+    /// This is a signal from this agent that it is planning to go offline or otherwise doesn't
+    /// want to be contacted anymore.
+    pub fn with_tombstone(mut self, is_tombstone: bool) -> Self {
+        self.is_tombstone = Some(is_tombstone);
         self
     }
 
