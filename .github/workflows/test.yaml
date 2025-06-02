@@ -79,7 +79,7 @@ jobs:
         with:
           cmake-version: '3.31.x'
 
-      - uses: johnwason/vcpkg-action@v6
+      - uses: johnwason/vcpkg-action@v7
         with:
           triplet: x64-windows-release
           token: ${{ github.token }}
