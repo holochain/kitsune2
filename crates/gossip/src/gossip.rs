@@ -1075,11 +1075,6 @@ mod test {
         iter_check!(1000, 20, {
             let mut all_tried = true;
 
-            // let summary = harness_1.gossip.get_state_summary(GossipStateSummaryRequest {
-            //     include_dht_summary: false
-            // }).await.unwrap();
-            // println!("Gossip summary: {:#?}", summary);
-
             for agent in &junk_agents {
                 all_tried &= harness_1
                     .peer_meta_store
