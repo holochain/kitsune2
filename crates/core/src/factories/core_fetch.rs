@@ -114,6 +114,7 @@ type IncomingResponse = Vec<Op>;
 struct State {
     requests: HashSet<OutgoingRequest>,
     back_off_list: BackOffList,
+    notify_when_drained_senders: Vec<futures::channel::oneshot::Sender<()>>,
 }
 
 impl State {
@@ -197,6 +198,17 @@ impl Fetch for CoreFetch {
         })
     }
 
+    fn notify_on_drained(&self, notify: futures::channel::oneshot::Sender<()>) {
+        let mut lock = self.state.lock().expect("poisoned");
+        if lock.requests.is_empty() {
+            if let Err(err) = notify.send(()) {
+                tracing::warn!(?err, "Failed to send notification on drained");
+            }
+        } else {
+            lock.notify_when_drained_senders.push(notify);
+        }
+    }
+
     fn get_state_summary(&self) -> BoxFut<'_, K2Result<FetchStateSummary>> {
         Box::pin(async move { Ok(self.state.lock().unwrap().summary()) })
     }
@@ -232,6 +244,7 @@ impl CoreFetch {
                 config.last_back_off_interval_ms,
                 config.num_back_off_intervals,
             ),
+            notify_when_drained_senders: vec![],
         }));
 
         let mut tasks =
@@ -312,6 +325,9 @@ impl CoreFetch {
                 let mut lock = state.lock().unwrap();
 
                 // Do nothing if op id is no longer in the set of requests to send.
+                //
+                // Note that because this request isn't in the state, it is safe to
+                // skip the requests empty check below.
                 if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
                     continue;
                 }
@@ -368,22 +384,47 @@ impl CoreFetch {
                 }
             }
 
+            // After processing this request, check if the fetch queue is drained.
+            //
+            // Note that using flow control above could skip this step, so please only `continue`
+            // if it is safe to do so.
+            {
+                let mut lock = state.lock().expect("poisoned");
+                if lock.requests.is_empty() {
+                    // Notify all listeners that the fetch queue is drained.
+                    for notify in lock.notify_when_drained_senders.drain(..) {
+                        if notify.send(()).is_err() {
+                            tracing::warn!(
+                                "Failed to send notification on drained"
+                            );
+                        }
+                    }
+                }
+            }
+
             // Re-insert the fetch request into the queue after a delay.
             let outgoing_request_tx = outgoing_request_tx.clone();
-            let state = state.clone();
-            tokio::task::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(
-                    re_insert_outgoing_request_delay as u64,
-                ))
-                .await;
-                if let Err(err) = outgoing_request_tx
-                    .try_send((op_id.clone(), peer_url.clone()))
-                {
-                    tracing::warn!(
+
+            tokio::task::spawn({
+                let state = state.clone();
+                async move {
+                    tokio::time::sleep(Duration::from_millis(
+                        re_insert_outgoing_request_delay as u64,
+                    ))
+                    .await;
+                    if let Err(err) = outgoing_request_tx
+                        .try_send((op_id.clone(), peer_url.clone()))
+                    {
+                        tracing::warn!(
                         "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
                     );
-                    // Remove op id/peer url from set to prevent build-up of state.
-                    state.lock().unwrap().requests.remove(&(op_id, peer_url));
+                        // Remove op id/peer url from set to prevent build-up of state.
+                        state
+                            .lock()
+                            .unwrap()
+                            .requests
+                            .remove(&(op_id, peer_url));
+                    }
                 }
             });
         }
