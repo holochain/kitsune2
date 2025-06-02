@@ -42,7 +42,7 @@ pub struct K2GossipConfig {
     /// This value should be set to a small value to keep the initial sync fast, but large enough to
     /// avoid using an unreasonable amount of CPU time.
     ///
-    /// Default: 5000 (1s)
+    /// Default: 1000 (1s)
     #[cfg_attr(feature = "schema", schemars(default))]
     pub initial_initiate_interval_ms: u32,
 

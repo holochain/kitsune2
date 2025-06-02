@@ -96,8 +96,8 @@ pub struct PeerMeta {
     pub completed_rounds: Option<u32>,
     /// The number of peer timeouts.
     pub peer_timeouts: Option<u32>,
-    /// Whether this peer has declared itself as offline.
-    pub is_offline: bool,
+    /// Whether this peer has declared itself as offline, and no longer reachable, with a tombstone.
+    pub is_tombstone: bool,
     /// The storage arc that this peer is declaring.
     pub storage_arc: DhtArc,
 }

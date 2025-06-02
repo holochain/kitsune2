@@ -56,7 +56,7 @@ async fn two_new_agents_sync() {
         .wait_for_sync_with(&harness_2, Duration::from_secs(10))
         .await;
 
-    // Then both agents should have reach full arc.
+    // Then both agents should have reached full arc.
     harness_1
         .wait_for_full_arc_for_all(Duration::from_secs(5))
         .await;
@@ -80,6 +80,9 @@ async fn new_agent_joins_existing_network() {
 
     let harness_1 = factory.new_instance().await;
     let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+
+    // Force the first agent to have a full arc, to simulate an existing network where there are
+    // agents that are already synced.
     harness_1
         .force_storage_arc(agent_1.agent.clone(), DhtArc::FULL)
         .await;
@@ -107,6 +110,7 @@ async fn new_agent_joins_existing_network() {
         .op_list
         .extend(ops.iter().map(|op| (op.op_id.clone(), op.clone())));
 
+    // Join a new agent that wants to reach full arc, and let them try to sync with the first agent.
     let harness_2 = factory.new_instance().await;
     harness_2.join_local_agent(DhtArc::FULL).await;
 
@@ -115,7 +119,7 @@ async fn new_agent_joins_existing_network() {
         .wait_for_sync_with(&harness_2, Duration::from_secs(10))
         .await;
 
-    // Then both agents should have or reach full arc.
+    // Then both agents should have or reached full arc.
     harness_1
         .wait_for_full_arc_for_all(Duration::from_secs(5))
         .await;

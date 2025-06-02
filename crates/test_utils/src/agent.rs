@@ -151,15 +151,9 @@ impl AgentBuilder {
         }
     }
 
-    /// Set the peer URL for the agent.
-    pub fn with_url(mut self, url: Option<Url>) -> Self {
-        self.url = Some(url);
-        self
-    }
-
-    /// Set the storage arc for the agent.
-    pub fn with_storage_arc(mut self, arc: DhtArc) -> Self {
-        self.storage_arc = Some(arc);
+    /// Set the space to which the agent belongs.
+    pub fn with_space(mut self, space: SpaceId) -> Self {
+        self.space = Some(space);
         self
     }
 
@@ -169,6 +163,18 @@ impl AgentBuilder {
     /// want to be contacted anymore.
     pub fn with_tombstone(mut self, is_tombstone: bool) -> Self {
         self.is_tombstone = Some(is_tombstone);
+        self
+    }
+
+    /// Set the peer URL for the agent.
+    pub fn with_url(mut self, url: Option<Url>) -> Self {
+        self.url = Some(url);
+        self
+    }
+
+    /// Set the storage arc for the agent.
+    pub fn with_storage_arc(mut self, arc: DhtArc) -> Self {
+        self.storage_arc = Some(arc);
         self
     }
 

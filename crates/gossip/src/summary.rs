@@ -130,7 +130,7 @@ impl K2Gossip {
                         .peer_meta_store
                         .peer_timeouts(url.clone())
                         .await?,
-                    is_offline: agent.is_tombstone,
+                    is_tombstone: agent.is_tombstone,
                     storage_arc: agent.storage_arc,
                 },
             );

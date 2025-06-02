@@ -39,13 +39,15 @@ pub fn spawn_initiate_task(
 
             let Ok(local_agents) = gossip.local_agent_store.get_all().await else {
                 tracing::warn!("Failed to get local agents, pausing and then retrying");
-                tokio::time::sleep(initial_initiate_interval).await;
+                // Wait a short amount of time before retrying to avoid busy looping
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             };
 
             if local_agents.is_empty() {
                 tracing::warn!("No local agents available, skipping initiation");
-                tokio::time::sleep(initial_initiate_interval).await;
+                // Wait a short amount of time before retrying to avoid busy looping
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
 
@@ -352,6 +354,16 @@ mod tests {
         enable_tracing();
 
         let harness = Harness::create().await;
+
+        assert!(
+            harness
+                .local_agent_store
+                .get_all()
+                .await
+                .unwrap()
+                .is_empty(),
+            "Expected no local agents"
+        );
 
         let url = select_next_target(
             harness.peer_store.clone(),
