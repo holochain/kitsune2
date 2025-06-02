@@ -51,6 +51,13 @@ pub fn spawn_initiate_task(
                 continue;
             }
 
+            // This logic isn't entirely sound with sharding. If a new local agent joins the space
+            // with a different target arc that isn't completely contained within the existing
+            // storage arc declared by the other local agents, then we might end up waiting a while
+            // before we start the initial sync for the new local agent.
+            // With full arc, if one local agent is in sync, then all local agents are and this isn't
+            // a problem, and with zero arc, we don't gossip data at all so it also doesn't matter.
+            // This is something to come back to when we implement sharding.
             if local_agents.iter().all(|a| a.get_cur_storage_arc() == a.get_tgt_storage_arc()) {
                 // All agents are at their target arc, we should do the normal delay
 
