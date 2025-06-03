@@ -208,13 +208,18 @@ impl TxSpaceHandler for TxHandlerTranslator {
             let peers = core_space.peer_store.get_all().await?;
             match peers.iter().find(|p| p.url == Some(peer.clone())) {
                 Some(agent_info) => {
-                    core_space
+                    if let Err(e) = core_space
                         .peer_meta_store
                         .mark_peer_unresponsive(
                             agent_info.url.clone().unwrap(),
                             agent_info.expires_at,
                         )
                         .await
+                    {
+                        tracing::error!("Failed to mark peer at url {:?} as unresponsive in the peer meta store: {e}", agent_info.url);
+                        return Err(e);
+                    }
+                    Ok(())
                 }
                 None => Ok(()),
             }
