@@ -134,8 +134,9 @@ impl TxImpHnd {
         }
     }
 
-    /// Call this whenever a connection to a peer fails to get established
-    /// or when sending a message to a peer fails.
+    /// Call this whenever a connection to a peer fails to get established,
+    /// sending a message to a peer fails or we get a disconnected event from
+    /// a peer.
     pub fn mark_peer_unresponsive(&self, peer: Url) {
         for (space_id, space_handler) in self.space_map.lock().unwrap().iter() {
             if let Err(e) = space_handler.mark_peer_unresponsive(peer.clone()) {
