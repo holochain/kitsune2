@@ -4,7 +4,6 @@
 use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
-use tokio::sync::mpsc::Receiver;
 
 trait PeerUrlExt {
     fn to_kitsune(&self) -> K2Result<Url>;
@@ -210,7 +209,7 @@ impl Drop for Tx5Transport {
 
 type PreCheckResp = tokio::sync::oneshot::Sender<std::io::Result<()>>;
 type PreCheck = (tx5::PeerUrl, Vec<u8>, PreCheckResp);
-type PreCheckRecv = Receiver<PreCheck>;
+type PreCheckRecv = tokio::sync::mpsc::Receiver<PreCheck>;
 
 impl Tx5Transport {
     pub async fn create(
