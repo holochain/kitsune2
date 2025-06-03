@@ -4,6 +4,7 @@
 use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 
 trait PeerUrlExt {
     fn to_kitsune(&self) -> K2Result<Url>;
@@ -197,18 +198,21 @@ struct Tx5Transport {
     ep: Arc<tx5::Endpoint>,
     pre_task: tokio::task::AbortHandle,
     evt_task: tokio::task::AbortHandle,
+    unresp_task: tokio::task::AbortHandle,
+    unresp_sender: tokio::sync::mpsc::Sender<Url>,
 }
 
 impl Drop for Tx5Transport {
     fn drop(&mut self) {
         self.pre_task.abort();
         self.evt_task.abort();
+        self.unresp_task.abort();
     }
 }
 
 type PreCheckResp = tokio::sync::oneshot::Sender<std::io::Result<()>>;
 type PreCheck = (tx5::PeerUrl, Vec<u8>, PreCheckResp);
-type PreCheckRecv = tokio::sync::mpsc::Receiver<PreCheck>;
+type PreCheckRecv = Receiver<PreCheck>;
 
 impl Tx5Transport {
     pub async fn create(
@@ -281,13 +285,20 @@ impl Tx5Transport {
             .abort_handle();
 
         let evt_task =
-            tokio::task::spawn(evt_task(handler, ep.clone(), ep_recv))
+            tokio::task::spawn(evt_task(handler.clone(), ep.clone(), ep_recv))
                 .abort_handle();
+
+        let (unresp_sender, unresp_rx) = tokio::sync::mpsc::channel::<Url>(1);
+
+        let unresp_task =
+            tokio::task::spawn(unresp_task(handler, unresp_rx)).abort_handle();
 
         let out: DynTxImp = Arc::new(Self {
             ep,
             pre_task,
             evt_task,
+            unresp_task,
+            unresp_sender,
         });
 
         Ok(out)
@@ -316,17 +327,18 @@ impl TxImp for Tx5Transport {
 
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            let peer = peer.to_peer_url()?;
+            let peer_url = peer.to_peer_url()?;
             // this would be more efficient if we retool tx5 to use bytes
-            self.ep
-                .send(peer.clone(), data.to_vec())
-                .await
-                .map_err(|e| {
-                    K2Error::other_src(
-                        format!("tx5 send error to peer at url {peer}"),
-                        e,
-                    )
-                })
+            if let Err(e) = self.ep.send(peer_url, data.to_vec()).await {
+                if let Err(err) = self.unresp_sender.send(peer.clone()).await {
+                    tracing::warn!("Failed to send unresponsive peer url to unresponsive peers task: {err}");
+                }
+                return Err(K2Error::other_src(
+                    format!("tx5 send error to peer at url {peer}"),
+                    e,
+                ));
+            }
+            Ok(())
         })
     }
 
@@ -442,6 +454,7 @@ async fn evt_task(
                         continue;
                     }
                 };
+                handler.mark_peer_unresponsive(peer_url.clone());
                 handler.peer_disconnect(peer_url, None);
             }
             Message { peer_url, message } => {
@@ -453,6 +466,13 @@ async fn evt_task(
                 }
             }
         }
+    }
+}
+
+async fn unresp_task(handler: Arc<TxImpHnd>, mut rx: Receiver<Url>) {
+    let _drop = TaskDrop("unresp_task");
+    while let Some(url) = rx.recv().await {
+        handler.mark_peer_unresponsive(url);
     }
 }
 

@@ -198,6 +198,29 @@ impl TxSpaceHandler for TxHandlerTranslator {
     ) -> K2Result<()> {
         self.0.recv_notify(peer, space, data)
     }
+
+    fn mark_peer_unresponsive(&self, peer: Url) -> K2Result<()> {
+        let core_space = self.1.upgrade().ok_or(K2Error::Other {
+            ctx: "CoreSpace had been dropped.".into(),
+            src: DynInnerError(None),
+        })?;
+        tokio::task::spawn(async move {
+            let peers = core_space.peer_store.get_all().await?;
+            match peers.iter().find(|p| p.url == Some(peer.clone())) {
+                Some(agent_info) => {
+                    core_space
+                        .peer_meta_store
+                        .mark_peer_unresponsive(
+                            agent_info.url.clone().unwrap(),
+                            agent_info.expires_at,
+                        )
+                        .await
+                }
+                None => Ok(()),
+            }
+        });
+        Ok(())
+    }
 }
 
 struct InnerData {

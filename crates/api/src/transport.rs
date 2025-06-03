@@ -133,6 +133,16 @@ impl TxImpHnd {
             }
         }
     }
+
+    /// Call this whenever a connection to a peer fails to get established
+    /// or when sending a message to a peer fails.
+    pub fn mark_peer_unresponsive(&self, peer: Url) {
+        for (space_id, space_handler) in self.space_map.lock().unwrap().iter() {
+            if let Err(e) = space_handler.mark_peer_unresponsive(peer.clone()) {
+                tracing::error!("Failed to mark peer with url {peer} as unresponsive in space {space_id}: {e}");
+            };
+        }
+    }
 }
 
 /// A low-level transport implementation.
@@ -447,6 +457,12 @@ pub trait TxSpaceHandler: TxBaseHandler {
         data: bytes::Bytes,
     ) -> K2Result<()> {
         drop((peer, space, data));
+        Ok(())
+    }
+
+    /// Mark a peer as unresponsive in the space's peer meta store
+    fn mark_peer_unresponsive(&self, peer: Url) -> K2Result<()> {
+        drop(peer);
         Ok(())
     }
 }
