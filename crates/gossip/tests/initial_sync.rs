@@ -119,7 +119,7 @@ async fn new_agent_joins_existing_network() {
         .wait_for_sync_with(&harness_2, Duration::from_secs(10))
         .await;
 
-    // Then both agents should have or reached full arc.
+    // Then both agents should have reached full arc.
     harness_1
         .wait_for_full_arc_for_all(Duration::from_secs(5))
         .await;
