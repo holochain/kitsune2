@@ -198,15 +198,13 @@ struct Tx5Transport {
     ep: Arc<tx5::Endpoint>,
     pre_task: tokio::task::AbortHandle,
     evt_task: tokio::task::AbortHandle,
-    unresp_task: tokio::task::AbortHandle,
-    unresp_sender: tokio::sync::mpsc::Sender<Url>,
+    handler: Arc<TxImpHnd>,
 }
 
 impl Drop for Tx5Transport {
     fn drop(&mut self) {
         self.pre_task.abort();
         self.evt_task.abort();
-        self.unresp_task.abort();
     }
 }
 
@@ -288,17 +286,11 @@ impl Tx5Transport {
             tokio::task::spawn(evt_task(handler.clone(), ep.clone(), ep_recv))
                 .abort_handle();
 
-        let (unresp_sender, unresp_rx) = tokio::sync::mpsc::channel::<Url>(1);
-
-        let unresp_task =
-            tokio::task::spawn(unresp_task(handler, unresp_rx)).abort_handle();
-
         let out: DynTxImp = Arc::new(Self {
             ep,
             pre_task,
             evt_task,
-            unresp_task,
-            unresp_sender,
+            handler,
         });
 
         Ok(out)
@@ -330,9 +322,7 @@ impl TxImp for Tx5Transport {
             let peer_url = peer.to_peer_url()?;
             // this would be more efficient if we retool tx5 to use bytes
             if let Err(e) = self.ep.send(peer_url, data.to_vec()).await {
-                if let Err(err) = self.unresp_sender.send(peer.clone()).await {
-                    tracing::warn!("Failed to send unresponsive peer url to unresponsive peers task: {err}");
-                }
+                self.handler.mark_peer_unresponsive(peer.clone());
                 return Err(K2Error::other_src(
                     format!("tx5 send error to peer at url {peer}"),
                     e,
@@ -466,13 +456,6 @@ async fn evt_task(
                 }
             }
         }
-    }
-}
-
-async fn unresp_task(handler: Arc<TxImpHnd>, mut rx: Receiver<Url>) {
-    let _drop = TaskDrop("unresp_task");
-    while let Some(url) = rx.recv().await {
-        handler.mark_peer_unresponsive(url);
     }
 }
 

@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, Weak};
 /// Construct using ([TxImpHnd::new]), with a high-level [DynTxHandler],
 /// then call [DefaultTransport::create] to return the high-level handler
 /// from the [TransportFactory].
+#[derive(Debug)]
 pub struct TxImpHnd {
     handler: DynTxHandler,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,

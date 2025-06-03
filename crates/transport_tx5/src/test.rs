@@ -661,7 +661,6 @@ async fn offline_peer_marked_unresponsive() {
     assert!(r.is_err());
 
     // Now peer 2 goes offline and we check that it gets marked as unresponsive
-    // t2.disconnect(u1.lock().unwrap().clone(), None).await;
     drop(t2);
 
     // We need to wait for a while in order for the webrtc connection to get
