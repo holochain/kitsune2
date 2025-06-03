@@ -21,7 +21,7 @@ const MAX_OP_SIZE_BYTES: usize = 1024 * 1024;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn historical_load() {
-    // We want less logging in this test, it create a lot of output at debug level.
+    // We want less logging in this test, it creates a lot of output at debug level.
     enable_tracing_with_default_level(tracing::Level::INFO);
 
     let factory = K2GossipFunctionalTestFactory::create(
