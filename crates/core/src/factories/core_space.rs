@@ -205,6 +205,11 @@ impl TxSpaceHandler for TxHandlerTranslator {
             src: DynInnerError(None),
         })?;
         tokio::task::spawn(async move {
+            // Only add a peer as unreachable to the peer meta store if it is
+            // also in the peer store. That's because this method may be called
+            // from a context that has no awareness about which space a peer
+            // (Url) is part of and that therefore needs to iteratively call
+            // it for all spaces
             let peers = core_space.peer_store.get_all().await?;
             match peers.iter().find(|p| p.url == Some(peer.clone())) {
                 Some(agent_info) => {
