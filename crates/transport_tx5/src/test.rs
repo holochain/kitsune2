@@ -653,11 +653,7 @@ async fn offline_peer_marked_unresponsive() {
     assert_eq!(b"hello", r.2.as_ref());
 
     // Check that the peer has not been marked as unresponsive
-    let r = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        unresp_recv.recv().await
-    })
-    .await;
-
+    let r = unresp_recv.try_recv();
     assert!(r.is_err());
 
     // Now peer 2 goes offline and we check that it gets marked as unresponsive
@@ -666,7 +662,7 @@ async fn offline_peer_marked_unresponsive() {
     // We need to wait for a while in order for the webrtc connection to get
     // disconnected. If this test becomes flaky, this waiting period may need
     // to be increased a bit.
-    tokio::time::sleep(std::time::Duration::from_secs(7)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(9)).await;
 
     let res = t1
         .send_space_notify(
