@@ -200,10 +200,10 @@ impl TxSpaceHandler for TxHandlerTranslator {
     }
 
     fn mark_peer_unresponsive(&self, peer: Url) -> K2Result<()> {
-        let core_space = self.1.upgrade().ok_or(K2Error::Other {
-            ctx: "CoreSpace had been dropped.".into(),
-            src: DynInnerError(None),
-        })?;
+        let core_space = self
+            .1
+            .upgrade()
+            .ok_or(K2Error::other("CoreSpace had been dropped."))?;
         tokio::task::spawn(async move {
             // Only add a peer as unreachable to the peer meta store if it is
             // also in the peer store. That's because this method may be called
@@ -213,7 +213,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
             let peers = core_space.peer_store.get_all().await?;
             match peers.iter().find(|p| p.url == Some(peer.clone())) {
                 Some(agent_info) => {
-                    if let Err(e) = core_space
+                    if let Err(err) = core_space
                         .peer_meta_store
                         .mark_peer_unresponsive(
                             agent_info.url.clone().unwrap(),
@@ -221,8 +221,8 @@ impl TxSpaceHandler for TxHandlerTranslator {
                         )
                         .await
                     {
-                        tracing::error!("Failed to mark peer at url {:?} as unresponsive in the peer meta store: {e}", agent_info.url);
-                        return Err(e);
+                        tracing::error!(?err, "Failed to mark peer at url {:?} as unresponsive in the peer meta store.", agent_info.url);
+                        return Err(err);
                     }
                     Ok(())
                 }
