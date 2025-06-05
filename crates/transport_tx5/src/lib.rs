@@ -443,7 +443,6 @@ async fn evt_task(
                         continue;
                     }
                 };
-                handler.mark_peer_unresponsive(peer_url.clone());
                 handler.peer_disconnect(peer_url, None);
             }
             Message { peer_url, message } => {
