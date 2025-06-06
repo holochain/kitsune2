@@ -133,6 +133,32 @@ impl TxImpHnd {
             }
         }
     }
+
+    /// Call this whenever a connection to a peer fails to get established,
+    /// sending a message to a peer fails or when we get a disconnected
+    /// event from a peer.
+    pub fn mark_peer_unresponsive(
+        &self,
+        peer: Url,
+    ) -> BoxFut<'_, K2Result<()>> {
+        let space_map = self.space_map.lock().unwrap().clone();
+        Box::pin(async move {
+            for (space_id, space_handler) in space_map.iter() {
+                if let Err(e) =
+                    space_handler.mark_peer_unresponsive(peer.clone()).await
+                {
+                    tracing::error!("Failed to mark peer with url {peer} as unresponsive in space {space_id}: {e}");
+                };
+            }
+            Ok(())
+        })
+    }
+}
+
+impl std::fmt::Debug for TxImpHnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,"TxImpHnd {{ handler: {:?}, space_map: [{} entries], mod_map: [{} entries] }}", self.handler, self.space_map.lock().unwrap().len(), self.mod_map.lock().unwrap().len() )
+    }
 }
 
 /// A low-level transport implementation.
@@ -448,6 +474,12 @@ pub trait TxSpaceHandler: TxBaseHandler {
     ) -> K2Result<()> {
         drop((peer, space, data));
         Ok(())
+    }
+
+    /// Mark a peer as unresponsive in the space's peer meta store
+    fn mark_peer_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
+        drop(peer);
+        Box::pin(async move { Ok(()) })
     }
 }
 

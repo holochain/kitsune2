@@ -197,6 +197,7 @@ struct Tx5Transport {
     ep: Arc<tx5::Endpoint>,
     pre_task: tokio::task::AbortHandle,
     evt_task: tokio::task::AbortHandle,
+    handler: Arc<TxImpHnd>,
 }
 
 impl Drop for Tx5Transport {
@@ -281,13 +282,14 @@ impl Tx5Transport {
             .abort_handle();
 
         let evt_task =
-            tokio::task::spawn(evt_task(handler, ep.clone(), ep_recv))
+            tokio::task::spawn(evt_task(handler.clone(), ep.clone(), ep_recv))
                 .abort_handle();
 
         let out: DynTxImp = Arc::new(Self {
             ep,
             pre_task,
             evt_task,
+            handler,
         });
 
         Ok(out)
@@ -316,17 +318,16 @@ impl TxImp for Tx5Transport {
 
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            let peer = peer.to_peer_url()?;
+            let peer_url = peer.to_peer_url()?;
             // this would be more efficient if we retool tx5 to use bytes
-            self.ep
-                .send(peer.clone(), data.to_vec())
-                .await
-                .map_err(|e| {
-                    K2Error::other_src(
-                        format!("tx5 send error to peer at url {peer}"),
-                        e,
-                    )
-                })
+            if let Err(e) = self.ep.send(peer_url, data.to_vec()).await {
+                let _ = self.handler.mark_peer_unresponsive(peer.clone()).await;
+                return Err(K2Error::other_src(
+                    format!("tx5 send error to peer at url {peer}"),
+                    e,
+                ));
+            }
+            Ok(())
         })
     }
 
