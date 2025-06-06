@@ -199,12 +199,12 @@ impl TxSpaceHandler for TxHandlerTranslator {
         self.0.recv_notify(peer, space, data)
     }
 
-    fn mark_peer_unresponsive(&self, peer: Url) -> K2Result<()> {
-        let core_space = self
-            .1
-            .upgrade()
-            .ok_or(K2Error::other("CoreSpace had been dropped."))?;
-        tokio::task::spawn(async move {
+    fn mark_peer_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let core_space = self
+                .1
+                .upgrade()
+                .ok_or(K2Error::other("CoreSpace had been dropped."))?;
             // Only add a peer as unreachable to the peer meta store if it is
             // also in the peer store. That's because this method may be called
             // from a context that has no awareness about which space a peer
@@ -228,8 +228,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
                 }
                 None => Ok(()),
             }
-        });
-        Ok(())
+        })
     }
 }
 

@@ -193,8 +193,8 @@ impl TxSpaceHandler for CbHandler {
         (self.recv_space_notify)(peer, space, data)
     }
 
-    fn mark_peer_unresponsive(&self, peer: Url) -> K2Result<()> {
-        (self.mark_peer_unresponsive)(peer)
+    fn mark_peer_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move { (self.mark_peer_unresponsive)(peer) })
     }
 }
 
