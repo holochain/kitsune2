@@ -1,13 +1,12 @@
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::K2GossipConfig;
-use backon::BackoffBuilder;
 use kitsune2_api::*;
-use kitsune2_api::{AgentId, DynLocalAgentStore, K2Result, Timestamp, Url};
-use rand::prelude::SliceRandom;
+use kitsune2_api::{AgentId, K2Result, Timestamp, Url};
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::AbortHandle;
 
 pub fn spawn_initiate_task(
@@ -18,46 +17,75 @@ pub fn spawn_initiate_task(
 
     let (force_initiate, mut force_initiate_rx) = tokio::sync::mpsc::channel(1);
 
-    let mut rush_to_first_initiated_round = true;
+    let initiate_jitter_ms = config.initiate_jitter_ms as u64;
+    let compute_delay = move |base_delay: Duration| {
+        if initiate_jitter_ms > 0 {
+            let jitter = rand::random::<u64>() % initiate_jitter_ms;
+            base_delay + Duration::from_millis(jitter)
+        } else {
+            base_delay
+        }
+    };
 
     let initial_initiate_interval = config.initial_initiate_interval();
-    let mut rush_backoff = backon::ExponentialBuilder::new()
-        .with_min_delay(Duration::from_millis(10))
-        .with_max_delay(initial_initiate_interval)
-        .with_factor(1.2)
-        .with_jitter()
-        .build();
-
     let initiate_interval = config.initiate_interval();
-    let initiate_jitter_ms = config.initiate_jitter_ms as u64;
-    let min_initiate_interval = config.min_initiate_interval();
     let here_force_initiate = force_initiate.clone();
     let abort_handle = tokio::task::spawn(async move {
         loop {
-            let delay = if rush_to_first_initiated_round {
-                tokio::time::sleep(rush_backoff.next().unwrap_or(initiate_interval))
-            } else {
-                let jitter = if initiate_jitter_ms > 0 {
-                    Duration::from_millis(rand::random::<u64>() % initiate_jitter_ms)
-                } else {
-                    Duration::ZERO
-                };
-                tokio::time::sleep(initiate_interval + jitter)
-            };
-
-            tokio::select! {
-                _ = delay => {
-                    // Continue to the next iteration
-                }
-                _ = force_initiate_rx.recv() => {
-                    tracing::info!("Force initiate received, skipping the remaining delay and attempting initiation");
-                }
-            }
-
             let Some(gossip) = gossip.upgrade() else {
                 tracing::info!("Gossip instance dropped, stopping initiate task");
                 break;
             };
+
+            let Ok(local_agents) = gossip.local_agent_store.get_all().await else {
+                tracing::warn!("Failed to get local agents, pausing and then retrying");
+                // Wait a short amount of time before retrying to avoid busy looping
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            };
+
+            if local_agents.is_empty() {
+                tracing::warn!("No local agents available, skipping initiation");
+                // Wait a short amount of time before retrying to avoid busy looping
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+
+            // This logic isn't entirely sound with sharding. If a new local agent joins the space
+            // with a different target arc that isn't completely contained within the existing
+            // storage arc declared by the other local agents, then we might end up waiting a while
+            // before we start the initial sync for the new local agent.
+            // With full arc, if one local agent is in sync, then all local agents are and this isn't
+            // a problem, and with zero arc, we don't gossip data at all so it also doesn't matter.
+            // This is something to come back to when we implement sharding.
+            if local_agents.iter().all(|a| a.get_cur_storage_arc() == a.get_tgt_storage_arc()) {
+                // All agents are at their target arc, we should do the normal delay
+
+                // Prepare the delay based on the configured initiate interval.
+                let delay = tokio::time::sleep(compute_delay(initiate_interval));
+
+                // Race the delay against the force initiate signal.
+                tokio::select! {
+                    _ = delay => {
+                        // Continue to the next iteration
+                    }
+                    _ = force_initiate_rx.recv() => {
+                        tracing::info!("Force initiate received, skipping the remaining delay and attempting initiation");
+                    }
+                }
+            } else {
+                // At least one agent is still growing its arc, we should wait for the fetch queue
+                // to be drained and then go ahead with the initiation.
+                let (tx, rx) = futures::channel::oneshot::channel();
+                gossip.fetch.notify_on_drained(tx);
+                rx.await.ok();
+
+                // If the fetch queue is empty and there's nobody to gossip with then this loop
+                // would just spin. So use the initial initiate interval to wait a short amount of
+                // time before trying to initiate again.
+                // For this reason, this configuration value should be set to a small value!
+                tokio::time::sleep(initial_initiate_interval).await;
+            }
 
             if gossip.initiated_round_state.lock().await.is_some() {
                 tracing::info!("Not initiating gossip because there is already an initiated round");
@@ -65,27 +93,34 @@ pub fn spawn_initiate_task(
             }
 
             match select_next_target(
-                min_initiate_interval,
                 gossip.peer_store.clone(),
-                gossip.local_agent_store.clone(),
+                &local_agents,
                 gossip.peer_meta_store.clone(),
             )
             .await
             {
                 Ok(Some(url)) => {
+                    tracing::debug!("Selected target for gossip: {}", url);
+
                     match gossip.initiate_gossip(url.clone()).await {
                         Ok(true) => {
-                            rush_to_first_initiated_round = false;
                             tracing::info!("Initiated gossip with {}", url);
                         }
                         Ok(false) => {
                             // Don't log here, will already have logged the reason
                         }
                         Err(e) => {
-                            tracing::error!("Error initiating gossip: {:?}", e);
+                            tracing::warn!("Failed to initiate gossip: {:?}", e);
 
-                            if let Err(err) = here_force_initiate.try_send(()) {
-                                tracing::error!("Error sending force initiate: {:?}", err);
+                            match here_force_initiate.try_send(()) {
+                                Ok(_) => {},
+                                Err(TrySendError::Full(_)) => {
+                                    tracing::debug!("Force initiate already pending");
+                                }
+                                Err(TrySendError::Closed(_)) => {
+                                    tracing::error!("Force initiate channel closed, stopping initiate task");
+                                    break;
+                                }
                             }
                         }
                     }
@@ -105,20 +140,11 @@ pub fn spawn_initiate_task(
 }
 
 async fn select_next_target(
-    min_interval: Duration,
     peer_store: DynPeerStore,
-    local_agent_store: DynLocalAgentStore,
+    local_agents: &[DynLocalAgent],
     peer_meta_store: Arc<K2PeerMetaStore>,
 ) -> K2Result<Option<Url>> {
     let current_time = Timestamp::now();
-
-    let local_agents = local_agent_store.get_all().await?;
-    if local_agents.is_empty() {
-        tracing::info!(
-            "Skipping initiating gossip because there are no local agents"
-        );
-        return Ok(None);
-    }
 
     // Get the TARGET storage arcs for all local agents
     //
@@ -130,7 +156,7 @@ async fn select_next_target(
         .collect::<HashSet<_>>();
 
     let local_agent_ids = local_agents
-        .into_iter()
+        .iter()
         .map(|a| a.agent().clone())
         .collect::<HashSet<_>>();
 
@@ -161,16 +187,15 @@ async fn select_next_target(
         using_overlapping_agents = false;
     }
 
-    let mut possible_targets = filter_by_recently_gossiped(
+    let mut possible_target = select_least_recently_gossiped(
         all_agents,
         peer_meta_store.clone(),
         current_time,
-        min_interval,
     )
     .await?;
 
     // We tried using overlapping agents, but they're all on timeout
-    if possible_targets.is_empty() && using_overlapping_agents {
+    if possible_target.is_none() && using_overlapping_agents {
         tracing::info!(
             "All agents with overlapping arcs are on timeout, selecting from all agents"
         );
@@ -178,44 +203,22 @@ async fn select_next_target(
         all_agents = peer_store.get_all().await?.into_iter().collect();
         remove_local_agents(&mut all_agents, &local_agent_ids);
 
-        possible_targets = filter_by_recently_gossiped(
+        possible_target = select_least_recently_gossiped(
             all_agents,
             peer_meta_store.clone(),
             current_time,
-            min_interval,
         )
         .await?;
     }
 
-    // All options exhausted, give up for now
-    if possible_targets.is_empty() {
-        tracing::info!("No agents to gossip with");
-        return Ok(None);
-    }
-
-    // Sort by last gossip timestamp with None first and then by oldest to newest
-    possible_targets.sort_by_key(|(timestamp, _)| *timestamp);
-
-    let last_new_peer = possible_targets
-        .iter()
-        .enumerate()
-        .find(|(_, (t, _))| t.is_some())
-        .map(|(i, _)| i);
-    match last_new_peer {
-        Some(0) => {
-            // Nothing to do
-        }
-        Some(end_of_new_peers) => {
-            possible_targets[0..end_of_new_peers]
-                .shuffle(&mut rand::thread_rng());
-        }
+    match possible_target {
         None => {
-            possible_targets.shuffle(&mut rand::thread_rng());
+            // All options exhausted, give up for now
+            tracing::info!("No agents to gossip with");
+            Ok(None)
         }
+        Some(target) => Ok(Some(target)),
     }
-
-    // We've already filtered for missing URLs so this is always `Some`
-    Ok(possible_targets[0].1.url.clone())
 }
 
 fn remove_local_agents(
@@ -225,14 +228,23 @@ fn remove_local_agents(
     agents.retain(|a| !local_agents.contains(&a.get_agent_info().agent));
 }
 
-async fn filter_by_recently_gossiped(
+async fn select_least_recently_gossiped(
     all_agents: HashSet<Arc<AgentInfoSigned>>,
     peer_meta_store: Arc<K2PeerMetaStore>,
     current_time: Timestamp,
-    min_interval: Duration,
-) -> K2Result<Vec<(Option<Timestamp>, Arc<AgentInfoSigned>)>> {
+) -> K2Result<Option<Url>> {
     let mut possible_targets = Vec::with_capacity(all_agents.len());
     for agent in all_agents {
+        if agent.is_tombstone {
+            // Skip tombstone agents, they are not valid gossip targets
+            continue;
+        }
+
+        if agent.expires_at < current_time {
+            // Skip agents that have expired, they are not valid gossip targets
+            continue;
+        }
+
         // Agent hasn't provided a URL, we won't be able to gossip with them.
         let Some(url) = agent.url.clone() else {
             continue;
@@ -241,19 +253,17 @@ async fn filter_by_recently_gossiped(
         let timestamp =
             peer_meta_store.last_gossip_timestamp(url.clone()).await?;
 
-        // Too soon to gossip with this peer again
-        if let Some(timestamp) = timestamp {
-            if (current_time - timestamp).unwrap_or(Duration::MAX)
-                < min_interval
-            {
-                continue;
-            }
-        }
+        let duration_since_last = (current_time
+            - timestamp.unwrap_or(UNIX_TIMESTAMP))
+        .unwrap_or(Duration::ZERO);
 
-        possible_targets.push((timestamp, agent));
+        possible_targets.push((duration_since_last, url));
     }
 
-    Ok(possible_targets)
+    Ok(possible_targets
+        .into_iter()
+        .max_by_key(|t| t.0)
+        .map(|t| t.1))
 }
 
 #[cfg(test)]
@@ -291,10 +301,7 @@ mod tests {
                 peer_meta_store: Arc::new(K2PeerMetaStore::new(
                     builder
                         .peer_meta_store
-                        .create(
-                            builder.clone(),
-                            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
-                        )
+                        .create(builder.clone(), TEST_SPACE_ID.clone())
                         .await
                         .unwrap(),
                 )),
@@ -324,7 +331,7 @@ mod tests {
             peer_url: Option<Url>,
             storage_arc: Option<DhtArc>,
             target_arc: Option<DhtArc>,
-        ) -> Arc<AgentInfoSigned> {
+        ) -> (DynLocalAgent, Arc<AgentInfoSigned>) {
             let local_agent: DynLocalAgent =
                 Arc::new(TestLocalAgent::default());
             if let Some(arc) = storage_arc {
@@ -345,7 +352,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            agent_info_signed
+            (local_agent, agent_info_signed)
         }
     }
 
@@ -355,10 +362,19 @@ mod tests {
 
         let harness = Harness::create().await;
 
+        assert!(
+            harness
+                .local_agent_store
+                .get_all()
+                .await
+                .unwrap()
+                .is_empty(),
+            "Expected no local agents"
+        );
+
         let url = select_next_target(
-            Duration::from_secs(60),
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
@@ -375,24 +391,24 @@ mod tests {
 
         harness.new_local_agent(DhtArc::FULL).await;
 
-        let agent_2 = harness
+        let remote_agent = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/1").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
-            .await;
+            .await
+            .1;
 
         let url = select_next_target(
-            Duration::from_secs(60),
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
         .unwrap();
 
-        assert_eq!(agent_2.url.clone().unwrap(), url.unwrap());
+        assert_eq!(remote_agent.url.clone().unwrap(), url.unwrap());
     }
 
     #[tokio::test]
@@ -402,99 +418,94 @@ mod tests {
         let harness = Harness::create().await;
 
         harness.new_local_agent(DhtArc::FULL).await;
-        let agent_2 = harness
+        let remote_agent_1 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/2").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
-            .await;
-        let agent_3 = harness
+            .await
+            .1;
+        let remote_agent_2 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/3").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
-            .await;
-
-        let min_interval = K2GossipConfig::default().min_initiate_interval();
+            .await
+            .1;
 
         // Mark both of the remote agents as having gossiped previously.
         // They should be selected by how long ago they gossiped.
         harness
             .peer_meta_store
             .set_last_gossip_timestamp(
-                agent_2.url.clone().unwrap(),
-                (Timestamp::now()
-                    - Duration::from_secs(min_interval.as_secs() + 30))
-                .unwrap(),
+                remote_agent_1.url.clone().unwrap(),
+                (Timestamp::now() - Duration::from_secs(30)).unwrap(),
             )
             .await
             .unwrap();
         harness
             .peer_meta_store
             .set_last_gossip_timestamp(
-                agent_3.url.clone().unwrap(),
-                (Timestamp::now()
-                    - Duration::from_secs(min_interval.as_secs() + 60))
-                .unwrap(),
+                remote_agent_2.url.clone().unwrap(),
+                (Timestamp::now() - Duration::from_secs(60)).unwrap(),
             )
             .await
             .unwrap();
 
         let url = select_next_target(
-            min_interval,
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
         .unwrap();
 
-        assert_eq!(agent_3.url.clone().unwrap(), url.unwrap());
+        assert_eq!(remote_agent_2.url.clone().unwrap(), url.unwrap());
 
-        // Now that agent_3 was selected for gossip, mark them as having gossiped recently so that
-        // they shouldn't be selected on the next pass.
+        // Now that remote_agent_2 was selected for gossip, mark them as having gossiped recently
+        // so that they shouldn't be selected on the next pass.
         harness
             .peer_meta_store
             .set_last_gossip_timestamp(
-                agent_3.url.clone().unwrap(),
+                remote_agent_2.url.clone().unwrap(),
                 Timestamp::now(),
             )
             .await
             .unwrap();
 
         let url = select_next_target(
-            min_interval,
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
         .unwrap();
 
-        assert_eq!(agent_2.url.clone().unwrap(), url.unwrap());
+        assert_eq!(remote_agent_1.url.clone().unwrap(), url.unwrap());
 
-        // Do the same thing for agent_2, so they aren't a valid pick for the next target
+        // Do the same thing for remote_agent_1
         harness
             .peer_meta_store
             .set_last_gossip_timestamp(
-                agent_2.url.clone().unwrap(),
+                remote_agent_1.url.clone().unwrap(),
                 Timestamp::now(),
             )
             .await
             .unwrap();
 
+        // Those the next best option by last gossip timestamp. Though this time we'd be selecting
+        // a remote agent that we've recently gossiped with.
         let url = select_next_target(
-            min_interval,
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
         .unwrap();
 
-        assert_eq!(None, url);
+        assert_eq!(remote_agent_2.url.clone().unwrap(), url.unwrap());
     }
 
     #[tokio::test]
@@ -514,12 +525,12 @@ mod tests {
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
-            .await;
+            .await
+            .1;
 
         let url = select_next_target(
-            Duration::from_secs(60),
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
@@ -537,15 +548,15 @@ mod tests {
             .unwrap();
 
         let url = select_next_target(
-            Duration::from_secs(60),
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
         .unwrap();
 
-        assert_eq!(None, url);
+        // Must pick the same agent again, it's the only valid choice.
+        assert_eq!(agent_3.url.clone().unwrap(), url.unwrap());
     }
 
     #[tokio::test]
@@ -556,89 +567,42 @@ mod tests {
 
         harness.new_local_agent(DhtArc::FULL).await;
 
-        let agent_2 = harness
+        let remote_agent_1 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/2").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
-            .await;
-        let agent_3 = harness
+            .await
+            .1;
+        let remote_agent_2 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/3").unwrap()),
                 Some(DhtArc::FULL),
                 Some(DhtArc::FULL),
             )
-            .await;
+            .await
+            .1;
 
-        let min_interval = K2GossipConfig::default().min_initiate_interval();
-
-        // Mark that we've gossiped with agent_3, but not recently
+        // Mark that we've gossiped with remote_agent_2, but not recently
         harness
             .peer_meta_store
             .set_last_gossip_timestamp(
-                agent_3.url.clone().unwrap(),
-                (Timestamp::now()
-                    - Duration::from_secs(min_interval.as_secs() + 90))
-                .unwrap(),
+                remote_agent_2.url.clone().unwrap(),
+                (Timestamp::now() - Duration::from_secs(900)).unwrap(),
             )
             .await
             .unwrap();
 
         let url = select_next_target(
-            min_interval,
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
         .unwrap();
 
-        assert_eq!(agent_2.url.clone().unwrap(), url.unwrap());
-    }
-
-    #[tokio::test]
-    async fn randomly_select_from_multiple_new_peers() {
-        enable_tracing();
-
-        let harness = Harness::create().await;
-
-        harness.new_local_agent(DhtArc::FULL).await;
-
-        let agent_2_url = Url::from_str("ws://test:80/2").unwrap();
-        harness
-            .new_remote_agent(
-                Some(agent_2_url.clone()),
-                Some(DhtArc::FULL),
-                Some(DhtArc::FULL),
-            )
-            .await;
-        let agent_3_url = Url::from_str("ws://test:80/3").unwrap();
-        harness
-            .new_remote_agent(
-                Some(agent_3_url.clone()),
-                Some(DhtArc::FULL),
-                Some(DhtArc::FULL),
-            )
-            .await;
-
-        let mut seen = HashSet::new();
-        for _ in 0..100 {
-            let url = select_next_target(
-                Duration::from_secs(60),
-                harness.peer_store.clone(),
-                harness.local_agent_store.clone(),
-                harness.peer_meta_store.clone(),
-            )
-            .await
-            .unwrap();
-
-            seen.insert(url.unwrap());
-        }
-
-        assert_eq!(2, seen.len());
-        assert!(seen.contains(&agent_2_url));
-        assert!(seen.contains(&agent_3_url));
+        assert_eq!(remote_agent_1.url.clone().unwrap(), url.unwrap());
     }
 
     #[tokio::test]
@@ -668,15 +632,17 @@ mod tests {
             .await;
 
         let mut seen = HashSet::new();
-        while let Some(url) = select_next_target(
-            Duration::from_secs(60),
-            harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
-            harness.peer_meta_store.clone(),
-        )
-        .await
-        .unwrap()
-        {
+        for _ in 0..2 {
+            let Some(url) = select_next_target(
+                harness.peer_store.clone(),
+                &harness.local_agent_store.get_all().await.unwrap(),
+                harness.peer_meta_store.clone(),
+            )
+            .await
+            .unwrap() else {
+                panic!("Expected to find a peer to gossip with");
+            };
+
             harness
                 .peer_meta_store
                 .set_last_gossip_timestamp(url.clone(), Timestamp::now())
@@ -700,7 +666,7 @@ mod tests {
             .await;
 
         // Overlapping
-        let agent_2 = harness
+        let (remote_local_agent_1, remote_agent_1) = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/2").unwrap()),
                 Some(DhtArc::Arc(0, SECTOR_SIZE * 10 - 1)),
@@ -708,35 +674,60 @@ mod tests {
             )
             .await;
         // Non-overlapping with our local agent
-        let agent_3 = harness
+        let remote_agent_2 = harness
             .new_remote_agent(
                 Some(Url::from_str("ws://test:80/3").unwrap()),
                 Some(DhtArc::Arc(SECTOR_SIZE, SECTOR_SIZE * 2 - 1)),
                 Some(DhtArc::Arc(SECTOR_SIZE, SECTOR_SIZE * 2 - 1)),
             )
-            .await;
+            .await
+            .1;
 
-        let mut seen = Vec::with_capacity(2);
-        while let Some(url) = select_next_target(
-            Duration::from_secs(60),
+        // Should pick the overlapping agent first
+        let Some(url) = select_next_target(
             harness.peer_store.clone(),
-            harness.local_agent_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
             harness.peer_meta_store.clone(),
         )
         .await
-        .unwrap()
-        {
-            harness
-                .peer_meta_store
-                .set_last_gossip_timestamp(url.clone(), Timestamp::now())
-                .await
-                .unwrap();
+        .unwrap() else {
+            panic!("Expected to find a peer to gossip with");
+        };
 
-            seen.push(url);
-        }
+        assert_eq!(remote_agent_1.url.clone().unwrap(), url);
 
-        assert_eq!(2, seen.len());
-        assert_eq!(agent_2.url.clone().unwrap(), seen[0]);
-        assert_eq!(agent_3.url.clone().unwrap(), seen[1]);
+        // Repeating will pick the same agent because an overlapping arc is preferred
+        let Some(url) = select_next_target(
+            harness.peer_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
+            harness.peer_meta_store.clone(),
+        )
+        .await
+        .unwrap() else {
+            panic!("Expected to find a peer to gossip with");
+        };
+        assert_eq!(remote_agent_1.url.clone().unwrap(), url);
+
+        // Mark the overlapping agent as having gone offline
+        let remote_agent_1 = AgentBuilder::update_for(remote_agent_1)
+            .with_tombstone(true)
+            .build(remote_local_agent_1);
+        harness
+            .peer_store
+            .insert(vec![remote_agent_1])
+            .await
+            .unwrap();
+
+        // Now we should pick the non-overlapping agent
+        let Some(url) = select_next_target(
+            harness.peer_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
+            harness.peer_meta_store.clone(),
+        )
+        .await
+        .unwrap() else {
+            panic!("Expected to find a peer to gossip with");
+        };
+        assert_eq!(remote_agent_2.url.clone().unwrap(), url);
     }
 }

@@ -879,6 +879,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore = "This is the wrong place to test this. Check it as a unit test of the gossip message handlers instead. Cannot prevent multiple gossip rounds happening fast any more."]
     async fn respect_size_limit_for_new_ops_and_dht_ring_diff() {
         enable_tracing();
 
@@ -1040,10 +1041,8 @@ mod test {
         )
         .await;
 
-        // The second harness has an empty arc set, so it will be lower priority for target
-        // selection in gossip initiate.
         let harness_2 = factory.new_instance().await;
-        let agent_2 = harness_2.join_local_agent(DhtArc::Empty).await;
+        let agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
 
         // Create some agent info to use with the first harness so it has to work through some
         // unavailable agents.
@@ -1053,9 +1052,6 @@ mod test {
             // We capture the agent info from this, but the harness is dropped immediately.
             let junk_harness = factory.new_instance().await;
             let junk_agent = junk_harness.join_local_agent(DhtArc::FULL).await;
-            let junk_agent = junk_harness
-                .force_storage_arc(junk_agent.agent.clone(), DhtArc::FULL)
-                .await;
 
             println!("Created a junk agent: {:#?}", junk_agent);
 
@@ -1076,14 +1072,6 @@ mod test {
             .await
             .unwrap();
 
-        // Also let the first harness know about the second agent
-        harness_1
-            .space
-            .peer_store()
-            .insert(vec![agent_2.clone()])
-            .await
-            .unwrap();
-
         iter_check!(1000, 20, {
             let mut all_tried = true;
 
@@ -1100,6 +1088,14 @@ mod test {
                 break;
             }
         });
+
+        // Now let the first harness know about the second agent
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_2.clone()])
+            .await
+            .unwrap();
 
         let good_agent_url = agent_2.url.clone().unwrap();
         iter_check!(1000, 20, {

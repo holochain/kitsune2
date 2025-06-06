@@ -34,13 +34,15 @@ pub struct K2GossipConfig {
 
     /// The initial interval in milliseconds between initiating gossip rounds.
     ///
-    /// This controls how often Kitsune will check for a peer to gossip with for its first gossip
-    /// round. Once a gossip round has been successfully initiated, this interval will no longer be
-    /// used. The value is used as an upper bound for an exponential backoff. The backoff runs from
-    /// 10ms, with a factor of 1.2, up to this value. Once the maximum value is reached, it
-    /// continues to be used as the upper bound for the backoff.
+    /// This value is used to prevent a busy loop for initiating gossip when trying to complete the
+    /// initial sync for an agent. The primary signal for when to initiate again is the fetch queue
+    /// draining. However, if no peers are available and the fetch queue is empty, initiation would
+    /// keep trying to initiate a gossip round immediately, which would result in a busy loop.
     ///
-    /// Default: 5000 (5s)
+    /// This value should be set to a small value to keep the initial sync fast, but large enough to
+    /// avoid using an unreasonable amount of CPU time.
+    ///
+    /// Default: 1000 (1s)
     #[cfg_attr(feature = "schema", schemars(default))]
     pub initial_initiate_interval_ms: u32,
 
@@ -140,7 +142,7 @@ impl Default for K2GossipConfig {
         Self {
             max_gossip_op_bytes: 100 * 1024 * 1024,
             max_request_gossip_op_bytes: 100 * 1024 * 1024,
-            initial_initiate_interval_ms: 5000,
+            initial_initiate_interval_ms: 1000,
             initiate_interval_ms: 120_000,
             initiate_jitter_ms: 10_000,
             min_initiate_interval_ms: 300_000,
@@ -163,16 +165,6 @@ impl K2GossipConfig {
     /// The interval between initiating gossip rounds.
     pub(crate) fn initiate_interval(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.initiate_interval_ms as u64)
-    }
-
-    /// The minimum amount of time that must be allowed to pass before a gossip round can be
-    /// initiated by a given peer.
-    // #[deprecated(
-    //     since = "0.1.9",
-    //     note = "This is being replaced by a burst mechanism instead."
-    // )]
-    pub(crate) fn min_initiate_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.min_initiate_interval_ms as u64)
     }
 
     /// The timeout for a gossip round.
