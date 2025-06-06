@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex, Weak};
 /// Construct using ([TxImpHnd::new]), with a high-level [DynTxHandler],
 /// then call [DefaultTransport::create] to return the high-level handler
 /// from the [TransportFactory].
-#[derive(Debug)]
 pub struct TxImpHnd {
     handler: DynTxHandler,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
@@ -144,6 +143,12 @@ impl TxImpHnd {
                 tracing::error!("Failed to mark peer with url {peer} as unresponsive in space {space_id}: {e}");
             };
         }
+    }
+}
+
+impl std::fmt::Debug for TxImpHnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,"TxImpHnd {{ handler: {:?}, space_map: [{} entries], mod_map: [{} entries] }}", self.handler, self.space_map.lock().unwrap().len(), self.mod_map.lock().unwrap().len() )
     }
 }
 
