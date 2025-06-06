@@ -543,7 +543,7 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     let (unresp_send, mut unresp_recv) = tokio::sync::mpsc::unbounded_channel();
 
-    let h1 = Arc::new(CbHandler {
+    let tx_handler1 = Arc::new(CbHandler {
         mark_peer_unresponsive: Arc::new({
             move |url| {
                 unresp_send.send(url).map_err(|_| K2Error::Other {
@@ -554,16 +554,20 @@ async fn nonexistent_peer_marked_unresponsive() {
         }),
         ..Default::default()
     });
-    let t1 = test.build_transport(h1.clone()).await;
-    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
-    t1.register_module_handler(TEST_SPACE_ID, "mod".into(), h1.clone());
+    let transport1 = test.build_transport(tx_handler1.clone()).await;
+    transport1.register_space_handler(TEST_SPACE_ID, tx_handler1.clone());
+    transport1.register_module_handler(
+        TEST_SPACE_ID,
+        "mod".into(),
+        tx_handler1.clone(),
+    );
 
     let faulty_url = Url::from_str(
         "ws://127.0.0.1:40813/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii-Oc-0IRtHmc",
     )
     .unwrap();
 
-    let res = t1
+    let res = transport1
         .send_space_notify(
             faulty_url.clone(),
             TEST_SPACE_ID,
@@ -576,13 +580,14 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     // We expect the mark_peer_unresponsive() method on the TxSpaceHandler trait to have
     // been invoked
-    let r = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        unresp_recv.recv().await
-    })
-    .await
-    .unwrap();
+    let maybe_url =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            unresp_recv.recv().await
+        })
+        .await
+        .unwrap();
 
-    assert!(Some(faulty_url) == r);
+    assert!(Some(faulty_url) == maybe_url);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -592,11 +597,12 @@ async fn offline_peer_marked_unresponsive() {
 
     let (unresp_send, mut unresp_recv) = tokio::sync::mpsc::unbounded_channel();
 
-    let u1 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
-    let u1_2 = u1.clone();
-    let h1 = Arc::new(CbHandler {
+    let url1 =
+        Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let url1_2 = url1.clone();
+    let tx_handler1 = Arc::new(CbHandler {
         new_addr: Arc::new(move |url| {
-            *u1_2.lock().unwrap() = url;
+            *url1_2.lock().unwrap() = url;
         }),
         mark_peer_unresponsive: Arc::new({
             move |url| {
@@ -608,16 +614,21 @@ async fn offline_peer_marked_unresponsive() {
         }),
         ..Default::default()
     });
-    let t1 = test.build_transport(h1.clone()).await;
-    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
-    t1.register_module_handler(TEST_SPACE_ID, "mod".into(), h1.clone());
+    let transport1 = test.build_transport(tx_handler1.clone()).await;
+    transport1.register_space_handler(TEST_SPACE_ID, tx_handler1.clone());
+    transport1.register_module_handler(
+        TEST_SPACE_ID,
+        "mod".into(),
+        tx_handler1.clone(),
+    );
 
     let (s_send, mut s_recv) = tokio::sync::mpsc::unbounded_channel();
-    let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
-    let u2_2 = u2.clone();
-    let h2 = Arc::new(CbHandler {
+    let url2 =
+        Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let url2_2 = url2.clone();
+    let tx_hanlder2 = Arc::new(CbHandler {
         new_addr: Arc::new(move |url| {
-            *u2_2.lock().unwrap() = url;
+            *url2_2.lock().unwrap() = url;
         }),
         recv_space_notify: Arc::new(move |url, space, data| {
             let _ = s_send.send((url, space, data));
@@ -625,48 +636,53 @@ async fn offline_peer_marked_unresponsive() {
         }),
         ..Default::default()
     });
-    let t2 = test.build_transport(h2.clone()).await;
-    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
-    t2.register_module_handler(TEST_SPACE_ID, "mod".into(), h2.clone());
+    let transport2 = test.build_transport(tx_hanlder2.clone()).await;
+    transport2.register_space_handler(TEST_SPACE_ID, tx_hanlder2.clone());
+    transport2.register_module_handler(
+        TEST_SPACE_ID,
+        "mod".into(),
+        tx_hanlder2.clone(),
+    );
 
-    let u2: Url = u2.lock().unwrap().clone();
-    println!("got u2: {}", u2);
+    let url2: Url = url2.lock().unwrap().clone();
+    println!("got url2: {}", url2);
 
     // check that send works initially while peer 2 is still online
-    t1.send_space_notify(
-        u2.clone(),
-        TEST_SPACE_ID,
-        bytes::Bytes::from_static(b"hello"),
-    )
-    .await
-    .unwrap();
+    transport1
+        .send_space_notify(
+            url2.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"hello"),
+        )
+        .await
+        .unwrap();
 
     // checks that recv works
-    let r = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        s_recv.recv().await
-    })
-    .await
-    .unwrap()
-    .unwrap();
+    let (_, _, bytes) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            s_recv.recv().await
+        })
+        .await
+        .unwrap()
+        .unwrap();
 
-    println!("{r:?}");
-    assert_eq!(b"hello", r.2.as_ref());
+    assert_eq!(b"hello", bytes.as_ref());
 
     // Check that the peer has not been marked as unresponsive
     let r = unresp_recv.try_recv();
     assert!(r.is_err());
 
     // Now peer 2 goes offline and we check that it gets marked as unresponsive
-    drop(t2);
+    drop(transport2);
 
     // We need to wait for a while in order for the webrtc connection to get
     // disconnected. If this test becomes flaky, this waiting period may need
     // to be increased a bit.
     tokio::time::sleep(std::time::Duration::from_secs(9)).await;
 
-    let res = t1
+    let res = transport1
         .send_space_notify(
-            u2.clone(),
+            url2.clone(),
             TEST_SPACE_ID,
             bytes::Bytes::from_static(b"anyone here?"),
         )
@@ -681,7 +697,7 @@ async fn offline_peer_marked_unresponsive() {
     .await
     .unwrap();
 
-    assert!(Some(u2) == r);
+    assert!(Some(url2) == r);
 }
 
 #[tokio::test(flavor = "multi_thread")]
