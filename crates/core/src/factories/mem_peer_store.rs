@@ -121,6 +121,14 @@ impl PeerStore for MemPeerStore {
         Box::pin(async move { Ok(r) })
     }
 
+    fn get_by_url(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<Option<Arc<AgentInfoSigned>>>> {
+        let r = self.0.lock().unwrap().get_by_url(peer_url);
+        Box::pin(async move { Ok(r) })
+    }
+
     fn get_all(&self) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
         let r = self.0.lock().unwrap().get_all();
         Box::pin(async move { Ok(r) })
@@ -208,6 +216,24 @@ impl Inner {
         self.check_prune();
 
         self.store.get(&agent).cloned()
+    }
+
+    pub fn get_by_url(
+        &mut self,
+        peer_url: Url,
+    ) -> Option<Arc<AgentInfoSigned>> {
+        self.check_prune();
+
+        self.store
+            .iter()
+            .find(|(_, agent)| {
+                if let Some(url) = &agent.url {
+                    *url == peer_url
+                } else {
+                    false
+                }
+            })
+            .map(|(_, agent)| agent.clone())
     }
 
     pub fn get_all(&mut self) -> Vec<Arc<AgentInfoSigned>> {

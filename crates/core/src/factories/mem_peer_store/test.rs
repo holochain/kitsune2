@@ -76,6 +76,22 @@ fn happy_get() {
 }
 
 #[test]
+fn happy_get_by_url() {
+    let mut store = create();
+
+    let agent = AgentBuilder {
+        agent: Some(AGENT_1),
+        url: Some(Some(Url::from_str("ws://dot.com:80").unwrap())),
+        ..Default::default()
+    }
+    .build(TestLocalAgent::default());
+    store.insert(vec![agent.clone()]);
+
+    let actual_agent = store.get_by_url(agent.url.clone().unwrap()).unwrap();
+    assert_eq!(actual_agent, agent);
+}
+
+#[test]
 fn happy_get_all() {
     let mut s = create();
 

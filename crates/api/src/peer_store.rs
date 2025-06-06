@@ -17,6 +17,12 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
         agent: AgentId,
     ) -> BoxFut<'_, K2Result<Option<Arc<AgentInfoSigned>>>>;
 
+    /// Get an agent by URL from the store.
+    fn get_by_url(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<Option<Arc<AgentInfoSigned>>>>;
+
     /// Get all agents from the store.
     fn get_all(&self) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
 
