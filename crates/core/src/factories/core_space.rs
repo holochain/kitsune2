@@ -199,7 +199,11 @@ impl TxSpaceHandler for TxHandlerTranslator {
         self.0.recv_notify(peer, space, data)
     }
 
-    fn set_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
+    fn set_unresponsive(
+        &self,
+        peer: Url,
+        when: Timestamp,
+    ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let core_space = self
                 .1
@@ -219,7 +223,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
                         .set_unresponsive(
                             agent_info.url.clone().unwrap(),
                             agent_info.expires_at,
-                            Timestamp::now(),
+                            when,
                         )
                         .await
                     {

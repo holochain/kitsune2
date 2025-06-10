@@ -120,7 +120,8 @@ struct CbHandler {
             + Send
             + Sync,
     >,
-    set_unresponsive: Arc<dyn Fn(Url) -> K2Result<()> + 'static + Send + Sync>,
+    set_unresponsive:
+        Arc<dyn Fn(Url, Timestamp) -> K2Result<()> + 'static + Send + Sync>,
     module: Arc<
         dyn Fn(Url, SpaceId, String, bytes::Bytes) -> K2Result<()>
             + 'static
@@ -144,7 +145,7 @@ impl Default for CbHandler {
             pre_out: Arc::new(|_| Ok(bytes::Bytes::new())),
             pre_in: Arc::new(|_, _| Ok(())),
             recv_space_notify: Arc::new(|_, _, _| Ok(())),
-            set_unresponsive: Arc::new(|_| Ok(())),
+            set_unresponsive: Arc::new(|_, _| Ok(())),
             module: Arc::new(|_, _, _, _| Ok(())),
         }
     }
@@ -192,8 +193,12 @@ impl TxSpaceHandler for CbHandler {
         (self.recv_space_notify)(peer, space, data)
     }
 
-    fn set_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move { (self.set_unresponsive)(peer) })
+    fn set_unresponsive(
+        &self,
+        peer: Url,
+        when: Timestamp,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move { (self.set_unresponsive)(peer, when) })
     }
 }
 
@@ -544,8 +549,8 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     let tx_handler1 = Arc::new(CbHandler {
         set_unresponsive: Arc::new({
-            move |url| {
-                unresp_send.send(url).map_err(|_| K2Error::Other {
+            move |url, when| {
+                unresp_send.send((url, when)).map_err(|_| K2Error::Other {
                     ctx: "Failed to send url to oneshot channel".into(),
                     src: DynInnerError::default(),
                 })
@@ -579,14 +584,16 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     // We expect the set_unresponsive() method on the TxSpaceHandler trait to have
     // been invoked
-    let maybe_url =
+    let maybe_url_and_when =
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             unresp_recv.recv().await
         })
         .await
         .unwrap();
 
-    assert!(Some(faulty_url) == maybe_url);
+    let url = maybe_url_and_when.unwrap().0;
+
+    assert!(faulty_url == url);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -604,8 +611,8 @@ async fn offline_peer_marked_unresponsive() {
             *url1_2.lock().unwrap() = url;
         }),
         set_unresponsive: Arc::new({
-            move |url| {
-                unresp_send.send(url).map_err(|_| K2Error::Other {
+            move |url, when| {
+                unresp_send.send((url, when)).map_err(|_| K2Error::Other {
                     ctx: "Failed to send url to oneshot channel".into(),
                     src: DynInnerError::default(),
                 })
@@ -696,7 +703,9 @@ async fn offline_peer_marked_unresponsive() {
     .await
     .unwrap();
 
-    assert!(Some(url2) == r);
+    let url = r.unwrap().0;
+
+    assert!(url2 == url);
 }
 
 #[tokio::test(flavor = "multi_thread")]
