@@ -1,11 +1,8 @@
-use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-const KEY_PREFIX: &str = "root";
 
 #[cfg(test)]
 mod test;
@@ -54,27 +51,6 @@ impl PeerMetaStore for MemPeerMetaStore {
         Box::pin(async move {
             let inner = inner.lock().await;
             Ok(inner.get(&peer).and_then(|entry| entry.get(&key).cloned()))
-        })
-    }
-
-    fn mark_peer_unresponsive(
-        &self,
-        peer: Url,
-        expiry: Timestamp,
-    ) -> BoxFuture<'_, K2Result<()>> {
-        self.put(
-            peer,
-            format!("{KEY_PREFIX}:unresponsive"),
-            Bytes::new(),
-            Some(expiry),
-        )
-    }
-
-    fn is_peer_unresponsive(&self, peer: Url) -> BoxFuture<'_, K2Result<bool>> {
-        Box::pin(async move {
-            self.get(peer, format!("{KEY_PREFIX}:unresponsive"))
-                .await
-                .map(|r| r.is_some())
         })
     }
 
