@@ -137,15 +137,12 @@ impl TxImpHnd {
     /// Call this whenever a connection to a peer fails to get established,
     /// sending a message to a peer fails or when we get a disconnected
     /// event from a peer.
-    pub fn mark_peer_unresponsive(
-        &self,
-        peer: Url,
-    ) -> BoxFut<'_, K2Result<()>> {
+    pub fn set_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
         let space_map = self.space_map.lock().unwrap().clone();
         Box::pin(async move {
             for (space_id, space_handler) in space_map.iter() {
                 if let Err(e) =
-                    space_handler.mark_peer_unresponsive(peer.clone()).await
+                    space_handler.set_unresponsive(peer.clone()).await
                 {
                     tracing::error!("Failed to mark peer with url {peer} as unresponsive in space {space_id}: {e}");
                 };
@@ -477,7 +474,7 @@ pub trait TxSpaceHandler: TxBaseHandler {
     }
 
     /// Mark a peer as unresponsive in the space's peer meta store
-    fn mark_peer_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
+    fn set_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
         drop(peer);
         Box::pin(async move { Ok(()) })
     }

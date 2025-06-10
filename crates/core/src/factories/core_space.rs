@@ -199,7 +199,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
         self.0.recv_notify(peer, space, data)
     }
 
-    fn mark_peer_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
+    fn set_unresponsive(&self, peer: Url) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let core_space = self
                 .1
@@ -216,9 +216,10 @@ impl TxSpaceHandler for TxHandlerTranslator {
                 Some(agent_info) => {
                     if let Err(err) = core_space
                         .peer_meta_store
-                        .mark_peer_unresponsive(
+                        .set_unresponsive(
                             agent_info.url.clone().unwrap(),
                             agent_info.expires_at,
+                            Timestamp::now(),
                         )
                         .await
                     {
