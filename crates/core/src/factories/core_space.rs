@@ -207,9 +207,10 @@ impl TxSpaceHandler for TxHandlerTranslator {
                 .ok_or(K2Error::other("CoreSpace had been dropped."))?;
             // Only add a peer as unreachable to the peer meta store if it is
             // also in the peer store. That's because this method may be called
-            // from a context that has no awareness about which space a peer
-            // (Url) is part of and that therefore needs to iteratively call
-            // it for all spaces
+            // from a context that has no awareness about all the spaces a peer
+            // (Url) is part of and that therefore wants to iteratively call it
+            // for all spaces in order for the peer to be marked unresponsive
+            // in all spaces that the peer is part of.
             let peers = core_space.peer_store.get_all().await?;
             match peers.iter().find(|p| p.url == Some(peer.clone())) {
                 Some(agent_info) => {
