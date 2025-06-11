@@ -133,3 +133,43 @@ async fn store_unresponsive_peer() {
         store.get_unresponsive(peer.clone()).await.unwrap();
     assert_eq!(when_set_unresponsive, Some(when));
 }
+
+#[tokio::test]
+async fn get_all_by_key() {
+    let factory = MemPeerMetaStoreFactory::create();
+    let store = factory
+        .create(
+            Arc::new(default_test_builder().with_default_config().unwrap()),
+            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+        )
+        .await
+        .unwrap();
+
+    let peer_1 = Url::from_str("ws://test-host:80/1").unwrap();
+    let when = Timestamp::now();
+    store
+        .set_unresponsive(peer_1.clone(), Timestamp::now(), when)
+        .await
+        .unwrap();
+    let peer_2 = Url::from_str("ws://test-host:80/2").unwrap();
+    store
+        .set_unresponsive(peer_2.clone(), Timestamp::now(), when)
+        .await
+        .unwrap();
+
+    let all_unresponsive_urls = store
+        .get_all_by_key(
+            format!("{KEY_PREFIX_ROOT}:{META_KEY_UNRESPONSIVE}").to_string(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(all_unresponsive_urls.len(), 2);
+    assert_eq!(
+        all_unresponsive_urls.get(&peer_1),
+        Some(&serde_json::to_vec(&when).unwrap().into())
+    );
+    assert_eq!(
+        all_unresponsive_urls.get(&peer_2),
+        Some(&serde_json::to_vec(&when).unwrap().into())
+    );
+}

@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::*;
 use std::collections::HashMap;
@@ -30,7 +31,7 @@ impl PeerMetaStore for MemPeerMetaStore {
         &self,
         peer: Url,
         key: String,
-        value: bytes::Bytes,
+        value: Bytes,
         _expiry: Option<Timestamp>,
     ) -> BoxFuture<'_, K2Result<()>> {
         let inner = self.inner.clone();
@@ -46,11 +47,29 @@ impl PeerMetaStore for MemPeerMetaStore {
         &self,
         peer: Url,
         key: String,
-    ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>> {
+    ) -> BoxFuture<'_, K2Result<Option<Bytes>>> {
         let inner = self.inner.clone();
         Box::pin(async move {
             let inner = inner.lock().await;
             Ok(inner.get(&peer).and_then(|entry| entry.get(&key).cloned()))
+        })
+    }
+
+    fn get_all_by_key(
+        &self,
+        key: String,
+    ) -> BoxFuture<'_, K2Result<HashMap<Url, Bytes>>> {
+        let inner = self.inner.clone();
+        Box::pin(async move {
+            let inner = inner.lock().await;
+            inner
+                .iter()
+                .filter_map(|(url, kv_map)| {
+                    kv_map
+                        .get_key_value(&key)
+                        .map(|(_, value)| Ok((url.clone(), value.clone())))
+                })
+                .collect()
         })
     }
 
