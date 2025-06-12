@@ -1,6 +1,13 @@
 //! tx5 transport module test utilities
 
-use super::*;
+use std::sync::Arc;
+
+use kitsune2_api::{
+    BoxFut, Builder, DynTransport, DynTxHandler, K2Result, SpaceId, Timestamp,
+    TxBaseHandler, TxHandler, TxModuleHandler, TxSpaceHandler, Url,
+};
+
+use crate::{config, Tx5TransportFactory};
 
 /// Test harness for the transport_tx5 module
 pub struct Tx5TransportTestHarness {
