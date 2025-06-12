@@ -101,10 +101,6 @@ fn make_mock_transport(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "outgoing_request_queue.rs:154:6: called `Result::unwrap()` on an `Err` value: Elapsed(())"
-)]
 async fn outgoing_request_queue() {
     let config = CoreFetchConfig {
         re_insert_outgoing_request_delay_ms: 50,
@@ -128,7 +124,7 @@ async fn outgoing_request_queue() {
 
     // Let the fetch request be sent multiple times. As only 1 op was added to the queue,
     // this proves that it is being re-added to the queue after sending a request for it.
-    iter_check!({
+    iter_check!(500, {
         if requests_sent.lock().unwrap().len() >= 2 {
             break;
         }

@@ -1,121 +1,38 @@
-use std::sync::Arc;
-
+use super::CorePublishConfig;
+use crate::{
+    default_test_builder,
+    factories::{core_publish::CorePublish, MemoryOp},
+};
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
-    DynPeerStore, DynTransport, DynVerifier, K2Result, Publish, Signer,
-    SpaceHandler, SpaceId, Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler,
-    Url,
+    DynPeerMetaStore, DynPeerStore, DynTransport, DynVerifier, K2Result,
+    MockTransport, Publish, Signer, SpaceHandler, SpaceId, Timestamp,
+    TxBaseHandler, TxHandler, TxSpaceHandler, Url,
 };
 use kitsune2_test_utils::{
     agent::{TestLocalAgent, TestVerifier},
     enable_tracing, iter_check,
     space::TEST_SPACE_ID,
 };
-
-use crate::factories::{core_publish::CorePublish, MemoryOp};
-
-use super::CorePublishConfig;
-
-const INVALID_SIG: &[u8] = b"invalid-signature";
-
-#[derive(Debug)]
-struct InvalidSigner;
-
-impl Signer for InvalidSigner {
-    fn sign<'a, 'b: 'a, 'c: 'a>(
-        &'a self,
-        _agent_info: &'b AgentInfo,
-        _encoded: &'c [u8],
-    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
-        Box::pin(async move { Ok(bytes::Bytes::from_static(INVALID_SIG)) })
-    }
-}
-
-async fn setup_test(
-    config: &CorePublishConfig,
-) -> (
-    CorePublish,
-    DynOpStore,
-    DynPeerStore,
-    DynVerifier,
-    Url,
-    DynTransport,
-) {
-    let verifier = Arc::new(TestVerifier);
-
-    let builder = Builder {
-        verifier: verifier.clone(),
-        ..crate::default_test_builder()
-    }
-    .with_default_config()
-    .unwrap();
-
-    let builder = Arc::new(builder);
-
-    let op_store = builder
-        .op_store
-        .create(builder.clone(), TEST_SPACE_ID)
-        .await
-        .unwrap();
-
-    #[derive(Debug)]
-    struct NoopHandler;
-    impl TxBaseHandler for NoopHandler {}
-    impl TxHandler for NoopHandler {}
-    impl TxSpaceHandler for NoopHandler {}
-    impl SpaceHandler for NoopHandler {}
-
-    let transport = builder
-        .transport
-        .create(builder.clone(), Arc::new(NoopHandler))
-        .await
-        .unwrap();
-
-    let fetch = builder
-        .fetch
-        .create(
-            builder.clone(),
-            TEST_SPACE_ID,
-            op_store.clone(),
-            transport.clone(),
-        )
-        .await
-        .unwrap();
-
-    let peer_store = builder
-        .peer_store
-        .create(builder.clone(), TEST_SPACE_ID)
-        .await
-        .unwrap();
-
-    let url =
-        transport.register_space_handler(TEST_SPACE_ID, Arc::new(NoopHandler));
-
-    (
-        CorePublish::new(
-            config.clone(),
-            TEST_SPACE_ID,
-            builder,
-            fetch,
-            peer_store.clone(),
-            transport.clone(),
-        ),
-        op_store,
-        peer_store,
-        verifier,
-        url.unwrap(),
-        transport,
-    )
-}
+use std::{sync::Arc, time::Duration};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn published_ops_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _, _, _, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, _, _, url_2, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
+    let Test {
+        publish: core_publish_1,
+        op_store: op_store_1,
+        transport: _transport_1,
+        ..
+    } = Test::setup().await;
+    let Test {
+        publish: _core_publish2,
+        op_store: op_store_2,
+        url: url_2,
+        transport: _transport_2,
+        ..
+    } = Test::setup().await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id_1 = incoming_op_1.compute_op_id();
@@ -156,10 +73,19 @@ async fn published_ops_can_be_retrieved() {
 async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
     enable_tracing();
 
-    let (core_publish_1, op_store_1, _, _, _, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, op_store_2, _, _, url_2, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
+    let Test {
+        publish: core_publish_1,
+        op_store: op_store_1,
+        transport: _transport_1,
+        ..
+    } = Test::setup().await;
+    let Test {
+        publish: _core_publish2,
+        op_store: op_store_2,
+        url: url_2,
+        transport: _transport_2,
+        ..
+    } = Test::setup().await;
 
     let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id_1 = incoming_op_1.compute_op_id();
@@ -208,10 +134,18 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
 async fn published_agent_can_be_retrieved() {
     enable_tracing();
 
-    let (core_publish_1, _, _, _, _, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, _, peer_store_2, _, url_2, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
+    let Test {
+        publish: core_publish_1,
+        transport: _transport_1,
+        ..
+    } = Test::setup().await;
+    let Test {
+        publish: _core_publish2,
+        peer_store: peer_store_2,
+        url: url_2,
+        transport: _transport_2,
+        ..
+    } = Test::setup().await;
 
     let agent_id: AgentId = bytes::Bytes::from_static(b"test-agent").into();
     let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
@@ -255,10 +189,19 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
 ) {
     enable_tracing();
 
-    let (core_publish_1, _, _, _, _, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
-    let (_core_publish2, _, peer_store_2, verifier_2, url_2, _transport) =
-        setup_test(&CorePublishConfig::default()).await;
+    let Test {
+        publish: core_publish_1,
+        transport: _transport_2,
+        ..
+    } = Test::setup().await;
+    let Test {
+        publish: _core_publish2,
+        peer_store: peer_store_2,
+        verifier: verifier_2,
+        url: url_2,
+        transport: _transport_2,
+        ..
+    } = Test::setup().await;
 
     let agent_id_invalid: AgentId =
         bytes::Bytes::from_static(b"test-agent").into();
@@ -338,4 +281,181 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
 
     // Verify that the invalid agent info has not been inserted
     assert_eq!(peer_store_2.get(agent_id_invalid).await.unwrap(), None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn no_publish_to_unresponsive_url() {
+    let unresponsive_url = Url::from_str("ws://unresponsi.ve:80").unwrap();
+    let responsive_url = Url::from_str("ws://responsi.ve:80").unwrap();
+
+    // Create a mock transport to check where publish sends to.
+    // Set up a channel to know when the intended publish has been sent.
+    let (expected_publish_sent_tx, mut expected_publish_sent_rx) =
+        tokio::sync::mpsc::channel(1);
+    let mut transport = MockTransport::new();
+    let responsive_url_clone = responsive_url.clone();
+    let unresponsive_url_clone = unresponsive_url.clone();
+    transport
+        .expect_send_module()
+        .returning(move |url, _, _, _| {
+            // If publish goes to unresponsive URL, test fails.
+            if url == unresponsive_url_clone {
+                panic!("published to unresponsive URL");
+            }
+            if url == responsive_url_clone {
+                expected_publish_sent_tx.try_send(()).unwrap();
+            }
+            Box::pin(async move { Ok(()) })
+        });
+    transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| {});
+    let transport = Arc::new(transport);
+
+    // Set up one publish module.
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let (publish, _, _, peer_meta_store) =
+        create_publish(builder, transport).await;
+
+    let op = MemoryOp::new(Timestamp::now(), vec![1]);
+    let op_id = op.compute_op_id();
+    // Set unresponsive URL in peer meta store.
+    peer_meta_store
+        .set_unresponsive(
+            unresponsive_url.clone(),
+            Timestamp::now(),
+            Timestamp::now(),
+        )
+        .await
+        .unwrap();
+
+    // Publish to the unresponsive URL, which should be omitted.
+    publish
+        .publish_ops(vec![op_id.clone()], unresponsive_url)
+        .await
+        .unwrap();
+    // Publish to another URL which is not unresponsive, so that this send
+    // can be awaited to have happened, which implies that the previous
+    // publish to the unresponsive URL has been omitted.
+    publish
+        .publish_ops(vec![op_id], responsive_url)
+        .await
+        .unwrap();
+
+    // Timeout after waiting 100 ms for publish to send to the responsive URL.
+    tokio::select! {
+        _ = expected_publish_sent_rx.recv() => {},
+        _ = tokio::time::sleep(Duration::from_millis(100)) => {
+            panic!("publish not sent to responsive URL")
+        },
+    };
+}
+
+const INVALID_SIG: &[u8] = b"invalid-signature";
+
+#[derive(Debug)]
+struct InvalidSigner;
+
+impl Signer for InvalidSigner {
+    fn sign<'a, 'b: 'a, 'c: 'a>(
+        &'a self,
+        _agent_info: &'b AgentInfo,
+        _encoded: &'c [u8],
+    ) -> BoxFut<'a, K2Result<bytes::Bytes>> {
+        Box::pin(async move { Ok(bytes::Bytes::from_static(INVALID_SIG)) })
+    }
+}
+
+async fn create_publish(
+    builder: Arc<Builder>,
+    transport: DynTransport,
+) -> (CorePublish, DynOpStore, DynPeerStore, DynPeerMetaStore) {
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let fetch = builder
+        .fetch
+        .create(
+            builder.clone(),
+            TEST_SPACE_ID,
+            op_store.clone(),
+            transport.clone(),
+        )
+        .await
+        .unwrap();
+    let peer_store = builder
+        .peer_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let publish = CorePublish::new(
+        CorePublishConfig::default(),
+        TEST_SPACE_ID,
+        builder,
+        fetch,
+        peer_store.clone(),
+        peer_meta_store.clone(),
+        transport.clone(),
+    );
+    (publish, op_store, peer_store, peer_meta_store)
+}
+
+struct Test {
+    publish: CorePublish,
+    op_store: DynOpStore,
+    peer_store: DynPeerStore,
+    transport: DynTransport,
+    verifier: DynVerifier,
+    url: Url,
+}
+
+impl Test {
+    async fn setup() -> Self {
+        let verifier = Arc::new(TestVerifier);
+
+        let builder = Builder {
+            verifier: verifier.clone(),
+            ..crate::default_test_builder()
+        }
+        .with_default_config()
+        .unwrap();
+        let builder = Arc::new(builder);
+
+        #[derive(Debug)]
+        struct NoopHandler;
+        impl TxBaseHandler for NoopHandler {}
+        impl TxHandler for NoopHandler {}
+        impl TxSpaceHandler for NoopHandler {}
+        impl SpaceHandler for NoopHandler {}
+
+        let transport = builder
+            .transport
+            .create(builder.clone(), Arc::new(NoopHandler))
+            .await
+            .unwrap();
+
+        let url = transport
+            .register_space_handler(TEST_SPACE_ID, Arc::new(NoopHandler))
+            .unwrap();
+
+        let (publish, op_store, peer_store, _) =
+            create_publish(builder, transport.clone()).await;
+
+        Self {
+            publish,
+            op_store,
+            peer_store,
+            verifier,
+            url,
+            transport,
+        }
+    }
 }
