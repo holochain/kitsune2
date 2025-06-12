@@ -25,11 +25,14 @@ url = { workspace = true }
 
 # Feature: schema
 schemars = { workspace = true, optional = true }
+# Feature: test-utils
+kitsune2_test_utils = { workspace = true, optional = true }
+# Feature: test-utils
+sbd-server = { workspace = true, optional = true }
+# Feature: test-utils
+kitsune2_core = { workspace = true, optional = true }
 
 [dev-dependencies]
-kitsune2_core = { workspace = true }
-kitsune2_test_utils = { workspace = true }
-sbd-server = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [features]
@@ -38,3 +41,5 @@ default = ["datachannel-vendored"]
 datachannel-vendored = ["tx5/datachannel-vendored"]
 
 schema = ["dep:schemars", "tx5/schema"]
+
+test-utils = ["dep:kitsune2_test_utils", "dep:sbd-server", "dep:kitsune2_core"]
