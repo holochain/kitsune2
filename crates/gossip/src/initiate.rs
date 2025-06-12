@@ -187,7 +187,7 @@ async fn select_next_target(
         using_overlapping_agents = false;
     }
 
-    let mut possible_target = select_least_recently_gossiped(
+    let mut possible_target = select_responsive_and_least_recently_gossiped(
         all_agents,
         peer_meta_store.clone(),
         current_time,
@@ -203,7 +203,7 @@ async fn select_next_target(
         all_agents = peer_store.get_all().await?.into_iter().collect();
         remove_local_agents(&mut all_agents, &local_agent_ids);
 
-        possible_target = select_least_recently_gossiped(
+        possible_target = select_responsive_and_least_recently_gossiped(
             all_agents,
             peer_meta_store.clone(),
             current_time,
@@ -228,7 +228,7 @@ fn remove_local_agents(
     agents.retain(|a| !local_agents.contains(&a.get_agent_info().agent));
 }
 
-async fn select_least_recently_gossiped(
+async fn select_responsive_and_least_recently_gossiped(
     all_agents: HashSet<Arc<AgentInfoSigned>>,
     peer_meta_store: Arc<K2PeerMetaStore>,
     current_time: Timestamp,
@@ -249,6 +249,16 @@ async fn select_least_recently_gossiped(
         let Some(url) = agent.url.clone() else {
             continue;
         };
+
+        // Agent has been marked as unreachable, we won't be able to gossip
+        // with them.
+        if peer_meta_store
+            .get_unresponsive(url.clone())
+            .await?
+            .is_some()
+        {
+            continue;
+        }
 
         let timestamp =
             peer_meta_store.last_gossip_timestamp(url.clone()).await?;
@@ -729,5 +739,56 @@ mod tests {
             panic!("Expected to find a peer to gossip with");
         };
         assert_eq!(remote_agent_2.url.clone().unwrap(), url);
+    }
+
+    #[tokio::test]
+    async fn skip_unresponsive_peer() {
+        enable_tracing();
+
+        let harness = Harness::create().await;
+
+        harness.new_local_agent(DhtArc::FULL).await;
+
+        let remote_agent = harness
+            .new_remote_agent(
+                Some(Url::from_str("ws://test:80/3").unwrap()),
+                Some(DhtArc::FULL),
+                Some(DhtArc::FULL),
+            )
+            .await
+            .1;
+
+        let url = select_next_target(
+            harness.peer_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
+            harness.peer_meta_store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Agent gets picked successfully while not marked as unresponsive
+        assert_eq!(remote_agent.url.clone().unwrap(), url.clone().unwrap());
+
+        harness
+            .peer_meta_store
+            .set_unresponsive(
+                url.unwrap(),
+                remote_agent.expires_at,
+                Timestamp::now(),
+            )
+            .await
+            .unwrap();
+
+        let url = select_next_target(
+            harness.peer_store.clone(),
+            &harness.local_agent_store.get_all().await.unwrap(),
+            harness.peer_meta_store.clone(),
+        )
+        .await
+        .unwrap();
+
+        // Must return no agent since the only non-local agent in the
+        // peer store is marked unresponsive
+        assert_eq!(None, url);
     }
 }

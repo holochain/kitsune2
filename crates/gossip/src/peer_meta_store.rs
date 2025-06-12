@@ -203,6 +203,24 @@ impl K2PeerMetaStore {
         .await
     }
 
+    /// Mark a peer url unresponsive with an expiration timestamp.
+    pub async fn set_unresponsive(
+        &self,
+        peer: Url,
+        expiry: Timestamp,
+        when: Timestamp,
+    ) -> K2Result<()> {
+        self.inner.set_unresponsive(peer, expiry, when).await
+    }
+
+    /// Check if a peer is marked unresponsive in the store.
+    pub async fn get_unresponsive(
+        &self,
+        peer: Url,
+    ) -> K2Result<Option<Timestamp>> {
+        self.inner.get_unresponsive(peer).await
+    }
+
     async fn get<T: serde::de::DeserializeOwned>(
         &self,
         peer: Url,
