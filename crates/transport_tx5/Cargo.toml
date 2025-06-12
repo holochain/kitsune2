@@ -34,6 +34,9 @@ kitsune2_core = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
+kitsune2_test_utils = { workspace = true }
+sbd-server = { workspace = true }
+kitsune2_core = { workspace = true }
 
 [features]
 default = ["datachannel-vendored"]
