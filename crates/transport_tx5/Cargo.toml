@@ -37,6 +37,7 @@ tokio = { workspace = true, features = ["full"] }
 kitsune2_test_utils = { workspace = true }
 sbd-server = { workspace = true }
 kitsune2_core = { workspace = true }
+kitsune2_transport_tx5 = { workspace = true, features = ["test-utils"] }
 
 [features]
 default = ["datachannel-vendored"]

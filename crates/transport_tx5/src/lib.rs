@@ -463,4 +463,4 @@ async fn evt_task(
 #[cfg(any(test, feature = "test-utils"))]
 pub mod harness;
 #[cfg(test)]
-pub mod test;
+mod test;
