@@ -1,9 +1,8 @@
 use super::test_utils::random_peer_url;
 use crate::{
     default_test_builder,
-    factories::{
-        core_fetch::{test::test_utils::make_op, CoreFetch, CoreFetchConfig},
-        MemOpStoreFactory,
+    factories::core_fetch::{
+        test::test_utils::make_op, CoreFetch, CoreFetchConfig,
     },
 };
 use kitsune2_api::*;
@@ -33,7 +32,13 @@ async fn setup_test(
 ) -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let op_store = MemOpStoreFactory::create()
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
@@ -45,6 +50,7 @@ async fn setup_test(
         config.clone(),
         TEST_SPACE_ID,
         op_store.clone(),
+        peer_meta_store,
         mock_transport.clone(),
     );
 
@@ -269,49 +275,84 @@ async fn filter_requests_for_held_ops() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn unresponsive_agents_are_put_on_back_off_list() {
-    let TestCase {
-        fetch,
-        requests_sent,
-        _transport,
-        ..
-    } = setup_test(&CoreFetchConfig::default(), true).await;
+async fn unresponsive_urls_are_filtered() {
+    let responsive_url = random_peer_url();
+    let unresponsive_url = random_peer_url();
 
-    let op_list_1 = create_op_id_list(5);
-    let op_list_2 = create_op_id_list(5);
-
-    let peer_url_1 = random_peer_url();
-    let peer_url_2 = random_peer_url();
-
-    // Add all ops to the queue.
-    futures::future::join_all([
-        fetch.request_ops(op_list_1.clone(), peer_url_1.clone()),
-        fetch.request_ops(op_list_2.clone(), peer_url_2.clone()),
-    ])
-    .await;
-
-    // Wait for one request for each agent.
-    let expected_peer_url = [peer_url_1, peer_url_2];
-    iter_check!({
-        let requests_sent = requests_sent.lock().unwrap();
-        let request_destinations = requests_sent
-            .iter()
-            .map(|(_, agent_id)| agent_id)
-            .collect::<Vec<_>>();
-        if expected_peer_url
-            .iter()
-            .all(|peer_url| request_destinations.contains(&peer_url))
-        {
-            // Check all agents are on back off list.
-            let back_off_list = &mut fetch.state.lock().unwrap().back_off_list;
-            if expected_peer_url
-                .iter()
-                .all(|peer_url| back_off_list.is_peer_on_back_off(peer_url))
-            {
-                break;
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    // Create a mock transport to track where fetch requests are sent.
+    // Set up a channel to know when the intended fetch request has been sent.
+    let (expected_fetch_request_sent_tx, mut expected_fetch_request_sent_rx) =
+        tokio::sync::mpsc::channel(1);
+    let mut transport = MockTransport::new();
+    let responsive_url_clone = responsive_url.clone();
+    let unresponsive_url_clone = unresponsive_url.clone();
+    transport.expect_send_module().returning({
+        move |url, _, _, _| {
+            if url == unresponsive_url_clone {
+                panic!("fetch request sent to unresponsive URL");
             }
+            if url == responsive_url_clone {
+                expected_fetch_request_sent_tx.try_send(()).unwrap();
+            }
+            Box::pin(async move { Ok(()) })
         }
     });
+    transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| ());
+    let transport = Arc::new(transport);
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let fetch = CoreFetch::new(
+        CoreFetchConfig::default(),
+        TEST_SPACE_ID,
+        op_store.clone(),
+        peer_meta_store.clone(),
+        transport.clone(),
+    );
+
+    let op_list_1 = create_op_id_list(1);
+    let op_list_2 = create_op_id_list(1);
+    // Set unresponsive URL as unresponsive in peer meta store.
+    peer_meta_store
+        .set_unresponsive(
+            unresponsive_url.clone(),
+            Timestamp::now(),
+            Timestamp::now(),
+        )
+        .await
+        .unwrap();
+
+    // Request ops from unresponsive URL, which should be omitted.
+    fetch
+        .request_ops(op_list_1, responsive_url.clone())
+        .await
+        .unwrap();
+    // Request ops from another URL which is not unresponsive, so that this request
+    // can be awaited to have happened, which implies that the previous
+    // publish to the unresponsive URL has been omitted.
+    fetch
+        .request_ops(op_list_2, unresponsive_url.clone())
+        .await
+        .unwrap();
+
+    // Timeout after waiting 100 ms for fetch to request from the responsive URL.
+    tokio::select! {
+        _ = expected_fetch_request_sent_rx.recv() => {},
+        _ = tokio::time::sleep(Duration::from_millis(1000)) => {
+            panic!("publish not sent to responsive URL")
+        },
+    };
 }
 
 #[tokio::test(flavor = "multi_thread")]

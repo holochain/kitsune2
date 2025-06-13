@@ -32,6 +32,11 @@ async fn setup_test() -> TestCase {
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
     let responses_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(responses_sent.clone());
     let config = CoreFetchConfig::default();
@@ -40,6 +45,7 @@ async fn setup_test() -> TestCase {
         config.clone(),
         TEST_SPACE_ID,
         op_store.clone(),
+        peer_meta_store,
         mock_transport.clone(),
     );
 
@@ -183,7 +189,13 @@ async fn fail_to_respond_once_then_succeed() {
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let op_store = MemOpStoreFactory::create()
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
@@ -228,6 +240,7 @@ async fn fail_to_respond_once_then_succeed() {
         config.clone(),
         TEST_SPACE_ID,
         op_store,
+        peer_meta_store,
         mock_transport.clone(),
     );
 

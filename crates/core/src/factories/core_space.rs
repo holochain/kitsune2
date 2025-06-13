@@ -107,18 +107,19 @@ impl SpaceFactory for CoreSpaceFactory {
                 .op_store
                 .create(builder.clone(), space.clone())
                 .await?;
+            let peer_meta_store = builder
+                .peer_meta_store
+                .create(builder.clone(), space.clone())
+                .await?;
             let fetch = builder
                 .fetch
                 .create(
                     builder.clone(),
                     space.clone(),
                     op_store.clone(),
+                    peer_meta_store.clone(),
                     tx.clone(),
                 )
-                .await?;
-            let peer_meta_store = builder
-                .peer_meta_store
-                .create(builder.clone(), space.clone())
                 .await?;
             let publish = builder
                 .publish

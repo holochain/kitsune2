@@ -4,7 +4,7 @@ use crate::{
     builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
     OpId, SpaceId, Url,
 };
-use crate::{op_store, Timestamp};
+use crate::{op_store, DynPeerMetaStore, Timestamp};
 use bytes::{Bytes, BytesMut};
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -126,6 +126,7 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
         op_store: DynOpStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>>;
 }

@@ -300,13 +300,13 @@ impl CorePublish {
             outgoing_publish_ops_rx.recv().await
         {
             // Check if peer URL to publish to is unresponsive.
-            if let Ok(maybe_value) =
-                peer_meta_store.get_unresponsive(peer_url.clone()).await
+            if peer_meta_store
+                .get_unresponsive(peer_url.clone())
+                .await
+                .is_ok_and(|maybe_value| maybe_value.is_some())
             {
-                if maybe_value.is_some() {
-                    // Peer URL is unresponsive, do not publish.
-                    continue;
-                }
+                // Peer URL is unresponsive, do not publish.
+                continue;
             }
 
             let Some(transport) = transport.upgrade() else {

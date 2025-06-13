@@ -106,6 +106,7 @@ impl FetchFactory for CoreFetchFactory {
         builder: Arc<Builder>,
         space_id: SpaceId,
         op_store: DynOpStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynFetch>> {
         Box::pin(async move {
@@ -115,6 +116,7 @@ impl FetchFactory for CoreFetchFactory {
                 config.core_fetch,
                 space_id,
                 op_store,
+                peer_meta_store,
                 transport,
             ));
             Ok(out)
@@ -172,9 +174,16 @@ impl CoreFetch {
         config: CoreFetchConfig,
         space_id: SpaceId,
         op_store: DynOpStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> Self {
-        Self::spawn_tasks(config, space_id, op_store, transport)
+        Self::spawn_tasks(
+            config,
+            space_id,
+            op_store,
+            peer_meta_store,
+            transport,
+        )
     }
 }
 
@@ -235,6 +244,7 @@ impl CoreFetch {
         config: CoreFetchConfig,
         space_id: SpaceId,
         op_store: DynOpStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> Self {
         // Create a queue to process outgoing op requests. Requests are sent to peers.
@@ -273,6 +283,7 @@ impl CoreFetch {
                     outgoing_request_tx.clone(),
                     outgoing_request_rx.clone(),
                     space_id.clone(),
+                    peer_meta_store.clone(),
                     Arc::downgrade(&transport),
                     config.re_insert_outgoing_request_delay_ms,
                 ));
@@ -324,6 +335,7 @@ impl CoreFetch {
         outgoing_request_tx: Sender<OutgoingRequest>,
         outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
         space_id: SpaceId,
+        peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
         re_insert_outgoing_request_delay: u32,
     ) {
@@ -337,65 +349,63 @@ impl CoreFetch {
                 break;
             };
 
-            let is_peer_on_back_off = {
-                let mut lock = state.lock().unwrap();
+            // Do nothing if op id is no longer in the set of requests to send.
+            //
+            // Note that because this request isn't in the state, it is safe to
+            // skip the requests empty check below.
+            if !state
+                .lock()
+                .unwrap()
+                .requests
+                .contains(&(op_id.clone(), peer_url.clone()))
+            {
+                continue;
+            }
 
-                // Do nothing if op id is no longer in the set of requests to send.
-                //
-                // Note that because this request isn't in the state, it is safe to
-                // skip the requests empty check below.
-                if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
-                    continue;
+            // Do not send request if peer URL is set as unresponsive.
+            if peer_meta_store
+                .get_unresponsive(peer_url.clone())
+                .await
+                .is_ok_and(|maybe_value| maybe_value.is_some())
+            {
+                continue;
+            }
+
+            tracing::debug!(
+                ?peer_url,
+                ?space_id,
+                ?op_id,
+                "sending fetch request"
+            );
+
+            // Send fetch request to peer.
+            let data = serialize_request_message(vec![op_id.clone()]);
+            match transport
+                .send_module(
+                    peer_url.clone(),
+                    space_id.clone(),
+                    MOD_NAME.to_string(),
+                    data,
+                )
+                .await
+            {
+                Ok(()) => {
+                    // If peer was on back off list, remove them.
+                    state.lock().unwrap().back_off_list.remove_peer(&peer_url);
                 }
-
-                lock.back_off_list.is_peer_on_back_off(&peer_url)
-            };
-
-            // Send request if peer is not on back off list.
-            if !is_peer_on_back_off {
-                tracing::debug!(
-                    ?peer_url,
-                    ?space_id,
-                    ?op_id,
-                    "sending fetch request"
-                );
-
-                // Send fetch request to peer.
-                let data = serialize_request_message(vec![op_id.clone()]);
-                match transport
-                    .send_module(
-                        peer_url.clone(),
-                        space_id.clone(),
-                        MOD_NAME.to_string(),
-                        data,
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        // If peer was on back off list, remove them.
-                        state
-                            .lock()
-                            .unwrap()
-                            .back_off_list
-                            .remove_peer(&peer_url);
-                    }
-                    Err(err) => {
-                        tracing::warn!(
+                Err(err) => {
+                    tracing::warn!(
                             ?op_id,
                             ?peer_url,
                             "could not send fetch request: {err}. Putting peer on back off list."
                         );
-                        let mut lock = state.lock().unwrap();
-                        lock.back_off_list.back_off_peer(&peer_url);
+                    let mut lock = state.lock().unwrap();
+                    lock.back_off_list.back_off_peer(&peer_url);
 
-                        // If max back off interval has expired for the peer,
-                        // give up on requesting ops from them.
-                        if lock
-                            .back_off_list
-                            .has_last_back_off_expired(&peer_url)
-                        {
-                            lock.requests.retain(|(_, a)| *a != peer_url);
-                        }
+                    // If max back off interval has expired for the peer,
+                    // give up on requesting ops from them.
+                    if lock.back_off_list.has_last_back_off_expired(&peer_url) {
+                        lock.requests.retain(|(_, a)| *a != peer_url);
                     }
                 }
             }

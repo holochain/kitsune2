@@ -25,6 +25,14 @@ async fn create_gossip_instance() {
         .create(builder.clone(), space_id.clone())
         .await
         .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(
+            builder.clone(),
+            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+        )
+        .await
+        .unwrap();
     factory
         .create(
             builder.clone(),
@@ -39,14 +47,7 @@ async fn create_gossip_instance() {
                 .create(builder.clone())
                 .await
                 .unwrap(),
-            builder
-                .peer_meta_store
-                .create(
-                    builder.clone(),
-                    kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
-                )
-                .await
-                .unwrap(),
+            peer_meta_store.clone(),
             op_store.clone(),
             tx.clone(),
             builder
@@ -55,6 +56,7 @@ async fn create_gossip_instance() {
                     builder.clone(),
                     space_id.clone(),
                     op_store.clone(),
+                    peer_meta_store,
                     tx.clone(),
                 )
                 .await

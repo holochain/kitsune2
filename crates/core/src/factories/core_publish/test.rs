@@ -376,23 +376,24 @@ async fn create_publish(
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
     let fetch = builder
         .fetch
         .create(
             builder.clone(),
             TEST_SPACE_ID,
             op_store.clone(),
+            peer_meta_store.clone(),
             transport.clone(),
         )
         .await
         .unwrap();
     let peer_store = builder
         .peer_store
-        .create(builder.clone(), TEST_SPACE_ID)
-        .await
-        .unwrap();
-    let peer_meta_store = builder
-        .peer_meta_store
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
