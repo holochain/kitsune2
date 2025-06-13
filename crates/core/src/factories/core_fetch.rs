@@ -1,4 +1,3 @@
-use back_off::BackOffList;
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::collections::HashMap;
@@ -12,7 +11,6 @@ use tokio::{
     task::JoinHandle,
 };
 
-mod back_off;
 mod message_handler;
 
 #[cfg(test)]
@@ -38,21 +36,6 @@ mod config {
         /// Default: 2 s.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub re_insert_outgoing_request_delay_ms: u32,
-        /// Duration of first interval to back off an unresponsive peer.
-        ///
-        /// Default: 20 s.
-        #[cfg_attr(feature = "schema", schemars(default))]
-        pub first_back_off_interval_ms: u32,
-        /// Duration of last interval to back off an unresponsive peer.
-        ///
-        /// Default: 10 min.
-        #[cfg_attr(feature = "schema", schemars(default))]
-        pub last_back_off_interval_ms: u32,
-        /// Number of back off intervals.
-        ///
-        /// Default: 4.
-        #[cfg_attr(feature = "schema", schemars(default))]
-        pub num_back_off_intervals: usize,
     }
 
     impl Default for CoreFetchConfig {
@@ -61,9 +44,6 @@ mod config {
             Self {
                 parallel_request_count: 2,
                 re_insert_outgoing_request_delay_ms: 2000,
-                first_back_off_interval_ms: 1000 * 20,
-                last_back_off_interval_ms: 1000 * 60 * 10,
-                num_back_off_intervals: 4,
             }
         }
     }
@@ -131,7 +111,6 @@ type IncomingResponse = Vec<Op>;
 #[derive(Debug)]
 struct State {
     requests: HashSet<OutgoingRequest>,
-    back_off_list: BackOffList,
     notify_when_drained_senders: Vec<futures::channel::oneshot::Sender<()>>,
 }
 
@@ -147,14 +126,6 @@ impl State {
                     acc
                 },
             ),
-            peers_on_backoff: self
-                .back_off_list
-                .state
-                .iter()
-                .map(|(peer_url, backoff)| {
-                    (peer_url.clone(), backoff.current_backoff_expiry())
-                })
-                .collect(),
         }
     }
 }
@@ -265,11 +236,6 @@ impl CoreFetch {
 
         let state = Arc::new(Mutex::new(State {
             requests: HashSet::new(),
-            back_off_list: BackOffList::new(
-                config.first_back_off_interval_ms,
-                config.last_back_off_interval_ms,
-                config.num_back_off_intervals,
-            ),
             notify_when_drained_senders: vec![],
         }));
 
@@ -362,51 +328,44 @@ impl CoreFetch {
                 continue;
             }
 
-            // Do not send request if peer URL is set as unresponsive.
-            if peer_meta_store
+            // If peer URL is set as unresponsive, do not send request or re-insert
+            // request into queue, and remove all remaining requests from state.
+            let peer_url_unresponsive = peer_meta_store
                 .get_unresponsive(peer_url.clone())
                 .await
-                .is_ok_and(|maybe_value| maybe_value.is_some())
-            {
-                continue;
+                .is_ok_and(|maybe_value| maybe_value.is_some());
+            if peer_url_unresponsive {
+                state
+                    .lock()
+                    .unwrap()
+                    .requests
+                    .retain(|(_, a)| *a != peer_url);
             }
 
-            tracing::debug!(
-                ?peer_url,
-                ?space_id,
-                ?op_id,
-                "sending fetch request"
-            );
+            if !peer_url_unresponsive {
+                tracing::debug!(
+                    ?peer_url,
+                    ?space_id,
+                    ?op_id,
+                    "sending fetch request"
+                );
 
-            // Send fetch request to peer.
-            let data = serialize_request_message(vec![op_id.clone()]);
-            match transport
-                .send_module(
-                    peer_url.clone(),
-                    space_id.clone(),
-                    MOD_NAME.to_string(),
-                    data,
-                )
-                .await
-            {
-                Ok(()) => {
-                    // If peer was on back off list, remove them.
-                    state.lock().unwrap().back_off_list.remove_peer(&peer_url);
-                }
-                Err(err) => {
+                // Send fetch request to peer.
+                let data = serialize_request_message(vec![op_id.clone()]);
+                if let Err(err) = transport
+                    .send_module(
+                        peer_url.clone(),
+                        space_id.clone(),
+                        MOD_NAME.to_string(),
+                        data,
+                    )
+                    .await
+                {
                     tracing::warn!(
-                            ?op_id,
-                            ?peer_url,
-                            "could not send fetch request: {err}. Putting peer on back off list."
-                        );
-                    let mut lock = state.lock().unwrap();
-                    lock.back_off_list.back_off_peer(&peer_url);
-
-                    // If max back off interval has expired for the peer,
-                    // give up on requesting ops from them.
-                    if lock.back_off_list.has_last_back_off_expired(&peer_url) {
-                        lock.requests.retain(|(_, a)| *a != peer_url);
-                    }
+                        ?op_id,
+                        ?peer_url,
+                        "could not send fetch request: {err}."
+                    );
                 }
             }
 
@@ -428,31 +387,33 @@ impl CoreFetch {
                 }
             }
 
-            // Re-insert the fetch request into the queue after a delay.
-            let outgoing_request_tx = outgoing_request_tx.clone();
+            if !peer_url_unresponsive {
+                // Re-insert the fetch request into the queue after a delay.
+                let outgoing_request_tx = outgoing_request_tx.clone();
 
-            tokio::task::spawn({
-                let state = state.clone();
-                async move {
-                    tokio::time::sleep(Duration::from_millis(
-                        re_insert_outgoing_request_delay as u64,
-                    ))
-                    .await;
-                    if let Err(err) = outgoing_request_tx
-                        .try_send((op_id.clone(), peer_url.clone()))
-                    {
-                        tracing::warn!(
+                tokio::task::spawn({
+                    let state = state.clone();
+                    async move {
+                        tokio::time::sleep(Duration::from_millis(
+                            re_insert_outgoing_request_delay as u64,
+                        ))
+                        .await;
+                        if let Err(err) = outgoing_request_tx
+                            .try_send((op_id.clone(), peer_url.clone()))
+                        {
+                            tracing::warn!(
                         "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
                     );
-                        // Remove op id/peer url from set to prevent build-up of state.
-                        state
-                            .lock()
-                            .unwrap()
-                            .requests
-                            .remove(&(op_id, peer_url));
+                            // Remove op id/peer url from set to prevent build-up of state.
+                            state
+                                .lock()
+                                .unwrap()
+                                .requests
+                                .remove(&(op_id, peer_url));
+                        }
                     }
-                }
-            });
+                });
+            }
         }
     }
 

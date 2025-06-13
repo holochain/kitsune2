@@ -23,13 +23,11 @@ struct TestCase {
     fetch: CoreFetch,
     requests_sent: Arc<Mutex<RequestsSent>>,
     op_store: DynOpStore,
+    peer_meta_store: DynPeerMetaStore,
     _transport: DynTransport,
 }
 
-async fn setup_test(
-    config: &CoreFetchConfig,
-    faulty_connection: bool,
-) -> TestCase {
+async fn setup_test(config: &CoreFetchConfig) -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
     let op_store = builder
@@ -43,14 +41,13 @@ async fn setup_test(
         .await
         .unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
-    let mock_transport =
-        make_mock_transport(requests_sent.clone(), faulty_connection);
+    let mock_transport = make_mock_transport(requests_sent.clone());
 
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
         op_store.clone(),
-        peer_meta_store,
+        peer_meta_store.clone(),
         mock_transport.clone(),
     );
 
@@ -58,13 +55,13 @@ async fn setup_test(
         fetch,
         requests_sent,
         op_store,
+        peer_meta_store,
         _transport: mock_transport,
     }
 }
 
 fn make_mock_transport(
     requests_sent: Arc<Mutex<RequestsSent>>,
-    faulty_connection: bool,
 ) -> Arc<MockTransport> {
     let mut mock_transport = MockTransport::new();
     mock_transport.expect_send_module().returning({
@@ -91,11 +88,7 @@ fn make_mock_transport(
                         lock.push((op_id, peer.clone()));
                     });
 
-                    if faulty_connection {
-                        Err(K2Error::other("connection timed out"))
-                    } else {
-                        Ok(())
-                    }
+                    Ok(())
                 }
             })
         }
@@ -117,7 +110,7 @@ async fn outgoing_request_queue() {
         requests_sent,
         _transport,
         ..
-    } = setup_test(&config, false).await;
+    } = setup_test(&config).await;
 
     let op_id = random_op_id();
     let op_list = vec![op_id.clone()];
@@ -173,7 +166,7 @@ async fn happy_op_fetch_from_multiple_agents() {
         requests_sent,
         _transport,
         ..
-    } = setup_test(&config, false).await;
+    } = setup_test(&config).await;
 
     let op_list_1 = create_op_id_list(10);
     let op_list_2 = create_op_id_list(20);
@@ -242,7 +235,8 @@ async fn filter_requests_for_held_ops() {
         requests_sent,
         op_store,
         _transport,
-    } = setup_test(&CoreFetchConfig::default(), false).await;
+        ..
+    } = setup_test(&CoreFetchConfig::default()).await;
 
     let held_op_1 = make_op(vec![1; 64]);
     let held_op_id_1 = held_op_1.compute_op_id();
@@ -356,74 +350,31 @@ async fn unresponsive_urls_are_filtered() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn agent_on_back_off_is_removed_from_list_after_successful_send() {
+async fn requests_are_dropped_when_peer_url_unresponsive() {
     let config = CoreFetchConfig {
-        first_back_off_interval_ms: 10,
-        ..Default::default()
-    };
-    let TestCase {
-        fetch,
-        requests_sent,
-        _transport,
-        ..
-    } = setup_test(&config, false).await;
-
-    let op_list = create_op_id_list(1);
-    let peer_url = random_peer_url();
-
-    let first_back_off_interval = {
-        let mut lock = fetch.state.lock().unwrap();
-        lock.back_off_list.back_off_peer(&peer_url);
-
-        assert!(lock.back_off_list.is_peer_on_back_off(&peer_url));
-
-        lock.back_off_list.first_back_off_interval_ms
-    };
-
-    tokio::time::sleep(Duration::from_millis(first_back_off_interval as u64))
-        .await;
-
-    fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
-
-    iter_check!({
-        if !requests_sent.lock().unwrap().is_empty() {
-            break;
-        }
-    });
-
-    assert!(fetch.state.lock().unwrap().back_off_list.state.is_empty());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn requests_are_dropped_when_max_back_off_expired() {
-    let config = CoreFetchConfig {
-        first_back_off_interval_ms: 10,
-        last_back_off_interval_ms: 10,
         re_insert_outgoing_request_delay_ms: 10,
         ..Default::default()
     };
     let TestCase {
         fetch,
-        requests_sent,
+        peer_meta_store,
         _transport,
         ..
-    } = setup_test(&config, true).await;
+    } = setup_test(&config).await;
 
     let op_list_1 = create_op_id_list(2);
-    let peer_url_1 = random_peer_url();
+    let unresponsive_url = random_peer_url();
 
     // Create a second agent to later check that their ops have not been removed.
     let op_list_2 = create_op_id_list(2);
-    let peer_url_2 = random_peer_url();
+    let responsive_url = random_peer_url();
 
-    fetch
-        .request_ops(op_list_1.clone(), peer_url_1.clone())
-        .await
-        .unwrap();
-
-    // Add control agent's ops to set.
-    fetch
-        .request_ops(op_list_2, peer_url_2.clone())
+    peer_meta_store
+        .set_unresponsive(
+            unresponsive_url.clone(),
+            Timestamp::now(),
+            Timestamp::now(),
+        )
         .await
         .unwrap();
 
@@ -431,79 +382,57 @@ async fn requests_are_dropped_when_max_back_off_expired() {
     let (tx, rx) = futures::channel::oneshot::channel();
     fetch.notify_on_drained(tx);
 
-    // Back off agent the maximum possible number of times.
-    let last_back_off_interval = {
-        let mut lock = fetch.state.lock().unwrap();
-        assert!(op_list_1.iter().all(|op_id| {
-            lock.requests.contains(&(op_id.clone(), peer_url_1.clone()))
-        }));
-        for _ in 0..config.num_back_off_intervals + 1 {
-            lock.back_off_list.back_off_peer(&peer_url_1);
-        }
+    fetch
+        .request_ops(op_list_1.clone(), unresponsive_url.clone())
+        .await
+        .unwrap();
 
-        lock.back_off_list.last_back_off_interval_ms
-    };
-
-    // Wait for back off interval to expire. Afterwards the request should fail again and all
-    // the agent's requests should be removed from the set.
-    tokio::time::sleep(Duration::from_millis(last_back_off_interval as u64))
-        .await;
-
-    assert!(fetch
-        .state
-        .lock()
-        .unwrap()
-        .back_off_list
-        .has_last_back_off_expired(&peer_url_1));
-
-    let current_number_of_requests_to_agent_1 = requests_sent
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|(_, a)| *a != peer_url_1)
-        .count();
-
-    // Wait for another request attempt to agent 1, which should remove all of their requests
-    // from the set.
-    iter_check!({
-        if requests_sent
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, a)| *a != peer_url_1)
-            .count()
-            > current_number_of_requests_to_agent_1
-        {
-            break;
-        }
-    });
-
+    // All ops in the request set are to be sent to the unresponsive URL.
     assert!(fetch
         .state
         .lock()
         .unwrap()
         .requests
         .iter()
-        .all(|(_, peer_url)| *peer_url != peer_url_1),);
+        .all(|(_, peer_url)| *peer_url == unresponsive_url));
 
     // Check that the drop has happened.
-    tokio::time::timeout(Duration::from_secs(5), rx)
+    tokio::time::timeout(Duration::from_secs(1), rx)
         .await
         .expect("Timed out waiting for drained notification")
         .unwrap();
+
+    // Add control agent's ops to set.
+    fetch
+        .request_ops(op_list_2, responsive_url.clone())
+        .await
+        .unwrap();
+
+    // Wait for a request attempt to the unresponsive URL, which should remove all of its requests
+    // from the set.
+    iter_check!({
+        if fetch
+            .state
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .all(|(_, peer_url)| *peer_url != unresponsive_url)
+        {
+            break;
+        }
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn empty_fetch_queue_notifies_drained() {
     let config = CoreFetchConfig {
-        first_back_off_interval_ms: 10,
-        last_back_off_interval_ms: 10,
         re_insert_outgoing_request_delay_ms: 10,
         ..Default::default()
     };
     let TestCase {
         fetch, _transport, ..
-    } = setup_test(&config, true).await;
+    } = setup_test(&config).await;
 
     let (tx, mut rx) = futures::channel::oneshot::channel();
     fetch.notify_on_drained(tx);
@@ -516,14 +445,12 @@ async fn empty_fetch_queue_notifies_drained() {
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue_notify_on_last_op_fetched() {
     let config = CoreFetchConfig {
-        first_back_off_interval_ms: 10,
-        last_back_off_interval_ms: 10,
         re_insert_outgoing_request_delay_ms: 10,
         ..Default::default()
     };
     let TestCase {
         fetch, _transport, ..
-    } = setup_test(&config, true).await;
+    } = setup_test(&config).await;
 
     let op_list = create_op_id_list(10);
     let peer_url = random_peer_url();
@@ -539,21 +466,16 @@ async fn fetch_queue_notify_on_last_op_fetched() {
         .into_iter()
         .for_each(|op_id| expected_ops.push((op_id, peer_url.clone())));
 
+    let (tx, rx) = futures::channel::oneshot::channel();
+    fetch.notify_on_drained(tx);
+
     fetch
         .request_ops(op_list.clone(), peer_url.clone())
         .await
         .unwrap();
 
-    let (tx, mut rx) = futures::channel::oneshot::channel();
-    fetch.notify_on_drained(tx);
-
-    // The queue should still be working, so the notification should not be sent yet.
-    assert!(rx.try_recv().unwrap().is_none());
-
-    tokio::time::timeout(Duration::from_secs(5), rx)
+    tokio::time::timeout(Duration::from_secs(1), rx)
         .await
         .expect("Timed out")
         .unwrap();
-
-    assert!(fetch.state.lock().unwrap().requests.is_empty());
 }

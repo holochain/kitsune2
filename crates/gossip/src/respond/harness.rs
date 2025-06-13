@@ -58,6 +58,11 @@ impl RespondTestHarness {
             .expect_register_module_handler()
             .returning(|_, _, _| {});
         let transport: DynTransport = Arc::new(transport);
+        let peer_meta_store = builder
+            .peer_meta_store
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
 
         let config = Arc::new(config);
         Self {
@@ -78,11 +83,7 @@ impl RespondTestHarness {
                     .await
                     .unwrap(),
                 peer_meta_store: Arc::new(K2PeerMetaStore::new(
-                    builder
-                        .peer_meta_store
-                        .create(builder.clone(), TEST_SPACE_ID)
-                        .await
-                        .unwrap(),
+                    peer_meta_store.clone(),
                 )),
                 op_store: op_store.clone(),
                 fetch: builder
@@ -91,6 +92,7 @@ impl RespondTestHarness {
                         builder.clone(),
                         TEST_SPACE_ID,
                         op_store.clone(),
+                        peer_meta_store.clone(),
                         transport.clone(),
                     )
                     .await

@@ -33,6 +33,7 @@ fn create_op_list(num_ops: u16) -> (Vec<MemoryOp>, Vec<OpId>) {
 struct Peer {
     builder: Arc<Builder>,
     op_store: DynOpStore,
+    peer_meta_store: DynPeerMetaStore,
     transport: DynTransport,
     peer_url: Url,
     fetch: Option<DynFetch>,
@@ -46,6 +47,11 @@ async fn make_peer(
         Arc::new(default_test_builder().with_default_config().unwrap());
     let op_store = builder
         .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
@@ -72,6 +78,7 @@ async fn make_peer(
                     builder.clone(),
                     TEST_SPACE_ID,
                     op_store.clone(),
+                    peer_meta_store.clone(),
                     transport.clone(),
                 )
                 .await
@@ -84,6 +91,7 @@ async fn make_peer(
     Peer {
         builder,
         op_store,
+        peer_meta_store,
         transport,
         peer_url,
         fetch,
@@ -183,7 +191,6 @@ async fn bob_comes_online_after_being_unresponsive() {
     enable_tracing();
     let fetch_config_alice = CoreFetchModConfig {
         core_fetch: CoreFetchConfig {
-            first_back_off_interval_ms: 10,
             re_insert_outgoing_request_delay_ms: 10,
             ..Default::default()
         },
@@ -191,6 +198,7 @@ async fn bob_comes_online_after_being_unresponsive() {
     let Peer {
         fetch: fetch_alice,
         op_store: op_store_alice,
+        peer_meta_store: peer_meta_store_alice,
         transport: _transport_alice,
         ..
     } = make_peer(Some(fetch_config_alice), true).await;
@@ -199,14 +207,14 @@ async fn bob_comes_online_after_being_unresponsive() {
     // Make Bob without fetch.
     let Peer {
         op_store: op_store_bob,
+        peer_meta_store: peer_meta_store_bob,
         transport: transport_bob,
         peer_url: peer_url_bob,
         builder: builder_bob,
         ..
     } = make_peer(None, false).await;
 
-    let num_of_ops = 100;
-    let (requested_ops_bob, requested_op_ids_bob) = create_op_list(num_of_ops);
+    let (requested_ops_bob, requested_op_ids_bob) = create_op_list(100);
 
     // Add Bob's ops to his store.
     op_store_bob
@@ -220,15 +228,25 @@ async fn bob_comes_online_after_being_unresponsive() {
         .await
         .unwrap();
 
+    // Set up channel to get notified when Alice's request queue is drained.
+    let (alice_queue_drained_tx, alice_queue_drained_rx) =
+        futures::channel::oneshot::channel();
+    fetch_alice.notify_on_drained(alice_queue_drained_tx);
+
     // Alice requests the ops from Bob.
     fetch_alice
-        .request_ops(requested_op_ids_bob.clone(), peer_url_bob)
+        .request_ops(requested_op_ids_bob.clone(), peer_url_bob.clone())
         .await
         .unwrap();
 
-    // Let some time pass for Alice to attempt sending a request to Bob
-    // and put him on the back off list.
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    // Wait for Alice to attempt sending a request to Bob,
+    // which will set him as unresponsive and remove all requests from
+    // her request queue, resulting in the notification that her request
+    // queue is drained.
+    tokio::time::timeout(Duration::from_millis(100), alice_queue_drained_rx)
+        .await
+        .unwrap()
+        .unwrap();
 
     // Alice could not fetch ops from Bob.
     let ops_in_store_alice = op_store_alice
@@ -243,9 +261,25 @@ async fn bob_comes_online_after_being_unresponsive() {
         .create(
             builder_bob.clone(),
             TEST_SPACE_ID,
-            op_store_bob.clone(),
+            op_store_bob,
+            peer_meta_store_bob,
             transport_bob.clone(),
         )
+        .await
+        .unwrap();
+
+    // Alice unsets Bob as unresponsive in her peer meta store.
+    peer_meta_store_alice
+        .delete(
+            peer_url_bob.clone(),
+            format!("{KEY_PREFIX_ROOT}:{META_KEY_UNRESPONSIVE}"),
+        )
+        .await
+        .unwrap();
+
+    // Alice needs to request the ops from Bob again.
+    fetch_alice
+        .request_ops(requested_op_ids_bob.clone(), peer_url_bob)
         .await
         .unwrap();
 

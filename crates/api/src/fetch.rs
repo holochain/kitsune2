@@ -4,7 +4,7 @@ use crate::{
     builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
     OpId, SpaceId, Url,
 };
-use crate::{op_store, DynPeerMetaStore, Timestamp};
+use crate::{op_store, DynPeerMetaStore};
 use bytes::{Bytes, BytesMut};
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -142,12 +142,6 @@ pub struct FetchStateSummary {
     /// Each op id is associated with one or more peer URL from which the op data could be
     /// requested.
     pub pending_requests: HashMap<OpId, Vec<Url>>,
-
-    /// The peer URL for nodes that are currently on backoff because of failed fetch requests, and the timestamp when that backoff will expire.
-    ///
-    /// If peers are in here then they are not being used as potential sources in
-    /// [`FetchStateSummary::pending_requests`].
-    pub peers_on_backoff: HashMap<Url, Timestamp>,
 }
 
 #[cfg(test)]
