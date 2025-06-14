@@ -299,6 +299,11 @@ impl CorePublish {
         while let Some((op_ids, peer_url)) =
             outgoing_publish_ops_rx.recv().await
         {
+            let Some(transport) = transport.upgrade() else {
+                tracing::warn!("Transport dropped, stopping publish ops task");
+                return;
+            };
+
             // Check if peer URL to publish to is unresponsive.
             if peer_meta_store
                 .get_unresponsive(peer_url.clone())
@@ -308,11 +313,6 @@ impl CorePublish {
                 // Peer URL is unresponsive, do not publish.
                 continue;
             }
-
-            let Some(transport) = transport.upgrade() else {
-                tracing::warn!("Transport dropped, stopping publish ops task");
-                return;
-            };
 
             // Send ops publish message to peer.
             let data = serialize_publish_ops_message(op_ids.clone());
