@@ -340,9 +340,7 @@ impl CoreFetch {
                     .unwrap()
                     .requests
                     .retain(|(_, a)| *a != peer_url);
-            }
-
-            if !peer_url_unresponsive {
+            } else {
                 tracing::debug!(
                     ?peer_url,
                     ?space_id,
