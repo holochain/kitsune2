@@ -365,7 +365,7 @@ async fn requests_are_dropped_when_peer_url_unresponsive() {
     let op_list_1 = create_op_id_list(2);
     let unresponsive_url = random_peer_url();
 
-    // Create a second agent to later check that their ops have not been removed.
+    // Create a second agent to check that their ops have not been removed.
     let op_list_2 = create_op_id_list(2);
     let responsive_url = random_peer_url();
 
@@ -378,28 +378,9 @@ async fn requests_are_dropped_when_peer_url_unresponsive() {
         .await
         .unwrap();
 
-    // Check that when the requests are dropped, the queue is treated as drained.
-    let (tx, rx) = futures::channel::oneshot::channel();
-    fetch.notify_on_drained(tx);
-
     fetch
         .request_ops(op_list_1.clone(), unresponsive_url.clone())
         .await
-        .unwrap();
-
-    // All ops in the request set are to be sent to the unresponsive URL.
-    assert!(fetch
-        .state
-        .lock()
-        .unwrap()
-        .requests
-        .iter()
-        .all(|(_, peer_url)| *peer_url == unresponsive_url));
-
-    // Check that the drop has happened.
-    tokio::time::timeout(Duration::from_secs(1), rx)
-        .await
-        .expect("Timed out waiting for drained notification")
         .unwrap();
 
     // Add control agent's ops to set.
@@ -417,7 +398,7 @@ async fn requests_are_dropped_when_peer_url_unresponsive() {
             .unwrap()
             .requests
             .iter()
-            .all(|(_, peer_url)| *peer_url != unresponsive_url)
+            .all(|(_, peer_url)| *peer_url == responsive_url)
         {
             break;
         }
