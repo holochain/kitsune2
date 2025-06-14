@@ -343,7 +343,7 @@ async fn unresponsive_urls_are_filtered() {
     // Timeout after waiting 100 ms for fetch to request from the responsive URL.
     tokio::select! {
         _ = expected_fetch_request_sent_rx.recv() => {},
-        _ = tokio::time::sleep(Duration::from_millis(1000)) => {
+        _ = tokio::time::sleep(Duration::from_millis(100)) => {
             panic!("publish not sent to responsive URL")
         },
     };
