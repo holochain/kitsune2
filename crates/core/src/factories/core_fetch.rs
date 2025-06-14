@@ -329,7 +329,7 @@ impl CoreFetch {
             }
 
             // If peer URL is set as unresponsive, do not send request or re-insert
-            // request into queue, and remove all remaining requests from state.
+            // request into queue, and remove all remaining requests for that peer from state.
             let peer_url_unresponsive = peer_meta_store
                 .get_unresponsive(peer_url.clone())
                 .await
