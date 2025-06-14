@@ -128,7 +128,7 @@ async fn filter_unresponsive_agents(
             if let Some(url) = a.url.clone() {
                 !unresponsive_urls.contains_key(&url)
             } else {
-                true
+                false
             }
         })
         .collect())
@@ -304,7 +304,7 @@ mod tests {
         let remote_agent_1 = AgentBuilder::default()
             .with_url(Some(Url::from_str("ws://responsi.ve:80/1").unwrap()))
             .build(TestLocalAgent::default());
-        // Agents without URL are not filtered out.
+        // Agents without URL are filtered out.
         let remote_agent_2 =
             AgentBuilder::default().build(TestLocalAgent::default());
         let local_agent: DynLocalAgent = Arc::new(TestLocalAgent::default());
@@ -359,9 +359,9 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(all_responsive_remote_agents.len(), 2);
+        assert_eq!(all_responsive_remote_agents.len(), 1);
         assert!(all_responsive_remote_agents.contains(&remote_agent_1));
-        assert!(all_responsive_remote_agents.contains(&remote_agent_2));
+        assert!(!all_responsive_remote_agents.contains(&remote_agent_2));
         assert!(!all_responsive_remote_agents
             .contains(&remote_agent_for_local_agent));
         assert!(!all_responsive_remote_agents.contains(&unresponsive_agent));
@@ -452,6 +452,7 @@ mod tests {
     async fn get_responsive_remote_agents_near_location_filters_unresponsive() {
         let remote_agent_1 = AgentBuilder::default()
             .with_storage_arc(DhtArc::FULL)
+            .with_url(Some(Url::from_str("ws://responsi.ve:80/1").unwrap()))
             .build(TestLocalAgent::default());
         let remote_agent_2 = AgentBuilder::default()
             .with_storage_arc(DhtArc::Empty)
