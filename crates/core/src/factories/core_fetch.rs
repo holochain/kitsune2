@@ -316,7 +316,29 @@ impl CoreFetch {
                 break;
             };
 
+            // If peer URL is set as unresponsive, remove all remaining requests for that peer from state.
+            let peer_url_unresponsive = match peer_meta_store
+                .get_unresponsive(peer_url.clone())
+                .await
+            {
+                Ok(maybe_value) => maybe_value.is_some(),
+                Err(err) => {
+                    tracing::warn!(?err, "could not query peer meta store");
+                    false
+                }
+            };
+            if peer_url_unresponsive {
+                state
+                    .lock()
+                    .unwrap()
+                    .requests
+                    .retain(|(_, a)| *a != peer_url);
+            }
+
             // Do nothing if op id is no longer in the set of requests to send.
+            // If the peer URL is unresponsive, its requests will have been removed
+            // from requests to be sent and no request will be sent and the request
+            // will not be re-inserted into the queue.
             {
                 let mut state_lock = state.lock().unwrap();
                 if !state_lock
@@ -345,82 +367,61 @@ impl CoreFetch {
                 }
             }
 
-            // If peer URL is set as unresponsive, do not send request or re-insert
-            // request into queue, and remove all remaining requests for that peer from state.
-            let peer_url_unresponsive = match peer_meta_store
-                .get_unresponsive(peer_url.clone())
+            tracing::debug!(
+                ?peer_url,
+                ?space_id,
+                ?op_id,
+                "sending fetch request"
+            );
+
+            // Send fetch request to peer.
+            let data = serialize_request_message(vec![op_id.clone()]);
+            if let Err(err) = transport
+                .send_module(
+                    peer_url.clone(),
+                    space_id.clone(),
+                    MOD_NAME.to_string(),
+                    data,
+                )
                 .await
             {
-                Ok(maybe_value) => maybe_value.is_some(),
-                Err(err) => {
-                    tracing::warn!(?err, "could not query peer meta store");
-                    false
-                }
-            };
-
-            if peer_url_unresponsive {
+                tracing::warn!(
+                    ?op_id,
+                    ?peer_url,
+                    "could not send fetch request: {err}."
+                );
                 state
                     .lock()
                     .unwrap()
                     .requests
                     .retain(|(_, a)| *a != peer_url);
-            } else {
-                tracing::debug!(
-                    ?peer_url,
-                    ?space_id,
-                    ?op_id,
-                    "sending fetch request"
-                );
+            }
 
-                // Send fetch request to peer.
-                let data = serialize_request_message(vec![op_id.clone()]);
-                if let Err(err) = transport
-                    .send_module(
-                        peer_url.clone(),
-                        space_id.clone(),
-                        MOD_NAME.to_string(),
-                        data,
-                    )
-                    .await
-                {
-                    tracing::warn!(
-                        ?op_id,
-                        ?peer_url,
-                        "could not send fetch request: {err}."
-                    );
-                    state
-                        .lock()
-                        .unwrap()
-                        .requests
-                        .retain(|(_, a)| *a != peer_url);
-                }
+            // Re-insert the fetch request into the queue after a delay.
+            let outgoing_request_tx = outgoing_request_tx.clone();
 
-                // Re-insert the fetch request into the queue after a delay.
-                let outgoing_request_tx = outgoing_request_tx.clone();
-
-                tokio::task::spawn({
-                    let state = state.clone();
-                    async move {
-                        tokio::time::sleep(Duration::from_millis(
-                            re_insert_outgoing_request_delay as u64,
-                        ))
-                        .await;
-                        if let Err(err) = outgoing_request_tx
-                            .try_send((op_id.clone(), peer_url.clone()))
-                        {
-                            tracing::warn!(
+            tokio::task::spawn({
+                let state = state.clone();
+                async move {
+                    tokio::time::sleep(Duration::from_millis(
+                        re_insert_outgoing_request_delay as u64,
+                    ))
+                    .await;
+                    if let Err(err) = outgoing_request_tx
+                        .try_send((op_id.clone(), peer_url.clone()))
+                    {
+                        tracing::warn!(
                                 "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
                             );
-                            // Remove op id/peer url from set to prevent build-up of state.
-                            state
-                                .lock()
-                                .unwrap()
-                                .requests
-                                .remove(&(op_id, peer_url));
-                        }
+                        // Remove op id/peer url from set to prevent build-up of state.
+                        state
+                            .lock()
+                            .unwrap()
+                            .requests
+                            .remove(&(op_id, peer_url));
                     }
-                });
-            }
+                }
+            });
         }
     }
 
