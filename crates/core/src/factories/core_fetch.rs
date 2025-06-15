@@ -330,10 +330,17 @@ impl CoreFetch {
 
             // If peer URL is set as unresponsive, do not send request or re-insert
             // request into queue, and remove all remaining requests for that peer from state.
-            let peer_url_unresponsive = peer_meta_store
+            let peer_url_unresponsive = match peer_meta_store
                 .get_unresponsive(peer_url.clone())
                 .await
-                .is_ok_and(|maybe_value| maybe_value.is_some());
+            {
+                Ok(maybe_value) => maybe_value.is_some(),
+                Err(err) => {
+                    tracing::warn!(?err, "could not query peer meta store");
+                    false
+                }
+            };
+
             if peer_url_unresponsive {
                 state
                     .lock()
