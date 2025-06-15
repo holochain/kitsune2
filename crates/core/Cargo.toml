@@ -14,7 +14,6 @@ edition.workspace = true
 kitsune2_api = { workspace = true }
 kitsune2_bootstrap_client = { workspace = true }
 
-backon = { workspace = true }
 bytes = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 futures = { workspace = true }

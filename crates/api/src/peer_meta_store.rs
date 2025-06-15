@@ -1,7 +1,7 @@
 use crate::{builder, config, BoxFut, K2Error, K2Result, Timestamp, Url};
 use bytes::Bytes;
 use futures::future::BoxFuture;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// Key prefix for items at the root level of the peer meta store.
 pub const KEY_PREFIX_ROOT: &str = "root";
@@ -28,6 +28,12 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
         peer: Url,
         key: String,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
+
+    /// Get all peers for a given key.
+    fn get_all_by_key(
+        &self,
+        key: String,
+    ) -> BoxFuture<'_, K2Result<HashMap<Url, bytes::Bytes>>>;
 
     /// Mark a peer url unresponsive with an expiration timestamp.
     ///

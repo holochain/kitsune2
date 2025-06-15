@@ -359,6 +359,7 @@ async fn broadcast_new_agent_info_on_resign() {
             _space_id: SpaceId,
             _fetch: DynFetch,
             _peer_store: DynPeerStore,
+            _peer_meta_store: DynPeerMetaStore,
             _transport: DynTransport,
         ) -> BoxFut<'static, K2Result<DynPublish>> {
             let out: DynPublish = self.0.clone();

@@ -104,6 +104,7 @@ impl PublishFactory for CorePublishFactory {
         space_id: SpaceId,
         fetch: DynFetch,
         peer_store: DynPeerStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> BoxFut<'static, K2Result<DynPublish>> {
         Box::pin(async move {
@@ -115,6 +116,7 @@ impl PublishFactory for CorePublishFactory {
                 builder,
                 fetch,
                 peer_store,
+                peer_meta_store,
                 transport,
             ));
             Ok(out)
@@ -141,10 +143,17 @@ impl CorePublish {
         builder: Arc<Builder>,
         fetch: DynFetch,
         peer_store: DynPeerStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> Self {
         Self::spawn_tasks(
-            config, space_id, builder, fetch, peer_store, transport,
+            config,
+            space_id,
+            builder,
+            fetch,
+            peer_store,
+            peer_meta_store,
+            transport,
         )
     }
 }
@@ -200,6 +209,7 @@ impl CorePublish {
         builder: Arc<Builder>,
         fetch: DynFetch,
         peer_store: DynPeerStore,
+        peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
     ) -> Self {
         // Create a queue to process outgoing op publishes. Publishes are sent to peers.
@@ -226,6 +236,7 @@ impl CorePublish {
             tokio::task::spawn(CorePublish::outgoing_publish_ops_task(
                 outgoing_publish_ops_rx,
                 space_id.clone(),
+                peer_meta_store,
                 Arc::downgrade(&transport),
             ))
             .abort_handle();
@@ -282,6 +293,7 @@ impl CorePublish {
     async fn outgoing_publish_ops_task(
         mut outgoing_publish_ops_rx: Receiver<OutgoingPublishOps>,
         space_id: SpaceId,
+        peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
     ) {
         while let Some((op_ids, peer_url)) =
@@ -291,6 +303,16 @@ impl CorePublish {
                 tracing::warn!("Transport dropped, stopping publish ops task");
                 return;
             };
+
+            // Check if peer URL to publish to is unresponsive.
+            if peer_meta_store
+                .get_unresponsive(peer_url.clone())
+                .await
+                .is_ok_and(|maybe_value| maybe_value.is_some())
+            {
+                // Peer URL is unresponsive, do not publish.
+                continue;
+            }
 
             // Send ops publish message to peer.
             let data = serialize_publish_ops_message(op_ids.clone());
