@@ -308,6 +308,7 @@ impl CoreFetch {
         while let Some((op_id, peer_url)) =
             outgoing_request_rx.lock().await.recv().await
         {
+            tracing::debug!(?op_id, ?peer_url, "processing outgoing request");
             let Some(transport) = transport.upgrade() else {
                 tracing::info!(
                     "Transport dropped, stopping outgoing request task"
@@ -316,16 +317,32 @@ impl CoreFetch {
             };
 
             // Do nothing if op id is no longer in the set of requests to send.
-            //
-            // Note that because this request isn't in the state, it is safe to
-            // skip the requests empty check below.
-            if !state
-                .lock()
-                .unwrap()
-                .requests
-                .contains(&(op_id.clone(), peer_url.clone()))
             {
-                continue;
+                let mut state_lock = state.lock().unwrap();
+                if !state_lock
+                    .requests
+                    .contains(&(op_id.clone(), peer_url.clone()))
+                {
+                    // Check if the fetch queue is drained.
+                    //
+                    // Either requests in the state is empty, in which case the queue is
+                    // drained and no further request is sent, or it is not empty and the
+                    // next request will be sent.
+                    if state_lock.requests.is_empty() {
+                        // Notify all listeners that the fetch queue is drained.
+                        for notify in
+                            state_lock.notify_when_drained_senders.drain(..)
+                        {
+                            if notify.send(()).is_err() {
+                                tracing::warn!(
+                                    "Failed to send notification on drained"
+                                );
+                            }
+                        }
+                    }
+
+                    continue;
+                }
             }
 
             // If peer URL is set as unresponsive, do not send request or re-insert
@@ -371,28 +388,13 @@ impl CoreFetch {
                         ?peer_url,
                         "could not send fetch request: {err}."
                     );
+                    state
+                        .lock()
+                        .unwrap()
+                        .requests
+                        .retain(|(_, a)| *a != peer_url);
                 }
-            }
 
-            // After processing this request, check if the fetch queue is drained.
-            //
-            // Note that using flow control above could skip this step, so please only `continue`
-            // if it is safe to do so.
-            {
-                let mut lock = state.lock().expect("poisoned");
-                if lock.requests.is_empty() {
-                    // Notify all listeners that the fetch queue is drained.
-                    for notify in lock.notify_when_drained_senders.drain(..) {
-                        if notify.send(()).is_err() {
-                            tracing::warn!(
-                                "Failed to send notification on drained"
-                            );
-                        }
-                    }
-                }
-            }
-
-            if !peer_url_unresponsive {
                 // Re-insert the fetch request into the queue after a delay.
                 let outgoing_request_tx = outgoing_request_tx.clone();
 
@@ -407,8 +409,8 @@ impl CoreFetch {
                             .try_send((op_id.clone(), peer_url.clone()))
                         {
                             tracing::warn!(
-                        "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
-                    );
+                                "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
+                            );
                             // Remove op id/peer url from set to prevent build-up of state.
                             state
                                 .lock()

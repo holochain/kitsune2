@@ -7,6 +7,7 @@ use crate::{
 };
 use kitsune2_api::*;
 use kitsune2_test_utils::{
+    enable_tracing,
     id::{create_op_id_list, random_op_id},
     iter_check,
     space::TEST_SPACE_ID,
@@ -425,6 +426,7 @@ async fn empty_fetch_queue_notifies_drained() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue_notify_on_last_op_fetched() {
+    enable_tracing();
     let config = CoreFetchConfig {
         re_insert_outgoing_request_delay_ms: 10,
         ..Default::default()
@@ -447,13 +449,94 @@ async fn fetch_queue_notify_on_last_op_fetched() {
         .into_iter()
         .for_each(|op_id| expected_ops.push((op_id, peer_url.clone())));
 
+    fetch
+        .request_ops(op_list.clone(), peer_url.clone())
+        .await
+        .unwrap();
+
     let (tx, rx) = futures::channel::oneshot::channel();
     fetch.notify_on_drained(tx);
+
+    tokio::time::sleep(Duration::from_millis(5)).await;
+
+    // Successfully fetched ops will clear the requests set.
+    // That should trigger the notification.
+    fetch.state.lock().unwrap().requests.clear();
+
+    tokio::time::timeout(Duration::from_secs(1), rx)
+        .await
+        .expect("Timed out")
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fetch_queue_notify_when_all_peers_unresponsive() {
+    enable_tracing();
+    let config = CoreFetchConfig {
+        re_insert_outgoing_request_delay_ms: 10,
+        ..Default::default()
+    };
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+
+    let mut mock_transport = MockTransport::new();
+    mock_transport.expect_send_module().returning({
+        move |_, _, _, _| {
+            Box::pin({
+                async move { Err(K2Error::other("peer unresponsive")) }
+            })
+        }
+    });
+    mock_transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| ());
+    let mock_transport = Arc::new(mock_transport);
+
+    let fetch = CoreFetch::new(
+        config.clone(),
+        TEST_SPACE_ID,
+        op_store.clone(),
+        peer_meta_store.clone(),
+        mock_transport.clone(),
+    );
+
+    let op_list = create_op_id_list(10);
+    let peer_url = random_peer_url();
+
+    let mut expected_requests = Vec::new();
+    op_list
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_requests.push((op_id, peer_url.clone())));
+    let mut expected_ops = Vec::new();
+    op_list
+        .clone()
+        .into_iter()
+        .for_each(|op_id| expected_ops.push((op_id, peer_url.clone())));
 
     fetch
         .request_ops(op_list.clone(), peer_url.clone())
         .await
         .unwrap();
+
+    let (tx, rx) = futures::channel::oneshot::channel();
+    fetch.notify_on_drained(tx);
+
+    tokio::time::sleep(Duration::from_millis(5)).await;
+
+    // Successfully fetched ops will clear the requests set.
+    // That should trigger the notification.
+    // fetch.state.lock().unwrap().requests.clear();
 
     tokio::time::timeout(Duration::from_secs(1), rx)
         .await
