@@ -305,11 +305,17 @@ impl CorePublish {
             };
 
             // Check if peer URL to publish to is unresponsive.
-            if peer_meta_store
+            let peer_url_unresponsive = match peer_meta_store
                 .get_unresponsive(peer_url.clone())
                 .await
-                .is_ok_and(|maybe_value| maybe_value.is_some())
             {
+                Ok(maybe_value) => maybe_value.is_some(),
+                Err(err) => {
+                    tracing::warn!(?err, "could not query peer meta store");
+                    false
+                }
+            };
+            if peer_url_unresponsive {
                 // Peer URL is unresponsive, do not publish.
                 continue;
             }
