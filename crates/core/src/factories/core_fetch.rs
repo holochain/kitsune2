@@ -1,6 +1,7 @@
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::collections::HashMap;
+use std::sync::MutexGuard;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -341,28 +342,10 @@ impl CoreFetch {
             // from state and no request will be sent and the request
             // will not be re-inserted into the queue.
             {
-                let mut state_lock = state.lock().expect("poisoned");
-                if !state_lock
-                    .requests
-                    .contains(&(op_id.clone(), peer_url.clone()))
-                {
-                    // Check if the fetch queue is drained.
-                    //
-                    // Either requests in the state is empty, in which case the queue is
-                    // drained and no further request is sent, or it is not empty and the
-                    // next request will be sent.
-                    if state_lock.requests.is_empty() {
-                        // Notify all listeners that the fetch queue is drained.
-                        for notify in
-                            state_lock.notify_when_drained_senders.drain(..)
-                        {
-                            if notify.send(()).is_err() {
-                                tracing::warn!(
-                                    "Failed to send notification on drained"
-                                );
-                            }
-                        }
-                    }
+                let lock = state.lock().expect("poisoned");
+                if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
+                    // Check if the fetch queue is drained and notify listeners.
+                    Self::notify_listeners_if_queue_drained(lock);
 
                     continue;
                 }
@@ -422,12 +405,26 @@ impl CoreFetch {
                             tracing::warn!(
                                 "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
                             );
-                            // Remove op id/peer url from set to prevent build-up of state.
+                            // Remove request from set to prevent build-up of state.
                             lock.requests.remove(&(op_id, peer_url));
+
+                            Self::notify_listeners_if_queue_drained(lock);
                         }
                     }
                 }
             });
+        }
+    }
+
+    fn notify_listeners_if_queue_drained(mut state: MutexGuard<State>) {
+        // Check if the fetch queue is drained.
+        if state.requests.is_empty() {
+            // Notify all listeners that the fetch queue is drained.
+            for notify in state.notify_when_drained_senders.drain(..) {
+                if notify.send(()).is_err() {
+                    tracing::warn!("Failed to send notification on drained");
+                }
+            }
         }
     }
 
