@@ -316,7 +316,7 @@ impl CoreFetch {
                 break;
             };
 
-            // If peer URL is set as unresponsive, remove all remaining requests for that peer from state.
+            // If peer URL is set as unresponsive, remove current request from state.
             let peer_url_unresponsive = match peer_meta_store
                 .get_unresponsive(peer_url.clone())
                 .await
@@ -332,12 +332,13 @@ impl CoreFetch {
                     .lock()
                     .expect("poisoned")
                     .requests
-                    .retain(|(_, a)| *a != peer_url);
+                    .remove(&(op_id.clone(), peer_url.clone()));
             }
 
             // Do nothing if op id is no longer in the set of requests to send.
-            // If the peer URL is unresponsive, its requests will have been removed
-            // from requests to be sent and no request will be sent and the request
+            //
+            // If the peer URL is unresponsive, the current request will have been removed
+            // from state and no request will be sent and the request
             // will not be re-inserted into the queue.
             {
                 let mut state_lock = state.lock().expect("poisoned");
