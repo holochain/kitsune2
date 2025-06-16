@@ -457,8 +457,6 @@ async fn fetch_queue_notify_on_last_op_fetched() {
     let (tx, rx) = futures::channel::oneshot::channel();
     fetch.notify_on_drained(tx);
 
-    tokio::time::sleep(Duration::from_millis(5)).await;
-
     // Successfully fetched ops will clear the requests set.
     // That should trigger the notification.
     fetch.state.lock().unwrap().requests.clear();

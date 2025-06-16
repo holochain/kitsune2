@@ -408,18 +408,23 @@ impl CoreFetch {
                         re_insert_outgoing_request_delay as u64,
                     ))
                     .await;
-                    if let Err(err) = outgoing_request_tx
-                        .try_send((op_id.clone(), peer_url.clone()))
+                    let mut lock = state.lock().expect("poisoned");
+                    // Only re-insert the request if it is still in the state, meaning that it
+                    // has not been removed from state because the requested op has come in or
+                    // the peer URL has been set as unresponsive.
+                    if lock
+                        .requests
+                        .contains(&(op_id.clone(), peer_url.clone()))
                     {
-                        tracing::warn!(
+                        if let Err(err) = outgoing_request_tx
+                            .try_send((op_id.clone(), peer_url.clone()))
+                        {
+                            tracing::warn!(
                                 "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
                             );
-                        // Remove op id/peer url from set to prevent build-up of state.
-                        state
-                            .lock()
-                            .expect("poisoned")
-                            .requests
-                            .remove(&(op_id, peer_url));
+                            // Remove op id/peer url from set to prevent build-up of state.
+                            lock.requests.remove(&(op_id, peer_url));
+                        }
                     }
                 }
             });
