@@ -330,7 +330,7 @@ impl CoreFetch {
             if peer_url_unresponsive {
                 state
                     .lock()
-                    .unwrap()
+                    .expect("poisoned")
                     .requests
                     .retain(|(_, a)| *a != peer_url);
             }
@@ -340,7 +340,7 @@ impl CoreFetch {
             // from requests to be sent and no request will be sent and the request
             // will not be re-inserted into the queue.
             {
-                let mut state_lock = state.lock().unwrap();
+                let mut state_lock = state.lock().expect("poisoned");
                 if !state_lock
                     .requests
                     .contains(&(op_id.clone(), peer_url.clone()))
@@ -392,7 +392,7 @@ impl CoreFetch {
                 );
                 state
                     .lock()
-                    .unwrap()
+                    .expect("poisoned")
                     .requests
                     .retain(|(_, a)| *a != peer_url);
             }
@@ -416,7 +416,7 @@ impl CoreFetch {
                         // Remove op id/peer url from set to prevent build-up of state.
                         state
                             .lock()
-                            .unwrap()
+                            .expect("poisoned")
                             .requests
                             .remove(&(op_id, peer_url));
                     }
