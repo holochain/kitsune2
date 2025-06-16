@@ -29,7 +29,7 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
         key: String,
     ) -> BoxFuture<'_, K2Result<Option<bytes::Bytes>>>;
 
-    /// Get all peers for a given key.
+    /// Get all peer urls and values for a given key.
     fn get_all_by_key(
         &self,
         key: String,
