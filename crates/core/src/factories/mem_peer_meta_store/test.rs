@@ -105,3 +105,31 @@ async fn store_with_multiple_agents() {
         Some(timestamp_2)
     );
 }
+
+#[tokio::test]
+async fn store_unresponsive_peer() {
+    let factory = MemPeerMetaStoreFactory::create();
+    let store = factory
+        .create(
+            Arc::new(default_test_builder().with_default_config().unwrap()),
+            kitsune2_test_utils::space::TEST_SPACE_ID.clone(),
+        )
+        .await
+        .unwrap();
+
+    let peer = Url::from_str("ws://test-host:80/1").unwrap();
+
+    let when_set_unresponsive =
+        store.get_unresponsive(peer.clone()).await.unwrap();
+    assert!(when_set_unresponsive.is_none());
+
+    let when = Timestamp::now();
+    store
+        .set_unresponsive(peer.clone(), Timestamp::now(), when)
+        .await
+        .unwrap();
+
+    let when_set_unresponsive =
+        store.get_unresponsive(peer.clone()).await.unwrap();
+    assert_eq!(when_set_unresponsive, Some(when));
+}
