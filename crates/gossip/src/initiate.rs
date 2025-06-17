@@ -272,7 +272,7 @@ mod tests {
     use kitsune2_core::default_test_builder;
     use kitsune2_dht::SECTOR_SIZE;
     use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
-    use kitsune2_test_utils::enable_tracing;
+    use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
     use std::sync::Arc;
 
     struct Harness {
