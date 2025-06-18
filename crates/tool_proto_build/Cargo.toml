@@ -3,6 +3,7 @@ name = "tool_proto_build"
 version.workspace = true
 publish = false
 edition.workspace = true
+repository.workspace = true
 
 [dependencies]
 prost-build = { workspace = true }

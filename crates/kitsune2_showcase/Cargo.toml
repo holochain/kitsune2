@@ -4,6 +4,7 @@ version.workspace = true
 description = "kitsune2 p2p / dht showcase app"
 license.workspace = true
 homepage.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/kitsune2_showcase"
 authors.workspace = true
 keywords.workspace = true

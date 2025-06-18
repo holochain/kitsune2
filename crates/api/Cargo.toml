@@ -4,6 +4,7 @@ version.workspace = true
 description = "p2p / dht communication framework api"
 license.workspace = true
 homepage.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/kitsune2_api"
 authors.workspace = true
 keywords.workspace = true

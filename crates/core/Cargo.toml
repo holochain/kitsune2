@@ -4,6 +4,7 @@ version.workspace = true
 description = "p2p / dht communication framework core and testing modules"
 license.workspace = true
 homepage.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/kitsune2_core"
 authors.workspace = true
 keywords.workspace = true

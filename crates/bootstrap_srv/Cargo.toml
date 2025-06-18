@@ -4,6 +4,7 @@ version.workspace = true
 description = "p2p / dht communication WAN discovery bootstrapping server"
 license.workspace = true
 homepage.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/kitsune2_bootstrap_srv"
 authors.workspace = true
 keywords.workspace = true

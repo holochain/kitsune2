@@ -4,6 +4,7 @@ version.workspace = true
 description = "The Tx5-based transport implementation for kitsune2"
 license.workspace = true
 homepage.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/kitsune2_transport_tx5"
 authors.workspace = true
 keywords.workspace = true

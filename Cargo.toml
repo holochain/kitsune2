@@ -18,7 +18,8 @@ resolver = "2"
 [workspace.package]
 version = "0.2.8"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
-homepage = "https://github.com/holochain/kitsune2"
+homepage = "https://www.holochain.org/"
+repository = "https://github.com/holochain/kitsune2"
 keywords = ["holochain", "kitsune", "p2p", "dht", "networking"]
 categories = ["network-programming"]
 license = "Apache-2.0"
