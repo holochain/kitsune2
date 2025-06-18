@@ -22,7 +22,10 @@ struct Test {
 }
 
 impl Test {
-    pub async fn new() -> Self {
+    pub async fn new(
+        _auth_material: Option<Vec<u8>>,
+        tx5_timeout_s: Option<u32>,
+    ) -> Self {
         let mut this = Self {
             srv: None,
             port: 0,
@@ -44,6 +47,7 @@ impl Test {
                 tx5_transport: config::Tx5TransportConfig {
                     signal_allow_plain_text: true,
                     server_url: format!("ws://127.0.0.1:{}", this.port),
+                    timeout_s: tx5_timeout_s.unwrap_or(60),
                     ..Default::default()
                 },
             })
@@ -109,12 +113,14 @@ struct CbHandler {
     pre_out: Arc<dyn Fn(Url) -> K2Result<bytes::Bytes> + 'static + Send + Sync>,
     pre_in:
         Arc<dyn Fn(Url, bytes::Bytes) -> K2Result<()> + 'static + Send + Sync>,
-    space: Arc<
+    recv_space_notify: Arc<
         dyn Fn(Url, SpaceId, bytes::Bytes) -> K2Result<()>
             + 'static
             + Send
             + Sync,
     >,
+    set_unresponsive:
+        Arc<dyn Fn(Url, Timestamp) -> K2Result<()> + 'static + Send + Sync>,
     module: Arc<
         dyn Fn(Url, SpaceId, String, bytes::Bytes) -> K2Result<()>
             + 'static
@@ -137,7 +143,8 @@ impl Default for CbHandler {
             peer_dis: Arc::new(|_, _| {}),
             pre_out: Arc::new(|_| Ok(bytes::Bytes::new())),
             pre_in: Arc::new(|_, _| Ok(())),
-            space: Arc::new(|_, _, _| Ok(())),
+            recv_space_notify: Arc::new(|_, _, _| Ok(())),
+            set_unresponsive: Arc::new(|_, _| Ok(())),
             module: Arc::new(|_, _, _, _| Ok(())),
         }
     }
@@ -182,7 +189,15 @@ impl TxSpaceHandler for CbHandler {
         space: SpaceId,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        (self.space)(peer, space, data)
+        (self.recv_space_notify)(peer, space, data)
+    }
+
+    fn set_unresponsive(
+        &self,
+        peer: Url,
+        when: Timestamp,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move { (self.set_unresponsive)(peer, when) })
     }
 }
 
@@ -243,7 +258,7 @@ fn validate_plain_server_url() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_addr() {
-    let mut test = Test::new().await;
+    let mut test = Test::new(None, None).await;
 
     let addr = Arc::new(Mutex::new(Vec::new()));
     let addr2 = addr.clone();
@@ -278,7 +293,7 @@ async fn restart_addr() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "disconnects currently broken in tx5"]
 async fn peer_connect_disconnect() {
-    let test = Test::new().await;
+    let test = Test::new(None, None).await;
 
     let u1 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
     let u1_2 = u1.clone();
@@ -359,7 +374,7 @@ async fn peer_connect_disconnect() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn message_send_recv() {
-    let test = Test::new().await;
+    let test = Test::new(None, None).await;
 
     let h1 = Arc::new(CbHandler {
         ..Default::default()
@@ -375,7 +390,59 @@ async fn message_send_recv() {
         new_addr: Arc::new(move |url| {
             *u2_2.lock().unwrap() = url;
         }),
-        space: Arc::new(move |url, space, data| {
+        recv_space_notify: Arc::new(move |url, space, data| {
+            let _ = s_send.send((url, space, data));
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let t2 = test.build_transport(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
+    t2.register_module_handler(TEST_SPACE_ID, "mod".into(), h2.clone());
+
+    let u2: Url = u2.lock().unwrap().clone();
+    println!("got u2: {}", u2);
+
+    // checks that send works
+    t1.send_space_notify(
+        u2,
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+
+    // checks that recv works
+    let r = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        s_recv.recv().await
+    })
+    .await
+    .unwrap()
+    .unwrap();
+
+    println!("{r:?}");
+    assert_eq!(b"hello", r.2.as_ref());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_send_recv_auth() {
+    let test = Test::new(Some(b"hello".into()), None).await;
+
+    let h1 = Arc::new(CbHandler {
+        ..Default::default()
+    });
+    let t1 = test.build_transport(h1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
+    t1.register_module_handler(TEST_SPACE_ID, "mod".into(), h1.clone());
+
+    let (s_send, mut s_recv) = tokio::sync::mpsc::unbounded_channel();
+    let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let u2_2 = u2.clone();
+    let h2 = Arc::new(CbHandler {
+        new_addr: Arc::new(move |url| {
+            *u2_2.lock().unwrap() = url;
+        }),
+        recv_space_notify: Arc::new(move |url, space, data| {
             let _ = s_send.send((url, space, data));
             Ok(())
         }),
@@ -412,7 +479,7 @@ async fn message_send_recv() {
 #[tokio::test(flavor = "multi_thread")]
 async fn preflight_send_recv() {
     use std::sync::atomic::*;
-    let test = Test::new().await;
+    let test = Test::new(None, None).await;
 
     let r1 = Arc::new(AtomicBool::new(false));
     let r1_2 = r1.clone();
@@ -473,8 +540,184 @@ async fn preflight_send_recv() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn nonexistent_peer_marked_unresponsive() {
+    // set the tx5 timeout to 5 seconds to keep the test reasonably short
+    let test = Test::new(None, Some(5)).await;
+
+    let (unresp_send, mut unresp_recv) = tokio::sync::mpsc::unbounded_channel();
+
+    let tx_handler1 = Arc::new(CbHandler {
+        set_unresponsive: Arc::new({
+            move |url, when| {
+                unresp_send.send((url, when)).map_err(|_| K2Error::Other {
+                    ctx: "Failed to send url to oneshot channel".into(),
+                    src: DynInnerError::default(),
+                })
+            }
+        }),
+        ..Default::default()
+    });
+    let transport1 = test.build_transport(tx_handler1.clone()).await;
+    transport1.register_space_handler(TEST_SPACE_ID, tx_handler1.clone());
+    transport1.register_module_handler(
+        TEST_SPACE_ID,
+        "mod".into(),
+        tx_handler1.clone(),
+    );
+
+    let faulty_url = Url::from_str(
+        "ws://127.0.0.1:40813/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii-Oc-0IRtHmc",
+    )
+    .unwrap();
+
+    let res = transport1
+        .send_space_notify(
+            faulty_url.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"anyone here?"),
+        )
+        .await;
+
+    // We expect it to have timed out because no peer should be reachable at above URL
+    assert!(res.is_err());
+
+    // We expect the set_unresponsive() method on the TxSpaceHandler trait to have
+    // been invoked
+    let maybe_url_and_when =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            unresp_recv.recv().await
+        })
+        .await
+        .unwrap();
+
+    let url = maybe_url_and_when.unwrap().0;
+
+    assert!(faulty_url == url);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn offline_peer_marked_unresponsive() {
+    // set the tx5 timeout to 5 seconds to keep the test reasonably short
+    let test = Test::new(None, Some(5)).await;
+
+    let (unresp_send, mut unresp_recv) = tokio::sync::mpsc::unbounded_channel();
+
+    let url1 =
+        Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let url1_2 = url1.clone();
+    let tx_handler1 = Arc::new(CbHandler {
+        new_addr: Arc::new(move |url| {
+            *url1_2.lock().unwrap() = url;
+        }),
+        set_unresponsive: Arc::new({
+            move |url, when| {
+                unresp_send.send((url, when)).map_err(|_| K2Error::Other {
+                    ctx: "Failed to send url to oneshot channel".into(),
+                    src: DynInnerError::default(),
+                })
+            }
+        }),
+        ..Default::default()
+    });
+    let transport1 = test.build_transport(tx_handler1.clone()).await;
+    transport1.register_space_handler(TEST_SPACE_ID, tx_handler1.clone());
+    transport1.register_module_handler(
+        TEST_SPACE_ID,
+        "mod".into(),
+        tx_handler1.clone(),
+    );
+
+    let (s_send, mut s_recv) = tokio::sync::mpsc::unbounded_channel();
+    let url2 =
+        Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+    let url2_2 = url2.clone();
+    let tx_handler2 = Arc::new(CbHandler {
+        new_addr: Arc::new(move |url| {
+            *url2_2.lock().unwrap() = url;
+        }),
+        recv_space_notify: Arc::new(move |url, space, data| {
+            let _ = s_send.send((url, space, data));
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let transport2 = test.build_transport(tx_handler2.clone()).await;
+    transport2.register_space_handler(TEST_SPACE_ID, tx_handler2.clone());
+    transport2.register_module_handler(
+        TEST_SPACE_ID,
+        "mod".into(),
+        tx_handler2,
+    );
+
+    let url2: Url = url2.lock().unwrap().clone();
+    println!("got url2: {}", url2);
+
+    // check that send works initially while peer 2 is still online
+    transport1
+        .send_space_notify(
+            url2.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"hello"),
+        )
+        .await
+        .unwrap();
+
+    // checks that recv works
+    let (_, _, bytes) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            s_recv.recv().await
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(b"hello", bytes.as_ref());
+
+    // Check that the peer has not been marked as unresponsive
+    let r = unresp_recv.try_recv();
+    assert!(r.is_err());
+
+    // Now peer 2 goes offline and we check that it gets marked as unresponsive
+    drop(transport2);
+    // This holds some reference to something.
+    drop(test);
+
+    // We need to wait for a while in order for the webrtc connection to get
+    // disconnected. If this test becomes flaky, this waiting period may need
+    // to be increased a bit.
+    //
+    // It's mysterious why a sleep here makes the connection disconnect.
+    // Without it, the disconnect doesn't happen. Reminiscent of the event loop
+    // in JavaScript...
+    // What has to happen is that the listening address of peer 1 is closed.
+    // But there's no event in the handler for that.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let res = transport1
+        .send_space_notify(
+            url2.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"anyone here?"),
+        )
+        .await;
+
+    // We expect it to have timed out because peer 2 is offline now
+    assert!(res.is_err());
+
+    let r = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        unresp_recv.recv().await
+    })
+    .await
+    .unwrap();
+
+    let url = r.unwrap().0;
+
+    assert!(url2 == url);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn dump_network_stats() {
-    let test = Test::new().await;
+    let test = Test::new(None, None).await;
 
     let h1 = Arc::new(CbHandler {
         ..Default::default()
