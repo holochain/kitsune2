@@ -19,7 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Prepare next release
 - Update Cargo.toml use repository instead of homepage (#244) by @szabgab in [#244](https://github.com/holochain/kitsune2/pull/244)
 - Release v0.2.8 by @jost-s in [#238](https://github.com/holochain/kitsune2/pull/238)
 - Check if queue is drained when re-inserting request failed by @jost-s in [#237](https://github.com/holochain/kitsune2/pull/237)
@@ -64,15 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
 - Functioning net stats from mem transport (#225) by @neonphog in [#225](https://github.com/holochain/kitsune2/pull/225)
 - Fix MemBootstrap Space Crossover (#224) by @neonphog in [#224](https://github.com/holochain/kitsune2/pull/224)
 
 ## [0.2.6] - 2025-05-15
-
-### Changed
-
-- Bump version by @neonphog
 
 ### Fixed
 
@@ -83,7 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
 - Bug fix and auth test binding change (#216) by @neonphog in [#216](https://github.com/holochain/kitsune2/pull/216)
 
 ## [0.2.4] - 2025-05-12
@@ -95,7 +88,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump to 0.2.4 (#215) by @ThetaSinner in [#215](https://github.com/holochain/kitsune2/pull/215)
 - Simpler test target (#211) by @ThetaSinner in [#211](https://github.com/holochain/kitsune2/pull/211)
 - Bootstrap-auth-test docker build (#212) by @neonphog in [#212](https://github.com/holochain/kitsune2/pull/212)
 - Close spaces (#208) by @ThetaSinner in [#208](https://github.com/holochain/kitsune2/pull/208)
@@ -108,7 +100,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
 - Authenticate (#198) by @neonphog in [#198](https://github.com/holochain/kitsune2/pull/198)
 - Add cargo make (#193) by @ThetaSinner in [#193](https://github.com/holochain/kitsune2/pull/193)
 - Use Google STUN (#210) by @ThetaSinner in [#210](https://github.com/holochain/kitsune2/pull/210)
@@ -122,14 +113,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
 - Moar tx5 config (#202) by @neonphog in [#202](https://github.com/holochain/kitsune2/pull/202)
 
 ## [0.2.1] - 2025-04-29
 
 ### Changed
 
-- Bump to 0.2.1 by @ThetaSinner
 - Tidy dependencies (#201) by @ThetaSinner in [#201](https://github.com/holochain/kitsune2/pull/201)
 - Move server address logging to binary (#199) by @anchalshivank in [#199](https://github.com/holochain/kitsune2/pull/199)
 
@@ -141,7 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump to 0.2.0 (#197) by @ThetaSinner in [#197](https://github.com/holochain/kitsune2/pull/197)
 - K2 consistency fixes (#195) by @ThetaSinner in [#195](https://github.com/holochain/kitsune2/pull/195)
 - Add schema support for configuration (#194) by @ThetaSinner in [#194](https://github.com/holochain/kitsune2/pull/194)
 
@@ -155,14 +143,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump to 0.1.4 by @ThetaSinner
 - Expose current URL instead of is_local_agent (#189) by @ThetaSinner in [#189](https://github.com/holochain/kitsune2/pull/189)
 
 ## [0.1.3] - 2025-04-16
 
 ### Changed
 
-- Bump to 0.1.3 by @ThetaSinner
 - Tools for filtering local agents (#187) by @ThetaSinner in [#187](https://github.com/holochain/kitsune2/pull/187)
 
 ### Fixed
@@ -173,7 +159,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump to 0.1.2 by @ThetaSinner
 - Initiate faster after failure (#180) by @ThetaSinner in [#180](https://github.com/holochain/kitsune2/pull/180)
 - Showcase Fixes (#179) by @neonphog in [#179](https://github.com/holochain/kitsune2/pull/179)
 - Resolve conflicting initiates (#182) by @ThetaSinner in [#182](https://github.com/holochain/kitsune2/pull/182)
@@ -191,7 +176,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version to 0.1.1 by @ThetaSinner
 - Process_incoming_ops in MemOpStore returns all op ids by @jost-s in [#167](https://github.com/holochain/kitsune2/pull/167)
 - Unit tests for terminate (#165) by @ThetaSinner in [#165](https://github.com/holochain/kitsune2/pull/165)
 - Update SBD and tx5 (#166) by @ThetaSinner in [#166](https://github.com/holochain/kitsune2/pull/166)
@@ -206,15 +190,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump to 0.0.1-alpha.17 (#163) by @ThetaSinner in [#163](https://github.com/holochain/kitsune2/pull/163)
 - Remove `get_local_agents` from the space API (#162) by @ThetaSinner in [#162](https://github.com/holochain/kitsune2/pull/162)
 - Add jitter to gossip initiation (#161) by @ThetaSinner in [#161](https://github.com/holochain/kitsune2/pull/161)
 
 ## [0.0.1-alpha.16] - 2025-03-26
-
-### Changed
-
-- Bump version to 0.0.1-alpha.16 (#159) by @ThetaSinner in [#159](https://github.com/holochain/kitsune2/pull/159)
 
 ### Fixed
 
@@ -224,7 +203,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump to 0.0.1-alpha.15 (#155) by @ThetaSinner in [#155](https://github.com/holochain/kitsune2/pull/155)
 - Make network stats typed (#154) by @ThetaSinner in [#154](https://github.com/holochain/kitsune2/pull/154)
 
 ## [0.0.1-alpha.14] - 2025-03-24
@@ -243,7 +221,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
 - :len -> DhtArc::arc_span (#146) by @neonphog in [#146](https://github.com/holochain/kitsune2/pull/146)
 - Bump cachix/cachix-action from 15 to 16 (#145) by @dependabot[bot] in [#145](https://github.com/holochain/kitsune2/pull/145)
 
@@ -251,15 +228,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version to 0.0.1-alpha.12 by @ThetaSinner
 - Avoid computing hashes for empty slices (#144) by @ThetaSinner in [#144](https://github.com/holochain/kitsune2/pull/144)
 
 ## [0.0.1-alpha.11] - 2025-03-14
 
 ### Changed
 
-- Bump version by @neonphog
-- Bump version by @neonphog
 - Expose publish module (#143) by @neonphog in [#143](https://github.com/holochain/kitsune2/pull/143)
 - Bump cachix/install-nix-action from 30 to 31 (#140) by @dependabot[bot] in [#140](https://github.com/holochain/kitsune2/pull/140)
 
@@ -271,8 +245,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
-- Bump version by @neonphog
 - Space accessors (#142) by @neonphog in [#142](https://github.com/holochain/kitsune2/pull/142)
 
 ## [0.0.1-alpha8] - 2025-03-11
@@ -283,12 +255,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump version by @neonphog
-- Bump version by @neonphog
-- Bump version by @neonphog
-- Bump version by @neonphog
-- Bump version correctly by @neonphog
-- Bump version by @neonphog
 - If peer-meta is per space, pass space in factory (#141) by @neonphog in [#141](https://github.com/holochain/kitsune2/pull/141)
 - Fix docs links (#138) by @ThetaSinner in [#138](https://github.com/holochain/kitsune2/pull/138)
 - Reload TLS certificates (#139) by @ThetaSinner in [#139](https://github.com/holochain/kitsune2/pull/139)
@@ -328,26 +294,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Cargo.lock by @neonphog
-- Bump version by @neonphog
 - Separate call to register kitsune handler (#135) by @neonphog in [#135](https://github.com/holochain/kitsune2/pull/135)
 - Support SBD in bootstrap (#132) by @ThetaSinner in [#132](https://github.com/holochain/kitsune2/pull/132)
 - Kitsune2_core docs point to the wrong crate (#133) by @neonphog in [#133](https://github.com/holochain/kitsune2/pull/133)
 - Fix versioned crate reference and bump by @ThetaSinner
-- Bump versions to alpha4 (#130) by @ThetaSinner in [#130](https://github.com/holochain/kitsune2/pull/130)
 - Add bootstrap server missing CLI args (#128) by @ThetaSinner in [#128](https://github.com/holochain/kitsune2/pull/128)
 - Downgrade to Rust edition 2021 (#127) by @ThetaSinner in [#127](https://github.com/holochain/kitsune2/pull/127)
-- Bump version by @neonphog
 - Bump Rust (#126) by @ThetaSinner in [#126](https://github.com/holochain/kitsune2/pull/126)
 - Simplify space notify (#125) by @neonphog in [#125](https://github.com/holochain/kitsune2/pull/125)
 - Add TLS support (#123) by @ThetaSinner in [#123](https://github.com/holochain/kitsune2/pull/123)
 - Make publish-all by @neonphog
-- Bump version by @neonphog
 - Add READMEs (#122) by @ThetaSinner in [#122](https://github.com/holochain/kitsune2/pull/122)
 - Showcase Chat (#120) by @neonphog in [#120](https://github.com/holochain/kitsune2/pull/120)
 - Bump to tx5 v0.3.0-beta to fix buffer overrun (#121) by @neonphog in [#121](https://github.com/holochain/kitsune2/pull/121)
 - More initiate tests (#117) by @ThetaSinner in [#117](https://github.com/holochain/kitsune2/pull/117)
 - Use vcpkg on windows for libsodium dependency (#118) by @neonphog in [#118](https://github.com/holochain/kitsune2/pull/118)
-- Bump versions for publish (#113) by @ThetaSinner in [#113](https://github.com/holochain/kitsune2/pull/113)
 - Publish crates (#109) by @ThetaSinner in [#109](https://github.com/holochain/kitsune2/pull/109)
 - Clean up bookmark handling (#108) by @ThetaSinner in [#108](https://github.com/holochain/kitsune2/pull/108)
 - Peer meta store no space (#112) by @ThetaSinner in [#112](https://github.com/holochain/kitsune2/pull/112)
