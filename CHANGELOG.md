@@ -221,7 +221,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- :len -> DhtArc::arc_span (#146) by @neonphog in [#146](https://github.com/holochain/kitsune2/pull/146)
+- DhtArc::len -> DhtArc::arc_span (#146) by @neonphog in [#146](https://github.com/holochain/kitsune2/pull/146)
 - Bump cachix/cachix-action from 15 to 16 (#145) by @dependabot[bot] in [#145](https://github.com/holochain/kitsune2/pull/145)
 
 ## [0.0.1-alpha.12] - 2025-03-14
