@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Prepare next release
 - Update Cargo.toml use repository instead of homepage (#244) by @szabgab in [#244](https://github.com/holochain/kitsune2/pull/244)
 - Release v0.2.8 by @jost-s in [#238](https://github.com/holochain/kitsune2/pull/238)
 - Check if queue is drained when re-inserting request failed by @jost-s in [#237](https://github.com/holochain/kitsune2/pull/237)
@@ -59,6 +60,407 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * @szabgab made their first contribution in [#244](https://github.com/holochain/kitsune2/pull/244)
 
+## [0.2.7] - 2025-05-23
+
+### Changed
+
+- Bump version by @neonphog
+- Functioning net stats from mem transport (#225) by @neonphog in [#225](https://github.com/holochain/kitsune2/pull/225)
+- Fix MemBootstrap Space Crossover (#224) by @neonphog in [#224](https://github.com/holochain/kitsune2/pull/224)
+
+## [0.2.6] - 2025-05-15
+
+### Changed
+
+- Bump version by @neonphog
+
+### Fixed
+
+- Fix authorization (#218) by @neonphog in [#218](https://github.com/holochain/kitsune2/pull/218)
+- Fix test-auth-hook-server docker default cmd (#217) by @neonphog in [#217](https://github.com/holochain/kitsune2/pull/217)
+
+## [0.2.5] - 2025-05-14
+
+### Changed
+
+- Bump version by @neonphog
+- Bug fix and auth test binding change (#216) by @neonphog in [#216](https://github.com/holochain/kitsune2/pull/216)
+
+## [0.2.4] - 2025-05-12
+
+### Added
+
+- Add rust-analyzer as a toolchain component (#214) by @cdunster in [#214](https://github.com/holochain/kitsune2/pull/214)
+- Support cargo-make in Nix devShell (#213) by @cdunster in [#213](https://github.com/holochain/kitsune2/pull/213)
+
+### Changed
+
+- Bump to 0.2.4 (#215) by @ThetaSinner in [#215](https://github.com/holochain/kitsune2/pull/215)
+- Simpler test target (#211) by @ThetaSinner in [#211](https://github.com/holochain/kitsune2/pull/211)
+- Bootstrap-auth-test docker build (#212) by @neonphog in [#212](https://github.com/holochain/kitsune2/pull/212)
+- Close spaces (#208) by @ThetaSinner in [#208](https://github.com/holochain/kitsune2/pull/208)
+
+## [0.2.3] - 2025-05-08
+
+### Added
+
+- Add Nix devShell and direnv support (#207) by @cdunster in [#207](https://github.com/holochain/kitsune2/pull/207)
+
+### Changed
+
+- Bump version by @neonphog
+- Authenticate (#198) by @neonphog in [#198](https://github.com/holochain/kitsune2/pull/198)
+- Add cargo make (#193) by @ThetaSinner in [#193](https://github.com/holochain/kitsune2/pull/193)
+- Use Google STUN (#210) by @ThetaSinner in [#210](https://github.com/holochain/kitsune2/pull/210)
+- Fix feature logic for automock (#206) by @ThetaSinner in [#206](https://github.com/holochain/kitsune2/pull/206)
+
+## First-time Contributors
+
+* @cdunster made their first contribution in [#207](https://github.com/holochain/kitsune2/pull/207)
+
+## [0.2.2] - 2025-04-29
+
+### Changed
+
+- Bump version by @neonphog
+- Moar tx5 config (#202) by @neonphog in [#202](https://github.com/holochain/kitsune2/pull/202)
+
+## [0.2.1] - 2025-04-29
+
+### Changed
+
+- Bump to 0.2.1 by @ThetaSinner
+- Tidy dependencies (#201) by @ThetaSinner in [#201](https://github.com/holochain/kitsune2/pull/201)
+- Move server address logging to binary (#199) by @anchalshivank in [#199](https://github.com/holochain/kitsune2/pull/199)
+
+## First-time Contributors
+
+* @anchalshivank made their first contribution in [#199](https://github.com/holochain/kitsune2/pull/199)
+
+## [0.2.0] - 2025-04-28
+
+### Changed
+
+- Bump to 0.2.0 (#197) by @ThetaSinner in [#197](https://github.com/holochain/kitsune2/pull/197)
+- K2 consistency fixes (#195) by @ThetaSinner in [#195](https://github.com/holochain/kitsune2/pull/195)
+- Add schema support for configuration (#194) by @ThetaSinner in [#194](https://github.com/holochain/kitsune2/pull/194)
+
+## [0.1.5] - 2025-04-17
+
+### Changed
+
+- Bump tx5 and k2 version (#191) by @neonphog in [#191](https://github.com/holochain/kitsune2/pull/191)
+
+## [0.1.4] - 2025-04-17
+
+### Changed
+
+- Bump to 0.1.4 by @ThetaSinner
+- Expose current URL instead of is_local_agent (#189) by @ThetaSinner in [#189](https://github.com/holochain/kitsune2/pull/189)
+
+## [0.1.3] - 2025-04-16
+
+### Changed
+
+- Bump to 0.1.3 by @ThetaSinner
+- Tools for filtering local agents (#187) by @ThetaSinner in [#187](https://github.com/holochain/kitsune2/pull/187)
+
+### Fixed
+
+- Fix double sleep (#186) by @ThetaSinner in [#186](https://github.com/holochain/kitsune2/pull/186)
+
+## [0.1.2] - 2025-04-14
+
+### Changed
+
+- Bump to 0.1.2 by @ThetaSinner
+- Initiate faster after failure (#180) by @ThetaSinner in [#180](https://github.com/holochain/kitsune2/pull/180)
+- Showcase Fixes (#179) by @neonphog in [#179](https://github.com/holochain/kitsune2/pull/179)
+- Resolve conflicting initiates (#182) by @ThetaSinner in [#182](https://github.com/holochain/kitsune2/pull/182)
+- Filter out requests for ops that are already in the store by @jost-s in [#178](https://github.com/holochain/kitsune2/pull/178)
+- Broadcast agent info when declaring a new storage arc (#176) by @ThetaSinner in [#176](https://github.com/holochain/kitsune2/pull/176)
+- Initiate first gossip round faster (#171) by @ThetaSinner in [#171](https://github.com/holochain/kitsune2/pull/171)
+- Validation error if config disallows plain text, but plain text sbd used (#169) by @neonphog in [#169](https://github.com/holochain/kitsune2/pull/169)
+
+### Fixed
+
+- Fix initiate_interval_ms description by @jost-s in [#170](https://github.com/holochain/kitsune2/pull/170)
+- Add historical sync test for gossip (#168) by @ThetaSinner in [#168](https://github.com/holochain/kitsune2/pull/168)
+
+## [0.1.1] - 2025-04-03
+
+### Changed
+
+- Bump version to 0.1.1 by @ThetaSinner
+- Process_incoming_ops in MemOpStore returns all op ids by @jost-s in [#167](https://github.com/holochain/kitsune2/pull/167)
+- Unit tests for terminate (#165) by @ThetaSinner in [#165](https://github.com/holochain/kitsune2/pull/165)
+- Update SBD and tx5 (#166) by @ThetaSinner in [#166](https://github.com/holochain/kitsune2/pull/166)
+
+## [0.1.0] - 2025-04-02
+
+### Changed
+
+- Update to 0.1.0 (#164) by @ThetaSinner in [#164](https://github.com/holochain/kitsune2/pull/164)
+
+## [0.0.1-alpha.17] - 2025-03-31
+
+### Changed
+
+- Bump to 0.0.1-alpha.17 (#163) by @ThetaSinner in [#163](https://github.com/holochain/kitsune2/pull/163)
+- Remove `get_local_agents` from the space API (#162) by @ThetaSinner in [#162](https://github.com/holochain/kitsune2/pull/162)
+- Add jitter to gossip initiation (#161) by @ThetaSinner in [#161](https://github.com/holochain/kitsune2/pull/161)
+
+## [0.0.1-alpha.16] - 2025-03-26
+
+### Changed
+
+- Bump version to 0.0.1-alpha.16 (#159) by @ThetaSinner in [#159](https://github.com/holochain/kitsune2/pull/159)
+
+### Fixed
+
+- Bootstrap bad URLs (#158) by @ThetaSinner in [#158](https://github.com/holochain/kitsune2/pull/158)
+
+## [0.0.1-alpha.15] - 2025-03-25
+
+### Changed
+
+- Bump to 0.0.1-alpha.15 (#155) by @ThetaSinner in [#155](https://github.com/holochain/kitsune2/pull/155)
+- Make network stats typed (#154) by @ThetaSinner in [#154](https://github.com/holochain/kitsune2/pull/154)
+
+## [0.0.1-alpha.14] - 2025-03-24
+
+### Changed
+
+- Publish 0.0.1-alpha.14 (#153) by @ThetaSinner in [#153](https://github.com/holochain/kitsune2/pull/153)
+- Expose the transport from the `Kitsune` trait (#152) by @ThetaSinner in [#152](https://github.com/holochain/kitsune2/pull/152)
+- Add state dumps for fetch and gossip modules (#150) by @ThetaSinner in [#150](https://github.com/holochain/kitsune2/pull/150)
+- Expose webrtc config (#151) by @ThetaSinner in [#151](https://github.com/holochain/kitsune2/pull/151)
+- Add `dump_network_stats` to the transport (#149) by @ThetaSinner in [#149](https://github.com/holochain/kitsune2/pull/149)
+- Expose DHT docs that get made private (#148) by @ThetaSinner in [#148](https://github.com/holochain/kitsune2/pull/148)
+- Gossip improvements (#147) by @ThetaSinner in [#147](https://github.com/holochain/kitsune2/pull/147)
+
+## [0.0.1-alpha.13] - 2025-03-19
+
+### Changed
+
+- Bump version by @neonphog
+- :len -> DhtArc::arc_span (#146) by @neonphog in [#146](https://github.com/holochain/kitsune2/pull/146)
+- Bump cachix/cachix-action from 15 to 16 (#145) by @dependabot[bot] in [#145](https://github.com/holochain/kitsune2/pull/145)
+
+## [0.0.1-alpha.12] - 2025-03-14
+
+### Changed
+
+- Bump version to 0.0.1-alpha.12 by @ThetaSinner
+- Avoid computing hashes for empty slices (#144) by @ThetaSinner in [#144](https://github.com/holochain/kitsune2/pull/144)
+
+## [0.0.1-alpha.11] - 2025-03-14
+
+### Changed
+
+- Bump version by @neonphog
+- Bump version by @neonphog
+- Expose publish module (#143) by @neonphog in [#143](https://github.com/holochain/kitsune2/pull/143)
+- Bump cachix/install-nix-action from 30 to 31 (#140) by @dependabot[bot] in [#140](https://github.com/holochain/kitsune2/pull/140)
+
+## First-time Contributors
+
+* @dependabot[bot] made their first contribution in [#140](https://github.com/holochain/kitsune2/pull/140)
+
+## [0.0.1-alpha9] - 2025-03-12
+
+### Changed
+
+- Bump version by @neonphog
+- Bump version by @neonphog
+- Space accessors (#142) by @neonphog in [#142](https://github.com/holochain/kitsune2/pull/142)
+
+## [0.0.1-alpha8] - 2025-03-11
+
+### Added
+
+- Add docker container (#134) by @ThetaSinner in [#134](https://github.com/holochain/kitsune2/pull/134)
+
+### Changed
+
+- Bump version by @neonphog
+- Bump version by @neonphog
+- Bump version by @neonphog
+- Bump version by @neonphog
+- Bump version correctly by @neonphog
+- Bump version by @neonphog
+- If peer-meta is per space, pass space in factory (#141) by @neonphog in [#141](https://github.com/holochain/kitsune2/pull/141)
+- Fix docs links (#138) by @ThetaSinner in [#138](https://github.com/holochain/kitsune2/pull/138)
+- Reload TLS certificates (#139) by @ThetaSinner in [#139](https://github.com/holochain/kitsune2/pull/139)
+
+## [0.0.1-alpha6] - 2025-03-04
+
+### Added
+
+- Add systems x86_64-darwin and aarch64-linux by @jost-s in [#137](https://github.com/holochain/kitsune2/pull/137)
+- Add bootstrap client (#129) by @ThetaSinner in [#129](https://github.com/holochain/kitsune2/pull/129)
+- Add agent publish (#124) by @matthme in [#124](https://github.com/holochain/kitsune2/pull/124)
+- Add integration test by @jost-s in [#100](https://github.com/holochain/kitsune2/pull/100)
+- Add publish module (#119) by @matthme in [#119](https://github.com/holochain/kitsune2/pull/119)
+- Add more peer meta for gossip (#114) by @ThetaSinner in [#114](https://github.com/holochain/kitsune2/pull/114)
+- Add links to module crates by @jost-s in [#115](https://github.com/holochain/kitsune2/pull/115)
+- Add job to nix build bootstrap-srv by @jost-s in [#116](https://github.com/holochain/kitsune2/pull/116)
+- Add flake with bootstrap-srv package by @jost-s
+- Add top-level crate with prod builder by @jost-s in [#85](https://github.com/holochain/kitsune2/pull/85)
+- Add test bootstrap server by @jost-s
+- Add gossip, fetch, op store and peer meta store to space by @jost-s
+- Add dht update task (#90) by @ThetaSinner in [#90](https://github.com/holochain/kitsune2/pull/90)
+- Add gossip tasks (#80) by @ThetaSinner in [#80](https://github.com/holochain/kitsune2/pull/80)
+- Add macro for repeated checks until timeout by @jost-s
+- Add fetch integration tests by @jost-s in [#78](https://github.com/holochain/kitsune2/pull/78)
+- Add id utilities by @jost-s
+- Add test space id by @jost-s in [#64](https://github.com/holochain/kitsune2/pull/64)
+- Add module handler for incoming requests/responses (#70) by @jost-s in [#70](https://github.com/holochain/kitsune2/pull/70)
+- Add peer meta store (#69) by @ThetaSinner in [#69](https://github.com/holochain/kitsune2/pull/69)
+- Add automocks to transport for testing by @jost-s
+- Add protobuf definition for ops by @jost-s
+- Add fetch module (#35) by @jost-s in [#35](https://github.com/holochain/kitsune2/pull/35)
+- Add Taplo (#49) by @ThetaSinner in [#49](https://github.com/holochain/kitsune2/pull/49)
+- Add test utils with tracing helper (#46) by @ThetaSinner in [#46](https://github.com/holochain/kitsune2/pull/46)
+- Add basic pr checks (#2) by @ThetaSinner in [#2](https://github.com/holochain/kitsune2/pull/2)
+- Add skeleton api crate (#1) by @neonphog in [#1](https://github.com/holochain/kitsune2/pull/1)
+
+### Changed
+
+- Cargo.lock by @neonphog
+- Bump version by @neonphog
+- Separate call to register kitsune handler (#135) by @neonphog in [#135](https://github.com/holochain/kitsune2/pull/135)
+- Support SBD in bootstrap (#132) by @ThetaSinner in [#132](https://github.com/holochain/kitsune2/pull/132)
+- Kitsune2_core docs point to the wrong crate (#133) by @neonphog in [#133](https://github.com/holochain/kitsune2/pull/133)
+- Fix versioned crate reference and bump by @ThetaSinner
+- Bump versions to alpha4 (#130) by @ThetaSinner in [#130](https://github.com/holochain/kitsune2/pull/130)
+- Add bootstrap server missing CLI args (#128) by @ThetaSinner in [#128](https://github.com/holochain/kitsune2/pull/128)
+- Downgrade to Rust edition 2021 (#127) by @ThetaSinner in [#127](https://github.com/holochain/kitsune2/pull/127)
+- Bump version by @neonphog
+- Bump Rust (#126) by @ThetaSinner in [#126](https://github.com/holochain/kitsune2/pull/126)
+- Simplify space notify (#125) by @neonphog in [#125](https://github.com/holochain/kitsune2/pull/125)
+- Add TLS support (#123) by @ThetaSinner in [#123](https://github.com/holochain/kitsune2/pull/123)
+- Make publish-all by @neonphog
+- Bump version by @neonphog
+- Add READMEs (#122) by @ThetaSinner in [#122](https://github.com/holochain/kitsune2/pull/122)
+- Showcase Chat (#120) by @neonphog in [#120](https://github.com/holochain/kitsune2/pull/120)
+- Bump to tx5 v0.3.0-beta to fix buffer overrun (#121) by @neonphog in [#121](https://github.com/holochain/kitsune2/pull/121)
+- More initiate tests (#117) by @ThetaSinner in [#117](https://github.com/holochain/kitsune2/pull/117)
+- Use vcpkg on windows for libsodium dependency (#118) by @neonphog in [#118](https://github.com/holochain/kitsune2/pull/118)
+- Bump versions for publish (#113) by @ThetaSinner in [#113](https://github.com/holochain/kitsune2/pull/113)
+- Publish crates (#109) by @ThetaSinner in [#109](https://github.com/holochain/kitsune2/pull/109)
+- Clean up bookmark handling (#108) by @ThetaSinner in [#108](https://github.com/holochain/kitsune2/pull/108)
+- Peer meta store no space (#112) by @ThetaSinner in [#112](https://github.com/holochain/kitsune2/pull/112)
+- Pick serde version that is more widely compatible (#111) by @ThetaSinner in [#111](https://github.com/holochain/kitsune2/pull/111)
+- Update storage arcs (#99) by @ThetaSinner in [#99](https://github.com/holochain/kitsune2/pull/99)
+- Bump tx5 to fix broken pipe bug (#105) by @neonphog in [#105](https://github.com/holochain/kitsune2/pull/105)
+- Prepare manifests for publishing (#106) by @ThetaSinner in [#106](https://github.com/holochain/kitsune2/pull/106)
+- Tidy imports (#104) by @ThetaSinner in [#104](https://github.com/holochain/kitsune2/pull/104)
+- Remove complete or no longer relevant TODOs (#103) by @ThetaSinner in [#103](https://github.com/holochain/kitsune2/pull/103)
+- Limit op data at sector granularity (#101) by @ThetaSinner in [#101](https://github.com/holochain/kitsune2/pull/101)
+- Skeleton crate for kitsune2 showcase app (#98) by @neonphog in [#98](https://github.com/holochain/kitsune2/pull/98)
+- Op data limit tests (#96) by @ThetaSinner in [#96](https://github.com/holochain/kitsune2/pull/96)
+- Extend space by gossip, fetch and op store by @jost-s
+- Use tx5 dep from workspace by @jost-s
+- Run test workflow on all branches by @jost-s
+- Limit data sent after dht differences (#94) by @ThetaSinner in [#94](https://github.com/holochain/kitsune2/pull/94)
+- New ops respect common arc set (#92) by @ThetaSinner in [#92](https://github.com/holochain/kitsune2/pull/92)
+- Limit the number of accepted rounds in progress concurrently (#91) by @ThetaSinner in [#91](https://github.com/holochain/kitsune2/pull/91)
+- Split up gossip file (#89) by @ThetaSinner in [#89](https://github.com/holochain/kitsune2/pull/89)
+- Integrate dht model (#82) by @ThetaSinner in [#82](https://github.com/holochain/kitsune2/pull/82)
+- Remove `ci_pass` job name (#87) by @ThetaSinner in [#87](https://github.com/holochain/kitsune2/pull/87)
+- Config Validation (#84) by @neonphog in [#84](https://github.com/holochain/kitsune2/pull/84)
+- Tx5Transport Module (#75) by @neonphog in [#75](https://github.com/holochain/kitsune2/pull/75)
+- Split local agent store out of the space (#77) by @ThetaSinner in [#77](https://github.com/holochain/kitsune2/pull/77)
+- Integrate fetch with gossip (#76) by @ThetaSinner in [#76](https://github.com/holochain/kitsune2/pull/76)
+- Go go gossip (#72) by @ThetaSinner in [#72](https://github.com/holochain/kitsune2/pull/72)
+- Process incoming responses to fetch requests by @jost-s
+- Rename Request -> FetchRequest & Response -> FetchResponse by @jost-s
+- Delay fetch request retries by @jost-s in [#73](https://github.com/holochain/kitsune2/pull/73)
+- Op store split metadata (#74) by @ThetaSinner in [#74](https://github.com/holochain/kitsune2/pull/74)
+- Gossip init (#68) by @ThetaSinner in [#68](https://github.com/holochain/kitsune2/pull/68)
+- Pass ops as bytes to op store by @jost-s in [#71](https://github.com/holochain/kitsune2/pull/71)
+- Build op store definition by @jost-s in [#63](https://github.com/holochain/kitsune2/pull/63)
+- Implement fetch response queue by @jost-s
+- Move the in-memory op store to the core crate (#67) by @ThetaSinner in [#67](https://github.com/holochain/kitsune2/pull/67)
+- DHT module docs (#51) by @ThetaSinner in [#51](https://github.com/holochain/kitsune2/pull/51)
+- Bootstrap and Re-Sign Agent Infos Before they Expire (#61) by @neonphog in [#61](https://github.com/holochain/kitsune2/pull/61)
+- Signing Agent Infos (#55) by @neonphog in [#55](https://github.com/holochain/kitsune2/pull/55)
+- Dht diff (#59) by @ThetaSinner in [#59](https://github.com/holochain/kitsune2/pull/59)
+- Improve back off feature for unresponsive agents (#60) by @jost-s in [#60](https://github.com/holochain/kitsune2/pull/60)
+- Transport Integration - Space Notify Send & Receive (#54) by @neonphog in [#54](https://github.com/holochain/kitsune2/pull/54)
+- Bootstrap Client Module (#50) by @neonphog in [#50](https://github.com/holochain/kitsune2/pull/50)
+- Config V2 (#58) by @neonphog in [#58](https://github.com/holochain/kitsune2/pull/58)
+- Consider persisting tombstones (#57) by @maackle in [#57](https://github.com/holochain/kitsune2/pull/57)
+- Tiny_http -> axum (#52) by @neonphog in [#52](https://github.com/holochain/kitsune2/pull/52)
+- Transport trait (#53) by @neonphog in [#53](https://github.com/holochain/kitsune2/pull/53)
+- Dht hash partitioning (#47) by @ThetaSinner in [#47](https://github.com/holochain/kitsune2/pull/47)
+- Transport API and StubTransport Test Implementation (#45) by @neonphog in [#45](https://github.com/holochain/kitsune2/pull/45)
+- BasicArc convert to type (#48) by @ThetaSinner in [#48](https://github.com/holochain/kitsune2/pull/48)
+- Need a Real Url Type (#44) by @neonphog in [#44](https://github.com/holochain/kitsune2/pull/44)
+- First-iteration top-level kitsune module (#40) by @neonphog in [#40](https://github.com/holochain/kitsune2/pull/40)
+- Kitsune2 Top-Level P2P Protocol (#38) by @neonphog in [#38](https://github.com/holochain/kitsune2/pull/38)
+- Two way op flow (#41) by @ThetaSinner in [#41](https://github.com/holochain/kitsune2/pull/41)
+- Eliminate the origin time (#37) by @ThetaSinner in [#37](https://github.com/holochain/kitsune2/pull/37)
+- Switch to core crate (#39) by @neonphog in [#39](https://github.com/holochain/kitsune2/pull/39)
+- Space Module Stubs (#33) by @neonphog in [#33](https://github.com/holochain/kitsune2/pull/33)
+- PeerStore API and MemPeerStore Implementation (#19) by @neonphog in [#19](https://github.com/holochain/kitsune2/pull/19)
+- Time slice (#20) by @ThetaSinner in [#20](https://github.com/holochain/kitsune2/pull/20)
+- Kitsune2 Bootstrap Server--Testing (#11) by @neonphog in [#11](https://github.com/holochain/kitsune2/pull/11)
+- Simplified mvp module factory config pattern (#12) by @neonphog in [#12](https://github.com/holochain/kitsune2/pull/12)
+- Kitsune2 Bootstrap Server--Core (#10) by @neonphog in [#10](https://github.com/holochain/kitsune2/pull/10)
+- Use K2Error in existing k2 code (#18) by @neonphog in [#18](https://github.com/holochain/kitsune2/pull/18)
+- K2Error Type (#8) by @neonphog in [#8](https://github.com/holochain/kitsune2/pull/8)
+- Kitsune2 Bootstrap Server--Preparation (#9) by @neonphog in [#9](https://github.com/holochain/kitsune2/pull/9)
+- Create the bootstrap spec (#6) by @neonphog in [#6](https://github.com/holochain/kitsune2/pull/6)
+- Agent types (#5) by @neonphog in [#5](https://github.com/holochain/kitsune2/pull/5)
+- Serde + timestamp type (#4) by @neonphog in [#4](https://github.com/holochain/kitsune2/pull/4)
+- Simplified hash types for kitsune2 (#3) by @neonphog in [#3](https://github.com/holochain/kitsune2/pull/3)
+- Kitsune2 by @neonphog
+
+### Fixed
+
+- Do less work when the byte limit is exhausted after finding a DHT diff (#102) by @ThetaSinner in [#102](https://github.com/holochain/kitsune2/pull/102)
+- Limit the value we'll accept as a max op bytes… (#97) by @ThetaSinner in [#97](https://github.com/holochain/kitsune2/pull/97)
+- Use space's fetch and op store in tests by @jost-s
+- Fix test requests_are_dropped_when_max_back_off_expired in core_fetch by @jost-s in [#88](https://github.com/holochain/kitsune2/pull/88)
+- Increase timeouts in fetch tests to prevent flakiness by @jost-s in [#81](https://github.com/holochain/kitsune2/pull/81)
+
+## First-time Contributors
+
+* @jost-s made their first contribution in [#137](https://github.com/holochain/kitsune2/pull/137)
+
+* @neonphog made their first contribution
+
+* @ThetaSinner made their first contribution in [#132](https://github.com/holochain/kitsune2/pull/132)
+
+* @matthme made their first contribution in [#124](https://github.com/holochain/kitsune2/pull/124)
+
+* @maackle made their first contribution in [#57](https://github.com/holochain/kitsune2/pull/57)
+
 [0.3.0]: https://github.com/holochain/kitsune2/compare/v0.2.7..v0.3.0
+[0.2.7]: https://github.com/holochain/kitsune2/compare/v0.2.6..v0.2.7
+[0.2.6]: https://github.com/holochain/kitsune2/compare/v0.2.5..v0.2.6
+[0.2.5]: https://github.com/holochain/kitsune2/compare/v0.2.4..v0.2.5
+[0.2.4]: https://github.com/holochain/kitsune2/compare/v0.2.3..v0.2.4
+[0.2.3]: https://github.com/holochain/kitsune2/compare/v0.2.2..v0.2.3
+[0.2.2]: https://github.com/holochain/kitsune2/compare/v0.2.1..v0.2.2
+[0.2.1]: https://github.com/holochain/kitsune2/compare/v0.2.0..v0.2.1
+[0.2.0]: https://github.com/holochain/kitsune2/compare/v0.1.5..v0.2.0
+[0.1.5]: https://github.com/holochain/kitsune2/compare/v0.1.4..v0.1.5
+[0.1.4]: https://github.com/holochain/kitsune2/compare/v0.1.3..v0.1.4
+[0.1.3]: https://github.com/holochain/kitsune2/compare/v0.1.2..v0.1.3
+[0.1.2]: https://github.com/holochain/kitsune2/compare/v0.1.1..v0.1.2
+[0.1.1]: https://github.com/holochain/kitsune2/compare/v0.1.0..v0.1.1
+[0.1.0]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.17..v0.1.0
+[0.0.1-alpha.17]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.16..v0.0.1-alpha.17
+[0.0.1-alpha.16]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.15..v0.0.1-alpha.16
+[0.0.1-alpha.15]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.14..v0.0.1-alpha.15
+[0.0.1-alpha.14]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.13..v0.0.1-alpha.14
+[0.0.1-alpha.13]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.12..v0.0.1-alpha.13
+[0.0.1-alpha.12]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha.11..v0.0.1-alpha.12
+[0.0.1-alpha.11]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha9..v0.0.1-alpha.11
+[0.0.1-alpha9]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha8..v0.0.1-alpha9
+[0.0.1-alpha8]: https://github.com/holochain/kitsune2/compare/v0.0.1-alpha6..v0.0.1-alpha8
 
 <!-- generated by git-cliff -->
