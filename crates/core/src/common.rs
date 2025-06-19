@@ -62,8 +62,8 @@ pub async fn get_all_responsive_remote_agents(
 
 /// Get responsive remote agents by overlapping storage arc.
 ///
-/// Uses the [DynPeerStore] to get agents with overlapping storage arcs and the [DynLocalAgentStore]
-/// to filter out local agents.
+/// Uses the [DynPeerStore] to get agents with overlapping storage arcs, the [DynLocalAgentStore]
+/// to filter out local agents and the [DynPeerMetaStore] to filter out unresponsive agents.
 pub async fn get_responsive_remote_agents_by_overlapping_storage_arc(
     peer_store: DynPeerStore,
     local_agent_store: DynLocalAgentStore,
@@ -80,8 +80,8 @@ pub async fn get_responsive_remote_agents_by_overlapping_storage_arc(
 
 /// Get responsive remote agents near a specific location.
 ///
-/// Uses the [DynPeerStore] to get agents near a location and the [DynLocalAgentStore] to filter
-/// out local agents.
+/// Uses the [DynPeerStore] to get agents near a location, the [DynLocalAgentStore] to filter
+/// out local agents and the [DynPeerMetaStore] to filter out unresponsive agents.
 pub async fn get_responsive_remote_agents_near_location(
     peer_store: DynPeerStore,
     local_agent_store: DynLocalAgentStore,
