@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2025-06-20
+
+### Added
+
+- Add changelog for previous versions
+- Add workflow that tags and publishes a release upon merge to main
+- Add a manually-triggered workflow to prepare a release
+- Add common functions to filter unresponsive URLs out of agent
+- Add get/set to mark peer unresponsive in peer meta store
+
+### Changed
+
+- Match all common unresponsive filter function comments
+- Filter unresponsive peers for gossip
+- Backport faster initial sync 0.1 (#240)
+
+### Fixed
+
+- The sharding feature was using old function name
+
 ## [0.1.8] - 2025-05-01
 
 ### Changed
