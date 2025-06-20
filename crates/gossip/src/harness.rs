@@ -418,7 +418,7 @@ impl K2GossipFunctionalTestFactory {
         impl TxSpaceHandler for NoopHandler {}
         impl SpaceHandler for NoopHandler {}
 
-        let mut builder = default_test_builder().with_default_config().unwrap();
+        let mut builder = default_test_builder();
         // Replace the core builder with a real gossip factory
         builder.gossip = K2GossipFactory::create();
 
@@ -431,6 +431,9 @@ impl K2GossipFunctionalTestFactory {
             store: op_store.clone(),
         });
 
+        // Default config should be set after module overrides are done.
+        let builder = builder.with_default_config().unwrap();
+        // Then custom configuration is applied.
         builder.config.set_module_config(&self.config).unwrap();
 
         let builder = Arc::new(builder);
