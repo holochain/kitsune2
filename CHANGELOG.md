@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2025-06-20
+
+### Added
+
+- Add a changelog by @cdunster in [#248](https://github.com/holochain/kitsune2/pull/248)
+- Add workflow that tags and publishes a release upon merge to main by @cdunster in [#245](https://github.com/holochain/kitsune2/pull/245)
+- Add a manually-triggered workflow to prepare a release by @cdunster
+
+### Changed
+
+- Bump dependencies by @ThetaSinner in [#251](https://github.com/holochain/kitsune2/pull/251)
+- Update Cargo.toml use repository instead of homepage by @szabgab in [#244](https://github.com/holochain/kitsune2/pull/244)
+
+## First-time Contributors
+
+* @szabgab made their first contribution in [#244](https://github.com/holochain/kitsune2/pull/244)
+
 ## [0.2.8] - 2025-06-16
 
 ### Added
