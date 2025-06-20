@@ -41,10 +41,9 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
 sbd-server = { workspace = true, features = ["tungstenite"] }
-tokio-rustls = { workspace = true }
 
 [dev-dependencies]
-ureq = { workspace = true, features = ["tls"] }
+ureq = { workspace = true }
 rand = { workspace = true }
 rcgen = { workspace = true }
 sbd-client = { workspace = true }

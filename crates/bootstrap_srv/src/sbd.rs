@@ -94,9 +94,11 @@ impl SbdWebsocket for WebsocketForSbd {
                         let msg = r.map_err(Error::other)?;
                         match msg {
                             Message::Text(s) => {
-                                return Ok(Payload::Vec(s.into_bytes()))
+                                return Ok(Payload::Vec(s.as_bytes().to_vec()))
                             }
-                            Message::Binary(v) => return Ok(Payload::Vec(v)),
+                            Message::Binary(v) => {
+                                return Ok(Payload::Vec(v.to_vec()))
+                            }
                             Message::Ping(_) | Message::Pong(_) => (),
                             Message::Close(_) => {
                                 return Err(Error::other("closed"))
@@ -112,11 +114,11 @@ impl SbdWebsocket for WebsocketForSbd {
         let this = self.clone();
         Box::pin(async move {
             let mut write = this.write.lock().await;
-            let v = match payload {
-                Payload::Vec(v) => v,
-                Payload::BytesMut(b) => b.to_vec(),
+            let b = match payload {
+                Payload::Vec(v) => bytes::Bytes::from(v),
+                Payload::BytesMut(b) => b.freeze(),
             };
-            write.send(Message::Binary(v)).await.map_err(Error::other)?;
+            write.send(Message::Binary(b)).await.map_err(Error::other)?;
             write.flush().await.map_err(Error::other)?;
             Ok(())
         })

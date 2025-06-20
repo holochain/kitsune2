@@ -54,7 +54,7 @@ impl TestBootstrapSrv {
 
         let app: Router = Router::new()
             .route(
-                "/bootstrap/:space",
+                "/bootstrap/{space}",
                 routing::get(move || async move {
                     if get_state.halt.load(Ordering::SeqCst) {
                         return Err(
@@ -76,7 +76,7 @@ impl TestBootstrapSrv {
                 }),
             )
             .route(
-                "/bootstrap/:space/:agent",
+                "/bootstrap/{space}/{agent}",
                 routing::put(move |body: String| async move {
                     if put_state.halt.load(Ordering::SeqCst) {
                         return Err(

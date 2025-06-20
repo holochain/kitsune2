@@ -177,16 +177,16 @@ fn tokio_thread(
             let app = Router::<AppState>::new()
                 .route("/authenticate", routing::put(handle_auth))
                 .route("/health", routing::get(handle_health_get))
-                .route("/bootstrap/:space", routing::get(handle_boot_get))
+                .route("/bootstrap/{space}", routing::get(handle_boot_get))
                 .route(
-                    "/bootstrap/:space/:agent",
+                    "/bootstrap/{space}/{agent}",
                     routing::put(handle_boot_put),
                 );
 
             let app = if config.no_sbd {
                 app
             } else {
-                app.route("/:pub_key", routing::get(crate::sbd::handle_sbd))
+                app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd))
             };
 
             let app: Router = app

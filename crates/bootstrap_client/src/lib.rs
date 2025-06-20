@@ -57,7 +57,8 @@ impl AuthMaterial {
         let token = ureq::put(auth_url)
             .send(&self.auth_material[..])
             .map_err(|err| K2Error::other_src("Authenticate Failed", err))?
-            .into_string()
+            .into_body()
+            .read_to_string()
             .map_err(|err| K2Error::other_src("Authenticate Failed", err))?;
 
         #[derive(serde::Deserialize)]
@@ -87,11 +88,11 @@ impl<T> Res<T> {
     }
 }
 
-impl<T> From<std::result::Result<T, ureq::Error>> for Res<T> {
-    fn from(r: std::result::Result<T, ureq::Error>) -> Self {
+impl<T> From<Result<T, ureq::Error>> for Res<T> {
+    fn from(r: Result<T, ureq::Error>) -> Self {
         match r {
             Ok(t) => Self::Ok(t),
-            Err(ureq::Error::Status(401, _)) => Self::Auth,
+            Err(ureq::Error::StatusCode(401)) => Self::Auth,
             Err(err) => Self::Err(K2Error::other(err)),
         }
     }
@@ -164,10 +165,10 @@ pub fn blocking_put_auth(
         if let Some(auth_material) = auth_material {
             let token =
                 auth_material.auth_token.lock().unwrap().clone().unwrap();
-            req = req.set("Authorization", &format!("Bearer {token}"));
+            req = req.header("Authorization", &format!("Bearer {token}"));
         }
 
-        req.send_string(encoded).map(|_| ()).into()
+        req.send(encoded).map(|_| ()).into()
     }
 
     let mut res = priv_put(&put_url, &encoded, &auth_material);
@@ -228,11 +229,11 @@ pub fn blocking_get_auth(
         if let Some(auth_material) = auth_material {
             let token =
                 auth_material.auth_token.lock().unwrap().clone().unwrap();
-            req = req.set("Authorization", &format!("Bearer {token}"));
+            req = req.header("Authorization", &format!("Bearer {token}"));
         }
 
         match req.call() {
-            Ok(r) => r.into_string().into(),
+            Ok(r) => r.into_body().read_to_string().into(),
             Err(err) => Err(err).into(),
         }
     }

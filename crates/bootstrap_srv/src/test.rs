@@ -1,12 +1,6 @@
 use crate::*;
-use rustls::client::danger::{
-    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, DigitallySignedStruct, Error, SignatureScheme};
 use std::fs::File;
 use std::io::Write;
-use std::sync::Arc;
 
 const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
 
@@ -162,80 +156,39 @@ impl PutInfo<'_> {
             },
         );
 
-        let agent_builder = ureq::builder();
+        let agent_builder =
+            ureq::Agent::config_builder().http_status_as_error(false);
         let agent = if self.use_tls {
-            let client_config = ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(NoVerify))
-                .with_no_client_auth();
-
-            agent_builder.tls_config(Arc::new(client_config)).build()
+            agent_builder
+                .tls_config(
+                    ureq::tls::TlsConfig::builder()
+                        .disable_verification(true)
+                        .build(),
+                )
+                .build()
         } else {
             agent_builder.build()
-        };
-
-        match agent.put(&addr).send_string(&info) {
-            Ok(res) => {
-                let res = res.into_string()?;
-                if res != "{}" {
-                    return Err(std::io::Error::other("InvalidResponse"));
-                }
-                Ok(PutInfoRes { info, agent: pk })
-            }
-            Err(ureq::Error::Status(status, res)) => {
-                let res = res.into_string()?;
-                Err(std::io::Error::other(format!("status {status}: {res}")))
-            }
-            Err(ureq::Error::Transport(err)) => Err(std::io::Error::other(err)),
         }
-    }
-}
+        .new_agent();
 
-#[derive(Debug)]
-struct NoVerify;
+        let res = agent.put(&addr).send(&info).unwrap();
+        if res.status().is_success() {
+            let res = res
+                .into_body()
+                .read_to_string()
+                .map_err(std::io::Error::other)?;
+            if res != "{}" {
+                return Err(std::io::Error::other("InvalidResponse"));
+            }
+            Ok(PutInfoRes { info, agent: pk })
+        } else {
+            let res = res
+                .into_body()
+                .read_to_string()
+                .map_err(std::io::Error::other)?;
 
-impl ServerCertVerifier for NoVerify {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer,
-        _intermediates: &[CertificateDer],
-        _server_name: &ServerName,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::RSA_PKCS1_SHA1,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::ECDSA_NISTP521_SHA512,
-        ]
+            Err(std::io::Error::other(res))
+        }
     }
 }
 
@@ -252,7 +205,12 @@ fn happy_bootstrap_put_get() {
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
     println!("{addr}");
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     println!("{res}");
 
     // make sure it is valid json and only contains one entry
@@ -267,7 +225,12 @@ fn happy_bootstrap_put_get() {
 fn happy_empty_server_health() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{:?}/health", s.listen_addrs()[0]);
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     assert_eq!("{}", res);
 }
 
@@ -275,7 +238,12 @@ fn happy_empty_server_health() {
 fn happy_empty_server_bootstrap_get() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     assert_eq!("[]", res);
 }
 
@@ -283,11 +251,18 @@ fn happy_empty_server_bootstrap_get() {
 fn invalid_auth() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::get(&addr)
-        .set("Authorization", "Bearer bob")
+    let res = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .new_agent()
+        .get(&addr)
+        .header("Authorization", "Bearer bob")
         .call()
-        .unwrap_err();
-    assert!(format!("{res:?}").contains("Unauthorized"));
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
+    assert!(format!("{res:?}").contains("Unauthorized"), "Got: {res:?}");
 }
 
 #[test]
@@ -297,17 +272,19 @@ fn valid_auth() {
     let token = ureq::put(&addr)
         .send(&b"hello"[..])
         .unwrap()
-        .into_string()
+        .into_body()
+        .read_to_string()
         .unwrap();
 
     let token = String::from_utf8_lossy(&token.as_bytes()[14..57]);
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
-        .set("Authorization", &format!("Bearer {token}"))
+        .header("Authorization", &format!("Bearer {token}"))
         .call()
         .unwrap()
-        .into_string()
+        .into_body()
+        .read_to_string()
         .unwrap();
 
     assert_eq!("[]", res);
@@ -326,7 +303,12 @@ fn tombstone_will_not_put() {
     .unwrap();
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     assert_eq!("[]", res);
 }
 
@@ -352,7 +334,12 @@ fn tombstone_old_is_ignored() {
     .unwrap();
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
     assert_eq!(1, res.len());
 }
@@ -409,7 +396,12 @@ fn tombstone_deletes_correct_agent() {
     // -- get the result -- //
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     let mut res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
 
     assert_eq!(1, res.len());
@@ -423,10 +415,8 @@ fn reject_get_no_space() {
 
     let addr = format!("http://{:?}/bootstrap", s.listen_addrs()[0]);
     match ureq::get(&addr).call() {
-        Err(ureq::Error::Status(status, err)) => {
-            let err = err.into_string().unwrap();
-
-            println!("status: {status}, response: {err:?}");
+        Err(ureq::Error::StatusCode(status)) => {
+            println!("status: {status}");
 
             //assert!(err.to_string().contains("InvalidPathSegment"));
         }
@@ -439,11 +429,9 @@ fn reject_put_no_space() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let addr = format!("http://{:?}/bootstrap", s.listen_addrs()[0]);
-    match ureq::put(&addr).call() {
-        Err(ureq::Error::Status(status, err)) => {
-            let err = err.into_string().unwrap();
-
-            println!("status: {status}, response: {err:?}");
+    match ureq::put(&addr).send_empty() {
+        Err(ureq::Error::StatusCode(status)) => {
+            println!("status: {status}");
 
             //assert!(err.to_string().contains("InvalidPathSegment"));
         }
@@ -456,11 +444,9 @@ fn reject_put_no_agent() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    match ureq::put(&addr).call() {
-        Err(ureq::Error::Status(status, err)) => {
-            let err = err.into_string().unwrap();
-
-            println!("status: {status}, response: {err:?}");
+    match ureq::put(&addr).send_empty() {
+        Err(ureq::Error::StatusCode(status)) => {
+            println!("status: {status}");
 
             //assert!(err.to_string().contains("InvalidPathSegment"));
         }
@@ -495,18 +481,14 @@ fn reject_mismatch_space_url() {
     .call()
     .unwrap_err();
 
-    assert!(err.to_string().contains("InvalidSpace"));
+    assert!(err.to_string().contains("InvalidSpace"), "Got: {err:?}");
 }
 
 #[test]
 fn reject_msg_too_long() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
-    let mut long = String::new();
-
-    for _ in 0..1024 {
-        long.push('s');
-    }
+    let long = String::from_utf8(vec![b's'; 1024]).unwrap();
 
     let err = PutInfo {
         addr: s.listen_addrs()[0],
@@ -518,8 +500,7 @@ fn reject_msg_too_long() {
 
     assert!(
         err.to_string().contains("length limit exceeded"),
-        "{}",
-        err.to_string()
+        "Got: {err:?}",
     );
 }
 
@@ -687,7 +668,12 @@ fn default_storage_rollover() {
     let addr = s.listen_addrs()[0];
     let get = move || {
         let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
-        let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+        let res = ureq::get(&addr)
+            .call()
+            .unwrap()
+            .into_body()
+            .read_to_string()
+            .unwrap();
         let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
         res.into_iter().map(|m| m.test_prop).collect::<Vec<_>>()
     };
@@ -755,8 +741,12 @@ fn multi_thread_stress() {
         all_r.push(std::thread::spawn(move || {
             while !w_done.load(std::sync::atomic::Ordering::SeqCst) {
                 let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
-                let res =
-                    ureq::get(&addr).call().unwrap().into_string().unwrap();
+                let res = ureq::get(&addr)
+                    .call()
+                    .unwrap()
+                    .into_body()
+                    .read_to_string()
+                    .unwrap();
                 let _: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
             }
         }));
@@ -805,7 +795,12 @@ fn multi_thread_stress() {
     }
 
     let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
     let res = res.into_iter().map(|m| m.test_prop).collect::<Vec<_>>();
 
@@ -878,7 +873,12 @@ fn expiration_prune() {
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    let res = ureq::get(&addr).call().unwrap().into_string().unwrap();
+    let res = ureq::get(&addr)
+        .call()
+        .unwrap()
+        .into_body()
+        .read_to_string()
+        .unwrap();
     let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
 
     assert_eq!(1, res.len());
@@ -951,7 +951,8 @@ fn use_bootstrap_and_sbd() {
     let res = ureq::get(&bootstrap_url)
         .call()
         .unwrap()
-        .into_string()
+        .into_body()
+        .read_to_string()
         .unwrap();
     let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
     assert_eq!(1, res.len());
