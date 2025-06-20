@@ -46,8 +46,13 @@ pub fn spawn_initiate_task(
 
             if local_agents.is_empty() {
                 tracing::warn!("No local agents available, skipping initiation");
-                // Wait a short amount of time before retrying to avoid busy looping
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                // Wait a short amount of time before retrying to avoid busy looping.
+                //
+                // This should be a short wait because it's expected to be a temporary state. The
+                // space should not be running if there are no local agents. Either the space has
+                // just been created and local agents haven't joined yet, or all local agents have
+                // left and the space is about to be shut down.
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             }
 
