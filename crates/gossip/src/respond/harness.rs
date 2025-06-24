@@ -109,10 +109,10 @@ impl RespondTestHarness {
         }
     }
 
-    pub(crate) async fn remote_agent(
+    pub(crate) async fn create_agent(
         &self,
         tgt_storage_arc: DhtArc,
-    ) -> TestRemoteAgent {
+    ) -> TestAgent {
         let local_agent = Ed25519LocalAgent::default();
         local_agent.set_tgt_storage_arc_hint(tgt_storage_arc);
 
@@ -126,7 +126,7 @@ impl RespondTestHarness {
         ));
 
         let local: DynLocalAgent = Arc::new(local_agent);
-        TestRemoteAgent {
+        TestAgent {
             local: local.clone(),
             agent_info: builder.build(local),
         }
@@ -146,12 +146,12 @@ impl RespondTestHarness {
 }
 
 #[derive(Debug)]
-pub struct TestRemoteAgent {
+pub struct TestAgent {
     pub local: DynLocalAgent,
     pub agent_info: Arc<AgentInfoSigned>,
 }
 
-impl Deref for TestRemoteAgent {
+impl Deref for TestAgent {
     type Target = Arc<AgentInfoSigned>;
 
     fn deref(&self) -> &Self::Target {

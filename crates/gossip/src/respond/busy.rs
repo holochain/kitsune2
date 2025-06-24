@@ -67,3 +67,189 @@ impl GossipRoundState {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::error::K2GossipError;
+    use crate::protocol::K2GossipBusyMessage;
+    use crate::respond::harness::{test_session_id, RespondTestHarness};
+    use crate::state::GossipRoundState;
+    use kitsune2_api::DhtArc;
+    use kitsune2_dht::ArcSet;
+    use kitsune2_test_utils::enable_tracing;
+
+    #[tokio::test]
+    async fn remove_session_on_busy() {
+        enable_tracing();
+
+        let harness = RespondTestHarness::create().await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let session_id = {
+            let mut round_state =
+                harness.gossip.initiated_round_state.lock().await;
+            assert!(round_state.is_none());
+            let state = GossipRoundState::new(
+                remote_agent.url.clone().unwrap(),
+                vec![local_agent.agent.clone()],
+                ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+            );
+            let session_id = state.session_id.clone();
+            *round_state = Some(state);
+            session_id
+        };
+
+        let response = harness
+            .gossip
+            .respond_to_busy(
+                remote_agent.url.clone().unwrap(),
+                K2GossipBusyMessage { session_id },
+            )
+            .await;
+
+        assert!(response.is_ok());
+
+        let busy = harness
+            .gossip
+            .peer_meta_store
+            .peer_busy(remote_agent.url.clone().unwrap())
+            .await
+            .unwrap();
+        assert!(busy.is_some());
+        assert_eq!(busy.unwrap(), 1);
+
+        assert!(
+            harness.gossip.initiated_round_state.lock().await.is_none(),
+            "Expected initiated round state to be removed after busy response"
+        );
+    }
+
+    #[tokio::test]
+    async fn busy_from_wrong_peer() {
+        enable_tracing();
+
+        let harness = RespondTestHarness::create().await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let session_id = {
+            let mut round_state =
+                harness.gossip.initiated_round_state.lock().await;
+            assert!(round_state.is_none());
+            let state = GossipRoundState::new(
+                remote_agent.url.clone().unwrap(),
+                vec![local_agent.agent.clone()],
+                ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+            );
+            let session_id = state.session_id.clone();
+            *round_state = Some(state);
+            session_id
+        };
+
+        let response = harness
+            .gossip
+            .respond_to_busy(
+                harness
+                    .create_agent(DhtArc::Empty)
+                    .await
+                    .url
+                    .clone()
+                    .unwrap(),
+                K2GossipBusyMessage { session_id },
+            )
+            .await;
+
+        let error = response.unwrap_err();
+        assert!(
+            error.to_string().contains("Busy message from wrong peer"),
+            "Expected error for busy message from wrong peer, got: {}",
+            error
+        );
+
+        let busy = harness
+            .gossip
+            .peer_meta_store
+            .peer_busy(remote_agent.url.clone().unwrap())
+            .await
+            .unwrap();
+        assert!(busy.is_none());
+    }
+
+    #[tokio::test]
+    async fn busy_with_wrong_session_id() {
+        enable_tracing();
+
+        let harness = RespondTestHarness::create().await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        {
+            let mut round_state =
+                harness.gossip.initiated_round_state.lock().await;
+            assert!(round_state.is_none());
+            let state = GossipRoundState::new(
+                remote_agent.url.clone().unwrap(),
+                vec![local_agent.agent.clone()],
+                ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+            );
+            *round_state = Some(state);
+        }
+
+        let response = harness
+            .gossip
+            .respond_to_busy(
+                remote_agent.url.clone().unwrap(),
+                K2GossipBusyMessage {
+                    session_id: test_session_id(),
+                },
+            )
+            .await;
+
+        let error = response.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(" Busy message with wrong session id"),
+            "Expected error for busy message with wrong session id, got: {}",
+            error
+        );
+
+        let busy = harness
+            .gossip
+            .peer_meta_store
+            .peer_busy(remote_agent.url.clone().unwrap())
+            .await
+            .unwrap();
+        assert!(busy.is_none());
+    }
+
+    #[tokio::test]
+    async fn busy_with_no_initiated_session() {
+        enable_tracing();
+
+        let harness = RespondTestHarness::create().await;
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let response = harness
+            .gossip
+            .respond_to_busy(
+                remote_agent.url.clone().unwrap(),
+                K2GossipBusyMessage {
+                    session_id: test_session_id(),
+                },
+            )
+            .await;
+
+        let error = response.unwrap_err();
+        assert!(
+            matches!(error, K2GossipError::PeerBehaviorError { .. }),
+            "Expected PeerBehaviorError for unsolicited Busy message, got: {}",
+            error
+        );
+    }
+}

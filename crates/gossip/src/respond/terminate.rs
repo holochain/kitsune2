@@ -93,7 +93,7 @@ mod tests {
 
         let harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         let response = harness
             .gossip
@@ -120,7 +120,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Initiate a session with the remote agent
         let initiated = harness
@@ -180,7 +180,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Initiate a session with the remote agent
         let initiated = harness
@@ -198,7 +198,7 @@ mod tests {
         };
 
         // Now simulate receiving a terminate message from some other peer
-        let other_agent = harness.remote_agent(DhtArc::Empty).await;
+        let other_agent = harness.create_agent(DhtArc::Empty).await;
         let response = harness
             .gossip
             .respond_to_terminate(
@@ -232,7 +232,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Initiate a session with the remote agent
         let initiated = harness
@@ -286,7 +286,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Simulate receiving an initiate message from the remote agent
         harness
@@ -374,7 +374,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Simulate receiving an initiate message from the remote agent
         harness

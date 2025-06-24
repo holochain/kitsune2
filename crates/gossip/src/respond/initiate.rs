@@ -219,7 +219,7 @@ mod tests {
             .unwrap();
 
         // Provide a remote agent who we don't need to know anything about.
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         let response = harness
             .gossip
@@ -476,7 +476,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Initiate a session with the remote agent
         let initiated = harness
@@ -536,7 +536,7 @@ mod tests {
 
         let mut harness = RespondTestHarness::create().await;
 
-        let remote_agent = harness.remote_agent(DhtArc::Empty).await;
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
 
         // Initiate a session with the remote agent
         let initiated = harness
