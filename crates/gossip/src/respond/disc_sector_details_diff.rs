@@ -185,3 +185,168 @@ impl GossipRoundState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::protocol::{
+        DiscSliceHashes, GossipMessage, K2GossipDiscSectorDetailsDiffMessage,
+        SnapshotDiscSectorDetailsMessage,
+    };
+    use crate::respond::harness::RespondTestHarness;
+    use crate::state::{RoundStage, RoundStageDiscSectorsDiff};
+    use crate::K2GossipConfig;
+    use bytes::Bytes;
+    use kitsune2_api::{decode_ids, DhtArc, Gossip, OpId, Timestamp};
+    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
+    use kitsune2_test_utils::enable_tracing;
+
+    #[tokio::test]
+    async fn respect_size_limit() {
+        enable_tracing();
+
+        let max_ops_per_round = 3usize;
+        let available_ops = 5;
+        let op_size = 128usize;
+
+        let harness = RespondTestHarness::create_with_config(K2GossipConfig {
+            max_gossip_op_bytes: (max_ops_per_round * op_size) as u32,
+            ..Default::default()
+        })
+        .await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent.local.clone())
+            .await
+            .unwrap();
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let session_id = harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
+        {
+            let mut round_state =
+                harness.gossip.initiated_round_state.lock().await;
+            round_state.as_mut().unwrap().stage =
+                RoundStage::DiscSectorsDiff(RoundStageDiscSectorsDiff {
+                    common_arc_set: ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+                });
+            round_state.as_mut().unwrap().peer_max_op_data_bytes =
+                harness.gossip.config.max_gossip_op_bytes as i32;
+        }
+
+        let mut ops = Vec::new();
+        for i in 0u8..available_ops {
+            let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
+            op_data.resize(128, 0);
+
+            let op =
+                MemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
+            ops.push(op);
+        }
+
+        harness
+            .gossip
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness
+            .gossip
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let disc_boundary = match harness
+            .gossip
+            .dht
+            .read()
+            .await
+            .snapshot_minimal(ArcSet::new(vec![DhtArc::FULL]).unwrap())
+            .await
+            .unwrap()
+        {
+            DhtSnapshot::Minimal { disc_boundary, .. } => disc_boundary,
+            _ => panic!("Expected a minimal snapshot"),
+        };
+        let diff_details = harness
+            .gossip
+            .respond_to_disc_sector_details_diff(
+                remote_agent.url.clone().unwrap(),
+                K2GossipDiscSectorDetailsDiffMessage {
+                    session_id,
+                    provided_agents: vec![],
+                    snapshot: Some(SnapshotDiscSectorDetailsMessage {
+                        disc_boundary: disc_boundary.as_micros(),
+                        sector_indices: vec![0, 1, 2, 3, 4],
+                        disc_slice_hashes: vec![
+                            DiscSliceHashes {
+                                slice_indices: vec![0],
+                                hashes: vec![Bytes::from_static(b"hash1")],
+                            },
+                            DiscSliceHashes {
+                                slice_indices: vec![0],
+                                hashes: vec![Bytes::from_static(b"hash2")],
+                            },
+                            DiscSliceHashes {
+                                slice_indices: vec![0],
+                                hashes: vec![Bytes::from_static(b"hash3")],
+                            },
+                            DiscSliceHashes {
+                                slice_indices: vec![0],
+                                hashes: vec![Bytes::from_static(b"hash4")],
+                            },
+                            DiscSliceHashes {
+                                slice_indices: vec![0],
+                                hashes: vec![Bytes::from_static(b"hash5")],
+                            },
+                        ],
+                    }),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            diff_details.is_some(),
+            "Should have responded to the diff message"
+        );
+        let diff_details = diff_details.unwrap();
+        let diff_details = match diff_details {
+            GossipMessage::DiscSectorDetailsDiffResponse(diff_details) => {
+                diff_details
+            }
+            _ => panic!(
+                "Expected a DiscSectorDetailsDiffResponse message, got: {:?}",
+                diff_details
+            ),
+        };
+        let sent_ops = decode_ids::<OpId>(diff_details.missing_ids);
+        assert_eq!(
+            max_ops_per_round,
+            sent_ops.len(),
+            "Should have sent only 3 ops due to size limit"
+        );
+
+        let remaining_budget = harness
+            .gossip
+            .initiated_round_state
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .peer_max_op_data_bytes;
+        assert_eq!(
+            0, remaining_budget,
+            "Should have used up the entire budget for the response"
+        );
+    }
+}

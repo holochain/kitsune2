@@ -309,3 +309,148 @@ impl GossipRoundState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
+    use crate::protocol::{
+        encode_agent_ids, ArcSetMessage, GossipMessage, K2GossipAcceptMessage,
+    };
+    use crate::respond::harness::RespondTestHarness;
+    use crate::K2GossipConfig;
+    use bytes::Bytes;
+    use kitsune2_api::{
+        decode_ids, DhtArc, Gossip, LocalAgent, OpId, Timestamp, UNIX_TIMESTAMP,
+    };
+    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_dht::{ArcSet, DhtSnapshot};
+    use kitsune2_test_utils::enable_tracing;
+
+    #[tokio::test]
+    async fn respect_size_limit_for_new_ops() {
+        enable_tracing();
+
+        let max_ops_per_round = 3usize;
+        let available_ops = 5;
+        let op_size = 128usize;
+
+        let harness = RespondTestHarness::create_with_config(K2GossipConfig {
+            max_gossip_op_bytes: (max_ops_per_round * op_size) as u32,
+            ..Default::default()
+        })
+        .await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent.local.clone())
+            .await
+            .unwrap();
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let session_id = harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
+
+        let mut ops = Vec::new();
+        for i in 0u8..available_ops {
+            let op = MemoryOp::new(Timestamp::now(), vec![i; op_size]);
+            ops.push(op);
+        }
+
+        harness
+            .gossip
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness
+            .gossip
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let disc_boundary = match harness
+            .gossip
+            .dht
+            .read()
+            .await
+            .snapshot_minimal(ArcSet::new(vec![DhtArc::FULL]).unwrap())
+            .await
+            .unwrap()
+        {
+            DhtSnapshot::Minimal { disc_boundary, .. } => disc_boundary,
+            _ => panic!("Expected a minimal snapshot"),
+        };
+        let no_diff = harness
+            .gossip
+            .respond_to_accept(
+                remote_agent.url.clone().unwrap(),
+                K2GossipAcceptMessage {
+                    session_id,
+                    participating_agents: encode_agent_ids([remote_agent
+                        .agent
+                        .clone()]),
+                    arc_set: Some(ArcSetMessage {
+                        value: ArcSet::new(vec![
+                            local_agent.local.get_tgt_storage_arc(),
+                            remote_agent.local.get_tgt_storage_arc(),
+                        ])
+                        .unwrap()
+                        .encode(),
+                    }),
+                    missing_agents: vec![],
+                    new_since: UNIX_TIMESTAMP.as_micros(),
+                    max_op_data_bytes: harness
+                        .gossip
+                        .config
+                        .max_gossip_op_bytes,
+                    new_ops: vec![],
+                    updated_new_since: Timestamp::now().as_micros(),
+                    snapshot: Some(SnapshotMinimalMessage {
+                        disc_boundary: disc_boundary.as_micros(),
+                        disc_top_hash: Bytes::new(),
+                        ring_top_hashes: vec![],
+                    }),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            no_diff.is_some(),
+            "Should have responded to the accept message"
+        );
+        let no_diff = no_diff.unwrap();
+        let no_diff = match no_diff {
+            GossipMessage::NoDiff(accept) => accept,
+            _ => panic!("Expected a NoDiff message, got: {:?}", no_diff),
+        };
+        let sent_ops =
+            decode_ids::<OpId>(no_diff.accept_response.unwrap().new_ops);
+        assert_eq!(
+            max_ops_per_round,
+            sent_ops.len(),
+            "Should have sent only 3 ops due to size limit"
+        );
+
+        let remaining_budget = harness
+            .gossip
+            .initiated_round_state
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .peer_max_op_data_bytes;
+        assert_eq!(
+            0, remaining_budget,
+            "Should have used up the entire budget for new ops"
+        );
+    }
+}

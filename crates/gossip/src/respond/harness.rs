@@ -14,7 +14,7 @@ use kitsune2_test_utils::space::TEST_SPACE_ID;
 use rand::RngCore;
 use std::ops::Deref;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 pub(crate) struct RespondTestHarness {
     pub(crate) gossip: K2Gossip,
@@ -147,6 +147,26 @@ impl RespondTestHarness {
         );
         let session_id = state.session_id.clone();
         *round_state = Some(state);
+        session_id
+    }
+
+    pub(crate) async fn insert_accepted_round_state(
+        &self,
+        local_agent: &TestAgent,
+        with_remote_agent: &TestAgent,
+    ) -> Bytes {
+        let mut accepted = self.gossip.accepted_round_states.write().await;
+        assert!(!accepted.contains_key(with_remote_agent.url.as_ref().unwrap()));
+        let state = GossipRoundState::new(
+            with_remote_agent.url.clone().unwrap(),
+            vec![local_agent.agent.clone()],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        );
+        let session_id = state.session_id.clone();
+        accepted.insert(
+            with_remote_agent.url.clone().unwrap(),
+            Arc::new(Mutex::new(state)),
+        );
         session_id
     }
 

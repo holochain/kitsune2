@@ -180,10 +180,15 @@ mod tests {
     use crate::respond::harness::{test_session_id, RespondTestHarness};
     use crate::state::{GossipRoundState, RoundStage};
     use crate::K2GossipConfig;
-    use kitsune2_api::{DhtArc, LocalAgent, Timestamp, Url};
+    use kitsune2_api::{
+        decode_ids, DhtArc, Gossip, LocalAgent, OpId, Timestamp, Url,
+        UNIX_TIMESTAMP,
+    };
+    use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::Ed25519LocalAgent;
     use kitsune2_dht::{ArcSet, SECTOR_SIZE};
     use kitsune2_test_utils::enable_tracing;
+    use rand::RngCore;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -586,5 +591,112 @@ mod tests {
                 harness.gossip.initiated_round_state.lock().await;
             assert!(initiated_lock.is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn respect_size_limit_for_new_ops() {
+        enable_tracing();
+
+        let max_ops_per_round = 3usize;
+        let available_ops = 5;
+        let op_size = 128usize;
+
+        let harness = RespondTestHarness::create_with_config(K2GossipConfig {
+            max_gossip_op_bytes: (max_ops_per_round * op_size) as u32,
+            ..Default::default()
+        })
+        .await;
+
+        let mut ops = Vec::new();
+        for i in 0u8..available_ops {
+            let op = MemoryOp::new(Timestamp::now(), vec![i; op_size]);
+            ops.push(op);
+        }
+
+        harness
+            .gossip
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness
+            .gossip
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent.local.clone())
+            .await
+            .unwrap();
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let accept = harness
+            .gossip
+            .respond_to_initiate(
+                remote_agent.url.clone().unwrap(),
+                K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: encode_agent_ids([remote_agent
+                        .agent
+                        .clone()]),
+                    arc_set: Some(ArcSetMessage {
+                        value: ArcSet::new(vec![remote_agent
+                            .local
+                            .get_tgt_storage_arc()])
+                        .unwrap()
+                        .encode(),
+                    }),
+                    tie_breaker: rand::thread_rng()
+                        .next_u32()
+                        .saturating_add(1),
+                    new_since: UNIX_TIMESTAMP.as_micros(),
+                    max_op_data_bytes: harness
+                        .gossip
+                        .config
+                        .max_gossip_op_bytes,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            accept.is_some(),
+            "Should have accepted the initiate message"
+        );
+        let accept = accept.unwrap();
+        let accept = match accept {
+            GossipMessage::Accept(accept) => accept,
+            _ => panic!("Expected an Accept message, got: {:?}", accept),
+        };
+        let sent_ops = decode_ids::<OpId>(accept.new_ops);
+        assert_eq!(
+            max_ops_per_round,
+            sent_ops.len(),
+            "Should have sent only 3 ops due to size limit"
+        );
+
+        let remaining_budget = harness
+            .gossip
+            .accepted_round_states
+            .read()
+            .await
+            .get(remote_agent.url.as_ref().unwrap())
+            .unwrap()
+            .lock()
+            .await
+            .peer_max_op_data_bytes;
+        assert_eq!(
+            0, remaining_budget,
+            "Should have used up the entire budget for new ops"
+        );
     }
 }

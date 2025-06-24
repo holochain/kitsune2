@@ -180,3 +180,161 @@ impl GossipRoundState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::protocol::{
+        GossipMessage, K2GossipRingSectorDetailsDiffResponseMessage,
+        RingSectorHashes, SnapshotRingSectorDetailsMessage,
+    };
+    use crate::respond::harness::RespondTestHarness;
+    use crate::state::{RoundStage, RoundStageRingSectorDetailsDiff};
+    use crate::K2GossipConfig;
+    use bytes::Bytes;
+    use kitsune2_api::{decode_ids, DhtArc, Gossip, OpId};
+    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
+    use kitsune2_test_utils::enable_tracing;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn respect_size_limit() {
+        enable_tracing();
+
+        let max_ops_per_round = 3usize;
+        let available_ops = 5;
+        let op_size = 128usize;
+
+        let harness = RespondTestHarness::create_with_config(K2GossipConfig {
+            max_gossip_op_bytes: (max_ops_per_round * op_size) as u32,
+            ..Default::default()
+        })
+        .await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent.local.clone())
+            .await
+            .unwrap();
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+
+        let disc_boundary = match harness
+            .gossip
+            .dht
+            .read()
+            .await
+            .snapshot_minimal(ArcSet::new(vec![DhtArc::FULL]).unwrap())
+            .await
+            .unwrap()
+        {
+            DhtSnapshot::Minimal { disc_boundary, .. } => disc_boundary,
+            _ => panic!("Expected a minimal snapshot"),
+        };
+
+        let session_id = harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
+        {
+            let mut initiated =
+                harness.gossip.initiated_round_state.lock().await;
+            let mut ring_sector_hashes = HashMap::new();
+            let mut sector_hashes = HashMap::new();
+            sector_hashes.insert(0, Bytes::from_static(b"other-hash1"));
+            sector_hashes.insert(1, Bytes::from_static(b"other-hash2"));
+            sector_hashes.insert(2, Bytes::from_static(b"other-hash3"));
+            sector_hashes.insert(3, Bytes::from_static(b"other-hash4"));
+            sector_hashes.insert(4, Bytes::from_static(b"other-hash5"));
+            ring_sector_hashes.insert(0, sector_hashes);
+            initiated.as_mut().unwrap().stage =
+                RoundStage::RingSectorDetailsDiff(
+                    RoundStageRingSectorDetailsDiff {
+                        common_arc_set: ArcSet::new(vec![DhtArc::FULL])
+                            .unwrap(),
+                        snapshot: DhtSnapshot::RingSectorDetails {
+                            disc_boundary,
+                            ring_sector_hashes,
+                        },
+                    },
+                );
+            initiated.as_mut().unwrap().peer_max_op_data_bytes =
+                harness.gossip.config.max_gossip_op_bytes as i32;
+        }
+
+        let mut ops = Vec::new();
+        for i in 0u8..available_ops {
+            let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
+            op_data.resize(op_size, 0);
+
+            let op = MemoryOp::new(
+                // Ops created just after the disc boundary so that they'll be in the first ring
+                disc_boundary + std::time::Duration::from_secs(30 + i as u64),
+                op_data,
+            );
+            ops.push(op);
+        }
+
+        harness
+            .gossip
+            .op_store
+            .process_incoming_ops(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+        harness
+            .gossip
+            .inform_ops_stored(
+                ops.clone().into_iter().map(Into::into).collect(),
+            )
+            .await
+            .unwrap();
+
+        let hashes = harness
+            .gossip
+            .respond_to_ring_sector_details_diff_response(
+                remote_agent.url.clone().unwrap(),
+                K2GossipRingSectorDetailsDiffResponseMessage {
+                    session_id,
+                    missing_ids: vec![],
+                    snapshot: Some(SnapshotRingSectorDetailsMessage {
+                        disc_boundary: disc_boundary.as_micros(),
+                        ring_indices: vec![0],
+                        ring_sector_hashes: vec![RingSectorHashes {
+                            sector_indices: vec![0, 1, 2, 3, 4],
+                            hashes: vec![
+                                Bytes::from_static(b"hash1"),
+                                Bytes::from_static(b"hash2"),
+                                Bytes::from_static(b"hash3"),
+                                Bytes::from_static(b"hash4"),
+                                Bytes::from_static(b"hash5"),
+                            ],
+                        }],
+                    }),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            hashes.is_some(),
+            "Should have responded to the diff message"
+        );
+        let hashes = hashes.unwrap();
+        let hashes = match hashes {
+            GossipMessage::Hashes(diff_details) => diff_details,
+            _ => panic!("Expected a Hashes message, got: {:?}", hashes),
+        };
+        let sent_ops = decode_ids::<OpId>(hashes.missing_ids);
+        assert_eq!(
+            max_ops_per_round,
+            sent_ops.len(),
+            "Should have sent only 3 ops due to size limit"
+        );
+
+        // The gossip round is finished, so the initiated round state should be cleared
+        assert!(harness.gossip.initiated_round_state.lock().await.is_none());
+    }
+}

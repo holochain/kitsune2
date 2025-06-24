@@ -26,6 +26,8 @@ mod terminate;
 
 #[cfg(test)]
 mod harness;
+#[cfg(test)]
+mod tests;
 
 impl K2Gossip {
     pub(super) async fn respond_to_msg(
