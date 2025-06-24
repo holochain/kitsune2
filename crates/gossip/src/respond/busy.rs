@@ -73,9 +73,7 @@ mod tests {
     use crate::error::K2GossipError;
     use crate::protocol::K2GossipBusyMessage;
     use crate::respond::harness::{test_session_id, RespondTestHarness};
-    use crate::state::GossipRoundState;
     use kitsune2_api::DhtArc;
-    use kitsune2_dht::ArcSet;
     use kitsune2_test_utils::enable_tracing;
 
     #[tokio::test]
@@ -87,19 +85,9 @@ mod tests {
         let local_agent = harness.create_agent(DhtArc::FULL).await;
         let remote_agent = harness.create_agent(DhtArc::FULL).await;
 
-        let session_id = {
-            let mut round_state =
-                harness.gossip.initiated_round_state.lock().await;
-            assert!(round_state.is_none());
-            let state = GossipRoundState::new(
-                remote_agent.url.clone().unwrap(),
-                vec![local_agent.agent.clone()],
-                ArcSet::new(vec![DhtArc::FULL]).unwrap(),
-            );
-            let session_id = state.session_id.clone();
-            *round_state = Some(state);
-            session_id
-        };
+        let session_id = harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
 
         let response = harness
             .gossip
@@ -135,19 +123,9 @@ mod tests {
         let local_agent = harness.create_agent(DhtArc::FULL).await;
         let remote_agent = harness.create_agent(DhtArc::FULL).await;
 
-        let session_id = {
-            let mut round_state =
-                harness.gossip.initiated_round_state.lock().await;
-            assert!(round_state.is_none());
-            let state = GossipRoundState::new(
-                remote_agent.url.clone().unwrap(),
-                vec![local_agent.agent.clone()],
-                ArcSet::new(vec![DhtArc::FULL]).unwrap(),
-            );
-            let session_id = state.session_id.clone();
-            *round_state = Some(state);
-            session_id
-        };
+        let session_id = harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
 
         let response = harness
             .gossip
@@ -179,7 +157,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn busy_with_wrong_session_id() {
+    async fn busy_with_mismatched_session_id() {
         enable_tracing();
 
         let harness = RespondTestHarness::create().await;
@@ -187,17 +165,9 @@ mod tests {
         let local_agent = harness.create_agent(DhtArc::FULL).await;
         let remote_agent = harness.create_agent(DhtArc::FULL).await;
 
-        {
-            let mut round_state =
-                harness.gossip.initiated_round_state.lock().await;
-            assert!(round_state.is_none());
-            let state = GossipRoundState::new(
-                remote_agent.url.clone().unwrap(),
-                vec![local_agent.agent.clone()],
-                ArcSet::new(vec![DhtArc::FULL]).unwrap(),
-            );
-            *round_state = Some(state);
-        }
+        harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
 
         let response = harness
             .gossip

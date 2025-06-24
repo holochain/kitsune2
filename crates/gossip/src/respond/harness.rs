@@ -2,12 +2,13 @@ use crate::burst::AcceptBurstTracker;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{deserialize_gossip_message, GossipMessage};
+use crate::state::GossipRoundState;
 use crate::{K2GossipConfig, MOD_NAME};
 use base64::Engine;
 use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
-use kitsune2_dht::Dht;
+use kitsune2_dht::{ArcSet, Dht};
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use rand::RngCore;
@@ -130,6 +131,23 @@ impl RespondTestHarness {
             local: local.clone(),
             agent_info: builder.build(local),
         }
+    }
+
+    pub(crate) async fn insert_initiated_round_state(
+        &self,
+        local_agent: &TestAgent,
+        with_remote_agent: &TestAgent,
+    ) -> Bytes {
+        let mut round_state = self.gossip.initiated_round_state.lock().await;
+        assert!(round_state.is_none());
+        let state = GossipRoundState::new(
+            with_remote_agent.url.clone().unwrap(),
+            vec![local_agent.agent.clone()],
+            ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+        );
+        let session_id = state.session_id.clone();
+        *round_state = Some(state);
+        session_id
     }
 
     pub(crate) async fn wait_for_sent_response(&mut self) -> GossipMessage {
