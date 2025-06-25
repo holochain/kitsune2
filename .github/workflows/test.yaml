@@ -132,6 +132,10 @@ jobs:
       - name: Build
         run: docker buildx build -f docker/kitsune2_test_auth_hook_server/Dockerfile .
 
+  changelog-preview-comment:
+      name: Add comment of changelog preview
+      uses: holochain/actions/.github/workflows/changelog-preview-comment.yml@v1.2.0
+
   ci_pass:
     if: ${{ always() }}
     runs-on: "ubuntu-latest"
