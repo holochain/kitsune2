@@ -77,11 +77,21 @@ pub struct Args {
     pub sbd_limit_clients: Option<i32>,
 
     /// If set, rate-limiting will be disabled on the server,
-    /// and clients will be informed they have an 8gbps rate limit.
+    /// and clients will be informed they have an 8 gbps rate limit.
     ///
     /// Note that this is an SBD option, but when SBD is enabled, this applies to all connections.
     #[arg(long)]
     pub sbd_disable_rate_limiting: bool,
+
+    /// Rate limit connections to this number of kilobits per second.
+    ///
+    /// If not set, the default is decided by the SBD code.
+    pub sbd_limit_ip_kbps: Option<i32>,
+
+    /// Allow IPs to burst by this byte count.
+    ///
+    /// If not set, the default is decided by the SBD code.
+    pub sbd_limit_ip_byte_burst: Option<i32>,
 
     /// The authentication "Hook Server" as defined by
     /// <https://github.com/holochain/sbd/blob/main/spec-auth.md>
@@ -149,6 +159,12 @@ fn main() {
     }
     if args.sbd_disable_rate_limiting {
         config.sbd.disable_rate_limiting = true;
+    }
+    if let Some(kbps) = args.sbd_limit_ip_kbps {
+        config.sbd.limit_ip_kbps = kbps;
+    }
+    if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
+        config.sbd.limit_ip_byte_burst = byte_burst;
     }
     config.sbd.authentication_hook_server = args.authentication_hook_server;
 
