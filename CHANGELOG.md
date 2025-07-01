@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2025-07-01
+
+### Added
+
+- Add job to generate changelog preview as a comment on PRs by @cdunster in [#254](https://github.com/holochain/kitsune2/pull/254)
+
+### Changed
+
+- Add rate limiting flags to the bootstrap server for configuring SBD by @ThetaSinner in [#257](https://github.com/holochain/kitsune2/pull/257)
+- Reduce the wait time when no local agents are available because it should be a temporary state by @ThetaSinner in [#253](https://github.com/holochain/kitsune2/pull/253)
+
+### Fixed
+
+- Replace flaky functional tests for gossip data limits with more reliable unit tests by @ThetaSinner in [#255](https://github.com/holochain/kitsune2/pull/255)
+- Tests for agents message response handler by @ThetaSinner
+- Tests for handling peer busy messages by @ThetaSinner
+- Clear a warning about unused configuration in gossip functional tests by @ThetaSinner
+
 ## [0.2.9] - 2025-06-20
 
 ### Added
