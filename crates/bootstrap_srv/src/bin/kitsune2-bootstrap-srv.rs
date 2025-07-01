@@ -86,11 +86,13 @@ pub struct Args {
     /// Rate limit connections to this number of kilobits per second.
     ///
     /// If not set, the default is decided by the SBD code.
+    #[arg(long)]
     pub sbd_limit_ip_kbps: Option<i32>,
 
     /// Allow IPs to burst by this byte count.
     ///
     /// If not set, the default is decided by the SBD code.
+    #[arg(long)]
     pub sbd_limit_ip_byte_burst: Option<i32>,
 
     /// The authentication "Hook Server" as defined by
