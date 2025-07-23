@@ -87,6 +87,16 @@ pub mod config {
         /// The maximum ephemeral udp port to bind.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub ephemeral_udp_port_max: Option<u16>,
+
+        /// Forces the network transport to use a relayed connection instead of WebRTC.
+        ///
+        /// This is only intended for testing and is expected to degrade the performance of the
+        /// network transport. It is useful for the developers of a Kitsune2 host application to be
+        /// able to verify that their application runs correctly without direct connections. It is
+        /// never desirable in production to force the use of a rate-limited, relayed connection
+        /// where a direct WebRTC connection is possible.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub danger_force_signal_relay: bool,
     }
 
     impl Default for Tx5TransportConfig {
@@ -102,6 +112,7 @@ pub mod config {
                 tracing_enabled: false,
                 ephemeral_udp_port_min: None,
                 ephemeral_udp_port_max: None,
+                danger_force_signal_relay: false,
             }
         }
     }
@@ -264,6 +275,7 @@ impl Tx5Transport {
                 tx5::backend::BackendModule::LibDataChannel.default_config(),
             ),
             initial_webrtc_config: config.webrtc_config,
+            danger_force_signal_relay: config.danger_force_signal_relay,
             ..Default::default()
         });
 
