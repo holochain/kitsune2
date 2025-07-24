@@ -16,7 +16,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.11"
+version = "0.3.0-dev.1"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
 homepage = "https://www.holochain.org/"
 repository = "https://github.com/holochain/kitsune2"
@@ -34,12 +34,12 @@ panic = "abort"
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.
-kitsune2 = { version = "0.2.9", path = "crates/kitsune2" }
-kitsune2_api = { version = "0.2.9", path = "crates/api" }
-kitsune2_dht = { version = "0.2.9", path = "crates/dht" }
-kitsune2_gossip = { version = "0.2.9", path = "crates/gossip" }
-kitsune2_transport_tx5 = { version = "0.2.9", path = "crates/transport_tx5" }
-kitsune2_bootstrap_client = { version = "0.2.9", path = "crates/bootstrap_client" }
+kitsune2 = { version = "0.3.0-dev.1", path = "crates/kitsune2" }
+kitsune2_api = { version = "0.3.0-dev.1", path = "crates/api" }
+kitsune2_dht = { version = "0.3.0-dev.1", path = "crates/dht" }
+kitsune2_gossip = { version = "0.3.0-dev.1", path = "crates/gossip" }
+kitsune2_transport_tx5 = { version = "0.3.0-dev.1", path = "crates/transport_tx5" }
+kitsune2_bootstrap_client = { version = "0.3.0-dev.1", path = "crates/bootstrap_client" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"
@@ -124,9 +124,9 @@ prost-build = "0.14"
 # Please be careful to only include them in dev dependencies or move them
 # above this section.
 # --- dev-dependencies ---
-kitsune2_bootstrap_srv = { version = "0.2.9", path = "crates/bootstrap_srv" }
-kitsune2_core = { version = "0.2.9", path = "crates/core" }
-kitsune2_test_utils = { version = "0.2.9", path = "crates/test_utils" }
+kitsune2_bootstrap_srv = { version = "0.3.0-dev.1", path = "crates/bootstrap_srv" }
+kitsune2_core = { version = "0.3.0-dev.1", path = "crates/core" }
+kitsune2_test_utils = { version = "0.3.0-dev.1", path = "crates/test_utils" }
 
 # used to test the bootstrap server with SBD enabled
 sbd-client = "0.3.2"

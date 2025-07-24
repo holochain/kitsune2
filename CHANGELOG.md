@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-dev.1] - 2025-07-24
+
+### Changed
+
+- Expose new module configuration for the tx5 transport `danger_force_signal_relay` by @ThetaSinner in [#270](https://github.com/holochain/kitsune2/pull/270)
+- Update tx5 to 0.5.0 by @ThetaSinner
+
 ## [0.2.11] - 2025-07-02
 
 ### Changed
