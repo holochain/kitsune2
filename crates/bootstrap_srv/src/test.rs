@@ -10,7 +10,7 @@ const K2: &str = "v9I5GT3xVKPcaa4uyd2pcuJromf5zv1-OaahYOLBAWY";
 #[derive(Debug)]
 #[allow(dead_code)]
 struct DecodeAgent {
-    space: String,
+    space_id: String,
     agent: String,
     created_at: i64,
     expires_at: i64,
@@ -37,7 +37,7 @@ impl<'de> serde::Deserialize<'de> for DecodeAgent {
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Inn {
-            space: String,
+            space_id: String,
             agent: String,
             created_at: String,
             expires_at: String,
@@ -48,7 +48,7 @@ impl<'de> serde::Deserialize<'de> for DecodeAgent {
         let inn: Inn = serde_json::from_str(&out.agent_info).unwrap();
 
         Ok(Self {
-            space: inn.space,
+            space_id: inn.space_id,
             agent: inn.agent,
             created_at: inn.created_at.parse().unwrap(),
             expires_at: inn.expires_at.parse().unwrap(),
@@ -118,7 +118,7 @@ impl PutInfo<'_> {
             BASE64_URL_SAFE_NO_PAD.encode(VerifyingKey::from(&sign).as_bytes());
 
         let agent_info = serde_json::to_string(&serde_json::json!({
-            "space": self.space,
+            "spaceId": self.space,
             "agent": match self.final_agent_pk {
                 Some(fapk) => fapk,
                 None => &pk,

@@ -386,12 +386,12 @@ pub struct K2GossipFunctionalTestFactory {
 impl K2GossipFunctionalTestFactory {
     /// Create a new functional test factory.
     pub async fn create(
-        space: SpaceId,
+        space_id: SpaceId,
         bootstrap: bool,
         config: Option<K2GossipConfig>,
     ) -> K2GossipFunctionalTestFactory {
         K2GossipFunctionalTestFactory {
-            space_id: space,
+            space_id,
             bootstrap,
             config: K2GossipModConfig {
                 k2_gossip: if let Some(config) = config {

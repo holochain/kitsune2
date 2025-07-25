@@ -18,9 +18,9 @@ impl Default for SpaceMap {
 
 impl SpaceMap {
     /// Read the content of a space.
-    pub fn read(&self, space: &SpaceId) -> std::io::Result<Vec<u8>> {
+    pub fn read(&self, space_id: &SpaceId) -> std::io::Result<Vec<u8>> {
         // minimize outer mutex lock time
-        let space = self.0.lock().unwrap().get(space).cloned();
+        let space = self.0.lock().unwrap().get(space_id).cloned();
 
         match space {
             Some(space) => space.read(),
@@ -33,8 +33,8 @@ impl SpaceMap {
         // minimize outer mutex lock time
         let all = self.0.lock().unwrap().keys().cloned().collect::<Vec<_>>();
 
-        for space in all {
-            self.update(max_entries, space, None);
+        for space_id in all {
+            self.update(max_entries, space_id, None);
         }
     }
 
@@ -44,7 +44,7 @@ impl SpaceMap {
     pub fn update(
         &self,
         max_entries: usize,
-        space: SpaceId,
+        space_id: SpaceId,
         new_info: Option<(crate::ParsedEntry, Option<StoreEntryRef>)>,
     ) {
         // minimize outer mutex lock time
@@ -53,13 +53,13 @@ impl SpaceMap {
 
             let mut map = self.0.lock().unwrap();
 
-            if new_info.is_none() && !map.contains_key(&space) {
+            if new_info.is_none() && !map.contains_key(&space_id) {
                 // we don't have this space, and we're not
                 // adding an info to it... nothing to do
                 return;
             }
 
-            match map.entry(space) {
+            match map.entry(space_id) {
                 Entry::Occupied(e) => {
                     // most other naive methods for clearing out dead spaces
                     // result in either races or deadlock, or they require

@@ -31,7 +31,7 @@ message K2Proto {
 
     // This is a notification or fire-and-forget message from a peer.
     //
-    // This type requires that a "space" be specified.
+    // This type requires that a "space_id" be specified.
     NOTIFY = 2;
 
     // This is a module communication.
@@ -39,8 +39,8 @@ message K2Proto {
     // Most of Kitsune2's communications will likely proceed between
     // Kitsune2's modules.
     //
-    // This type requires that a "space" be specified.
-    // This type requires that a "module" be specified.
+    // This type requires that a "space_id" be specified.
+    // This type requires that a "module_id" be specified.
     MODULE = 3;
 
     // This message indicates a general disconnect, with the reason
@@ -61,7 +61,7 @@ message K2Proto {
   // Kitsune is divided up into multiple dht "spaces" and peers
   // join and communicate over these spaces. These bytes identify
   // the space within which this message is communicating.
-  optional bytes space = 3;
+  optional bytes space_id = 3;
 
   // If the Ty requires a module impl be specified, this is it.
   //
@@ -69,5 +69,5 @@ message K2Proto {
   // so those messages must be routed to the correct module.
   //
   // This string is the module routing info. E.g. "gossip", "fetch", "sharding".
-  optional string module = 4;
+  optional string module_id = 4;
 }

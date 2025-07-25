@@ -5,7 +5,7 @@
 /// that will be transferred between Kitsune2 peers. Most communications
 /// between peers to make Kitsune2 actually function will be encoded
 /// separately inside the payload of TY_MODULE type messages.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct K2Proto {
     /// The type of this message.
     #[prost(enumeration = "k2_proto::K2WireType", tag = "1")]
@@ -19,7 +19,7 @@ pub struct K2Proto {
     /// join and communicate over these spaces. These bytes identify
     /// the space within which this message is communicating.
     #[prost(bytes = "bytes", optional, tag = "3")]
-    pub space: ::core::option::Option<::prost::bytes::Bytes>,
+    pub space_id: ::core::option::Option<::prost::bytes::Bytes>,
     /// If the Ty requires a module impl be specified, this is it.
     ///
     /// Modules include specific sub-protocols to communicate with each other,
@@ -27,7 +27,7 @@ pub struct K2Proto {
     ///
     /// This string is the module routing info. E.g. "gossip", "fetch", "sharding".
     #[prost(string, optional, tag = "4")]
-    pub module: ::core::option::Option<::prost::alloc::string::String>,
+    pub module_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Nested message and enum types in `K2Proto`.
 pub mod k2_proto {
@@ -63,15 +63,15 @@ pub mod k2_proto {
         Preflight = 1,
         /// This is a notification or fire-and-forget message from a peer.
         ///
-        /// This type requires that a "space" be specified.
+        /// This type requires that a "space_id" be specified.
         Notify = 2,
         /// This is a module communication.
         ///
         /// Most of Kitsune2's communications will likely proceed between
         /// Kitsune2's modules.
         ///
-        /// This type requires that a "space" be specified.
-        /// This type requires that a "module" be specified.
+        /// This type requires that a "space_id" be specified.
+        /// This type requires that a "module_id" be specified.
         Module = 3,
         /// This message indicates a general disconnect, with the reason
         /// or context specified in the data payload.

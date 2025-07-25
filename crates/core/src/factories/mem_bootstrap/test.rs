@@ -36,7 +36,7 @@ struct Test {
 }
 
 impl Test {
-    pub async fn new(space: SpaceId) -> Self {
+    pub async fn new(space_id: SpaceId) -> Self {
         let builder = Arc::new(
             Builder {
                 verifier: Arc::new(TestCrypto),
@@ -49,20 +49,20 @@ impl Test {
 
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), space.clone())
+            .create(builder.clone(), space_id.clone())
             .await
             .unwrap();
 
         let boot = builder
             .bootstrap
-            .create(builder.clone(), peer_store.clone(), space.clone())
+            .create(builder.clone(), peer_store.clone(), space_id.clone())
             .await
             .unwrap();
 
         Self { peer_store, boot }
     }
 
-    pub async fn push_agent(&self, space: SpaceId) -> AgentId {
+    pub async fn push_agent(&self, space_id: SpaceId) -> AgentId {
         use std::sync::atomic::*;
 
         static NXT: AtomicU64 = AtomicU64::new(1);
@@ -77,7 +77,7 @@ impl Test {
             &TestCrypto,
             AgentInfo {
                 agent: agent.clone(),
-                space,
+                space_id,
                 created_at: Timestamp::now(),
                 expires_at: Timestamp::now()
                     + std::time::Duration::from_secs(60 * 20),

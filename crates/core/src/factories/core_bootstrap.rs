@@ -99,7 +99,7 @@ impl BootstrapFactory for CoreBootstrapFactory {
         &self,
         builder: Arc<Builder>,
         peer_store: DynPeerStore,
-        space: SpaceId,
+        space_id: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
             let config: CoreBootstrapModConfig =
@@ -108,7 +108,7 @@ impl BootstrapFactory for CoreBootstrapFactory {
                 builder,
                 config.core_bootstrap,
                 peer_store,
-                space,
+                space_id,
             ));
             Ok(out)
         })
@@ -120,7 +120,7 @@ type PushRecv = tokio::sync::mpsc::Receiver<Arc<AgentInfoSigned>>;
 
 #[derive(Debug)]
 struct CoreBootstrap {
-    space: SpaceId,
+    space_id: SpaceId,
     push_send: PushSend,
     push_task: tokio::task::JoinHandle<()>,
     poll_task: tokio::task::JoinHandle<()>,
@@ -138,7 +138,7 @@ impl CoreBootstrap {
         builder: Arc<Builder>,
         config: CoreBootstrapConfig,
         peer_store: DynPeerStore,
-        space: SpaceId,
+        space_id: SpaceId,
     ) -> Self {
         let auth_material =
             Arc::new(builder.auth_material.as_ref().map(|auth_material| {
@@ -159,13 +159,13 @@ impl CoreBootstrap {
         let poll_task = tokio::task::spawn(poll_task(
             builder,
             config,
-            space.clone(),
+            space_id.clone(),
             peer_store,
             auth_material,
         ));
 
         Self {
-            space,
+            space_id,
             push_send,
             push_task,
             poll_task,
@@ -176,7 +176,7 @@ impl CoreBootstrap {
 impl Bootstrap for CoreBootstrap {
     fn put(&self, info: Arc<AgentInfoSigned>) {
         // ignore puts outside our space.
-        if info.space != self.space {
+        if info.space_id != self.space_id {
             tracing::error!(
                 ?info,
                 "Logic Error: Attempting to put an agent outside of this space"
@@ -260,7 +260,7 @@ async fn push_task(
 async fn poll_task(
     builder: Arc<Builder>,
     config: CoreBootstrapConfig,
-    space: SpaceId,
+    space_id: SpaceId,
     peer_store: DynPeerStore,
     auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
 ) {
@@ -274,12 +274,12 @@ async fn poll_task(
         match tokio::task::spawn_blocking({
             let auth_material = auth_material.clone();
             let server_url = server_url.clone();
-            let space = space.clone();
+            let space_id = space_id.clone();
             let verifier = builder.verifier.clone();
             move || {
                 kitsune2_bootstrap_client::blocking_get_auth(
                     server_url,
-                    space.clone(),
+                    space_id.clone(),
                     verifier,
                     auth_material.as_ref().as_ref(),
                 )

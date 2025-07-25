@@ -40,14 +40,14 @@ impl OpStoreFactory for FileOpStoreFactory {
     fn create(
         &self,
         builder: Arc<Builder>,
-        space: SpaceId,
+        space_id: SpaceId,
     ) -> BoxFut<'static, K2Result<DynOpStore>> {
         let mem_op_store_factory = self.mem_op_store_factory.clone();
         let file_store_lookup = self.file_store_lookup.clone();
         Box::pin(async move {
             let out: DynOpStore = Arc::new(FileOpStore {
                 mem_op_store: mem_op_store_factory
-                    .create(builder, space)
+                    .create(builder, space_id)
                     .await?,
                 file_store_lookup,
             });

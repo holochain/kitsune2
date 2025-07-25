@@ -152,7 +152,7 @@ pub struct AgentInfo {
     pub agent: AgentId,
 
     /// The space id.
-    pub space: SpaceId,
+    pub space_id: SpaceId,
 
     /// When this metadata was created.
     #[serde(with = "serde_string_timestamp")]
@@ -343,7 +343,7 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     async fn happy_encode_decode() {
         let agent: AgentId = bytes::Bytes::from_static(b"test-agent").into();
-        let space: SpaceId = bytes::Bytes::from_static(b"test-space").into();
+        let space_id: SpaceId = bytes::Bytes::from_static(b"test-space").into();
         let now = Timestamp::from_micros(1731690797907204);
         let later = Timestamp::from_micros(now.as_micros() + 72_000_000_000);
         let url = Some(Url::from_str("ws://test.com:80/test-url").unwrap());
@@ -353,7 +353,7 @@ mod test {
             &TestCrypto,
             AgentInfo {
                 agent: agent.clone(),
-                space: space.clone(),
+                space_id: space_id.clone(),
                 created_at: now,
                 expires_at: later,
                 is_tombstone: false,
@@ -367,13 +367,13 @@ mod test {
         .unwrap();
 
         assert_eq!(
-            r#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"ws://test.com:80/test-url\",\"storageArc\":[42,330382099]}","signature":"ZmFrZS1zaWduYXR1cmU"}"#,
+            r#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"spaceId\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"ws://test.com:80/test-url\",\"storageArc\":[42,330382099]}","signature":"ZmFrZS1zaWduYXR1cmU"}"#,
             enc
         );
 
         let dec = AgentInfoSigned::decode(&TestCrypto, enc.as_bytes()).unwrap();
         assert_eq!(agent, dec.agent);
-        assert_eq!(space, dec.space);
+        assert_eq!(space_id, dec.space_id);
         assert_eq!(now, dec.created_at);
         assert_eq!(later, dec.expires_at);
         assert!(!dec.is_tombstone);
@@ -383,19 +383,19 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn ignores_future_extension_fields() {
-        AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"ws://test.com:80/test-url\",\"storageArc\":[42,330382099],\"fakeField\":\"bla\"}","signature":"ZmFrZS1zaWduYXR1cmU","fakeField2":"bla2"}"#).unwrap();
+        AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"spaceId\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false,\"url\":\"ws://test.com:80/test-url\",\"storageArc\":[42,330382099],\"fakeField\":\"bla\"}","signature":"ZmFrZS1zaWduYXR1cmU","fakeField2":"bla2"}"#).unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn fills_in_default_fields() {
-        let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":"ZmFrZS1zaWduYXR1cmU"}"#).unwrap();
+        let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"spaceId\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":"ZmFrZS1zaWduYXR1cmU"}"#).unwrap();
         assert!(dec.url.is_none());
         assert_eq!(DhtArc::Empty, dec.storage_arc);
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn dies_with_invalid_signature() {
-        let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"space\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":""}"#).unwrap_err();
+        let dec = AgentInfoSigned::decode(&TestCrypto, br#"{"agentInfo":"{\"agent\":\"dGVzdC1hZ2VudA\",\"spaceId\":\"dGVzdC1zcGFjZQ\",\"createdAt\":\"1731690797907204\",\"expiresAt\":\"1731762797907204\",\"isTombstone\":false}","signature":""}"#).unwrap_err();
         assert!(dec.to_string().contains("InvalidSignature"));
     }
 }

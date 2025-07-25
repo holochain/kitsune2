@@ -205,10 +205,10 @@ impl TxSpaceHandler for MockTxHandler {
     fn recv_space_notify(
         &self,
         peer: Url,
-        space: SpaceId,
+        space_id: SpaceId,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        (self.recv_space_not)(peer, space, data)
+        (self.recv_space_not)(peer, space_id, data)
     }
 
     fn set_unresponsive(
@@ -224,10 +224,10 @@ impl TxModuleHandler for MockTxHandler {
     fn recv_module_msg(
         &self,
         peer: Url,
-        space: SpaceId,
+        space_id: SpaceId,
         module: String,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        (self.recv_mod_msg)(peer, space, module, data)
+        (self.recv_mod_msg)(peer, space_id, module, data)
     }
 }

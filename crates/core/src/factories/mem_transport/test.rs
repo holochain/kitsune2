@@ -66,13 +66,13 @@ impl TxSpaceHandler for TrackHnd {
     fn recv_space_notify(
         &self,
         peer: Url,
-        space: SpaceId,
+        space_id: SpaceId,
         data: bytes::Bytes,
     ) -> K2Result<()> {
         self.track
             .lock()
             .unwrap()
-            .push(Track::SpaceRecv(peer, space, data));
+            .push(Track::SpaceRecv(peer, space_id, data));
         Ok(())
     }
 }
@@ -81,14 +81,14 @@ impl TxModuleHandler for TrackHnd {
     fn recv_module_msg(
         &self,
         peer: Url,
-        space: SpaceId,
+        space_id: SpaceId,
         module: String,
         data: bytes::Bytes,
     ) -> K2Result<()> {
         self.track
             .lock()
             .unwrap()
-            .push(Track::ModRecv(peer, space, module, data));
+            .push(Track::ModRecv(peer, space_id, module, data));
         Ok(())
     }
 }
@@ -160,18 +160,18 @@ impl TrackHnd {
     pub fn check_notify(
         &self,
         peer: &Url,
-        space: &SpaceId,
+        space_id: &SpaceId,
         msg: &[u8],
     ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
             if let Track::SpaceRecv(u, s, d) = t {
-                if u == peer && space == s && &d[..] == msg {
+                if u == peer && space_id == s && &d[..] == msg {
                     return Ok(());
                 }
             }
         }
         Err(K2Error::other(format!(
-            "matching notify not found {peer} {space} {}, out of {:#?}",
+            "matching notify not found {peer} {space_id} {}, out of {:#?}",
             String::from_utf8_lossy(msg),
             self.track.lock().unwrap(),
         )))
@@ -180,19 +180,19 @@ impl TrackHnd {
     pub fn check_mod(
         &self,
         peer: &Url,
-        space: &SpaceId,
+        space_id: &SpaceId,
         module: &str,
         msg: &[u8],
     ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
             if let Track::ModRecv(u, s, m, d) = t {
-                if u == peer && space == s && module == m && &d[..] == msg {
+                if u == peer && space_id == s && module == m && &d[..] == msg {
                     return Ok(());
                 }
             }
         }
         Err(K2Error::other(format!(
-            "matching mod not found {peer} {space} {module} {}, out of {:#?}",
+            "matching mod not found {peer} {space_id} {module} {}, out of {:#?}",
             String::from_utf8_lossy(msg),
             self.track.lock().unwrap(),
         )))

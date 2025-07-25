@@ -12,10 +12,10 @@ pub trait SpaceHandler: 'static + Send + Sync + std::fmt::Debug {
     fn recv_notify(
         &self,
         from_peer: Url,
-        space: SpaceId,
+        space_id: SpaceId,
         data: bytes::Bytes,
     ) -> K2Result<()> {
-        drop((from_peer, space, data));
+        drop((from_peer, space_id, data));
         Ok(())
     }
 }
@@ -116,7 +116,7 @@ pub trait SpaceFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<builder::Builder>,
         handler: DynSpaceHandler,
-        space: SpaceId,
+        space_id: SpaceId,
         tx: transport::DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>>;
 }

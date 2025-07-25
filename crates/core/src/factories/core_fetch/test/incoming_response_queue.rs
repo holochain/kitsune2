@@ -65,9 +65,9 @@ fn create_mock_transport(
         .expect_register_module_handler()
         .returning(|_, _, _| ());
     mock_transport.expect_send_module().returning({
-        move |peer, space, module, data| {
-            assert_eq!(space, TEST_SPACE_ID);
-            assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
+        move |peer, space_id, module_id, data| {
+            assert_eq!(space_id, TEST_SPACE_ID);
+            assert_eq!(module_id, crate::factories::core_fetch::MOD_NAME);
             let fetch_message = K2FetchMessage::decode(data).unwrap();
             match fetch_message.fetch_message_type() {
                 FetchMessageType::Request => {

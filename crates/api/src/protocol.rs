@@ -39,8 +39,8 @@ mod test {
         let m = K2Proto {
             ty: K2WireType::Module as i32,
             data: bytes::Bytes::from_static(b"a"),
-            space: Some(bytes::Bytes::from_static(b"b")),
-            module: Some("c".into()),
+            space_id: Some(bytes::Bytes::from_static(b"b")),
+            module_id: Some("c".into()),
         };
 
         let m_enc = m.encode_to_vec();
@@ -48,8 +48,8 @@ mod test {
         let d = K2Proto {
             ty: K2WireType::Disconnect as i32,
             data: bytes::Bytes::from_static(b"d"),
-            space: None,
-            module: None,
+            space_id: None,
+            module_id: None,
         };
 
         let d_enc = d.encode_to_vec();

@@ -236,9 +236,9 @@ impl Handler<'_> {
     /// Respond to a request for the agent infos within a space.
     fn handle_boot_get(
         &mut self,
-        space: bytes::Bytes,
+        space_id: bytes::Bytes,
     ) -> std::io::Result<(u16, Vec<u8>)> {
-        let res = self.space_map.read(&space)?;
+        let res = self.space_map.read(&space_id)?;
 
         Ok((200, res))
     }
@@ -246,7 +246,7 @@ impl Handler<'_> {
     /// Validate an incoming agent info and put it in the store if appropriate.
     fn handle_boot_put(
         &mut self,
-        space: bytes::Bytes,
+        space_id: bytes::Bytes,
         agent: bytes::Bytes,
         body: bytes::Bytes,
     ) -> std::io::Result<(u16, Vec<u8>)> {
@@ -262,7 +262,7 @@ impl Handler<'_> {
         }
 
         // validate space matches url path
-        if space != info.space {
+        if space_id != info.space_id {
             return Err(std::io::Error::other("InvalidSpace"));
         }
 
@@ -310,7 +310,7 @@ impl Handler<'_> {
 
         self.space_map.update(
             self.config.max_entries_per_space,
-            space,
+            space_id,
             Some((info, r)),
         );
 

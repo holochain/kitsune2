@@ -5,7 +5,7 @@ pub struct ParsedEntry {
     pub agent: ed25519_dalek::VerifyingKey,
 
     /// space
-    pub space: bytes::Bytes,
+    pub space_id: bytes::Bytes,
 
     /// created_at
     pub created_at: i64,
@@ -39,7 +39,7 @@ impl ParsedEntry {
         #[serde(rename_all = "camelCase")]
         struct Inner {
             agent: String,
-            space: String,
+            space_id: String,
             created_at: String,
             expires_at: String,
             is_tombstone: bool,
@@ -63,8 +63,8 @@ impl ParsedEntry {
         Ok(ParsedEntry {
             agent: ed25519_dalek::VerifyingKey::from_bytes(&agent)
                 .map_err(std::io::Error::other)?,
-            space: BASE64_URL_SAFE_NO_PAD
-                .decode(inn.space)
+            space_id: BASE64_URL_SAFE_NO_PAD
+                .decode(inn.space_id)
                 .map_err(std::io::Error::other)?
                 .into(),
             created_at: inn

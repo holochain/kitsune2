@@ -117,7 +117,7 @@ pub struct AgentBuilder {
     /// provided by the signer.
     pub agent: Option<AgentId>,
     /// Optional space id. If not provided, this will be `b"test-space"`.
-    pub space: Option<SpaceId>,
+    pub space_id: Option<SpaceId>,
     /// Optional created at timestamp. If not provided, will be now.
     pub created_at: Option<Timestamp>,
     /// Optional expires at timestamp. If not provided, will be now + 20min.
@@ -143,7 +143,7 @@ impl AgentBuilder {
     pub fn update_for(existing_agent: Arc<AgentInfoSigned>) -> Self {
         AgentBuilder {
             agent: Some(existing_agent.agent.clone()),
-            space: Some(existing_agent.space.clone()),
+            space_id: Some(existing_agent.space_id.clone()),
             is_tombstone: Some(existing_agent.is_tombstone),
             url: Some(existing_agent.url.clone()),
             storage_arc: Some(existing_agent.storage_arc),
@@ -152,8 +152,8 @@ impl AgentBuilder {
     }
 
     /// Set the space to which the agent belongs.
-    pub fn with_space(mut self, space: SpaceId) -> Self {
-        self.space = Some(space);
+    pub fn with_space(mut self, space_id: SpaceId) -> Self {
+        self.space_id = Some(space_id);
         self
     }
 
@@ -181,7 +181,7 @@ impl AgentBuilder {
     /// Build an agent from given values or defaults.
     pub fn build<A: LocalAgent>(self, a: A) -> Arc<AgentInfoSigned> {
         let agent = self.agent.unwrap_or_else(|| a.agent().clone());
-        let space = self.space.unwrap_or_else(|| TEST_SPACE_ID.clone());
+        let space_id = self.space_id.unwrap_or_else(|| TEST_SPACE_ID.clone());
         let created_at = self.created_at.unwrap_or_else(Timestamp::now);
         let expires_at = self.expires_at.unwrap_or_else(|| {
             created_at + std::time::Duration::from_secs(60 * 20)
@@ -191,7 +191,7 @@ impl AgentBuilder {
         let storage_arc = self.storage_arc.unwrap_or_default();
         let agent_info = AgentInfo {
             agent,
-            space,
+            space_id,
             created_at,
             expires_at,
             is_tombstone,

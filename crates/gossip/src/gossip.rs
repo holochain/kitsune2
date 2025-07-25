@@ -413,13 +413,13 @@ impl TxModuleHandler for K2Gossip {
     fn recv_module_msg(
         &self,
         peer: Url,
-        space: SpaceId,
+        space_id: SpaceId,
         module: String,
         data: Bytes,
     ) -> K2Result<()> {
         tracing::trace!("Incoming module message: {:?}", data);
 
-        if self.space_id != space {
+        if self.space_id != space_id {
             return Err(K2Error::other("wrong space"));
         }
 

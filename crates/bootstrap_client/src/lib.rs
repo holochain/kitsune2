@@ -144,7 +144,7 @@ pub fn blocking_put_auth(
 
     server_url.set_path(&format!(
         "bootstrap/{}/{}",
-        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.space),
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.space_id),
         base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.agent),
     ));
     let put_url = server_url.as_str().to_string();
@@ -190,10 +190,10 @@ pub fn blocking_put_auth(
 /// operation.
 pub fn blocking_get(
     server_url: Url,
-    space: SpaceId,
+    space_id: SpaceId,
     verifier: DynVerifier,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
-    blocking_get_auth(server_url, space, verifier, None)
+    blocking_get_auth(server_url, space_id, verifier, None)
 }
 
 /// Get all agent infos from the bootstrap server for the given space.
@@ -203,7 +203,7 @@ pub fn blocking_get(
 /// operation.
 pub fn blocking_get_auth(
     mut server_url: Url,
-    space: SpaceId,
+    space_id: SpaceId,
     verifier: DynVerifier,
     mut auth_material: Option<&AuthMaterial>,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
@@ -216,7 +216,7 @@ pub fn blocking_get_auth(
 
     server_url.set_path(&format!(
         "bootstrap/{}",
-        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**space)
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**space_id)
     ));
     let get_url = server_url.as_str().to_string();
 

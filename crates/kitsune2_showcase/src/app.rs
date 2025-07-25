@@ -44,7 +44,7 @@ impl App {
         printer_tx: mpsc::Sender<String>,
         args: Args,
     ) -> K2Result<Self> {
-        let space = if let Some(seed) = args.network_seed {
+        let space_id = if let Some(seed) = args.network_seed {
             use sha2::Digest;
             let mut hasher = sha2::Sha256::new();
             hasher.update(seed);
@@ -60,7 +60,7 @@ impl App {
             fn recv_notify(
                 &self,
                 _from_peer: Url,
-                _space: SpaceId,
+                _space_id: SpaceId,
                 data: Bytes,
             ) -> K2Result<()> {
                 let printer_tx = self.0.clone();
@@ -80,7 +80,7 @@ impl App {
         impl KitsuneHandler for K {
             fn create_space(
                 &self,
-                _space: SpaceId,
+                _space_id: SpaceId,
             ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
                 Box::pin(async move {
                     let s: DynSpaceHandler = Arc::new(S(self.0.clone()));
@@ -143,7 +143,7 @@ impl App {
         let kitsune = builder.build().await?;
         kitsune.register_handler(h).await?;
         let transport = kitsune.transport().await?;
-        let space = kitsune.space(space).await?;
+        let space = kitsune.space(space_id).await?;
 
         let agent = Arc::new(kitsune2_core::Ed25519LocalAgent::default());
         agent.set_tgt_storage_arc_hint(DhtArc::FULL);

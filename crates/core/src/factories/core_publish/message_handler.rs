@@ -14,7 +14,7 @@ impl TxModuleHandler for PublishMessageHandler {
     fn recv_module_msg(
         &self,
         peer: Url,
-        _space: SpaceId,
+        _space_id: SpaceId,
         _module: String,
         data: bytes::Bytes,
     ) -> K2Result<()> {

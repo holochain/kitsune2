@@ -36,7 +36,7 @@ pub trait BootstrapFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<Builder>,
         peer_store: DynPeerStore,
-        space: SpaceId,
+        space_id: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>>;
 }
 

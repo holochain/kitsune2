@@ -28,7 +28,7 @@ fn connect_with_client() {
     // Get all agent infos from the server, should just be ours
     let infos = blocking_get(
         server_url.clone(),
-        info.space.clone(),
+        info.space_id.clone(),
         Arc::new(Ed25519Verifier),
     )
     .unwrap();
@@ -61,7 +61,7 @@ fn connect_with_auth() {
     // Get all agent infos from the server, should just be ours
     let infos = blocking_get_auth(
         server_url.clone(),
-        info.space.clone(),
+        info.space_id.clone(),
         Arc::new(Ed25519Verifier),
         Some(&auth),
     )

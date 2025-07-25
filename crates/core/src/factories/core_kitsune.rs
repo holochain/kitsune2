@@ -122,7 +122,7 @@ impl Kitsune for CoreKitsune {
         self.map.lock().unwrap().keys().cloned().collect()
     }
 
-    fn space(&self, space: SpaceId) -> BoxFut<'_, K2Result<DynSpace>> {
+    fn space(&self, space_id: SpaceId) -> BoxFut<'_, K2Result<DynSpace>> {
         Box::pin(async move {
             const ERR: &str = "handler not registered";
             use std::collections::hash_map::Entry;
@@ -130,7 +130,7 @@ impl Kitsune for CoreKitsune {
             // This is quick, we don't hold the lock very long,
             // because we're just constructing the future here,
             // not awaiting it.
-            let fut = match self.map.lock().unwrap().entry(space.clone()) {
+            let fut = match self.map.lock().unwrap().entry(space_id.clone()) {
                 Entry::Occupied(e) => e.get().clone(),
                 Entry::Vacant(e) => {
                     let builder = self.builder.clone();
@@ -147,10 +147,10 @@ impl Kitsune for CoreKitsune {
                     e.insert(futures::future::FutureExt::shared(Box::pin(
                         async move {
                             let sh =
-                                handler.create_space(space.clone()).await?;
+                                handler.create_space(space_id.clone()).await?;
                             let s = builder
                                 .space
-                                .create(builder.clone(), sh, space, tx)
+                                .create(builder.clone(), sh, space_id, tx)
                                 .await?;
                             Ok(s)
                         },
@@ -163,16 +163,19 @@ impl Kitsune for CoreKitsune {
         })
     }
 
-    fn space_if_exists(&self, space: SpaceId) -> BoxFut<'_, Option<DynSpace>> {
+    fn space_if_exists(
+        &self,
+        space_id: SpaceId,
+    ) -> BoxFut<'_, Option<DynSpace>> {
         Box::pin(async move {
-            let fut = self.map.lock().unwrap().get(&space)?.clone();
+            let fut = self.map.lock().unwrap().get(&space_id)?.clone();
             fut.await.ok()
         })
     }
 
-    fn remove_space(&self, space: SpaceId) -> BoxFut<'_, K2Result<()>> {
+    fn remove_space(&self, space_id: SpaceId) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            let fut = self.map.lock().unwrap().get(&space).cloned();
+            let fut = self.map.lock().unwrap().get(&space_id).cloned();
             if let Some(fut) = fut {
                 if let Ok(s) = fut.await {
                     // Just a point in time check, try to help the user out if they accidentally
@@ -185,10 +188,10 @@ impl Kitsune for CoreKitsune {
                     }
 
                     // Checks passed, remove our reference to the space.
-                    self.map.lock().unwrap().remove(&space);
+                    self.map.lock().unwrap().remove(&space_id);
 
                     // Unregister the space and its module handlers from the transport.
-                    self.transport().await?.unregister_space(space).await;
+                    self.transport().await?.unregister_space(space_id).await;
 
                     // Get all the peer URLs of connected peers.
                     let connected_peer_urls = Arc::new(RwLock::new(
@@ -267,7 +270,7 @@ impl Kitsune for CoreKitsune {
                     );
                 }
             } else {
-                tracing::info!("Space {space:?} not found");
+                tracing::info!("Space with id {space_id:?} not found");
             }
             Ok(())
         })
@@ -299,7 +302,7 @@ mod test {
             fn recv_notify(
                 &self,
                 _peer: Url,
-                _space: SpaceId,
+                _space_id: SpaceId,
                 _data: bytes::Bytes,
             ) -> K2Result<()> {
                 // this test is a bit of a stub for now until we have the
@@ -314,7 +317,7 @@ mod test {
         impl KitsuneHandler for K {
             fn create_space(
                 &self,
-                _space: SpaceId,
+                _space_id: SpaceId,
             ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
                 Box::pin(async move {
                     let s: DynSpaceHandler = Arc::new(S);

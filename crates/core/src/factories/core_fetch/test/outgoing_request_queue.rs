@@ -67,9 +67,9 @@ fn make_mock_transport(
     let mut mock_transport = MockTransport::new();
     mock_transport.expect_send_module().returning({
         let requests_sent = requests_sent.clone();
-        move |peer, space, module, data| {
-            assert_eq!(space, TEST_SPACE_ID);
-            assert_eq!(module, crate::factories::core_fetch::MOD_NAME);
+        move |peer, space_id, module_id, data| {
+            assert_eq!(space_id, TEST_SPACE_ID);
+            assert_eq!(module_id, crate::factories::core_fetch::MOD_NAME);
             Box::pin({
                 let requests_sent = requests_sent.clone();
                 async move {

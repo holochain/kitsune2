@@ -49,8 +49,8 @@ async fn offline_peer_marked_unresponsive() {
         new_addr: Arc::new(move |url| {
             *url2_2.lock().unwrap() = url;
         }),
-        recv_space_not: Arc::new(move |url, space, data| {
-            let _ = s_send.send((url, space, data));
+        recv_space_not: Arc::new(move |url, space_id, data| {
+            let _ = s_send.send((url, space_id, data));
             Ok(())
         }),
         ..Default::default()

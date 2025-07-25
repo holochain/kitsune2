@@ -31,7 +31,7 @@ impl OpStoreFactory for K2GossipMemOpStoreFactory {
     fn create(
         &self,
         _builder: Arc<Builder>,
-        _space: SpaceId,
+        _space_id: SpaceId,
     ) -> BoxFut<'static, K2Result<DynOpStore>> {
         let inner = self.store.clone();
         Box::pin(async move {

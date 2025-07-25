@@ -196,8 +196,8 @@ async fn message_send_recv() {
         new_addr: Arc::new(move |url| {
             *u2_2.lock().unwrap() = url;
         }),
-        recv_space_not: Arc::new(move |url, space, data| {
-            let _ = s_send.send((url, space, data));
+        recv_space_not: Arc::new(move |url, space_id, data| {
+            let _ = s_send.send((url, space_id, data));
             Ok(())
         }),
         ..Default::default()
@@ -248,8 +248,8 @@ async fn message_send_recv_auth() {
         new_addr: Arc::new(move |url| {
             *u2_2.lock().unwrap() = url;
         }),
-        recv_space_not: Arc::new(move |url, space, data| {
-            let _ = s_send.send((url, space, data));
+        recv_space_not: Arc::new(move |url, space_id, data| {
+            let _ = s_send.send((url, space_id, data));
             Ok(())
         }),
         ..Default::default()

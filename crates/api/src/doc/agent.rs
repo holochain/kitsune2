@@ -25,7 +25,7 @@
 //!   "type": "object",
 //!   "properties": {
 //!     "agent": { "type": "string", "required": true, "description": "base64" },
-//!     "space": { "type": "string", "required": true, "description": "base64" },
+//!     "spaceId": { "type": "string", "required": true, "description": "base64" },
 //!     "createdAt": {
 //!         "type": "string",
 //!         "required": true,
