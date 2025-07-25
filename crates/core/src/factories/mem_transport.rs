@@ -35,7 +35,7 @@ impl TransportFactory for MemTransportFactory {
         Box::pin(async move {
             let handler = TxImpHnd::new(handler);
             let imp = MemTransport::create(handler.clone()).await;
-            Ok(DefaultTransport::create(&handler, imp))
+            Ok(DefaultTransport::new(&handler, imp))
         })
     }
 }

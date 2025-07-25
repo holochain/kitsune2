@@ -284,7 +284,7 @@ impl DefaultTransport {
     /// to produce the [Transport] struct.
     ///
     /// [DefaultTransport] is built to be used with the provided [TxImpHnd].
-    pub fn create(hnd: &TxImpHnd, imp: DynTxImp) -> DynTransport {
+    pub fn new(hnd: &TxImpHnd, imp: DynTxImp) -> DynTransport {
         let out: DynTransport = Arc::new(DefaultTransport {
             imp,
             space_map: hnd.space_map.clone(),

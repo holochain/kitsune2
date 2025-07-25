@@ -198,7 +198,7 @@ impl TransportFactory for Tx5TransportFactory {
                 builder.auth_material.clone(),
             )
             .await?;
-            Ok(DefaultTransport::create(&handler, imp))
+            Ok(DefaultTransport::new(&handler, imp))
         })
     }
 }
