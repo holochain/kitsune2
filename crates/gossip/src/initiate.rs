@@ -178,7 +178,7 @@ async fn select_next_target(
     // wider and gossip with agents that might still be growing their arc and have some ops
     // or agent infos that we are missing
     if all_agents.is_empty() {
-        tracing::info!(
+        tracing::debug!(
             "No agents with overlapping arcs available, selecting from all agents"
         );
 
@@ -214,7 +214,7 @@ async fn select_next_target(
     match possible_targets {
         None => {
             // All options exhausted, give up for now
-            tracing::info!("No agents to gossip with");
+            tracing::debug!("No agents to gossip with");
             Ok(None)
         }
         Some(target) => Ok(Some(target)),
