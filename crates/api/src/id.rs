@@ -24,7 +24,7 @@ macro_rules! imp_from {
     };
 }
 
-/// The function signature for Id loc derivation.
+/// The function signature for [`Id`] location derivation.
 pub type LocCb = fn(&bytes::Bytes) -> u32;
 
 fn default_loc(b: &bytes::Bytes) -> u32 {
@@ -60,34 +60,35 @@ imp_from!(Id, bytes::Bytes, b => Id(b));
 imp_from!(bytes::Bytes, Id, i => i.0);
 
 impl Id {
-    /// Get the location u32 based off this Id.
+    /// Get the location u32 based off this [`Id`].
     ///
     /// This is accomplished by directly xor-ing every successive 4 bytes
     /// in the hash. It is okay if the hash len is not a multiple of 4,
     /// it will stop with the ending byte of the hash.
     ///
     /// The remaining 4 bytes are then interpreted as a little-endian u32.
-    //
-    // Holochain previously would re-hash the hash, and then
-    // xor to shrink down to a u32. This extra step is not needed
-    // and does not provide any benefit. One extra hash step does
-    // not prevent location farming, and if the original hash was
-    // distributed well enough, re-hashing it again doesn't improve
-    // distribution.
     pub fn loc(&self) -> u32 {
         ID_LOC.get_or_init(|| default_loc)(&self.0)
     }
 
-    /// Set the location calculation implementation for all kitsune2 Ids
-    /// for the duration of this process. Note, if anything was calculated
-    /// earlier, the default impl will have been set and cannot be changed.
+    /// Set the location calculation implementation for all kitsune2 [`Id`]s
+    /// for the duration of this process.
+    ///
+    /// This applies to all ids, but the op id can be overridden separately. It is expected that
+    /// part of making DHT logic work is that some DHT ops are co-located at known locations. For
+    /// that to work, the location calculation for ops can't be as simple as deriving a location
+    /// from its id.
+    ///
+    /// Note: if anything was calculated earlier, the default impl will have been set and cannot be
+    /// changed.
+    ///
     /// Returns false if the default was unable to be set.
     pub fn set_global_loc_callback(cb: LocCb) -> bool {
         ID_LOC.set(cb).is_ok()
     }
 }
 
-/// The function signature for Id display overrides.
+/// The function signature for [`Id`] display overrides.
 pub type DisplayCb =
     fn(&bytes::Bytes, &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 
@@ -146,7 +147,9 @@ impl std::fmt::Debug for AgentId {
 
 impl AgentId {
     /// Set the display/debug implementation for AgentId for the duration
-    /// of this process. Note, if anything was printed earlier, the
+    /// of this process.
+    ///
+    /// Note: If anything was printed earlier, the
     /// default impl will have been set and cannot be changed.
     /// Returns false if the default was unable to be set.
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
@@ -190,13 +193,17 @@ impl std::fmt::Debug for SpaceId {
 
 impl SpaceId {
     /// Set the display/debug implementation for SpaceId for the duration
-    /// of this process. Note, if anything was printed earlier, the
+    /// of this process.
+    ///
+    /// Note: If anything was printed earlier, the
     /// default impl will have been set and cannot be changed.
     /// Returns false if the default was unable to be set.
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
         SPACE_DISP.set(cb).is_ok()
     }
 }
+
+static OP_ID_LOC: std::sync::OnceLock<LocCb> = std::sync::OnceLock::new();
 
 static OP_DISP: std::sync::OnceLock<DisplayCb> = std::sync::OnceLock::new();
 
@@ -233,12 +240,45 @@ impl std::fmt::Debug for OpId {
 }
 
 impl OpId {
+    /// Get the location u32 based off this [`OpId`].
+    ///
+    /// This will either use the global location callback for [`Id`] or the specific op id location
+    /// calculation callback if it has been set.
+    ///
+    /// Note: If you have overridden this callback, and do want to get the location of the
+    /// inner id, then this method is simply hiding the method on the inner [`Id`]. You can
+    /// access the inner id's location directly using `my_op_id.0.loc()`.
+    pub fn loc(&self) -> u32 {
+        OP_ID_LOC.get_or_init(|| {
+            *ID_LOC.get_or_init(|| {
+                tracing::warn!(
+                    "No global location callback set, using default for OpId"
+                );
+                default_loc
+            })
+        })(&self.0)
+    }
+
     /// Set the display/debug implementation for OpId for the duration
-    /// of this process. Note, if anything was printed earlier, the
-    /// default impl will have been set and cannot be changed.
+    /// of this process.
+    ///
+    /// Note: If anything was printed earlier, the default impl will have been set and cannot be
+    /// changed.
+    ///
     /// Returns false if the default was unable to be set.
     pub fn set_global_display_callback(cb: DisplayCb) -> bool {
         OP_DISP.set(cb).is_ok()
+    }
+
+    /// Set the location calculation implementation for all kitsune2 [`OpId`]s
+    /// for the duration of this process.
+    ///
+    /// Note: If anything was calculated earlier, the default impl will have been set and cannot be
+    /// changed.
+    ///
+    /// Returns false if the default was unable to be set.
+    pub fn set_loc_callback(cb: LocCb) -> bool {
+        OP_ID_LOC.set(cb).is_ok()
     }
 }
 
