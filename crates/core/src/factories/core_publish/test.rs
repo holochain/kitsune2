@@ -158,7 +158,7 @@ async fn published_agent_can_be_retrieved() {
         &TestLocalAgent::default(),
         AgentInfo {
             agent: agent_id.clone(),
-            space_id: space_id.clone(),
+            space: space_id.clone(),
             created_at: now,
             expires_at: later,
             is_tombstone: false,
@@ -217,7 +217,7 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
         &InvalidSigner,
         AgentInfo {
             agent: agent_id_invalid.clone(),
-            space_id: space_id.clone(),
+            space: space_id.clone(),
             created_at: now,
             expires_at: later,
             is_tombstone: false,
@@ -243,7 +243,7 @@ async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_
         &TestLocalAgent::default(),
         AgentInfo {
             agent: agent_id_valid.clone(),
-            space_id: space_id.clone(),
+            space: space_id.clone(),
             created_at: now,
             expires_at: later,
             is_tombstone: false,

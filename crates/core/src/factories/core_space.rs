@@ -395,7 +395,7 @@ impl Space for CoreSpace {
                             + std::time::Duration::from_secs(60 * 20);
                         let info = AgentInfo {
                             agent: local_agent2.agent().clone(),
-                            space_id,
+                            space: space_id,
                             created_at,
                             expires_at,
                             is_tombstone: false,
@@ -463,7 +463,7 @@ impl Space for CoreSpace {
                     created_at + std::time::Duration::from_secs(60 * 20);
                 let info = AgentInfo {
                     agent: local_agent.agent().clone(),
-                    space_id: self.space_id.clone(),
+                    space: self.space_id.clone(),
                     created_at,
                     expires_at,
                     is_tombstone: true,

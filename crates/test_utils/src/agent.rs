@@ -143,7 +143,7 @@ impl AgentBuilder {
     pub fn update_for(existing_agent: Arc<AgentInfoSigned>) -> Self {
         AgentBuilder {
             agent: Some(existing_agent.agent.clone()),
-            space_id: Some(existing_agent.space_id.clone()),
+            space_id: Some(existing_agent.space.clone()),
             is_tombstone: Some(existing_agent.is_tombstone),
             url: Some(existing_agent.url.clone()),
             storage_arc: Some(existing_agent.storage_arc),
@@ -191,7 +191,7 @@ impl AgentBuilder {
         let storage_arc = self.storage_arc.unwrap_or_default();
         let agent_info = AgentInfo {
             agent,
-            space_id,
+            space: space_id,
             created_at,
             expires_at,
             is_tombstone,

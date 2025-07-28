@@ -77,7 +77,7 @@ impl Test {
             &TestCrypto,
             AgentInfo {
                 agent: agent.clone(),
-                space_id,
+                space: space_id,
                 created_at: Timestamp::now(),
                 expires_at: Timestamp::now()
                     + std::time::Duration::from_secs(60 * 20),

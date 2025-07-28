@@ -144,7 +144,7 @@ pub fn blocking_put_auth(
 
     server_url.set_path(&format!(
         "bootstrap/{}/{}",
-        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.space_id),
+        base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.space),
         base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.agent),
     ));
     let put_url = server_url.as_str().to_string();

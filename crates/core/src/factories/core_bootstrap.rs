@@ -120,7 +120,7 @@ type PushRecv = tokio::sync::mpsc::Receiver<Arc<AgentInfoSigned>>;
 
 #[derive(Debug)]
 struct CoreBootstrap {
-    space_id: SpaceId,
+    space: SpaceId,
     push_send: PushSend,
     push_task: tokio::task::JoinHandle<()>,
     poll_task: tokio::task::JoinHandle<()>,
@@ -138,7 +138,7 @@ impl CoreBootstrap {
         builder: Arc<Builder>,
         config: CoreBootstrapConfig,
         peer_store: DynPeerStore,
-        space_id: SpaceId,
+        space: SpaceId,
     ) -> Self {
         let auth_material =
             Arc::new(builder.auth_material.as_ref().map(|auth_material| {
@@ -159,13 +159,13 @@ impl CoreBootstrap {
         let poll_task = tokio::task::spawn(poll_task(
             builder,
             config,
-            space_id.clone(),
+            space.clone(),
             peer_store,
             auth_material,
         ));
 
         Self {
-            space_id,
+            space,
             push_send,
             push_task,
             poll_task,
@@ -176,7 +176,7 @@ impl CoreBootstrap {
 impl Bootstrap for CoreBootstrap {
     fn put(&self, info: Arc<AgentInfoSigned>) {
         // ignore puts outside our space.
-        if info.space_id != self.space_id {
+        if info.space != self.space {
             tracing::error!(
                 ?info,
                 "Logic Error: Attempting to put an agent outside of this space"

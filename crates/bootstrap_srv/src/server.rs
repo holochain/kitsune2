@@ -262,7 +262,7 @@ impl Handler<'_> {
         }
 
         // validate space matches url path
-        if space_id != info.space_id {
+        if space_id != info.space {
             return Err(std::io::Error::other("InvalidSpace"));
         }
 
