@@ -36,6 +36,8 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 /// - `gossip` - The default gossip module is [K2GossipFactory].
 /// - `local_agent_store` - The default local agent store is [factories::CoreLocalAgentStoreFactory].
 /// - `publish` - The default publish module is [factories::CorePublishFactory].
+/// - `blocks` - The default blocks module is [factories::MemBlocksFactory].
+///              Note: you will likely want to implement your own [`Blocks`] module.
 pub fn default_builder() -> Builder {
     Builder {
         config: Config::default(),
@@ -52,5 +54,6 @@ pub fn default_builder() -> Builder {
         gossip: K2GossipFactory::create(),
         local_agent_store: factories::CoreLocalAgentStoreFactory::create(),
         publish: factories::CorePublishFactory::create(),
+        blocks: factories::MemBlocksFactory::create(),
     }
 }

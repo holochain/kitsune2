@@ -151,6 +151,7 @@ impl LocalAgent for Ed25519LocalAgent {
 /// - `gossip` - The default gossip module is [factories::CoreGossipStubFactory].
 /// - `local_agent_store` - The default local agent store is [factories::CoreLocalAgentStoreFactory].
 /// - `publish` - The default publish module is [factories::CorePublishFactory].
+/// - `blocks` - The default blocks module is [factories::MemBlocksFactory].
 pub fn default_test_builder() -> Builder {
     Builder {
         config: Config::default(),
@@ -167,6 +168,7 @@ pub fn default_test_builder() -> Builder {
         gossip: factories::CoreGossipStubFactory::create(),
         local_agent_store: factories::CoreLocalAgentStoreFactory::create(),
         publish: factories::CorePublishFactory::create(),
+        blocks: factories::MemBlocksFactory::create(),
     }
 }
 
