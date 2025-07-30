@@ -5,7 +5,12 @@
 //! can be created to make [`Block::is_blocked`] and [`Block::are_all_blocked`] always return
 //! `false` and have [`Block::block`] be a no-op that returns `Ok`.
 
-use crate::{AgentId, BoxFut, K2Result};
+use std::sync::Arc;
+
+use crate::{AgentId, BoxFut, Builder, Config, K2Result, SpaceId};
+
+/// Trait-object version of kitsune2 [`Block`] trait.
+pub type DynBlock = Arc<dyn Block>;
 
 /// A selection of targets to be blocked.
 ///
@@ -41,4 +46,23 @@ pub trait Block: 'static + Send + Sync + std::fmt::Debug {
         &self,
         targets: &[BlockTarget],
     ) -> BoxFut<'static, K2Result<bool>>;
+}
+
+/// Trait-object version of kitsune2 [`BlockFactory`] trait.
+pub type DynBlockFactory = Arc<dyn BlockFactory>;
+
+/// A factory for constructing [`Block`] instances.
+pub trait BlockFactory: 'static + Send + Sync + std::fmt::Debug {
+    /// Help the builder construct a default config from the chosen module factories.
+    fn default_config(&self, config: &mut Config) -> K2Result<()>;
+
+    /// Validate configuration.
+    fn validate_config(&self, config: &Config) -> K2Result<()>;
+
+    /// Construct a [`Block`] instance.
+    fn create(
+        &self,
+        builder: Arc<Builder>,
+        space_id: SpaceId,
+    ) -> BoxFut<'static, K2Result<DynBlock>>;
 }
