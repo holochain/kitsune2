@@ -1,5 +1,6 @@
 //! A production-ready memory-based peer store.
 
+use futures::executor::block_on;
 use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -79,13 +80,13 @@ impl PeerStoreFactory for MemPeerStoreFactory {
         &self,
         builder: Arc<Builder>,
         _space_id: SpaceId,
-        _blocks: DynBlocks,
+        blocks: DynBlocks,
     ) -> BoxFut<'static, K2Result<DynPeerStore>> {
         Box::pin(async move {
             let config: MemPeerStoreModConfig =
                 builder.config.get_module_config()?;
             let out: DynPeerStore =
-                Arc::new(MemPeerStore::new(config.mem_peer_store));
+                Arc::new(MemPeerStore::new(config.mem_peer_store, blocks));
             Ok(out)
         })
     }
@@ -100,8 +101,12 @@ impl std::fmt::Debug for MemPeerStore {
 }
 
 impl MemPeerStore {
-    pub fn new(config: MemPeerStoreConfig) -> Self {
-        Self(Mutex::new(Inner::new(config, std::time::Instant::now())))
+    pub fn new(config: MemPeerStoreConfig, blocks: DynBlocks) -> Self {
+        Self(Mutex::new(Inner::new(
+            config,
+            std::time::Instant::now(),
+            blocks,
+        )))
     }
 }
 
@@ -110,8 +115,9 @@ impl PeerStore for MemPeerStore {
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> BoxFut<'_, K2Result<()>> {
-        self.0.lock().unwrap().insert(agent_list);
-        Box::pin(async move { Ok(()) })
+        let res = self.0.lock().unwrap().insert(agent_list);
+
+        Box::pin(async move { res })
     }
 
     fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>> {
@@ -155,18 +161,21 @@ struct Inner {
     config: MemPeerStoreConfig,
     store: HashMap<AgentId, Arc<AgentInfoSigned>>,
     no_prune_until: std::time::Instant,
+    blocks: DynBlocks,
 }
 
 impl Inner {
     pub fn new(
         config: MemPeerStoreConfig,
         now_inst: std::time::Instant,
+        blocks: DynBlocks,
     ) -> Self {
         let no_prune_until = now_inst + config.prune_interval();
         Self {
             config,
             store: HashMap::new(),
             no_prune_until,
+            blocks,
         }
     }
 
@@ -189,12 +198,28 @@ impl Inner {
         self.do_prune(now_inst, Timestamp::now());
     }
 
-    pub fn insert(&mut self, agent_list: Vec<Arc<AgentInfoSigned>>) {
+    pub fn insert(
+        &mut self,
+        agent_list: Vec<Arc<AgentInfoSigned>>,
+    ) -> K2Result<()> {
         self.check_prune();
 
         let now = Timestamp::now();
 
         for agent in agent_list {
+            // Don't insert blocked agents.
+            // TODO: Don't use `block_on`.
+            if block_on(
+                self.blocks
+                    .is_blocked(BlockTarget::Agent(agent.agent.clone())),
+            )? {
+                tracing::debug!(
+                    ?agent,
+                    "Refusing to insert agent as it is currently blocked",
+                );
+                continue;
+            }
+
             // Don't insert expired infos.
             if agent.expires_at < now {
                 continue;
@@ -209,6 +234,8 @@ impl Inner {
 
             self.store.insert(agent.agent.clone(), agent);
         }
+
+        Ok(())
     }
 
     pub fn remove(&mut self, agent_id: &AgentId) {
