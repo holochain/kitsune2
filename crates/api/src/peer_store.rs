@@ -11,6 +11,9 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
         agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> BoxFut<'_, K2Result<()>>;
 
+    /// Remove agent from the store with the passed [`AgentId`].
+    fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>>;
+
     /// Get an agent from the store.
     fn get(
         &self,

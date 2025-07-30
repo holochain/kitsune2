@@ -113,6 +113,12 @@ impl PeerStore for MemPeerStore {
         Box::pin(async move { Ok(()) })
     }
 
+    fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>> {
+        self.0.lock().unwrap().remove(&agent_id);
+
+        Box::pin(async { Ok(()) })
+    }
+
     fn get(
         &self,
         agent: AgentId,
@@ -202,6 +208,10 @@ impl Inner {
 
             self.store.insert(agent.agent.clone(), agent);
         }
+    }
+
+    pub fn remove(&mut self, agent_id: &AgentId) {
+        self.store.remove(agent_id);
     }
 
     pub fn get(&mut self, agent: AgentId) -> Option<Arc<AgentInfoSigned>> {

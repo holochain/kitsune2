@@ -214,3 +214,22 @@ fn fixture_get_near_location() {
         assert_eq!(exp, &got.as_slice());
     }
 }
+
+#[test]
+fn can_remove_agent_from_store() {
+    let mut mem_store = create();
+
+    mem_store.insert(vec![AgentBuilder {
+        agent: Some(AGENT_1),
+        ..Default::default()
+    }
+    .build(TestLocalAgent::default())]);
+
+    let agent = mem_store.get(AGENT_1).unwrap();
+    assert_eq!(agent.agent, AGENT_1);
+
+    mem_store.remove(&AGENT_1);
+
+    let agent = mem_store.get(AGENT_1);
+    assert!(agent.is_none());
+}
