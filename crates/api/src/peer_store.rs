@@ -12,6 +12,9 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'_, K2Result<()>>;
 
     /// Remove agent from the store with the passed [`AgentId`].
+    ///
+    /// Note: If the agent is not also blocked via [`Blocks::block()`] then they will likely be
+    /// re-inserted shortly after removal. It is recommended to first block and then remove.
     fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>>;
 
     /// Get an agent from the store.

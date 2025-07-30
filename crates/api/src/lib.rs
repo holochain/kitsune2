@@ -41,6 +41,9 @@ pub use agent::*;
 mod arc;
 pub use arc::*;
 
+mod blocks;
+pub use blocks::*;
+
 mod bootstrap;
 pub use bootstrap::*;
 
