@@ -62,6 +62,9 @@ pub struct Builder {
     /// The [PublishFactory] to be used for creating [Publish]
     /// instances
     pub publish: DynPublishFactory,
+
+    /// The [`BlockFactory`] to be used for creating [`Block`] instances.
+    pub block: DynBlockFactory,
 }
 
 impl Builder {
@@ -86,6 +89,7 @@ impl Builder {
                 gossip,
                 local_agent_store,
                 publish,
+                block,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -99,6 +103,7 @@ impl Builder {
             gossip.default_config(config)?;
             local_agent_store.default_config(config)?;
             publish.default_config(config)?;
+            block.default_config(config)?;
 
             config.mark_defaults_set();
         }
@@ -119,6 +124,7 @@ impl Builder {
         self.gossip.validate_config(&self.config)?;
         self.local_agent_store.validate_config(&self.config)?;
         self.publish.validate_config(&self.config)?;
+        self.block.validate_config(&self.config)?;
 
         self.config.mark_validated();
 
