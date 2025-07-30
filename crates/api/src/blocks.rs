@@ -16,7 +16,7 @@ pub type DynBlocks = Arc<dyn Blocks>;
 ///
 /// Marked as `non_exhaustive` as other targets might be added later.
 #[non_exhaustive]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum BlockTarget {
     /// Block an agent by its [`AgentId`].
     Agent(AgentId),

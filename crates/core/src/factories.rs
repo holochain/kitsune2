@@ -37,3 +37,6 @@ pub use mem_transport::*;
 
 mod mem_op_store;
 pub use mem_op_store::*;
+
+mod mem_blocks;
+pub use mem_blocks::*;
