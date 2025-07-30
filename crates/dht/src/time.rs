@@ -451,14 +451,17 @@ impl TimePartition {
         &self,
         slice_index: u32,
     ) -> K2Result<bytes::Bytes> {
-        let slice_index = slice_index as usize;
-        if slice_index > self.partial_slices.len() {
-            return Err(K2Error::other(
-                "Requested slice index is beyond the current partial slices",
-            ));
-        }
-
-        Ok(self.partial_slices[slice_index].hash.clone().freeze())
+        Ok(self
+            .partial_slices
+            .get(slice_index as usize)
+            .ok_or_else(|| {
+                K2Error::other(
+                    "Requested slice index is beyond the current partial slices",
+                )
+            })?
+            .hash
+            .clone()
+            .freeze())
     }
 }
 
@@ -1627,6 +1630,37 @@ mod tests {
         let mut expected = vec![31 ^ 29];
         expected.resize(32, 0);
         assert_eq!(expected, pt.partial_slices.last().unwrap().hash);
+    }
+
+    #[tokio::test]
+    async fn access_out_of_bounds_partial_slice() {
+        let factor = 7;
+        let current_time = UNIX_TIMESTAMP
+            + Duration::from_secs(
+                // Enough time for all the partial slices
+                min_recent_time(factor).as_secs() + 1,
+            );
+        let store = test_store().await;
+        let pt = TimePartition::try_from_store(
+            factor,
+            current_time,
+            DhtArc::FULL,
+            store,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(0, pt.full_slices);
+        assert_eq!(factor as usize, pt.partial_slices.len());
+        validate_partial_slices(&pt);
+
+        assert!(pt.partial_slice_hash(0).is_ok());
+        assert!(pt
+            .partial_slice_hash(pt.partial_slices.len() as u32)
+            .is_err());
+        assert!(pt
+            .partial_slice_hash(pt.partial_slices.len() as u32 + 1)
+            .is_err());
     }
 
     fn validate_partial_slices(pt: &TimePartition) {
