@@ -41,8 +41,9 @@ impl BlockFactory for MemBlockFactory {
     }
 }
 
+/// A simple, in-memory implementation of the [`Block`] trait.
 #[derive(Default)]
-struct MemBlock(Mutex<HashSet<BlockTarget>>);
+pub struct MemBlock(Mutex<HashSet<BlockTarget>>);
 
 impl std::fmt::Debug for MemBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
