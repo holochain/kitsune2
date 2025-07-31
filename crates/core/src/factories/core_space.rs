@@ -145,6 +145,10 @@ impl SpaceFactory for CoreSpaceFactory {
                     fetch.clone(),
                 )
                 .await?;
+            let block = builder
+                .block
+                .create(builder.clone(), space_id.clone())
+                .await?;
 
             let out: DynSpace = Arc::new_cyclic(move |this| {
                 let current_url = tx.register_space_handler(
@@ -165,6 +169,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     fetch,
                     publish,
                     gossip,
+                    block,
                 )
             });
             Ok(out)
@@ -255,6 +260,7 @@ struct CoreSpace {
     fetch: DynFetch,
     publish: DynPublish,
     gossip: DynGossip,
+    block: DynBlock,
     inner: Arc<RwLock<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
 }
@@ -290,6 +296,7 @@ impl CoreSpace {
         fetch: DynFetch,
         publish: DynPublish,
         gossip: DynGossip,
+        block: DynBlock,
     ) -> Self {
         let task_check_agent_infos = tokio::task::spawn(check_agent_infos(
             config,
@@ -309,6 +316,7 @@ impl CoreSpace {
             fetch,
             publish,
             gossip,
+            block,
         }
     }
 
@@ -353,6 +361,10 @@ impl Space for CoreSpace {
 
     fn peer_meta_store(&self) -> &DynPeerMetaStore {
         &self.peer_meta_store
+    }
+
+    fn block(&self) -> &DynBlock {
+        &self.block
     }
 
     fn current_url(&self) -> Option<Url> {
