@@ -169,6 +169,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     fetch,
                     publish,
                     gossip,
+                    blocks,
                 )
             });
             Ok(out)
@@ -259,6 +260,7 @@ struct CoreSpace {
     fetch: DynFetch,
     publish: DynPublish,
     gossip: DynGossip,
+    blocks: DynBlocks,
     inner: Arc<RwLock<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
 }
@@ -294,6 +296,7 @@ impl CoreSpace {
         fetch: DynFetch,
         publish: DynPublish,
         gossip: DynGossip,
+        blocks: DynBlocks,
     ) -> Self {
         let task_check_agent_infos = tokio::task::spawn(check_agent_infos(
             config,
@@ -313,6 +316,7 @@ impl CoreSpace {
             fetch,
             publish,
             gossip,
+            blocks,
         }
     }
 
@@ -357,6 +361,10 @@ impl Space for CoreSpace {
 
     fn peer_meta_store(&self) -> &DynPeerMetaStore {
         &self.peer_meta_store
+    }
+
+    fn blocks(&self) -> &DynBlocks {
+        &self.blocks
     }
 
     fn current_url(&self) -> Option<Url> {
