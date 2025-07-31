@@ -1,6 +1,7 @@
 use kitsune2_api::{
-    AgentInfoSigned, DhtArc, DynLocalAgentStore, DynPeerMetaStore,
-    DynPeerStore, K2Result, KEY_PREFIX_ROOT, META_KEY_UNRESPONSIVE,
+    AgentId, AgentInfoSigned, BlockTarget, DhtArc, DynBlock,
+    DynLocalAgentStore, DynPeerMetaStore, DynPeerStore, K2Result,
+    KEY_PREFIX_ROOT, META_KEY_UNRESPONSIVE,
 };
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -134,11 +135,22 @@ async fn filter_unresponsive_agents(
         .collect())
 }
 
+/// Remove the agent with the provided [`AgentId`] from the [`crate::PeerStore`] and block it.
+pub async fn remove_and_block_agent(
+    peer_store: &DynPeerStore,
+    block: &DynBlock,
+    agent_id: &AgentId,
+) -> K2Result<()> {
+    block.block(BlockTarget::Agent(agent_id.clone())).await?;
+
+    peer_store.remove(agent_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::default_test_builder;
-    use kitsune2_api::{DynLocalAgent, Timestamp, Url};
+    use kitsune2_api::{BlockTarget, DynLocalAgent, Timestamp, Url};
     use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
     use kitsune2_test_utils::space::TEST_SPACE_ID;
     use std::sync::Arc;
@@ -520,5 +532,69 @@ mod tests {
         assert!(!responsive_remote_near_location
             .contains(&remote_agent_for_local_agent));
         assert!(!responsive_remote_near_location.contains(&unresponsive_agent));
+    }
+
+    #[tokio::test]
+    async fn remove_and_block_agent_removes_them_from_peer_store() {
+        let builder =
+            Arc::new(default_test_builder().with_default_config().unwrap());
+
+        let block = builder
+            .block
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
+
+        let peer_store = builder
+            .peer_store
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
+
+        let agent = AgentBuilder::default().build(TestLocalAgent::default());
+        let agent_id = agent.agent.clone();
+        peer_store.insert(vec![agent]).await.unwrap();
+        assert_eq!(peer_store.get_all().await.unwrap().len(), 1);
+
+        remove_and_block_agent(&peer_store, &block, &agent_id)
+            .await
+            .unwrap();
+
+        assert!(peer_store.get_all().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_and_block_agent_blocks_agent() {
+        let builder =
+            Arc::new(default_test_builder().with_default_config().unwrap());
+
+        let peer_store = builder
+            .peer_store
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
+
+        let block = builder
+            .block
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
+
+        let agent = AgentBuilder::default().build(TestLocalAgent::default());
+        let agent_id = agent.agent.clone();
+
+        assert!(!block
+            .is_blocked(&BlockTarget::Agent(agent_id.clone()))
+            .await
+            .unwrap());
+
+        remove_and_block_agent(&peer_store, &block, &agent_id)
+            .await
+            .unwrap();
+
+        assert!(block
+            .is_blocked(&BlockTarget::Agent(agent_id))
+            .await
+            .unwrap());
     }
 }
