@@ -155,6 +155,15 @@ impl PeerStore for MemPeerStore {
         let r = self.0.lock().unwrap().get_near_location(loc, limit);
         Box::pin(async move { Ok(r) })
     }
+
+    fn get_by_url(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
+        let r = self.0.lock().unwrap().get_by_url(&peer_url);
+
+        Box::pin(async move { Ok(r) })
+    }
 }
 
 struct Inner {
@@ -305,6 +314,16 @@ impl Inner {
         out.into_iter()
             .take(limit)
             .map(|(_, v)| v.clone())
+            .collect()
+    }
+
+    pub fn get_by_url(&mut self, peer_url: &Url) -> Vec<Arc<AgentInfoSigned>> {
+        self.check_prune();
+
+        self.store
+            .values()
+            .filter(|agent| agent.url.as_ref() == Some(peer_url))
+            .cloned()
             .collect()
     }
 }

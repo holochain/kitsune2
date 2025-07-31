@@ -46,6 +46,12 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
         loc: u32,
         limit: usize,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
+
+    /// Get a list of agents that are reachable at the passed [`Url`].
+    fn get_by_url(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
 }
 
 /// Trait-object [PeerStore].
