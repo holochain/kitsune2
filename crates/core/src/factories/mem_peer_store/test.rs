@@ -1,3 +1,5 @@
+use crate::factories::MemBlock;
+
 use super::*;
 use kitsune2_test_utils::agent::*;
 
@@ -8,6 +10,7 @@ fn create() -> Inner {
             prune_interval_s: 10,
         },
         std::time::Instant::now(),
+        Arc::new(MemBlock::default()),
     )
 }
 
@@ -51,7 +54,8 @@ fn prune_prunes_only_expired_agents() {
             ..Default::default()
         }
         .build(TestLocalAgent::default()),
-    ]);
+    ])
+    .unwrap();
 
     s.do_prune(
         std::time::Instant::now(),
@@ -69,7 +73,8 @@ fn happy_get() {
         agent: Some(AGENT_1),
         ..Default::default()
     }
-    .build(TestLocalAgent::default())]);
+    .build(TestLocalAgent::default())])
+        .unwrap();
 
     let a = s.get(AGENT_1).unwrap();
     assert_eq!(a.agent, AGENT_1);
@@ -90,7 +95,8 @@ fn happy_get_all() {
             ..Default::default()
         }
         .build(TestLocalAgent::default()),
-    ]);
+    ])
+    .unwrap();
 
     let mut a = s
         .get_all()
@@ -143,7 +149,8 @@ fn fixture_get_by_overlapping_storage_arc() {
                 url: Some(Some(sneak_url(arc_name))),
                 ..Default::default()
             }
-            .build(TestLocalAgent::default())]);
+            .build(TestLocalAgent::default())])
+                .unwrap();
         }
 
         let mut got = s
@@ -171,7 +178,8 @@ fn fixture_get_near_location() {
             url: Some(Some(sneak_url(&idx.to_string()))),
             ..Default::default()
         }
-        .build(TestLocalAgent::default())]);
+        .build(TestLocalAgent::default())])
+            .unwrap();
     }
 
     // these should not be returned because they are invalid.
@@ -197,7 +205,8 @@ fn fixture_get_near_location() {
             ..Default::default()
         }
         .build(TestLocalAgent::default()),
-    ]);
+    ])
+    .unwrap();
 
     const F: &[(&[&str], u32)] = &[
         (&["0", "1", "7", "2", "6", "3", "5", "4"], 0),
