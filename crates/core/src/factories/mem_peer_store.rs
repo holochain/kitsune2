@@ -3,7 +3,8 @@
 use futures::executor::block_on;
 use kitsune2_api::*;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// MemPeerStore configuration types.
 mod config {
@@ -115,36 +116,34 @@ impl PeerStore for MemPeerStore {
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> BoxFut<'_, K2Result<()>> {
-        let res = self.0.lock().unwrap().insert(agent_list);
-
-        Box::pin(async move { res })
+        Box::pin(async move { self.0.lock().await.insert(agent_list) })
     }
 
     fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>> {
-        self.0.lock().unwrap().remove(&agent_id);
-
-        Box::pin(async { Ok(()) })
+        Box::pin(async move {
+            self.0.lock().await.remove(&agent_id);
+            Ok(())
+        })
     }
 
     fn get(
         &self,
         agent: AgentId,
     ) -> BoxFut<'_, K2Result<Option<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get(agent);
-        Box::pin(async move { Ok(r) })
+        Box::pin(async move { Ok(self.0.lock().await.get(agent)) })
     }
 
     fn get_all(&self) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get_all();
-        Box::pin(async move { Ok(r) })
+        Box::pin(async move { Ok(self.0.lock().await.get_all()) })
     }
 
     fn get_by_overlapping_storage_arc(
         &self,
         arc: DhtArc,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get_by_overlapping_storage_arc(arc);
-        Box::pin(async move { Ok(r) })
+        Box::pin(async move {
+            Ok(self.0.lock().await.get_by_overlapping_storage_arc(arc))
+        })
     }
 
     fn get_near_location(
@@ -152,17 +151,16 @@ impl PeerStore for MemPeerStore {
         loc: u32,
         limit: usize,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get_near_location(loc, limit);
-        Box::pin(async move { Ok(r) })
+        Box::pin(async move {
+            Ok(self.0.lock().await.get_near_location(loc, limit))
+        })
     }
 
     fn get_by_url(
         &self,
         peer_url: Url,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
-        let r = self.0.lock().unwrap().get_by_url(&peer_url);
-
-        Box::pin(async move { Ok(r) })
+        Box::pin(async move { Ok(self.0.lock().await.get_by_url(&peer_url)) })
     }
 }
 
