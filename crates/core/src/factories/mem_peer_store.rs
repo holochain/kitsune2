@@ -1,6 +1,5 @@
 //! A production-ready memory-based peer store.
 
-use futures::executor::block_on;
 use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -116,7 +115,7 @@ impl PeerStore for MemPeerStore {
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move { self.0.lock().await.insert(agent_list) })
+        Box::pin(async move { self.0.lock().await.insert(agent_list).await })
     }
 
     fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>> {
@@ -205,7 +204,7 @@ impl Inner {
         self.do_prune(now_inst, Timestamp::now());
     }
 
-    pub fn insert(
+    pub async fn insert(
         &mut self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> K2Result<()> {
@@ -215,11 +214,11 @@ impl Inner {
 
         for agent in agent_list {
             // Don't insert blocked agents.
-            // TODO: Don't use `block_on`.
-            if block_on(
-                self.blocks
-                    .is_blocked(BlockTarget::Agent(agent.agent.clone())),
-            )? {
+            if self
+                .blocks
+                .is_blocked(BlockTarget::Agent(agent.agent.clone()))
+                .await?
+            {
                 tracing::debug!(
                     ?agent,
                     "Refusing to insert agent as it is currently blocked",

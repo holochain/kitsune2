@@ -37,8 +37,8 @@ fn empty_store() {
     assert_eq!(0, s.get_all().len());
 }
 
-#[test]
-fn prune_prunes_only_expired_agents() {
+#[tokio::test]
+async fn prune_prunes_only_expired_agents() {
     let mut s = create();
 
     s.insert(vec![
@@ -55,6 +55,7 @@ fn prune_prunes_only_expired_agents() {
         }
         .build(TestLocalAgent::default()),
     ])
+    .await
     .unwrap();
 
     s.do_prune(
@@ -65,8 +66,8 @@ fn prune_prunes_only_expired_agents() {
     assert_eq!(1, s.get_all().len());
 }
 
-#[test]
-fn happy_get() {
+#[tokio::test]
+async fn happy_get() {
     let mut s = create();
 
     s.insert(vec![AgentBuilder {
@@ -74,14 +75,15 @@ fn happy_get() {
         ..Default::default()
     }
     .build(TestLocalAgent::default())])
+        .await
         .unwrap();
 
     let a = s.get(AGENT_1).unwrap();
     assert_eq!(a.agent, AGENT_1);
 }
 
-#[test]
-fn happy_get_all() {
+#[tokio::test]
+async fn happy_get_all() {
     let mut s = create();
 
     s.insert(vec![
@@ -96,6 +98,7 @@ fn happy_get_all() {
         }
         .build(TestLocalAgent::default()),
     ])
+    .await
     .unwrap();
 
     let mut a = s
@@ -107,8 +110,8 @@ fn happy_get_all() {
     assert_eq!(&[AGENT_1, AGENT_2], a.as_slice());
 }
 
-#[test]
-fn fixture_get_by_overlapping_storage_arc() {
+#[tokio::test]
+async fn fixture_get_by_overlapping_storage_arc() {
     const fn u32f(f: f64) -> u32 {
         (u32::MAX as f64 * f) as u32
     }
@@ -150,6 +153,7 @@ fn fixture_get_by_overlapping_storage_arc() {
                 ..Default::default()
             }
             .build(TestLocalAgent::default())])
+                .await
                 .unwrap();
         }
 
@@ -165,8 +169,8 @@ fn fixture_get_by_overlapping_storage_arc() {
     }
 }
 
-#[test]
-fn fixture_get_near_location() {
+#[tokio::test]
+async fn fixture_get_near_location() {
     let mut s = create();
 
     for idx in 0..8 {
@@ -179,6 +183,7 @@ fn fixture_get_near_location() {
             ..Default::default()
         }
         .build(TestLocalAgent::default())])
+            .await
             .unwrap();
     }
 
@@ -206,6 +211,7 @@ fn fixture_get_near_location() {
         }
         .build(TestLocalAgent::default()),
     ])
+    .await
     .unwrap();
 
     const F: &[(&[&str], u32)] = &[
@@ -224,8 +230,8 @@ fn fixture_get_near_location() {
     }
 }
 
-#[test]
-fn can_remove_agent_from_store() {
+#[tokio::test]
+async fn can_remove_agent_from_store() {
     let mut mem_store = create();
 
     mem_store
@@ -234,6 +240,7 @@ fn can_remove_agent_from_store() {
             ..Default::default()
         }
         .build(TestLocalAgent::default())])
+        .await
         .unwrap();
 
     let agent = mem_store.get(AGENT_1).unwrap();
@@ -264,6 +271,7 @@ async fn try_insert_blocked_agent() {
             ..Default::default()
         }
         .build(TestLocalAgent::default())])
+        .await
         .unwrap();
 
     let agent = mem_store.get(AGENT_1);
@@ -296,6 +304,7 @@ async fn try_insert_multiple_agents_when_one_is_blocked() {
             }
             .build(TestLocalAgent::default()),
         ])
+        .await
         .unwrap();
 
     let agent_1 = mem_store.get(AGENT_1);
@@ -322,6 +331,7 @@ async fn remove_blocked_agent() {
             ..Default::default()
         }
         .build(TestLocalAgent::default())])
+        .await
         .unwrap();
 
     blocks.block(BlockTarget::Agent(AGENT_1)).await.unwrap();
