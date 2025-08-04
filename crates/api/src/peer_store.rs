@@ -5,7 +5,11 @@ use std::sync::Arc;
 
 /// Represents the ability to store and query agents.
 pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
-    /// Insert agents into the store.
+    /// Insert agents into the store so long as they are not blocked.
+    ///
+    /// Note: It is expected that the implementation of this method will respect the blocking of
+    /// agents done by [`Blocks`]. Therefore it is important to call [`Blocks::is_blocked`] before
+    /// inserting the passed agent.
     fn insert(
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
