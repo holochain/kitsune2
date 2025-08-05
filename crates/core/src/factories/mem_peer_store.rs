@@ -79,6 +79,7 @@ impl PeerStoreFactory for MemPeerStoreFactory {
         &self,
         builder: Arc<Builder>,
         _space_id: SpaceId,
+        _blocks: DynBlocks,
     ) -> BoxFut<'static, K2Result<DynPeerStore>> {
         Box::pin(async move {
             let config: MemPeerStoreModConfig =

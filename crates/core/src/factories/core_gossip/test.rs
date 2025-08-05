@@ -39,7 +39,15 @@ async fn create_gossip_instance() {
             space_id.clone(),
             builder
                 .peer_store
-                .create(builder.clone(), space_id.clone())
+                .create(
+                    builder.clone(),
+                    space_id.clone(),
+                    builder
+                        .blocks
+                        .create(builder.clone(), space_id.clone())
+                        .await
+                        .unwrap(),
+                )
                 .await
                 .unwrap(),
             builder

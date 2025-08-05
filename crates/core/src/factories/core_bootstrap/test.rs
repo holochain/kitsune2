@@ -69,9 +69,15 @@ impl Test {
         let builder = Arc::new(builder);
         println!("{}", serde_json::to_string(&builder.config).unwrap());
 
+        let blocks = builder
+            .blocks
+            .create(builder.clone(), S1.clone())
+            .await
+            .unwrap();
+
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), S1.clone())
+            .create(builder.clone(), S1.clone(), blocks)
             .await
             .unwrap();
 

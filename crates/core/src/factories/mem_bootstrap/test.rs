@@ -47,9 +47,15 @@ impl Test {
         );
         println!("{}", serde_json::to_string(&builder.config).unwrap());
 
+        let blocks = builder
+            .blocks
+            .create(builder.clone(), space_id.clone())
+            .await
+            .unwrap();
+
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), space_id.clone())
+            .create(builder.clone(), space_id.clone(), blocks)
             .await
             .unwrap();
 

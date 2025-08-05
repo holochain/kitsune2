@@ -392,9 +392,14 @@ async fn create_publish(
         )
         .await
         .unwrap();
+    let blocks = builder
+        .blocks
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
     let peer_store = builder
         .peer_store
-        .create(builder.clone(), TEST_SPACE_ID)
+        .create(builder.clone(), TEST_SPACE_ID, blocks)
         .await
         .unwrap();
     let publish = CorePublish::new(
