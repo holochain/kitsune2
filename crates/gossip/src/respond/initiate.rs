@@ -594,6 +594,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolve_tie_break_tie() {
+        enable_tracing();
+
+        let mut harness = RespondTestHarness::create().await;
+
+        let remote_agent = harness.create_agent(DhtArc::Empty).await;
+
+        // Initiate a session with the remote agent
+        let initiated = harness
+            .gossip
+            .initiate_gossip(remote_agent.url.clone().unwrap())
+            .await
+            .unwrap();
+        assert!(initiated);
+
+        // Wait for us to send the initiate message
+        let response = harness.wait_for_sent_response().await;
+        let initiate = match response {
+            GossipMessage::Initiate(initiate) => initiate,
+            other => panic!("Expected initiate message, got: {:?}", other),
+        };
+
+        assert!(initiate.tie_breaker > 0, "Expected tie breaker to be set");
+
+        // Send an initiate message. It doesn't need to be valid for this test, it just needs to
+        // have the same value for the tie-breaker.
+        let arc_set = ArcSet::new(vec![DhtArc::FULL]).unwrap();
+        harness
+            .gossip
+            .respond_to_msg(
+                remote_agent.url.clone().unwrap(),
+                GossipMessage::Initiate(K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: vec![],
+                    arc_set: Some(ArcSetMessage {
+                        value: arc_set.encode(),
+                    }),
+                    tie_breaker: initiate.tie_breaker,
+                    new_since: Timestamp::now().as_micros(),
+                    max_op_data_bytes: 5_000,
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Check that we accepted the session
+        let response = harness.wait_for_sent_response().await;
+        match response {
+            GossipMessage::Accept(accept) => accept,
+            other => panic!("Expected accept message, got: {:?}", other),
+        };
+
+        // Check that we removed our initiated state
+        {
+            let initiated_lock =
+                harness.gossip.initiated_round_state.lock().await;
+            assert!(initiated_lock.is_none());
+        }
+    }
+
+    #[tokio::test]
     async fn respect_size_limit_for_new_ops() {
         enable_tracing();
 
