@@ -184,7 +184,7 @@ mod tests {
         decode_ids, DhtArc, Gossip, LocalAgent, OpId, Timestamp, Url,
         UNIX_TIMESTAMP,
     };
-    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_core::factories::TestMemoryOp;
     use kitsune2_core::Ed25519LocalAgent;
     use kitsune2_dht::{ArcSet, SECTOR_SIZE};
     use kitsune2_test_utils::enable_tracing;
@@ -609,7 +609,7 @@ mod tests {
 
         let mut ops = Vec::new();
         for i in 0u8..available_ops {
-            let op = MemoryOp::new(Timestamp::now(), vec![i; op_size]);
+            let op = TestMemoryOp::new(Timestamp::now(), vec![i; op_size]);
             ops.push(op);
         }
 

@@ -7,7 +7,7 @@ use kitsune2_api::{
 use kitsune2_core::{
     factories::{
         config::{CoreBootstrapConfig, CoreBootstrapModConfig},
-        MemoryOp,
+        MemoryOp, TestMemoryOp,
     },
     Ed25519LocalAgent,
 };
@@ -26,7 +26,8 @@ fn create_op_list(num_ops: u16) -> (Vec<Bytes>, Vec<OpId>) {
     let mut ops = Vec::new();
     let mut op_ids = Vec::new();
     for _ in 0..num_ops {
-        let op = MemoryOp::new(Timestamp::from_micros(0), random_bytes(256));
+        let op =
+            TestMemoryOp::new(Timestamp::from_micros(0), random_bytes(256));
         let op_id = op.compute_op_id();
         ops.push(op.into());
         op_ids.push(op_id);

@@ -163,7 +163,7 @@ pub fn default_test_builder() -> Builder {
         bootstrap: factories::MemBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         transport: factories::MemTransportFactory::create(),
-        op_store: factories::MemOpStoreFactory::create(),
+        op_store: factories::MemOpStoreFactory::<TestMemoryOp>::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
         gossip: factories::CoreGossipStubFactory::create(),
         local_agent_store: factories::CoreLocalAgentStoreFactory::create(),
@@ -176,6 +176,8 @@ pub mod factories;
 
 mod common;
 pub use common::*;
+
+use crate::factories::TestMemoryOp;
 
 #[cfg(any(doc, docsrs))]
 pub mod doc;

@@ -1,6 +1,6 @@
 use kitsune2_api::*;
-use kitsune2_core::factories::{CoreFetchConfig, CoreFetchModConfig};
-use kitsune2_core::{default_test_builder, factories::MemoryOp};
+use kitsune2_core::factories::{CoreFetchConfig, CoreFetchModConfig, MemoryOp};
+use kitsune2_core::{default_test_builder, factories::TestMemoryOp};
 use kitsune2_test_utils::{
     enable_tracing, iter_check, random_bytes, space::TEST_SPACE_ID,
 };
@@ -18,11 +18,11 @@ impl TxBaseHandler for MockTxHandler {
 }
 impl TxHandler for MockTxHandler {}
 
-fn create_op_list(num_ops: u16) -> (Vec<MemoryOp>, Vec<OpId>) {
+fn create_op_list(num_ops: u16) -> (Vec<TestMemoryOp>, Vec<OpId>) {
     let mut ops = Vec::new();
     let mut op_ids = Vec::new();
     for _ in 0..num_ops {
-        let op = MemoryOp::new(Timestamp::now(), random_bytes(32));
+        let op = TestMemoryOp::new(Timestamp::now(), random_bytes(32));
         let op_id = op.compute_op_id();
         ops.push(op);
         op_ids.push(op_id);

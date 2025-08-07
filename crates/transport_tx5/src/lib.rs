@@ -33,8 +33,9 @@ trait SigUrlExt {
 
 impl SigUrlExt for &str {
     fn to_sig_url(&self) -> K2Result<tx5::SigUrl> {
-        tx5::SigUrl::parse(self)
-            .map_err(|e| K2Error::other_src("parsing tx5 sig url", e))
+        tx5::SigUrl::parse(self).map_err(|e| {
+            K2Error::other_src(&format!("parsing tx5 sig url: {self}"), e)
+        })
     }
 }
 

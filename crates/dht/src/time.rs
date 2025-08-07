@@ -718,7 +718,7 @@ mod tests {
     use super::*;
     use crate::test::test_store;
     use kitsune2_api::OpId;
-    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_core::factories::TestMemoryOp;
     use kitsune2_test_utils::enable_tracing;
 
     #[test]
@@ -897,9 +897,12 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                MemoryOp::new((current_time - UNIT_TIME).unwrap(), vec![7; 32])
-                    .into(),
-                MemoryOp::new(
+                TestMemoryOp::new(
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![7; 32],
+                )
+                .into(),
+                TestMemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
                     vec![23; 32],
                 )
@@ -979,8 +982,8 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
-                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
             ])
             .await
             .unwrap();
@@ -1029,14 +1032,14 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
-                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
-                MemoryOp::new(
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
+                TestMemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
                     vec![11; 32],
                 )
                 .into(),
-                MemoryOp::new(
+                TestMemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
                     vec![29; 32],
                 )
@@ -1092,8 +1095,8 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
-                MemoryOp::new(
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                TestMemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
                     vec![11; 32],
                 )
@@ -1147,9 +1150,12 @@ mod tests {
             .unwrap();
         store
             .process_incoming_ops(vec![
-                MemoryOp::new((current_time - UNIT_TIME).unwrap(), vec![7; 32])
-                    .into(),
-                MemoryOp::new(
+                TestMemoryOp::new(
+                    (current_time - UNIT_TIME).unwrap(),
+                    vec![7; 32],
+                )
+                .into(),
+                TestMemoryOp::new(
                     (current_time - UNIT_TIME).unwrap(),
                     vec![29; 32],
                 )
@@ -1173,7 +1179,7 @@ mod tests {
 
         // Store a new op which will currently be outside the last partial slice
         store
-            .process_incoming_ops(vec![MemoryOp::new(
+            .process_incoming_ops(vec![TestMemoryOp::new(
                 current_time,
                 vec![13; 32],
             )
@@ -1210,8 +1216,8 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
-                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
             ])
             .await
             .unwrap();
@@ -1238,7 +1244,7 @@ mod tests {
 
         // Store a new op, currently in the first partial slice, but will be in the next full slice.
         store
-            .process_incoming_ops(vec![MemoryOp::new(
+            .process_incoming_ops(vec![TestMemoryOp::new(
                 pt.full_slice_end_timestamp(), // Start of the next full slice
                 vec![13; 32],
             )
@@ -1301,16 +1307,16 @@ mod tests {
         store
             .process_incoming_ops(vec![
                 // Store two new ops at the unix timestamp, to go into the first complete slice
-                MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
-                MemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
+                TestMemoryOp::new(UNIX_TIMESTAMP, vec![23; 32]).into(),
                 // Store two new ops at the unix timestamp plus one full time slice,
                 // to go into the second complete slice
-                MemoryOp::new(
+                TestMemoryOp::new(
                     UNIX_TIMESTAMP + pt.full_slice_duration,
                     vec![11; 32],
                 )
                 .into(),
-                MemoryOp::new(
+                TestMemoryOp::new(
                     UNIX_TIMESTAMP + pt.full_slice_duration,
                     vec![37; 32],
                 )
@@ -1387,7 +1393,7 @@ mod tests {
 
         // Now insert an op at the current time
         store
-            .process_incoming_ops(vec![MemoryOp::new(
+            .process_incoming_ops(vec![TestMemoryOp::new(
                 pt.full_slice_end_timestamp(),
                 vec![7; 32],
             )
@@ -1462,7 +1468,7 @@ mod tests {
         let store = test_store().await;
         // Insert a single op in the first time slice
         store
-            .process_incoming_ops(vec![MemoryOp::new(
+            .process_incoming_ops(vec![TestMemoryOp::new(
                 UNIX_TIMESTAMP,
                 vec![7, 0, 0, 0],
             )
@@ -1571,12 +1577,12 @@ mod tests {
         let store = test_store().await;
         store
             .process_incoming_ops(vec![
-                MemoryOp::new(
+                TestMemoryOp::new(
                     UNIX_TIMESTAMP + Duration::from_secs(10),
                     vec![7, 0, 0, 0],
                 )
                 .into(),
-                MemoryOp::new(
+                TestMemoryOp::new(
                     (current_time - Duration::from_secs(30)).unwrap(),
                     vec![31, 0, 0, 0],
                 )

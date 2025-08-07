@@ -3,7 +3,7 @@
 //! This test uses the default network transport and creates enough data to be realistic.
 
 use kitsune2_api::{DhtArc, Timestamp};
-use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::factories::{MemoryOp, TestMemoryOp};
 use kitsune2_gossip::harness::{K2GossipFunctionalTestFactory, MemoryOpRecord};
 use kitsune2_gossip::K2GossipConfig;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
@@ -56,7 +56,7 @@ async fn historical_load() {
             % (MAX_OP_SIZE_BYTES - MIN_OP_SIZE_BYTES)
             + MIN_OP_SIZE_BYTES;
 
-        let op = MemoryOp::new(time, random_bytes(op_size as u16));
+        let op = TestMemoryOp::new(time, random_bytes(op_size as u16));
         ops.push(MemoryOpRecord {
             op_id: op.compute_op_id(),
             op_data: op.op_data,
