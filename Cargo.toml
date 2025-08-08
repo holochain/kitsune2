@@ -95,9 +95,9 @@ tracing-appender = "0.2.3"
 # Used in testing and the showcase app to output tracing
 tracing-subscriber = "0.3"
 # for init config
-tx5-core = "0.5.0"
+tx5-core = "0.6.0"
 # for the transport_tx5 crate
-tx5 = { version = "0.5.0", default-features = false }
+tx5 = { version = "0.6.0", default-features = false }
 # TLS support for the bootstrap server
 axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
