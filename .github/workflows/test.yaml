@@ -46,6 +46,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Go Toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '=1.24.6'
+
       - uses: Swatinem/rust-cache@v2
 
       # we cannot use cmake 4 until openssl-src is updated
@@ -58,7 +63,15 @@ jobs:
         run: make build
 
       - name: Test
-        run: make test
+        run: |
+          make test
+          cargo test \
+            --package kitsune2_transport_tx5 \
+            --package kitsune2 \
+            --no-default-features \
+            --features backend-go-pion \
+            -- \
+            --nocapture
 
   test-windows:
     needs: static
@@ -71,6 +84,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Go Toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '=1.24.6'
 
       - uses: Swatinem/rust-cache@v2
 
@@ -96,6 +114,7 @@ jobs:
         run: |-
           $env:SODIUM_LIB_DIR="$(pwd)\vcpkg\packages\libsodium_x64-windows-release\lib"
           make test
+          cargo test --package kitsune2_transport_tx5 --package kitsune2 --no-default-features --features backend-go-pion -- --nocapture
 
   nix-build:
     needs: static

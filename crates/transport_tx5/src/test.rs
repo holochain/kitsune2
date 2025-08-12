@@ -750,7 +750,21 @@ async fn dump_network_stats() {
     let stats_1 = t1.dump_network_stats().await.unwrap();
     let stats_2 = t2.dump_network_stats().await.unwrap();
 
+    #[cfg(all(
+        feature = "backend-libdatachannel",
+        not(feature = "backend-go-pion")
+    ))]
     assert_eq!(stats_1.backend, "BackendLibDataChannel");
+    #[cfg(all(
+        feature = "backend-go-pion",
+        not(feature = "backend-libdatachannel")
+    ))]
+    assert_eq!(stats_1.backend, "BackendGoPion");
+    #[cfg(all(
+        feature = "backend-go-pion",
+        not(feature = "backend-libdatachannel")
+    ))]
+    panic!("This test must be run with either libdatachannel or go-pion enabled, but not both.");
 
     let peer_url_1 = stats_1.peer_urls.first().unwrap();
     let peer_id_1 = peer_url_1.peer_id().unwrap();
