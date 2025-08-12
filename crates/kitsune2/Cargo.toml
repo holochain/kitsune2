@@ -37,7 +37,22 @@ jsonschema = { workspace = true }
 [features]
 default = ["datachannel-vendored"]
 
-datachannel-vendored = ["kitsune2_transport_tx5/datachannel-vendored"]
+# Use the datachannel backend for the tx5 transport.
+backend-libdatachannel = ["kitsune2_transport_tx5/backend-libdatachannel"]
+
+# Use the go-pion backend for the tx5 transport.
+#
+# If enabled with the `backend-libdatachannel` feature, the go-pion library will be built but not used.
+backend-go-pion = ["kitsune2_transport_tx5/backend-go-pion"]
+
+# Recommended feature to build the datachannel library as part of the tx5 build.
+#
+# Unless you have a build issue or other reason to use your own datachannel library, consider
+# using this feature.
+datachannel-vendored = [
+  "backend-libdatachannel",
+  "kitsune2_transport_tx5/datachannel-vendored",
+]
 
 schema = [
   "dep:schemars",
