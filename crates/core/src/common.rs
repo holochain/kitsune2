@@ -116,6 +116,8 @@ async fn filter_unresponsive_agents(
     peer_meta_store: DynPeerMetaStore,
     agent_list: Vec<Arc<AgentInfoSigned>>,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
+    tracing::info!(?agent_list, "Filtering out unresponsive agents");
+
     let mut filtered_list = Vec::new();
     for agent in agent_list {
         if let Some(url) = &agent.url {
@@ -130,6 +132,9 @@ async fn filter_unresponsive_agents(
             }
         }
     }
+
+    tracing::info!(?filtered_list, "Filtered unresponsive agents");
+
     Ok(filtered_list)
 }
 
