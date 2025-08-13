@@ -2,6 +2,7 @@ use super::*;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::collections::HashSet;
 use std::sync::Mutex;
+use kitsune2_test_utils::enable_tracing;
 
 // We don't need or want to test all of tx5 in here... that should be done
 // in the tx5 repo. Here we should only test the kitsune2 integration of tx5.
@@ -541,6 +542,8 @@ async fn preflight_send_recv() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_peer_marked_unresponsive() {
+    enable_tracing();
+
     // set the tx5 timeout to 5 seconds to keep the test reasonably short
     let test = Test::new(None, Some(5)).await;
 
@@ -566,7 +569,7 @@ async fn nonexistent_peer_marked_unresponsive() {
     );
 
     let faulty_url = Url::from_str(
-        "ws://127.0.0.1:40813/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii-Oc-0IRtHmc",
+        format!("ws://127.0.0.1:{}/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii-Oc-0IRtHmc", test.port),
     )
     .unwrap();
 
@@ -592,18 +595,22 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     let url = maybe_url_and_when.unwrap().0;
 
-    assert!(faulty_url == url);
+    assert_eq!(faulty_url, url);
+
+    assert!(transport1.dump_network_stats().await.unwrap().connections.is_empty(), "Expected no connections to be present in the transport after sending to a non-existent peer, but found some.");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn offline_peer_marked_unresponsive() {
+    enable_tracing();
+
     // set the tx5 timeout to 5 seconds to keep the test reasonably short
     let test = Test::new(None, Some(5)).await;
 
     let (unresp_send, mut unresp_recv) = tokio::sync::mpsc::unbounded_channel();
 
     let url1 =
-        Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+        Arc::new(Mutex::new(Url::from_str(format!("ws://127.0.0.1:{}/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii", test.port)).unwrap()));
     let url1_2 = url1.clone();
     let tx_handler1 = Arc::new(CbHandler {
         new_addr: Arc::new(move |url| {
@@ -629,7 +636,7 @@ async fn offline_peer_marked_unresponsive() {
 
     let (s_send, mut s_recv) = tokio::sync::mpsc::unbounded_channel();
     let url2 =
-        Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
+        Arc::new(Mutex::new(Url::from_str(format!("ws://127.0.0.1:{}/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dia", test.port)).unwrap()));
     let url2_2 = url2.clone();
     let tx_handler2 = Arc::new(CbHandler {
         new_addr: Arc::new(move |url| {
@@ -679,8 +686,8 @@ async fn offline_peer_marked_unresponsive() {
 
     // Now peer 2 goes offline and we check that it gets marked as unresponsive
     drop(transport2);
-    // This holds some reference to something.
-    drop(test);
+
+    assert!(!transport1.dump_network_stats().await.unwrap().connections.is_empty(), "Expected connections to be present in the transport before sending to an offline peer, but found none.");
 
     // We need to wait for a while in order for the webrtc connection to get
     // disconnected. If this test becomes flaky, this waiting period may need
@@ -712,7 +719,9 @@ async fn offline_peer_marked_unresponsive() {
 
     let url = r.unwrap().0;
 
-    assert!(url2 == url);
+    assert_eq!(url2, url);
+
+    assert!(transport1.dump_network_stats().await.unwrap().connections.is_empty(), "Expected no connections to be present in the transport after sending to an offline peer, but found some.");
 }
 
 #[tokio::test(flavor = "multi_thread")]

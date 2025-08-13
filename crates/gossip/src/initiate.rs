@@ -261,7 +261,7 @@ async fn select_responsive_and_least_recently_gossiped(
             continue;
         };
 
-        // Agent has been marked as unreachable, we won't be able to gossip
+        // Agent has been marked as unresponsive, we won't be able to gossip
         // with them.
         if peer_meta_store
             .get_unresponsive(url.clone())
