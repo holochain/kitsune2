@@ -125,6 +125,8 @@ async fn filter_unresponsive_agents(
                 .is_none()
             {
                 filtered_list.push(agent);
+            } else {
+                tracing::debug!(?url, "Filtering out unresponsive peer");
             }
         }
     }
