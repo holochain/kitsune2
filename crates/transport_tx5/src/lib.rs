@@ -233,9 +233,9 @@ impl Tx5Transport {
                 }),
             )),
             timeout: std::time::Duration::from_secs(config.timeout_s as u64),
-            backend_module: tx5::backend::BackendModule::LibDataChannel,
+            backend_module: tx5::backend::BackendModule::default(),
             backend_module_config: Some(
-                tx5::backend::BackendModule::LibDataChannel.default_config(),
+                tx5::backend::BackendModule::default().default_config(),
             ),
             initial_webrtc_config: serde_json::to_string(&config.webrtc_config)
                 .map_err(|e| {

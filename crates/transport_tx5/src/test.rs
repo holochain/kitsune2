@@ -759,7 +759,10 @@ async fn dump_network_stats() {
     let stats_1 = t1.dump_network_stats().await.unwrap();
     let stats_2 = t2.dump_network_stats().await.unwrap();
 
+    #[cfg(feature = "backend-libdatachannel")]
     assert_eq!(stats_1.backend, "BackendLibDataChannel");
+    #[cfg(feature = "backend-go-pion")]
+    assert_eq!(stats_1.backend, "BackendGoPion");
 
     let peer_url_1 = stats_1.peer_urls.first().unwrap();
     let peer_id_1 = peer_url_1.peer_id().unwrap();
