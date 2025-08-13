@@ -3179,8 +3179,7 @@ dependencies = [
 [[package]]
 name = "tx5"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77cb4d29fe08f80062158de5942d79ba86d80efa5b2280933457212f84dbbb6f"
+source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
 dependencies = [
  "base64",
  "futures",
@@ -3197,8 +3196,7 @@ dependencies = [
 [[package]]
 name = "tx5-connection"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3cf96dcd01754f154b71a16ee26b5efe1d4284e732b5f77c6a3b045a93815a2"
+source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
 dependencies = [
  "bit_field",
  "datachannel",
@@ -3215,8 +3213,7 @@ dependencies = [
 [[package]]
 name = "tx5-core"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b592d1c0640b7c761b92db3e7261ad0800ebe49e1c8d8e5b32b99d3fc158cfd5"
+source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
 dependencies = [
  "app_dirs2",
  "base64",
@@ -3233,8 +3230,7 @@ dependencies = [
 [[package]]
 name = "tx5-go-pion"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37405e2620a525f364372913fab4e942e0451abb46be0b1a30abbdb1b6978070"
+source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
 dependencies = [
  "futures",
  "tokio",
@@ -3245,8 +3241,7 @@ dependencies = [
 [[package]]
 name = "tx5-go-pion-sys"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f7b3200cad816f2fa336c74c03495b2308233e8232c094a400e1db6114675aa"
+source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
 dependencies = [
  "Inflector",
  "base64",
@@ -3263,8 +3258,7 @@ dependencies = [
 [[package]]
 name = "tx5-signal"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65e063a6532baff2f6d52a6c61e716e9f559749339b14bf8f7c4414fa0f057ff"
+source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
 dependencies = [
  "rand",
  "sbd-e2e-crypto-client",
