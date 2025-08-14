@@ -159,7 +159,14 @@ impl Inner {
     }
 
     fn do_prune(&mut self, now_inst: std::time::Instant, now_ts: Timestamp) {
-        self.store.retain(|_, v| v.expires_at > now_ts);
+        self.store.retain(|_, v| {
+            if v.expires_at > now_ts {
+                true
+            } else {
+                tracing::debug!(?v.agent, ?v.space, "Pruning expired agent info");
+                false
+            }
+        });
 
         // we only care about not looping on the order of tight cpu cycles
         // even a couple seconds gets us away from this.
@@ -185,12 +192,18 @@ impl Inner {
         for agent in agent_list {
             // Don't insert expired infos.
             if agent.expires_at < now {
+                tracing::debug!(?agent.agent, ?agent.space, "Ignoring insert for expired agent info");
                 continue;
             }
 
             if let Some(a) = self.store.get(&agent.agent) {
                 // If we already have a newer (or equal) one, abort.
                 if a.created_at >= agent.created_at {
+                    // Don't want to log anything if we got the same agent info again. That's a
+                    // normal part of operation to rediscover existing agents.
+                    if a.created_at > agent.created_at {
+                        tracing::debug!(?agent.agent, ?agent.space, "Ignoring insert for older agent info");
+                    }
                     continue;
                 }
             }
