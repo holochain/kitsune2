@@ -33,14 +33,29 @@ impl TxModuleHandler for FetchMessageHandler {
                             err,
                         )
                     })?;
-                self.incoming_request_tx
-                    .try_send((request.into(), peer))
-                    .map_err(|err| {
-                        K2Error::other_src(
-                            "could not insert incoming request into queue",
-                            err,
-                        )
-                    })
+
+                if let Err(err) = self
+                    .incoming_request_tx
+                    .try_send((request.into(), peer.clone()))
+                {
+                    match err {
+                        tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                            tracing::info!(?err, "could not insert incoming request into queue, dropping it");
+                        }
+                        tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                            tracing::warn!(
+                                ?peer,
+                                "incoming request queue is closed, dropping request"
+                            );
+                            return Err(K2Error::other_src(
+                                "incoming request queue is closed",
+                                err,
+                            ));
+                        }
+                    }
+                }
+
+                Ok(())
             }
             FetchMessageType::Response => {
                 let response =
@@ -50,14 +65,28 @@ impl TxModuleHandler for FetchMessageHandler {
                             err,
                         )
                     })?;
-                self.incoming_response_tx.try_send(response.ops).map_err(
-                    |err| {
-                        K2Error::other_src(
-                            "could not insert incoming response into queue",
-                            err,
-                        )
-                    },
-                )
+
+                if let Err(err) =
+                    self.incoming_response_tx.try_send(response.ops)
+                {
+                    match err {
+                        tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                            tracing::info!(?err, "incoming response queue is full, dropping response");
+                        }
+                        tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                            tracing::warn!(
+                                ?peer,
+                                "incoming response queue is closed, dropping response"
+                            );
+                            return Err(K2Error::other_src(
+                                "incoming response queue is closed",
+                                err,
+                            ));
+                        }
+                    }
+                }
+
+                Ok(())
             }
             unknown_message => Err(K2Error::other(format!(
                 "unknown fetch message: {unknown_message:?}"
@@ -71,10 +100,13 @@ impl TxBaseHandler for FetchMessageHandler {}
 #[cfg(test)]
 mod test {
     use super::FetchMessageHandler;
-    use crate::factories::core_fetch::test::test_utils::make_op;
+    use crate::factories::core_fetch::test::test_utils::{
+        make_op, random_peer_url,
+    };
+    use crate::factories::MOD_NAME;
     use bytes::Bytes;
     use kitsune2_api::*;
-    use kitsune2_test_utils::id::create_op_id_list;
+    use kitsune2_test_utils::id::{create_op_id_list, random_op_id};
     use kitsune2_test_utils::space::TEST_SPACE_ID;
     use prost::Message;
     use std::time::Duration;
@@ -203,5 +235,85 @@ mod test {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    /// The request or response queues could be filled up by multiple peers sending us messages.
+    /// It's not right to punish an individual peer without evidence that they did something
+    /// unreasonable. Returning an error here would close the connection and force the peer to
+    /// reconnect and resend the request. That's not actually helpful because we just end up with
+    /// more requests we can't service.
+    #[tokio::test]
+    async fn queue_full_not_an_error() {
+        let (incoming_request_tx, _rx1) = tokio::sync::mpsc::channel(10);
+        let (incoming_response_tx, _rx2) = tokio::sync::mpsc::channel(10);
+
+        let handler = FetchMessageHandler {
+            incoming_request_tx,
+            incoming_response_tx,
+        };
+
+        for _ in 0..15 {
+            handler
+                .recv_module_msg(
+                    random_peer_url(),
+                    TEST_SPACE_ID,
+                    MOD_NAME.to_string(),
+                    serialize_request_message(vec![random_op_id()]),
+                )
+                .unwrap();
+        }
+
+        for _ in 0..15 {
+            handler
+                .recv_module_msg(
+                    random_peer_url(),
+                    TEST_SPACE_ID,
+                    MOD_NAME.to_string(),
+                    serialize_response_message(vec![make_op(vec![0]).into()]),
+                )
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn closed_channel_returns_err() {
+        let (incoming_request_tx, incoming_request_rx) =
+            tokio::sync::mpsc::channel(1);
+        let (incoming_response_tx, incoming_response_rx) =
+            tokio::sync::mpsc::channel(1);
+
+        let handler = FetchMessageHandler {
+            incoming_request_tx,
+            incoming_response_tx,
+        };
+
+        drop(incoming_request_rx); // close receiver
+        drop(incoming_response_rx); // close receiver
+
+        let err = handler
+            .recv_module_msg(
+                random_peer_url(),
+                TEST_SPACE_ID,
+                MOD_NAME.to_string(),
+                serialize_request_message(vec![random_op_id()]),
+            )
+            .unwrap_err();
+
+        assert!(
+            matches!(err, K2Error::Other { ctx, .. } if ctx.contains("incoming request queue is closed"))
+        );
+
+        let err = handler
+            .recv_module_msg(
+                random_peer_url(),
+                TEST_SPACE_ID,
+                MOD_NAME.to_string(),
+                serialize_response_message(vec![make_op(vec![0]).into()]),
+            )
+            .unwrap_err();
+
+        assert!(
+            matches!(err, K2Error::Other { ctx, .. } if ctx.contains("incoming response queue is closed"))
+        );
     }
 }
