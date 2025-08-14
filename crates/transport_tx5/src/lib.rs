@@ -337,6 +337,7 @@ impl TxImp for Tx5Transport {
                     .handler
                     .set_unresponsive(peer.clone(), Timestamp::now())
                     .await;
+                self.ep.close(&peer.to_peer_url()?);
                 return Err(K2Error::other_src(
                     format!("tx5 send error to peer at url {peer}"),
                     e,
