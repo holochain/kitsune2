@@ -382,6 +382,9 @@ impl CoreFetch {
                         }
                     }
                 }
+
+                // It's a background process, chill out
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
 
             // After processing this request, check if the fetch queue is drained.
