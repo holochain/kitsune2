@@ -169,7 +169,7 @@ checksum = "e539d3fca749fcee5236ab05e93a52867dd549cc157c8cb7f99595f3cedffdb5"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -337,7 +337,7 @@ dependencies = [
  "regex",
  "rustc-hash 1.1.0",
  "shlex",
- "syn 2.0.104",
+ "syn 2.0.105",
  "which",
 ]
 
@@ -358,7 +358,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.1",
  "shlex",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -484,7 +484,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -578,7 +578,7 @@ dependencies = [
  "lazy_static",
  "proc-macro2",
  "regex",
- "syn 2.0.104",
+ "syn 2.0.105",
  "unicode-xid",
 ]
 
@@ -590,7 +590,7 @@ checksum = "25fcfea2ee05889597d35e986c2ad0169694320ae5cc8f6d2640a4bb8a884560"
 dependencies = [
  "lazy_static",
  "proc-macro2",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -661,7 +661,7 @@ checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -730,7 +730,7 @@ checksum = "30542c1ad912e0e3d22a1935c290e12e8a29d704a420177a31faad4a601a0800"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -750,7 +750,7 @@ checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
  "unicode-xid",
 ]
 
@@ -772,7 +772,7 @@ checksum = "97369cbbc041bc366949bc74d34658d6cda5621039731c6310521892a3a20ae0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -1011,7 +1011,7 @@ checksum = "162ee34ebcb7c64a8abebc059ce0fee27c2262618d7b60ed8faf72fef13c3650"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -1840,7 +1840,7 @@ dependencies = [
  "cfg-if",
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2145,7 +2145,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
 dependencies = [
  "proc-macro2",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2207,7 +2207,7 @@ dependencies = [
  "prost",
  "prost-types",
  "regex",
- "syn 2.0.104",
+ "syn 2.0.105",
  "tempfile",
 ]
 
@@ -2221,7 +2221,7 @@ dependencies = [
  "itertools 0.14.0",
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2522,7 +2522,7 @@ checksum = "5d66de233f908aebf9cc30ac75ef9103185b4b715c6f2fb7a626aa5e5ede53ab"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2654,7 +2654,7 @@ checksum = "5b0276cf7f2c73365f7157c8123c21cd9a50fbbd844757af28ca1f5925fc2a00"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2805,9 +2805,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.104"
+version = "2.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17b6f705963418cdb9927482fa304bc562ece2fdd4f616084c50b7023b435a40"
+checksum = "7bc3fcb250e53458e712715cf74285c1f889686520d79294a9ef3bd7aa1fc619"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2828,7 +2828,7 @@ checksum = "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2897,7 +2897,7 @@ checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2908,7 +2908,7 @@ checksum = "cc5b44b4ab9c2fdd0e0512e6bece8388e214c0749f5862b114cc5b7a25daf227"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -2977,7 +2977,7 @@ checksum = "6e06d43f1345a3bcd39f6a56dbb7dcab2ba47e68e8ac134855e7e2bdbaf8cab8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -3083,7 +3083,7 @@ checksum = "81383ab64e72a7a8b8e13130c49e3dab29def6d0c7d76a03087b3cf71c5c6903"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -3179,7 +3179,7 @@ dependencies = [
 [[package]]
 name = "tx5"
 version = "0.3.9"
-source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
+source = "git+https://github.com/holochain/tx5?rev=36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca#36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca"
 dependencies = [
  "base64",
  "futures",
@@ -3196,7 +3196,7 @@ dependencies = [
 [[package]]
 name = "tx5-connection"
 version = "0.3.9"
-source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
+source = "git+https://github.com/holochain/tx5?rev=36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca#36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca"
 dependencies = [
  "bit_field",
  "datachannel",
@@ -3213,7 +3213,7 @@ dependencies = [
 [[package]]
 name = "tx5-core"
 version = "0.3.9"
-source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
+source = "git+https://github.com/holochain/tx5?rev=36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca#36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca"
 dependencies = [
  "app_dirs2",
  "base64",
@@ -3230,7 +3230,7 @@ dependencies = [
 [[package]]
 name = "tx5-go-pion"
 version = "0.3.9"
-source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
+source = "git+https://github.com/holochain/tx5?rev=36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca#36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca"
 dependencies = [
  "futures",
  "tokio",
@@ -3241,7 +3241,7 @@ dependencies = [
 [[package]]
 name = "tx5-go-pion-sys"
 version = "0.3.9"
-source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
+source = "git+https://github.com/holochain/tx5?rev=36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca#36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca"
 dependencies = [
  "Inflector",
  "base64",
@@ -3258,7 +3258,7 @@ dependencies = [
 [[package]]
 name = "tx5-signal"
 version = "0.3.9"
-source = "git+https://github.com/holochain/tx5?rev=b48f5d82147ac24073840fb3529d8076579df72e#b48f5d82147ac24073840fb3529d8076579df72e"
+source = "git+https://github.com/holochain/tx5?rev=36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca#36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca"
 dependencies = [
  "rand",
  "sbd-e2e-crypto-client",
@@ -3419,7 +3419,7 @@ dependencies = [
  "log",
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
  "wasm-bindgen-shared",
 ]
 
@@ -3441,7 +3441,7 @@ checksum = "8ae87ea40c9f689fc23f209965b6fb8a99ad69aeeb0231408be24920604395de"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -3814,7 +3814,7 @@ checksum = "38da3c9736e16c5d3c8c597a9aaa5d1fa565d0532ae05e27c24aa62fb32c0ab6"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
  "synstructure",
 ]
 
@@ -3835,7 +3835,7 @@ checksum = "9ecf5b4cc5364572d7f4c329661bcc82724222973f2cab6f050a4e5c22f75181"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]
@@ -3855,7 +3855,7 @@ checksum = "d71e5d6e06ab090c67b5e44993ec16b72dcbaabc526db883a360057678b48502"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
  "synstructure",
 ]
 
@@ -3895,7 +3895,7 @@ checksum = "5b96237efa0c878c64bd89c436f661be4e46b2f3eff1ebb976f7ef2321d2f58f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 2.0.105",
 ]
 
 [[package]]

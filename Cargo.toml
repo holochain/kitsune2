@@ -90,9 +90,9 @@ url = "2.5.4"
 # to receive these logs.
 tracing = "0.1"
 # for init config
-tx5-core = { git = "https://github.com/holochain/tx5", rev = "b48f5d82147ac24073840fb3529d8076579df72e" }
+tx5-core = { git = "https://github.com/holochain/tx5", rev = "36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca" }
 # for the transport_tx5 crate
-tx5 = { git = "https://github.com/holochain/tx5", rev = "b48f5d82147ac24073840fb3529d8076579df72e", default-features = false }
+tx5 = { git = "https://github.com/holochain/tx5", rev = "36d2d54ebf61489bb47c0c34d5e85a6558c5a9ca", default-features = false }
 # TLS support for the bootstrap server
 axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
