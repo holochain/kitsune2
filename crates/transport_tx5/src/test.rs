@@ -1,4 +1,5 @@
 use super::*;
+use kitsune2_test_utils::enable_tracing;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -541,6 +542,8 @@ async fn preflight_send_recv() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_peer_marked_unresponsive() {
+    enable_tracing();
+
     // set the tx5 timeout to 5 seconds to keep the test reasonably short
     let test = Test::new(None, Some(5)).await;
 
@@ -565,9 +568,10 @@ async fn nonexistent_peer_marked_unresponsive() {
         tx_handler1.clone(),
     );
 
-    let faulty_url = Url::from_str(
-        "ws://127.0.0.1:40813/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii-Oc-0IRtHmc",
-    )
+    let faulty_url = Url::from_str(format!(
+        "ws://127.0.0.1:{}/VtK2IOCncQM6LbWkvhB_CYwajQzw6Dii-Oc-0IRtHmc",
+        test.port
+    ))
     .unwrap();
 
     let res = transport1
@@ -592,7 +596,9 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     let url = maybe_url_and_when.unwrap().0;
 
-    assert!(faulty_url == url);
+    assert_eq!(faulty_url, url);
+
+    assert!(transport1.dump_network_stats().await.unwrap().connections.is_empty(), "Expected no connections to be present in the transport after sending to a non-existent peer, but found some.");
 }
 
 #[tokio::test(flavor = "multi_thread")]
