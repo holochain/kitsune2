@@ -33,14 +33,13 @@ impl TxModuleHandler for FetchMessageHandler {
                             err,
                         )
                     })?;
-                self.incoming_request_tx
-                    .try_send((request.into(), peer))
-                    .map_err(|err| {
-                        K2Error::other_src(
-                            "could not insert incoming request into queue",
-                            err,
-                        )
-                    })
+                if let Err(err) =
+                    self.incoming_request_tx.try_send((request.into(), peer))
+                {
+                    tracing::info!(?err, "could not insert incoming request into queue, dropping it");
+                }
+
+                Ok(())
             }
             FetchMessageType::Response => {
                 let response =
@@ -50,14 +49,13 @@ impl TxModuleHandler for FetchMessageHandler {
                             err,
                         )
                     })?;
-                self.incoming_response_tx.try_send(response.ops).map_err(
-                    |err| {
-                        K2Error::other_src(
-                            "could not insert incoming response into queue",
-                            err,
-                        )
-                    },
-                )
+                if let Err(err) =
+                    self.incoming_response_tx.try_send(response.ops)
+                {
+                    tracing::info!(?err, "could not insert incoming response into queue, dropping it");
+                }
+
+                Ok(())
             }
             unknown_message => Err(K2Error::other(format!(
                 "unknown fetch message: {unknown_message:?}"
