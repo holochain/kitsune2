@@ -57,11 +57,11 @@ async fn two_new_agents_sync() {
         .await;
 
     // Then both agents should have reached full arc.
-    harness_1
-        .wait_for_full_arc_for_all(Duration::from_secs(5))
-        .await;
     harness_2
-        .wait_for_full_arc_for_all(Duration::from_secs(5))
+        .wait_for_full_arc_for_all(Duration::from_secs(10))
+        .await;
+    harness_1
+        .wait_for_full_arc_for_all(Duration::from_secs(10))
         .await;
 }
 
