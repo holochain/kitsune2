@@ -75,7 +75,7 @@ pub fn spawn_initiate_task(
                         // Continue to the next iteration
                     }
                     _ = force_initiate_rx.recv() => {
-                        tracing::info!("Force initiate received, skipping the remaining delay and attempting initiation");
+                        tracing::debug!("Force initiate received, skipping the remaining delay and attempting initiation");
                     }
                 }
             } else {
@@ -93,7 +93,7 @@ pub fn spawn_initiate_task(
             }
 
             if gossip.initiated_round_state.lock().await.is_some() {
-                tracing::info!("Not initiating gossip because there is already an initiated round");
+                tracing::debug!("Not initiating gossip because there is already an initiated round");
                 continue;
             }
 
@@ -201,7 +201,7 @@ async fn select_next_target(
 
     // We tried using overlapping agents, but they're all on timeout
     if possible_target.is_none() && using_overlapping_agents {
-        tracing::info!(
+        tracing::debug!(
             "All agents with overlapping arcs are on timeout, selecting from all agents"
         );
 
