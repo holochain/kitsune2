@@ -3,6 +3,7 @@ use kitsune2_api::{
     BoxFut, Builder, Config, DhtArc, DynOpStore, K2Error, K2Result, MetaOp,
     OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
 };
+use kitsune2_core::factories::MemoryOp;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -62,7 +63,7 @@ pub struct MemoryOpRecord {
 
 impl From<Bytes> for MemoryOpRecord {
     fn from(value: Bytes) -> Self {
-        let inner: kitsune2_core::factories::MemoryOp = value.into();
+        let inner: kitsune2_core::factories::TestMemoryOp = value.into();
         Self {
             op_id: inner.compute_op_id(),
             created_at: inner.created_at,
@@ -168,7 +169,7 @@ impl OpStore for K2GossipMemoryOpStore {
                 .filter_map(|op_id| {
                     self_lock.op_list.get(op_id).map(|op| MetaOp {
                         op_id: op.op_id.clone(),
-                        op_data: kitsune2_core::factories::MemoryOp {
+                        op_data: kitsune2_core::factories::TestMemoryOp {
                             created_at: op.created_at,
                             op_data: op.op_data.clone(),
                         }

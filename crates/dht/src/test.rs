@@ -3,7 +3,9 @@
 use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_core::default_test_builder;
-use kitsune2_core::factories::{CoreBootstrapFactory, MemOpStoreFactory};
+use kitsune2_core::factories::{
+    CoreBootstrapFactory, MemOpStoreFactory, TestMemoryOp,
+};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -27,7 +29,7 @@ pub async fn test_store() -> DynOpStore {
     }
     .with_default_config()
     .unwrap();
-    MemOpStoreFactory::create()
+    MemOpStoreFactory::<TestMemoryOp>::create()
         .create(
             Arc::new(builder),
             SpaceId::from(Bytes::from_static("test-space".as_bytes())),

@@ -453,7 +453,7 @@ mod tests {
     use crate::test::test_store;
     use crate::UNIT_TIME;
     use kitsune2_api::{OpId, UNIX_TIMESTAMP};
-    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_core::factories::TestMemoryOp;
     use kitsune2_test_utils::enable_tracing;
     use std::time::Duration;
 
@@ -648,7 +648,7 @@ mod tests {
                 _ => panic!("Expected an arc"),
             };
             store
-                .process_incoming_ops(vec![MemoryOp::new(
+                .process_incoming_ops(vec![TestMemoryOp::new(
                     now,
                     // Place the op within the current space partition
                     (start + 1).to_le_bytes().as_slice().to_vec(),
