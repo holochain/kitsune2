@@ -768,7 +768,7 @@ async fn dump_network_stats() {
     assert_eq!(stats_1.backend, "BackendGoPion");
     #[cfg(all(
         feature = "backend-go-pion",
-        not(feature = "backend-libdatachannel")
+        feature = "backend-libdatachannel"
     ))]
     panic!("This test must be run with either libdatachannel or go-pion enabled, but not both.");
 
