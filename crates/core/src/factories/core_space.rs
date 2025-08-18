@@ -1,5 +1,6 @@
 //! The core space implementation provided by Kitsune2.
 
+use futures::executor::block_on;
 use kitsune2_api::*;
 use std::sync::{Arc, RwLock, Weak};
 
@@ -245,6 +246,21 @@ impl TxSpaceHandler for TxHandlerTranslator {
                 None => Ok(()),
             }
         })
+    }
+
+    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+        let peer_url = peer_url.clone();
+
+        let core_space = self
+            .1
+            .upgrade()
+            .ok_or(K2Error::other("CoreSpace has been dropped."))?;
+        let block_targets: Vec<_> =
+            block_on(core_space.peer_store.get_by_url(peer_url))?
+                .iter()
+                .map(|agent| BlockTarget::Agent(agent.agent.clone()))
+                .collect();
+        block_on(core_space.blocks.are_all_blocked(block_targets))
     }
 }
 

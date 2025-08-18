@@ -445,7 +445,14 @@ impl Test {
         struct NoopHandler;
         impl TxBaseHandler for NoopHandler {}
         impl TxHandler for NoopHandler {}
-        impl TxSpaceHandler for NoopHandler {}
+        impl TxSpaceHandler for NoopHandler {
+            fn are_all_agents_at_url_blocked(
+                &self,
+                _peer_url: &Url,
+            ) -> K2Result<bool> {
+                Ok(false)
+            }
+        }
         impl SpaceHandler for NoopHandler {}
 
         let transport = builder
