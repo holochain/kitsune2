@@ -115,6 +115,16 @@ impl TxImpHnd {
             K2WireType::Module => {
                 if let (Some(space_id), Some(module)) = (space_id, module_id) {
                     let space_id = SpaceId::from(space_id);
+                    if let Some(space_handler) =
+                        self.space_map.lock().unwrap().get(&space_id)
+                    {
+                        let space_handler = space_handler.clone();
+                        if space_handler.are_all_agents_at_url_blocked(&peer).inspect_err(|e| tracing::warn!(?module, "Error in recv_module_msg, peer connection will be closed: {e}"))? {
+                            tracing::warn!(?peer, "All agents at peer are blocked, peer connection will be closed");
+                            return Err(K2Error::other(format!("all agents at peer URL '{peer}' are blocked")));
+                        }
+                    }
+
                     if let Some(h) = self
                         .mod_map
                         .lock()
@@ -490,6 +500,9 @@ pub trait TxSpaceHandler: TxBaseHandler {
         drop((peer, when));
         Box::pin(async move { Ok(()) })
     }
+
+    /// Return `true` if every agent using the passed peer [`Url`] is blocked.
+    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool>;
 }
 
 /// Trait-object [TxSpaceHandler].

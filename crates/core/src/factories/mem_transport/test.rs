@@ -9,6 +9,7 @@ enum Track {
     Disconnect(Url, Option<String>),
     SpaceRecv(Url, SpaceId, bytes::Bytes),
     ModRecv(Url, SpaceId, String, bytes::Bytes),
+    AreBlocked(Url),
 }
 
 type G = Box<dyn Fn(Url) -> K2Result<bytes::Bytes> + 'static + Send + Sync>;
@@ -74,6 +75,14 @@ impl TxSpaceHandler for TrackHnd {
             .unwrap()
             .push(Track::SpaceRecv(peer, space_id, data));
         Ok(())
+    }
+
+    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+        self.track
+            .lock()
+            .unwrap()
+            .push(Track::AreBlocked(peer_url.clone()));
+        Ok(false)
     }
 }
 
@@ -197,6 +206,20 @@ impl TrackHnd {
             self.track.lock().unwrap(),
         )))
     }
+
+    pub fn check_are_blocked(&self, peer_url: &Url) -> K2Result<()> {
+        self.track
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| matches!(t, Track::AreBlocked(url) if peer_url == url))
+            .ok_or(K2Error::other(format!(
+                "matching are blocked not found {peer_url}, out of {:#?}",
+                self.track.lock().unwrap(),
+            )))?;
+
+        Ok(())
+    }
 }
 
 async fn gen_tx(hnd: DynTxHandler) -> DynTransport {
@@ -276,6 +299,8 @@ async fn transport_module() {
     h2.check_connect(&u1).unwrap();
     h1.check_mod(&u2, &TEST_SPACE_ID, "test", b"world").unwrap();
     h2.check_mod(&u1, &TEST_SPACE_ID, "test", b"hello").unwrap();
+    h1.check_are_blocked(&u2).unwrap();
+    h2.check_are_blocked(&u1).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
