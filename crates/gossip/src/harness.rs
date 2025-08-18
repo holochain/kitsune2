@@ -415,7 +415,14 @@ impl K2GossipFunctionalTestFactory {
         struct NoopHandler;
         impl TxBaseHandler for NoopHandler {}
         impl TxHandler for NoopHandler {}
-        impl TxSpaceHandler for NoopHandler {}
+        impl TxSpaceHandler for NoopHandler {
+            fn are_all_agents_at_url_blocked(
+                &self,
+                _peer_url: &kitsune2_api::Url,
+            ) -> kitsune2_api::K2Result<bool> {
+                Ok(false)
+            }
+        }
         impl SpaceHandler for NoopHandler {}
 
         let mut builder = default_test_builder();

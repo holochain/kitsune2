@@ -12,6 +12,7 @@ enum Track {
     ModRecv(Url, SpaceId, String, bytes::Bytes),
     PreflightSend,
     PreflightRecv,
+    AreBlocked(Url),
 }
 
 type G = Box<dyn Fn(Url) -> K2Result<bytes::Bytes> + 'static + Send + Sync>;
@@ -79,6 +80,15 @@ impl TxSpaceHandler for TrackHnd {
             .unwrap()
             .push(Track::SpaceRecv(peer, space_id, data));
         Ok(())
+    }
+
+    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+        self.track
+            .lock()
+            .unwrap()
+            .push(Track::AreBlocked(peer_url.clone()));
+
+        Ok(false)
     }
 }
 
@@ -225,6 +235,20 @@ impl TrackHnd {
             panic!("Preflight messages were not sent/received before other messages");
         }
     }
+
+    /// Check that are_all_agents_at_url_blocked() has been called on the
+    /// TxSpaceHandler
+    pub fn check_checked_for_blocks(&self, peer_url: &Url) -> K2Result<()> {
+        let track = self.track.lock().unwrap();
+        track
+            .iter()
+            .find(|t| matches!(t, Track::AreBlocked(url) if peer_url == url))
+            .ok_or(K2Error::other(format!(
+                "matching AreBlocked not found {peer_url}, out of {:#?}",
+                track
+            )))?;
+        Ok(())
+    }
 }
 
 async fn gen_tx(hnd: DynTxHandler) -> DynTransport {
@@ -268,6 +292,8 @@ async fn transport_notify() {
     h2.check_connect(&u1).unwrap();
     h1.check_notify(&u2, &TEST_SPACE_ID, b"world").unwrap();
     h2.check_notify(&u1, &TEST_SPACE_ID, b"hello").unwrap();
+    h1.check_checked_for_blocks(&u2).unwrap();
+    h2.check_checked_for_blocks(&u1).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -277,11 +303,13 @@ async fn transport_module() {
     let h1 = TrackHnd::new();
     let t1 = gen_tx(h1.clone()).await;
     t1.register_module_handler(TEST_SPACE_ID, "test".into(), h1.clone());
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
     let u1 = h1.url();
 
     let h2 = TrackHnd::new();
     let t2 = gen_tx(h2.clone()).await;
     t2.register_module_handler(TEST_SPACE_ID, "test".into(), h2.clone());
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
     let u2 = h2.url();
 
     t1.send_module(
@@ -306,6 +334,8 @@ async fn transport_module() {
     h2.check_connect(&u1).unwrap();
     h1.check_mod(&u2, &TEST_SPACE_ID, "test", b"world").unwrap();
     h2.check_mod(&u1, &TEST_SPACE_ID, "test", b"hello").unwrap();
+    h1.check_checked_for_blocks(&u2).unwrap();
+    h2.check_checked_for_blocks(&u1).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -397,9 +427,11 @@ async fn transport_preflight_reject() {
     );
 
     let t1 = gen_tx(h1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
     let u1 = h1.url();
 
-    let _t2 = gen_tx(h2.clone()).await;
+    let t2 = gen_tx(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
     let u2 = h2.url();
 
     t1.send_space_notify(
