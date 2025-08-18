@@ -1,1 +1,15 @@
 extend = "../../Makefile.toml"
+
+[tasks.clippy]
+args = [
+  "clippy",
+  "--all-targets",
+  "--no-default-features",
+  "--features",
+  "datachannel-vendored",
+  "--",
+  "--deny=warnings",
+]
+
+[tasks.test]
+args = ["test", "--no-default-features", "--features", "datachannel-vendored"]

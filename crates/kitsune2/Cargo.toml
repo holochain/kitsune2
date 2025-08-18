@@ -20,7 +20,7 @@ bytes = { workspace = true }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_gossip = { workspace = true }
-kitsune2_transport_tx5 = { workspace = true }
+kitsune2_transport_tx5 = { workspace = true, default-features = false }
 serde = { workspace = true, features = ["derive"] }
 
 # Feature: schema

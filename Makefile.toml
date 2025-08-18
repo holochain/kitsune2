@@ -36,16 +36,16 @@ args = ["test"]
 [tasks.test-go-pion]
 command = "cargo"
 args = [
-    "test",
-    "--package",
-    "kitsune2_transport_tx5",
-    "--package",
-    "kitsune2",
-    "--no-default-features",
-    "--features",
-    "backend-go-pion",
-    "--",
-    "--nocapture",
+  "test",
+  "--package",
+  "kitsune2_transport_tx5",
+  "--package",
+  "kitsune2",
+  "--no-default-features",
+  "--features",
+  "backend-go-pion",
+  "--",
+  "--nocapture",
 ]
 
 #
@@ -79,7 +79,7 @@ dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
 
 [tasks.verify]
 description = "Run all static checks and tests"
-dependencies = ["static", "test"]
+dependencies = ["static", "test", "test-go-pion"]
 
 [tasks.fix]
 description = "Run all tasks to format, generate and tidy"

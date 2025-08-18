@@ -18,7 +18,9 @@ clap = { workspace = true, features = ["derive", "wrap_help"] }
 kitsune2 = { workspace = true }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
-kitsune2_transport_tx5 = { workspace = true }
+kitsune2_transport_tx5 = { workspace = true, features = [
+  "datachannel-vendored",
+] }
 rustls = { workspace = true }
 rustyline = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
