@@ -34,7 +34,7 @@ mod config {
         pub parallel_request_count: u8,
         /// Delay before re-inserting ops to request back into the outgoing request queue.
         ///
-        /// Default: 2 s.
+        /// Default: 30 s.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub re_insert_outgoing_request_delay_ms: u32,
     }
@@ -44,7 +44,7 @@ mod config {
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                re_insert_outgoing_request_delay_ms: 2000,
+                re_insert_outgoing_request_delay_ms: 30000,
             }
         }
     }
