@@ -172,21 +172,18 @@ impl K2Gossip {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::burst::AcceptBurstTracker;
-    use crate::protocol::{
-        encode_agent_ids, ArcSetMessage, GossipMessage,
-        K2GossipInitiateMessage, K2GossipTerminateMessage,
-    };
+    use crate::protocol::K2GossipTerminateMessage;
     use crate::respond::harness::{test_session_id, RespondTestHarness};
-    use crate::state::{GossipRoundState, RoundStage};
+    use crate::state::GossipRoundState;
     use crate::K2GossipConfig;
     use kitsune2_api::{
-        decode_ids, DhtArc, Gossip, LocalAgent, OpId, Timestamp, Url,
-        UNIX_TIMESTAMP,
+        decode_ids, DhtArc, Gossip, LocalAgent, OpId, UNIX_TIMESTAMP,
     };
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::Ed25519LocalAgent;
-    use kitsune2_dht::{ArcSet, SECTOR_SIZE};
+    use kitsune2_dht::SECTOR_SIZE;
     use kitsune2_test_utils::enable_tracing;
     use rand::RngCore;
     use std::sync::Arc;
