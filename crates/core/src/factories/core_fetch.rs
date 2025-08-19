@@ -30,7 +30,7 @@ mod config {
         /// How many parallel op fetch requests can be made at once. Default: 2.
         pub parallel_request_count: u8,
         /// Delay before re-inserting ops to request back into the outgoing request queue.
-        /// Default: 2 s.
+        /// Default: 30 s.
         pub re_insert_outgoing_request_delay_ms: u32,
         /// Duration of first interval to back off an unresponsive peer. Default: 20 s.
         pub first_back_off_interval_ms: u32,
@@ -45,7 +45,7 @@ mod config {
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                re_insert_outgoing_request_delay_ms: 2000,
+                re_insert_outgoing_request_delay_ms: 30000,
                 first_back_off_interval_ms: 1000 * 20,
                 last_back_off_interval_ms: 1000 * 60 * 10,
                 num_back_off_intervals: 4,
