@@ -185,7 +185,7 @@ mod tests {
     use crate::K2GossipConfig;
     use bytes::Bytes;
     use kitsune2_api::{decode_ids, DhtArc, Gossip, OpId, Timestamp};
-    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_core::factories::TestMemoryOp;
     use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
     use kitsune2_test_utils::enable_tracing;
     use std::collections::HashMap;
@@ -256,7 +256,7 @@ mod tests {
             op_data.resize(128, 0);
 
             let op =
-                MemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
+                TestMemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
             ops.push(op);
         }
 
