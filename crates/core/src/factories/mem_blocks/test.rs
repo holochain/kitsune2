@@ -67,3 +67,9 @@ async fn all_targets_are_blocked_when_checking() {
         .await
         .unwrap());
 }
+
+#[tokio::test]
+async fn checking_empty_target_list_returns_false() {
+    let blocks = MemBlocks::default();
+    assert!(!blocks.are_all_blocked(vec![]).await.unwrap());
+}

@@ -78,6 +78,9 @@ impl Blocks for MemBlocks {
         &self,
         targets: Vec<BlockTarget>,
     ) -> BoxFut<'static, K2Result<bool>> {
+        if targets.is_empty() {
+            return Box::pin(async { Ok(false) });
+        }
         let inner = self.0.lock().expect("MemBlocks inner Mutex is poisoned");
         let are_all_blocked =
             targets.iter().all(|target| inner.contains(target));
