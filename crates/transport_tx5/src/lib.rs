@@ -4,6 +4,7 @@
 use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
+use std::time::Duration;
 
 trait PeerUrlExt {
     fn to_kitsune(&self) -> K2Result<Url>;
@@ -220,10 +221,10 @@ impl Tx5Transport {
         let (pre_send, pre_recv) = tokio::sync::mpsc::channel::<PreCheck>(1024);
 
         let preflight_send_handler = handler.clone();
-        let tx5_config = Arc::new(tx5::Config {
-            signal_allow_plain_text: config.signal_allow_plain_text,
-            signal_auth_material: auth_material,
-            preflight: Some((
+
+        let mut tx5_config = tx5::Config::new()
+            .with_signal_allow_plain_text(config.signal_allow_plain_text)
+            .with_preflight(
                 Arc::new(move |peer_url| {
                     // gather any preflight data, and send to remote
                     let handler = preflight_send_handler.clone();
@@ -257,15 +258,18 @@ impl Tx5Transport {
                         })?
                     })
                 }),
-            )),
-            timeout: std::time::Duration::from_secs(config.timeout_s as u64),
-            backend_module: tx5::backend::BackendModule::default(),
-            backend_module_config: Some(
+            )
+            .with_timeout(Duration::from_secs(config.timeout_s as u64))
+            .with_backend_module_config(
                 tx5::backend::BackendModule::default().default_config(),
-            ),
-            initial_webrtc_config: config.webrtc_config,
-            ..Default::default()
-        });
+            )
+            .with_initial_webrtc_config(config.webrtc_config);
+
+        if let Some(auth_material) = auth_material {
+            tx5_config = tx5_config.with_signal_auth_material(auth_material);
+        }
+
+        let tx5_config = Arc::new(tx5_config);
 
         let (ep, ep_recv) = tx5::Endpoint::new(tx5_config);
         let ep = Arc::new(ep);
