@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.2.17](https://github.com/holochain/kitsune2/compare/v0.2.16...v0.2.17)\] - 2025-08-29
+
+### Features
+
+- Upgrade tx5 to 0.8
+
 ## \[[0.2.16]\] - 2025-08-19
 
 ### Bug Fixes
