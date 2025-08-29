@@ -1,12 +1,18 @@
-//! The core stub transport implementation provided by Kitsune2.
+//! The core stub transport implementation provided by Kitsune2 that can be
+//! used in tests.
 
 use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// The core stub transport implementation provided by Kitsune2.
+///
 /// This is NOT a production module. It is for testing only.
-/// It will only establish "connections" within the same process.
+///
+/// It will only establish "connections" between different MemTransport
+/// instances within the same process, where a "connection" is comprised
+/// of two oppositely directed [`tokio::sync::mpsc::unbounded_channel`]s
+/// to send data in either direction.
 #[derive(Debug)]
 pub struct MemTransportFactory {}
 
@@ -58,7 +64,7 @@ impl Drop for MemTransport {
 
 impl MemTransport {
     pub async fn create(handler: Arc<TxImpHnd>) -> DynTxImp {
-        let mut listener = get_stat().listen();
+        let mut listener = get_transport_instances().listen();
         let this_url = listener.url();
         handler.new_listening_address(this_url.clone()).await;
 
@@ -76,8 +82,13 @@ impl MemTransport {
         // listen for incoming connections
         let cmd_send2 = cmd_send.clone();
         task_list.lock().unwrap().spawn(async move {
-            while let Some((u, s, r)) = listener.recv.recv().await {
-                if cmd_send2.send(Cmd::RegCon(u, s, r)).is_err() {
+            while let Some((url, data_send, data_recv)) =
+                listener.connection_recv.recv().await
+            {
+                if cmd_send2
+                    .send(Cmd::RegisterConnection(url, data_send, data_recv))
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -128,11 +139,12 @@ impl TxImp for MemTransport {
 
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            let (s, r) = tokio::sync::oneshot::channel();
-            match self.cmd_send.send(Cmd::Send(peer, data, s)) {
+            let (result_sender, result_receiver) =
+                tokio::sync::oneshot::channel();
+            match self.cmd_send.send(Cmd::Send(peer, data, result_sender)) {
                 Err(_) => Err(K2Error::other("Connection Closed")),
-                Ok(_) => match r.await {
-                    Ok(r) => r,
+                Ok(_) => match result_receiver.await {
+                    Ok(result) => result,
                     Err(_) => Err(K2Error::other("Connection Closed")),
                 },
             }
@@ -154,23 +166,54 @@ impl TxImp for MemTransport {
     }
 }
 
-type Res = tokio::sync::oneshot::Sender<K2Result<()>>;
-type CmdSend = tokio::sync::mpsc::UnboundedSender<Cmd>;
-type CmdRecv = tokio::sync::mpsc::UnboundedReceiver<Cmd>;
-type DataSend = tokio::sync::mpsc::UnboundedSender<(bytes::Bytes, Res)>;
-type DataRecv = tokio::sync::mpsc::UnboundedReceiver<(bytes::Bytes, Res)>;
-type ConSend = tokio::sync::mpsc::UnboundedSender<(Url, DataSend, DataRecv)>;
-type ConRecv = tokio::sync::mpsc::UnboundedReceiver<(Url, DataSend, DataRecv)>;
+/// A oneshot sender to report back a K2Result.
+type ResultSender = tokio::sync::oneshot::Sender<K2Result<()>>;
 
-struct DropSend {
-    send: DataSend,
+/// The sending end of the channel to send commands to a MemTransport's
+/// command runner task.
+type CmdSend = tokio::sync::mpsc::UnboundedSender<Cmd>;
+
+/// The receiving end of the channel to send commands to a MemTransport's
+/// command runner task.
+type CmdRecv = tokio::sync::mpsc::UnboundedReceiver<Cmd>;
+
+/// The sending end of a "data" channel between two MemTransport instances.
+///
+/// Used to send the bytes of a message alongside with a ResultSender to
+/// report back the result of handling the message.
+type DataSend =
+    tokio::sync::mpsc::UnboundedSender<(bytes::Bytes, ResultSender)>;
+
+/// The receiving end of a "data" channel between two MemTransport instances.
+///
+/// Used to send the bytes of a message alongside with a ResultSender to
+/// report back the result of handling the message.
+type DataRecv =
+    tokio::sync::mpsc::UnboundedReceiver<(bytes::Bytes, ResultSender)>;
+
+/// The sending end of a "connection establishment channel" used to establish
+/// connections (in the form of two opposite "data" channels) between different
+/// MemTransport instances.
+type ConnectionSend =
+    tokio::sync::mpsc::UnboundedSender<(Url, DataSend, DataRecv)>;
+
+/// The receiving end of a "connection establishment channel" used to establish
+/// connections (in the form of two opposite "data" channels) between different
+/// MemTransport instances.
+type ConnectionRecv =
+    tokio::sync::mpsc::UnboundedReceiver<(Url, DataSend, DataRecv)>;
+
+/// An open connection to another peer, containing the sending end of the
+/// "data" channel connected to their MemTransport instance.
+struct DropConnection {
+    data_send: DataSend,
     handler: Arc<TxImpHnd>,
     peer: Url,
     reason: Option<String>,
     net_stats: Arc<Mutex<TransportStats>>,
 }
 
-impl Drop for DropSend {
+impl Drop for DropConnection {
     fn drop(&mut self) {
         let peer_str = self.peer.to_string();
         self.net_stats
@@ -183,15 +226,15 @@ impl Drop for DropSend {
     }
 }
 
-impl DropSend {
+impl DropConnection {
     fn new(
-        send: DataSend,
+        data_send: DataSend,
         handler: Arc<TxImpHnd>,
         peer: Url,
         net_stats: Arc<Mutex<TransportStats>>,
     ) -> Self {
         Self {
-            send,
+            data_send,
             handler,
             peer,
             reason: None,
@@ -200,13 +243,31 @@ impl DropSend {
     }
 }
 
+/// A command to be handled by the MemTransport's command runner task.
 enum Cmd {
-    RegCon(Url, DataSend, DataRecv),
-    InData(Url, bytes::Bytes, Res),
-    Disconnect(Url, Option<(String, bytes::Bytes)>, Res),
-    Send(Url, bytes::Bytes, Res),
+    /// A pseudo-connection to register in the MemTransport's in-memory
+    /// connection pool.
+    ///
+    /// Contains a sender and a receiver for oppositely directed "data"
+    /// channels to send messages to and receive messages from the other peer,
+    /// respectively.
+    RegisterConnection(Url, DataSend, DataRecv),
+
+    /// Message bytes received from a peer to be handled, alongside with the
+    /// ResultSender to be used to report the Result of handling the message.
+    RecvData(Url, bytes::Bytes, ResultSender),
+
+    /// Disconnect from a peer.
+    Disconnect(Url, Option<(String, bytes::Bytes)>, ResultSender),
+
+    /// Message bytes to send to another peer alongside with the ResultSender
+    /// to report back the result of handling the message by the receiving
+    /// peer.
+    Send(Url, bytes::Bytes, ResultSender),
 }
 
+/// The command runner task that gets spawned when creating a MemTransport
+/// instance.
 async fn cmd_task(
     task_list: Arc<Mutex<tokio::task::JoinSet<()>>>,
     handler: Arc<TxImpHnd>,
@@ -215,9 +276,16 @@ async fn cmd_task(
     mut cmd_recv: CmdRecv,
     net_stats: Arc<Mutex<TransportStats>>,
 ) {
+    // Pool of open in-memory connections.
     let mut con_pool = HashMap::new();
 
-    fn ns_ref<Cb: FnOnce(&mut TransportConnectionStats)>(
+    /// Get a reference to the [`TransportConnectionStats`] associated to the
+    /// given peer url and operate with the provided callback on it.
+    ///
+    /// Creates a new [`TransportConnectionStats`] instance with default
+    /// values if none exists yet in the [`TransportStats`] provided via
+    /// the nets_stats argument, before applying the callback.
+    fn net_stat_ref<Cb: FnOnce(&mut TransportConnectionStats)>(
         net_stats: &Mutex<TransportStats>,
         url: &Url,
         cb: Cb,
@@ -250,21 +318,32 @@ async fn cmd_task(
 
     while let Some(cmd) = cmd_recv.recv().await {
         match cmd {
-            Cmd::RegCon(url, data_send, mut data_recv) => {
+            Cmd::RegisterConnection(url, data_send, mut data_recv) => {
                 match handler.peer_connect(url.clone()) {
                     Err(_) => continue,
                     Ok(preflight) => {
-                        let (s, _) = tokio::sync::oneshot::channel();
-                        let _ = data_send.send((preflight, s));
+                        let (result_sender, _) =
+                            tokio::sync::oneshot::channel();
+                        let _ = data_send.send((preflight, result_sender));
                     }
                 }
 
                 let cmd_send2 = cmd_send.clone();
                 let url2 = url.clone();
+
+                // Spawn a task to listen on the receiving end of the "data" channel and
+                // send received messages through the command handler channel to the
+                // command runner task.
                 task_list.lock().unwrap().spawn(async move {
-                    while let Some((data, res)) = data_recv.recv().await {
+                    while let Some((data, result_sender)) =
+                        data_recv.recv().await
+                    {
                         if cmd_send2
-                            .send(Cmd::InData(url2.clone(), data, res))
+                            .send(Cmd::RecvData(
+                                url2.clone(),
+                                data,
+                                result_sender,
+                            ))
                             .is_err()
                         {
                             break;
@@ -274,7 +353,7 @@ async fn cmd_task(
 
                 con_pool.insert(
                     url.clone(),
-                    DropSend::new(
+                    DropConnection::new(
                         data_send,
                         handler.clone(),
                         url,
@@ -282,40 +361,41 @@ async fn cmd_task(
                     ),
                 );
             }
-            Cmd::InData(url, data, res) => {
-                ns_ref(&net_stats, &url, |r| {
+            Cmd::RecvData(url, data, result_sender) => {
+                net_stat_ref(&net_stats, &url, |r| {
                     r.recv_message_count += 1;
                     r.recv_bytes += data.len() as u64;
                 });
                 if let Err(err) = handler.recv_data(url.clone(), data) {
-                    if let Some(mut data_send) = con_pool.remove(&url) {
-                        data_send.reason = Some(format!("{err:?}"));
+                    if let Some(mut drop_send) = con_pool.remove(&url) {
+                        drop_send.reason = Some(format!("{err:?}"));
                     }
-                    let _ = res.send(Err(err));
+                    let _ = result_sender.send(Err(err));
                 } else {
-                    let _ = res.send(Ok(()));
+                    let _ = result_sender.send(Ok(()));
                 }
             }
-            Cmd::Disconnect(url, payload, res) => {
-                if let Some(mut data_send) = con_pool.remove(&url) {
+            Cmd::Disconnect(url, payload, result_sender) => {
+                if let Some(mut drop_send) = con_pool.remove(&url) {
                     if let Some((reason, payload)) = payload {
-                        data_send.reason = Some(reason);
-                        let _ = data_send.send.send((payload, res));
+                        drop_send.reason = Some(reason);
+                        let _ =
+                            drop_send.data_send.send((payload, result_sender));
                     }
                 }
             }
-            Cmd::Send(url, data, res) => {
-                if let Some(send) = get_stat().connect(
+            Cmd::Send(url, data, result_sender) => {
+                if let Some(data_send) = get_transport_instances().connect(
                     &cmd_send,
                     &mut con_pool,
                     &url,
                     &this_url,
                 ) {
-                    ns_ref(&net_stats, &url, |r| {
+                    net_stat_ref(&net_stats, &url, |r| {
                         r.send_message_count += 1;
                         r.send_bytes += data.len() as u64;
                     });
-                    let _ = send.send((data, res));
+                    let _ = data_send.send((data, result_sender));
                 }
             }
         }
@@ -328,7 +408,7 @@ async fn cmd_task(
 struct Listener {
     id: u64,
     url: Url,
-    recv: ConRecv,
+    connection_recv: ConnectionRecv,
 }
 
 impl std::fmt::Debug for Listener {
@@ -339,7 +419,7 @@ impl std::fmt::Debug for Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        get_stat().remove(self.id);
+        get_transport_instances().remove(self.id);
     }
 }
 
@@ -349,51 +429,75 @@ impl Listener {
     }
 }
 
-/// This struct will be instantiated as a static global called STAT.
-/// The purpose is to hold the sender side of channels that let us
-/// open "connections" to endpoints. These senders will remain in memory
-/// until the [Listener] instance is dropped.
-struct Stat {
-    con_map: Mutex<HashMap<u64, ConSend>>,
+/// This struct will be instantiated as a static global called
+/// TRANSPORT_INSTANCES. The purpose is to hold the sender side of "connection
+/// establishment channels" that let us open (pseudo-)"connections" between
+/// different MemTransport instances.
+///
+/// A "connection" between two MemTransport instances is in essence two
+/// unbounded channels ("data" channels) in opposite directions, where each of
+/// the MemTransport instances holds a receiving end of one channel and a
+/// sending end of the other channel.
+///
+/// If a new MemTransport instance gets created, it will keep the receiving
+/// end of the connection establishment channel and add the sending end to
+/// this struct.
+///
+/// These senders will remain in memory until the [`Listener`] instance is
+/// dropped.
+struct TransportInstances {
+    instances_map: Mutex<HashMap<u64, ConnectionSend>>,
 }
 
-impl Stat {
+impl TransportInstances {
     fn new() -> Self {
         Self {
-            con_map: Mutex::new(HashMap::new()),
+            instances_map: Mutex::new(HashMap::new()),
         }
     }
 
-    /// "Bind" a new [Listener].
+    /// "Bind" a new [`Listener`] by adding the sending end of an unbounded
+    /// channel to the instances map and return the receiving end of the
+    /// channel to the caller.
+    ///
+    /// Called by [MemTransport::create].
     fn listen(&self) -> Listener {
         use std::sync::atomic::*;
         static ID: AtomicU64 = AtomicU64::new(1);
         let id = ID.fetch_add(1, Ordering::Relaxed);
         let url = Url::from_str(format!("ws://stub.tx:42/{id}")).unwrap();
-        let (send, recv) = tokio::sync::mpsc::unbounded_channel();
-        self.con_map.lock().unwrap().insert(id, send);
-        Listener { id, url, recv }
+        let (connection_send, connection_recv) =
+            tokio::sync::mpsc::unbounded_channel();
+        self.instances_map
+            .lock()
+            .unwrap()
+            .insert(id, connection_send);
+        Listener {
+            id,
+            url,
+            connection_recv,
+        }
     }
 
     /// Remove a sender. Called by [Listener::drop].
     fn remove(&self, id: u64) {
-        self.con_map.lock().unwrap().remove(&id);
+        self.instances_map.lock().unwrap().remove(&id);
     }
 
-    /// If the destination peer is still in memory, this will
-    /// establish an in-memory "connection" to them.
+    /// If the destination peer's MemTransport instance is still in memory,
+    /// this will establish an in-memory "connection" to them.
     fn connect(
         &self,
         cmd_send: &CmdSend,
-        map: &mut HashMap<Url, DropSend>,
+        conn_pool: &mut HashMap<Url, DropConnection>,
         to_peer: &Url,
         from_peer: &Url,
     ) -> Option<DataSend> {
-        if let Some(send) = map.get(to_peer) {
-            return Some(send.send.clone());
+        if let Some(open_connection) = conn_pool.get(to_peer) {
+            return Some(open_connection.data_send.clone());
         }
 
-        let id: u64 = match to_peer.peer_id() {
+        let to_peer_id: u64 = match to_peer.peer_id() {
             None => return None,
             Some(id) => match id.parse() {
                 Err(_) => return None,
@@ -401,28 +505,52 @@ impl Stat {
             },
         };
 
-        let send = match self.con_map.lock().unwrap().get(&id) {
-            None => return None,
-            Some(send) => send.clone(),
-        };
+        // Get the sender side of the connection establishment channel for the
+        // MemTranport associated with the to_peer Url, if an associated
+        // MemTransport instance is found.
+        let connection_send =
+            match self.instances_map.lock().unwrap().get(&to_peer_id) {
+                None => return None,
+                Some(send) => send.clone(),
+            };
 
-        let (ds1, dr1) = tokio::sync::mpsc::unbounded_channel();
-        let (ds2, dr2) = tokio::sync::mpsc::unbounded_channel();
+        // Create an unbounded "data" channel "B -> A" to send data from
+        // peer B's MemTransport instance to peer A's MemTransport instance
+        let (data_send_1, data_recv_1) = tokio::sync::mpsc::unbounded_channel();
 
-        if send.send((from_peer.clone(), ds1, dr2)).is_err() {
+        // Create an unbounded "data" channel "A -> B" to send data from
+        // peer A's MemTransport instance to peer B's MemTransport instance
+        let (data_send_2, data_recv_2) = tokio::sync::mpsc::unbounded_channel();
+
+        // Send the sending end of the "data" channel "B > A" and the receiving
+        // end of the "data" channel "A > B" to the MemTransport instance
+        // of peer B.
+        if connection_send
+            .send((from_peer.clone(), data_send_1, data_recv_2))
+            .is_err()
+        {
             return None;
         }
 
-        let _ = cmd_send.send(Cmd::RegCon(to_peer.clone(), ds2.clone(), dr1));
+        // Send the sending end of the "data" channel "A > B" and the receiving
+        // end of the "data" channel "B > A" to the MemTransport instance
+        // of peer A.
+        let _ = cmd_send.send(Cmd::RegisterConnection(
+            to_peer.clone(),
+            data_send_2.clone(),
+            data_recv_1,
+        ));
 
-        Some(ds2)
+        Some(data_send_2)
     }
 }
 
-/// This is our static global instance of the [Stat] struct.
-static STAT: OnceLock<Stat> = OnceLock::new();
-fn get_stat() -> &'static Stat {
-    STAT.get_or_init(Stat::new)
+/// This is our static global instance of the [`TransportInstances`] struct.
+static TRANSPORT_INSTANCES: OnceLock<TransportInstances> = OnceLock::new();
+/// Get the global instance of the [`TransportInstances`] struct which holds the sender side of
+/// channels that let us open "connections" to endpoints.
+fn get_transport_instances() -> &'static TransportInstances {
+    TRANSPORT_INSTANCES.get_or_init(TransportInstances::new)
 }
 
 #[cfg(test)]
