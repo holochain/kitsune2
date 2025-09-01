@@ -49,16 +49,16 @@ impl TxHandler for TrackHnd {
     fn preflight_gather_outgoing(
         &self,
         peer_url: Url,
-    ) -> K2Result<bytes::Bytes> {
-        (self.preflight_gather_outgoing)(peer_url)
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        Box::pin(async { (self.preflight_gather_outgoing)(peer_url) })
     }
 
     fn preflight_validate_incoming(
         &self,
         peer_url: Url,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
-        (self.preflight_validate_incoming)(peer_url, data)
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { (self.preflight_validate_incoming)(peer_url, data) })
     }
 }
 

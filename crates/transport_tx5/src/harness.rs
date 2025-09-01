@@ -188,16 +188,16 @@ impl TxHandler for MockTxHandler {
     fn preflight_gather_outgoing(
         &self,
         peer_url: Url,
-    ) -> K2Result<bytes::Bytes> {
-        (self.pre_out)(peer_url)
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        Box::pin(async { (self.pre_out)(peer_url) })
     }
 
     fn preflight_validate_incoming(
         &self,
         peer_url: Url,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
-        (self.pre_in)(peer_url, data)
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { (self.pre_in)(peer_url, data) })
     }
 }
 

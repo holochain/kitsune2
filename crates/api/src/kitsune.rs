@@ -25,9 +25,9 @@ pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
     fn preflight_gather_outgoing(
         &self,
         peer_url: Url,
-    ) -> K2Result<bytes::Bytes> {
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
         drop(peer_url);
-        Ok(bytes::Bytes::new())
+        Box::pin(async { Ok(bytes::Bytes::new()) })
     }
 
     /// Validate preflight data sent by a remote peer on a new connection.
@@ -39,10 +39,10 @@ pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
         &self,
         peer_url: Url,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
+    ) -> BoxFut<'_, K2Result<()>> {
         drop(peer_url);
         drop(data);
-        Ok(())
+        Box::pin(async { Ok(()) })
     }
 
     /// Kitsune would like to construct a space. Provide a handler.

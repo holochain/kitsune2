@@ -55,23 +55,29 @@ impl TxImpHnd {
     /// On success, this function returns bytes that should be
     /// sent as a preflight message for additional connection validation.
     /// (The preflight data should be sent even if it is zero length).
-    pub fn peer_connect(&self, peer: Url) -> K2Result<bytes::Bytes> {
-        for mod_handler in self.mod_map.lock().unwrap().values() {
-            mod_handler.peer_connect(peer.clone())?;
-        }
-        for space_handler in self.space_map.lock().unwrap().values() {
-            space_handler.peer_connect(peer.clone())?;
-        }
-        self.handler.peer_connect(peer.clone())?;
-        let preflight = self.handler.preflight_gather_outgoing(peer)?;
-        let enc = (K2Proto {
-            ty: K2WireType::Preflight as i32,
-            data: preflight,
-            space_id: None,
-            module_id: None,
+    pub fn peer_connect(
+        &self,
+        peer: Url,
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        Box::pin(async {
+            for mod_handler in self.mod_map.lock().unwrap().values() {
+                mod_handler.peer_connect(peer.clone())?;
+            }
+            for space_handler in self.space_map.lock().unwrap().values() {
+                space_handler.peer_connect(peer.clone())?;
+            }
+            self.handler.peer_connect(peer.clone())?;
+            let preflight =
+                self.handler.preflight_gather_outgoing(peer).await?;
+            let enc = (K2Proto {
+                ty: K2WireType::Preflight as i32,
+                data: preflight,
+                space_id: None,
+                module_id: None,
+            })
+            .encode()?;
+            Ok(enc)
         })
-        .encode()?;
-        Ok(enc)
     }
 
     /// Call this whenever a connection is closed.
@@ -86,53 +92,61 @@ impl TxImpHnd {
     }
 
     /// Call this whenever data is received on an open connection.
-    pub fn recv_data(&self, peer: Url, data: bytes::Bytes) -> K2Result<()> {
-        let data = K2Proto::decode(&data)?;
-        let ty = data.ty();
-        let K2Proto {
-            space_id,
-            module_id,
-            data,
-            ..
-        } = data;
+    pub fn recv_data(
+        &self,
+        peer: Url,
+        data: bytes::Bytes,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let data = K2Proto::decode(&data)?;
+            let ty = data.ty();
+            let K2Proto {
+                space_id,
+                module_id,
+                data,
+                ..
+            } = data;
 
-        match ty {
-            K2WireType::Unspecified => Ok(()),
-            K2WireType::Preflight => {
-                self.handler.preflight_validate_incoming(peer, data)
-            }
-            K2WireType::Notify => {
-                if let Some(space_id) = space_id {
-                    let space_id = SpaceId::from(space_id);
-                    if let Some(h) =
-                        self.space_map.lock().unwrap().get(&space_id)
-                    {
-                        h.recv_space_notify(peer, space_id, data)?;
-                    }
+            match ty {
+                K2WireType::Unspecified => Ok(()),
+                K2WireType::Preflight => {
+                    self.handler.preflight_validate_incoming(peer, data).await
                 }
-                Ok(())
-            }
-            K2WireType::Module => {
-                if let (Some(space_id), Some(module)) = (space_id, module_id) {
-                    let space_id = SpaceId::from(space_id);
-                    if let Some(h) = self
-                        .mod_map
-                        .lock()
-                        .unwrap()
-                        .get(&(space_id.clone(), module.clone()))
+                K2WireType::Notify => {
+                    if let Some(space_id) = space_id {
+                        let space_id = SpaceId::from(space_id);
+                        if let Some(h) =
+                            self.space_map.lock().unwrap().get(&space_id)
+                        {
+                            h.recv_space_notify(peer, space_id, data)?;
+                        }
+                    }
+                    Ok(())
+                }
+                K2WireType::Module => {
+                    if let (Some(space_id), Some(module)) =
+                        (space_id, module_id)
                     {
-                        h.recv_module_msg(peer, space_id, module.clone(), data).inspect_err(|e| {
+                        let space_id = SpaceId::from(space_id);
+                        if let Some(h) = self
+                            .mod_map
+                            .lock()
+                            .unwrap()
+                            .get(&(space_id.clone(), module.clone()))
+                        {
+                            h.recv_module_msg(peer, space_id, module.clone(), data).inspect_err(|e| {
                             tracing::warn!(?module, "Error in recv_module_msg, peer connection will be closed: {e}");
                         })?;
+                        }
                     }
+                    Ok(())
                 }
-                Ok(())
+                K2WireType::Disconnect => {
+                    let reason = String::from_utf8_lossy(&data).to_string();
+                    Err(K2Error::other(format!("Remote Disconnect: {reason}")))
+                }
             }
-            K2WireType::Disconnect => {
-                let reason = String::from_utf8_lossy(&data).to_string();
-                Err(K2Error::other(format!("Remote Disconnect: {reason}")))
-            }
-        }
+        })
     }
 
     /// Call this whenever a connection to a peer fails to get established,
@@ -443,9 +457,9 @@ pub trait TxHandler: TxBaseHandler {
     fn preflight_gather_outgoing(
         &self,
         peer_url: Url,
-    ) -> K2Result<bytes::Bytes> {
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
         drop(peer_url);
-        Ok(bytes::Bytes::new())
+        Box::pin(async { Ok(bytes::Bytes::new()) })
     }
 
     /// Validate preflight data sent by a remote peer on a new connection.
@@ -457,9 +471,9 @@ pub trait TxHandler: TxBaseHandler {
         &self,
         peer_url: Url,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
+    ) -> BoxFut<'_, K2Result<()>> {
         drop((peer_url, data));
-        Ok(())
+        Box::pin(async { Ok(()) })
     }
 }
 

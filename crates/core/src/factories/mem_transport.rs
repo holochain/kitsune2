@@ -319,7 +319,7 @@ async fn cmd_task(
     while let Some(cmd) = cmd_recv.recv().await {
         match cmd {
             Cmd::RegisterConnection(url, data_send, mut data_recv) => {
-                match handler.peer_connect(url.clone()) {
+                match handler.peer_connect(url.clone()).await {
                     Err(_) => continue,
                     Ok(preflight) => {
                         let (result_sender, _) =
@@ -366,7 +366,7 @@ async fn cmd_task(
                     r.recv_message_count += 1;
                     r.recv_bytes += data.len() as u64;
                 });
-                if let Err(err) = handler.recv_data(url.clone(), data) {
+                if let Err(err) = handler.recv_data(url.clone(), data).await {
                     if let Some(mut drop_send) = con_pool.remove(&url) {
                         drop_send.reason = Some(format!("{err:?}"));
                     }

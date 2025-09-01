@@ -245,6 +245,7 @@ impl Tx5Transport {
                             peer_url.map_err(std::io::Error::other)?;
                         let data = handler
                             .peer_connect(peer_url)
+                            .await
                             .map_err(std::io::Error::other)?;
                         Ok(data.to_vec())
                     })
@@ -397,19 +398,21 @@ fn handle_msg(
     handler: &TxImpHnd,
     peer_url: tx5::PeerUrl,
     message: Vec<u8>,
-) -> K2Result<()> {
-    let peer_url = match peer_url.to_kitsune() {
-        Ok(peer_url) => peer_url,
-        Err(err) => {
-            return Err(K2Error::other_src("malformed peer url", err));
+) -> BoxFut<'_, K2Result<()>> {
+    Box::pin(async move {
+        let peer_url = match peer_url.to_kitsune() {
+            Ok(peer_url) => peer_url,
+            Err(err) => {
+                return Err(K2Error::other_src("malformed peer url", err));
+            }
+        };
+        // this would be more efficient if we retool tx5 to use bytes internally
+        let message = bytes::BytesMut::from(message.as_slice()).freeze();
+        if let Err(err) = handler.recv_data(peer_url, message).await {
+            return Err(K2Error::other_src("error in recv data handler", err));
         }
-    };
-    // this would be more efficient if we retool tx5 to use bytes internally
-    let message = bytes::BytesMut::from(message.as_slice()).freeze();
-    if let Err(err) = handler.recv_data(peer_url, message) {
-        return Err(K2Error::other_src("error in recv data handler", err));
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 struct TaskDrop(&'static str);
@@ -425,6 +428,7 @@ async fn pre_task(handler: Arc<TxImpHnd>, mut pre_recv: PreCheckRecv) {
     while let Some((peer_url, message, resp)) = pre_recv.recv().await {
         let _ = resp.send(
             handle_msg(&handler, peer_url, message)
+                .await
                 .map_err(std::io::Error::other),
         );
     }
@@ -468,7 +472,7 @@ async fn evt_task(
             }
             Message { peer_url, message } => {
                 if let Err(err) =
-                    handle_msg(&handler, peer_url.clone(), message)
+                    handle_msg(&handler, peer_url.clone(), message).await
                 {
                     ep.close(&peer_url);
                     tracing::debug!(?err);

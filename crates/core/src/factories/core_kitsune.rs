@@ -55,7 +55,7 @@ impl TxHandler for TxHandlerTranslator {
     fn preflight_gather_outgoing(
         &self,
         peer_url: Url,
-    ) -> K2Result<bytes::Bytes> {
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
         self.0.preflight_gather_outgoing(peer_url)
     }
 
@@ -63,7 +63,7 @@ impl TxHandler for TxHandlerTranslator {
         &self,
         peer_url: Url,
         data: bytes::Bytes,
-    ) -> K2Result<()> {
+    ) -> BoxFut<'_, K2Result<()>> {
         self.0.preflight_validate_incoming(peer_url, data)
     }
 }
