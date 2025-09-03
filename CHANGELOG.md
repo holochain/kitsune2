@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.3.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.1...v0.3.0-dev.2)\] - 2025-09-03
+
+### Features
+
+- Upgrade tx5 to 0.8 by @ThetaSinner in [#322](https://github.com/holochain/kitsune2/pull/322)
+- Support the go-pion backend for tx5 as an optional configuration by @ThetaSinner in [#301](https://github.com/holochain/kitsune2/pull/301)
+- Make MemPeerStore inner insert method async by @cdunster
+- Use async Mutex for MemPeerStore inner by @cdunster
+- Add blocks module to the Space module by @cdunster
+- Add method to PeerStore to get agents by peer URL by @cdunster
+- Add common function to remove and block an agent by ID by @cdunster
+- Check if agents are blocked before inserting into peer_store by @cdunster
+- PeerStoreFactory::create now takes a DynBlocks by @cdunster
+- Add in-memory blocks implementation as default Blocks by @cdunster
+- Add mem_blocks module to implement Blocks and BlocksFactory by @cdunster
+  - This is an in-memory implementation to be used for testing only.
+- Add blocks factory to blocks module in API crate by @cdunster
+- Add blocks module to API crate by @cdunster
+- Add method to remove peer from peer_store based on AgentId by @cdunster
+
+### Bug Fixes
+
+- When an empty target list was passed to MemBlocks::are_all_blocked() it incorrectly returned true (#321) by @matthme in [#321](https://github.com/holochain/kitsune2/pull/321)
+- Use default-features = false for transport dependencies by @ThetaSinner in [#314](https://github.com/holochain/kitsune2/pull/314)
+- Increase default re-insert delay for fetch requests by @ThetaSinner in [#317](https://github.com/holochain/kitsune2/pull/317)
+  - This should improve performance because the fast fetch retry could spam the target before they get a chance to respond
+- Ensure the gossip initiate loop will always progress even if the fetch queue does not notify it by @ThetaSinner in [#304](https://github.com/holochain/kitsune2/pull/304)
+- Fetch should not error when too many messages have been received by @ThetaSinner in [#305](https://github.com/holochain/kitsune2/pull/305)
+  - Instead, fetch should just handle as many messages as it is willing to and drop messages that it can't respond to. The remote peers whose requests fail will just have to try again.
+- Close connections when marking a peer unresponsive by @ThetaSinner in [#303](https://github.com/holochain/kitsune2/pull/303)
+- Out of bounds panic in the DHT time module caused by a wrong bounds check by @ThetaSinner in [#285](https://github.com/holochain/kitsune2/pull/285)
+- Revert renaming of space field in AgentInfo (#278) by @matthme in [#278](https://github.com/holochain/kitsune2/pull/278)
+
+### Miscellaneous Tasks
+
+- *(kitsune2_core)* Add more tracing for prune and insert operations by @ThetaSinner
+- *(kitsune2_gossip)* Downgrade some common tracing logs from info to debug level to reduce noise in logs by @ThetaSinner in [#307](https://github.com/holochain/kitsune2/pull/307)
+- Upgrade tx5 to 0.7.1 by @ThetaSinner in [#306](https://github.com/holochain/kitsune2/pull/306)
+- Update to the latest tx5 release which includes a bugfix for handling p2p connection setup failures by @ThetaSinner in [#296](https://github.com/holochain/kitsune2/pull/296)
+- Allow a dedicated override for `OpId` by @ThetaSinner in [#279](https://github.com/holochain/kitsune2/pull/279)
+- Downgrade "no peers" gossip tracing messages from info to debug because they're too noisy when no other peers are available on the network by @ThetaSinner in [#276](https://github.com/holochain/kitsune2/pull/276)
+
+### Testing
+
+- Add test for when a tie-breaker check results in a tie by @cdunster in [#292](https://github.com/holochain/kitsune2/pull/292)
+- Give test `two_node_gossip` more time to sync on CI by @ThetaSinner in [#308](https://github.com/holochain/kitsune2/pull/308)
+- Attempt to make `two_new_agents_sync` less flaky on macos on CI by @ThetaSinner
+
+### Refactor
+
+- Make preflight handlers async (#326) by @matthme in [#326](https://github.com/holochain/kitsune2/pull/326)
+- Clearer namings and more docs for the MemTransport (#323) by @matthme in [#323](https://github.com/holochain/kitsune2/pull/323)
+- Extract block targets in tests into constants by @cdunster in [#290](https://github.com/holochain/kitsune2/pull/290)
+- \[**BREAKING**\] Rename space to space_id for clarity where applicable (#273) by @matthme in [#273](https://github.com/holochain/kitsune2/pull/273)
+
+### Styling
+
+- Clean up imports in test module by @cdunster
+
+### Documentation
+
+- Update PeerStore::insert doc-comment to mention blocks by @cdunster
+
+### Automated Changes
+
+- *(deps)* Bump actions/checkout from 4 to 5 by @dependabot[bot] in [#299](https://github.com/holochain/kitsune2/pull/299)
+  - Bumps [actions/checkout](https://github.com/actions/checkout) from 4 to 5. - [Release notes](https://github.com/actions/checkout/releases) - [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md) - [Commits](https://github.com/actions/checkout/compare/v4...v5)
+  - Updated-dependencies: - dependency-name: actions/checkout   dependency-version: '5'   dependency-type: direct:production   update-type: version-update:semver-major ...
+
 ## [0.3.0-dev.1] - 2025-07-24
 
 ### Changed

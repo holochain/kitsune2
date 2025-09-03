@@ -16,7 +16,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0-dev.1"
+version = "0.3.0-dev.2"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
 homepage = "https://www.holochain.org/"
 repository = "https://github.com/holochain/kitsune2"
