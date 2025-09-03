@@ -28,6 +28,7 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 /// - `peer_store` - The default peer store is [factories::MemPeerStoreFactory].
 /// - `bootstrap` - The default bootstrap is [factories::CoreBootstrapFactory].
 /// - `fetch` - The default fetch module is [factories::CoreFetchFactory].
+/// - `report` - The default report module is [factories::CoreReportFactory].
 /// - `transport` - The default transport is [Tx5TransportFactory].
 /// - `op_store` - The default op store is [MemOpStoreFactory].
 ///                Note: you will likely want to implement your own op store.
@@ -48,6 +49,7 @@ pub fn default_builder() -> Builder {
         peer_store: factories::MemPeerStoreFactory::create(),
         bootstrap: factories::CoreBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
+        report: factories::CoreReportFactory::create(),
         transport: Tx5TransportFactory::create(),
         op_store: MemOpStoreFactory::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
