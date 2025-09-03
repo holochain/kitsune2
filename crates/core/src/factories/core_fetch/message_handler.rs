@@ -66,8 +66,9 @@ impl TxModuleHandler for FetchMessageHandler {
                         )
                     })?;
 
-                if let Err(err) =
-                    self.incoming_response_tx.try_send(response.ops)
+                if let Err(err) = self
+                    .incoming_response_tx
+                    .try_send((response.ops, peer.clone()))
                 {
                     match err {
                         tokio::sync::mpsc::error::TrySendError::Full(_) => {
@@ -216,6 +217,7 @@ mod test {
                 .recv()
                 .await
                 .unwrap()
+                .0
                 .into_iter()
                 .map(|op| op.data)
                 .collect::<Vec<_>>();

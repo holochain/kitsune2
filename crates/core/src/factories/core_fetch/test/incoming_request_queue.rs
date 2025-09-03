@@ -28,6 +28,7 @@ struct TestCase {
 async fn setup_test() -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), TEST_SPACE_ID)
         .await
@@ -44,6 +45,7 @@ async fn setup_test() -> TestCase {
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store,
         mock_transport.clone(),
@@ -189,6 +191,7 @@ async fn fail_to_respond_once_then_succeed() {
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -239,6 +242,7 @@ async fn fail_to_respond_once_then_succeed() {
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
+        report,
         op_store,
         peer_meta_store,
         mock_transport.clone(),

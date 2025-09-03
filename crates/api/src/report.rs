@@ -11,10 +11,9 @@ pub trait Report: 'static + Send + Sync + std::fmt::Debug {
         _space_id: SpaceId,
         _source: Url,
         _op_id: OpId,
-        _size_bytes: u32,
-    ) -> BoxFut<'_, K2Result<()>> {
+        _size_bytes: u64,
+    ) {
         // provided impl is a no-op
-        Box::pin(async move { Ok(()) })
     }
 }
 

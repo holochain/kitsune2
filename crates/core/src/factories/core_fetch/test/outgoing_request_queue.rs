@@ -31,6 +31,7 @@ struct TestCase {
 async fn setup_test(config: &CoreFetchConfig) -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -47,6 +48,7 @@ async fn setup_test(config: &CoreFetchConfig) -> TestCase {
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store.clone(),
         mock_transport.clone(),
@@ -276,6 +278,7 @@ async fn unresponsive_urls_are_filtered() {
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -311,6 +314,7 @@ async fn unresponsive_urls_are_filtered() {
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store.clone(),
         transport.clone(),
@@ -476,6 +480,7 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
     };
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -503,6 +508,7 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store.clone(),
         mock_transport.clone(),
