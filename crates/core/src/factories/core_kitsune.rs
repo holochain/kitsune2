@@ -32,7 +32,8 @@ impl KitsuneFactory for CoreKitsuneFactory {
         builder: Arc<Builder>,
     ) -> BoxFut<'static, K2Result<DynKitsune>> {
         Box::pin(async move {
-            let out: DynKitsune = Arc::new(CoreKitsune::new(builder));
+            let out = CoreKitsune::new(builder).await?;
+            let out: DynKitsune = Arc::new(out);
             Ok(out)
         })
     }
@@ -76,17 +77,20 @@ struct CoreKitsune {
     builder: Arc<Builder>,
     handler: std::sync::OnceLock<DynKitsuneHandler>,
     map: std::sync::Mutex<Map>,
+    report: DynReport,
     tx: std::sync::OnceLock<DynTransport>,
 }
 
 impl CoreKitsune {
-    pub fn new(builder: Arc<Builder>) -> Self {
-        Self {
+    pub async fn new(builder: Arc<Builder>) -> K2Result<Self> {
+        let report = builder.report.create(builder.clone()).await?;
+        Ok(Self {
             builder,
             handler: std::sync::OnceLock::new(),
             map: std::sync::Mutex::new(HashMap::new()),
+            report,
             tx: std::sync::OnceLock::new(),
-        }
+        })
     }
 }
 
@@ -139,6 +143,7 @@ impl Kitsune for CoreKitsune {
                         .get()
                         .ok_or_else(|| K2Error::other(ERR))?
                         .clone();
+                    let report = self.report.clone();
                     let tx = self
                         .tx
                         .get()
@@ -150,7 +155,13 @@ impl Kitsune for CoreKitsune {
                                 handler.create_space(space_id.clone()).await?;
                             let s = builder
                                 .space
-                                .create(builder.clone(), sh, space_id, tx)
+                                .create(
+                                    builder.clone(),
+                                    sh,
+                                    space_id,
+                                    report,
+                                    tx,
+                                )
                                 .await?;
                             Ok(s)
                         },

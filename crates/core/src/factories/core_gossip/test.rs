@@ -63,6 +63,7 @@ async fn create_gossip_instance() {
                 .create(
                     builder.clone(),
                     space_id.clone(),
+                    builder.report.create(builder.clone()).await.unwrap(),
                     op_store.clone(),
                     peer_meta_store,
                     tx.clone(),

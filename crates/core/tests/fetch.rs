@@ -32,6 +32,7 @@ fn create_op_list(num_ops: u16) -> (Vec<MemoryOp>, Vec<OpId>) {
 
 struct Peer {
     builder: Arc<Builder>,
+    report: DynReport,
     op_store: DynOpStore,
     peer_meta_store: DynPeerMetaStore,
     transport: DynTransport,
@@ -45,6 +46,7 @@ async fn make_peer(
 ) -> Peer {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -77,6 +79,7 @@ async fn make_peer(
                 .create(
                     builder.clone(),
                     TEST_SPACE_ID,
+                    report.clone(),
                     op_store.clone(),
                     peer_meta_store.clone(),
                     transport.clone(),
@@ -90,6 +93,7 @@ async fn make_peer(
 
     Peer {
         builder,
+        report,
         op_store,
         peer_meta_store,
         transport,
@@ -207,6 +211,7 @@ async fn bob_comes_online_after_being_unresponsive() {
     // Make Bob without fetch.
     let Peer {
         op_store: op_store_bob,
+        report: report_bob,
         peer_meta_store: peer_meta_store_bob,
         transport: transport_bob,
         peer_url: peer_url_bob,
@@ -261,6 +266,7 @@ async fn bob_comes_online_after_being_unresponsive() {
         .create(
             builder_bob.clone(),
             TEST_SPACE_ID,
+            report_bob,
             op_store_bob,
             peer_meta_store_bob,
             transport_bob.clone(),

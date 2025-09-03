@@ -1,8 +1,8 @@
 //! Kitsune2 fetch types.
 
 use crate::{
-    builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
-    OpId, SpaceId, Url,
+    builder, config, transport::DynTransport, BoxFut, DynOpStore, DynReport,
+    K2Result, OpId, SpaceId, Url,
 };
 use crate::{op_store, DynPeerMetaStore};
 use bytes::{Bytes, BytesMut};
@@ -125,6 +125,7 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
+        report: DynReport,
         op_store: DynOpStore,
         peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,

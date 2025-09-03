@@ -438,6 +438,8 @@ impl K2GossipFunctionalTestFactory {
 
         let builder = Arc::new(builder);
 
+        let report = builder.report.create(builder.clone()).await.unwrap();
+
         let transport = builder
             .transport
             .create(builder.clone(), Arc::new(NoopHandler))
@@ -450,6 +452,7 @@ impl K2GossipFunctionalTestFactory {
                 builder.clone(),
                 Arc::new(NoopHandler),
                 self.space_id.clone(),
+                report,
                 transport.clone(),
             )
             .await

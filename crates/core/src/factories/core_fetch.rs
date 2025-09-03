@@ -86,6 +86,7 @@ impl FetchFactory for CoreFetchFactory {
         &self,
         builder: Arc<Builder>,
         space_id: SpaceId,
+        _report: DynReport,
         op_store: DynOpStore,
         peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,

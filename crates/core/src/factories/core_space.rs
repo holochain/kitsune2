@@ -87,6 +87,7 @@ impl SpaceFactory for CoreSpaceFactory {
         builder: Arc<Builder>,
         handler: DynSpaceHandler,
         space_id: SpaceId,
+        report: DynReport,
         tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
@@ -120,6 +121,7 @@ impl SpaceFactory for CoreSpaceFactory {
                 .create(
                     builder.clone(),
                     space_id.clone(),
+                    report,
                     op_store.clone(),
                     peer_meta_store.clone(),
                     tx.clone(),
