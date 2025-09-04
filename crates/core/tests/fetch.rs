@@ -46,7 +46,6 @@ async fn make_peer(
 ) -> Peer {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -66,6 +65,11 @@ async fn make_peer(
     let transport = builder
         .transport
         .create(builder.clone(), tx_handler.clone())
+        .await
+        .unwrap();
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
         .await
         .unwrap();
     let peer_url = tx_handler.peer_url.lock().unwrap().clone();

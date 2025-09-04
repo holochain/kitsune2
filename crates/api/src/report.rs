@@ -1,10 +1,21 @@
 //! Kitsune2 report types.
 
-use crate::{builder, config, BoxFut, K2Result, OpId, SpaceId, Url};
+use crate::{
+    builder, config, BoxFut, DynLocalAgentStore, K2Result, OpId, SpaceId, Url,
+};
 use std::sync::Arc;
 
 /// Trait for implementing a report module in kitsune2.
 pub trait Report: 'static + Send + Sync + std::fmt::Debug {
+    /// Notify that a space was created.
+    fn space(
+        &self,
+        _space_id: SpaceId,
+        _local_agent_store: DynLocalAgentStore,
+    ) {
+        // provided impl is a no-op
+    }
+
     /// Notify that we have fetched op data from a remote peer.
     fn fetched_op(
         &self,
@@ -33,6 +44,7 @@ pub trait ReportFactory: 'static + Send + Sync + std::fmt::Debug {
     fn create(
         &self,
         builder: Arc<builder::Builder>,
+        tx: crate::DynTransport,
     ) -> BoxFut<'static, K2Result<DynReport>>;
 }
 

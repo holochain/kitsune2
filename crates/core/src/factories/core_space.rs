@@ -107,6 +107,7 @@ impl SpaceFactory for CoreSpaceFactory {
                 .await?;
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
+            report.space(space_id.clone(), local_agent_store.clone());
             let inner = Arc::new(RwLock::new(InnerData { current_url: None }));
             let op_store = builder
                 .op_store

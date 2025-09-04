@@ -28,9 +28,13 @@ struct TestCase {
 async fn setup_test() -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = create_mock_transport(requests_sent.clone());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -225,7 +229,11 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),

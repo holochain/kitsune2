@@ -31,7 +31,6 @@ struct TestCase {
 async fn setup_test(config: &CoreFetchConfig) -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -44,6 +43,11 @@ async fn setup_test(config: &CoreFetchConfig) -> TestCase {
         .unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(requests_sent.clone());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
@@ -278,7 +282,6 @@ async fn unresponsive_urls_are_filtered() {
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -306,6 +309,11 @@ async fn unresponsive_urls_are_filtered() {
         .expect_register_module_handler()
         .returning(|_, _, _| ());
     let transport = Arc::new(transport);
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
+        .await
+        .unwrap();
     let peer_meta_store = builder
         .peer_meta_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -480,7 +488,6 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
     };
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -504,6 +511,11 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
         .expect_register_module_handler()
         .returning(|_, _, _| ());
     let mock_transport = Arc::new(mock_transport);
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),

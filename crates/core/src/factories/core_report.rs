@@ -25,6 +25,7 @@ impl ReportFactory for CoreReportFactory {
     fn create(
         &self,
         _builder: Arc<Builder>,
+        _tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynReport>> {
         Box::pin(async move {
             let out: DynReport = Arc::new(CoreReport);

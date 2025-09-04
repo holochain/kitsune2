@@ -77,19 +77,18 @@ struct CoreKitsune {
     builder: Arc<Builder>,
     handler: std::sync::OnceLock<DynKitsuneHandler>,
     map: std::sync::Mutex<Map>,
-    report: DynReport,
     tx: std::sync::OnceLock<DynTransport>,
+    report: std::sync::OnceLock<DynReport>,
 }
 
 impl CoreKitsune {
     pub async fn new(builder: Arc<Builder>) -> K2Result<Self> {
-        let report = builder.report.create(builder.clone()).await?;
         Ok(Self {
             builder,
             handler: std::sync::OnceLock::new(),
             map: std::sync::Mutex::new(HashMap::new()),
-            report,
             tx: std::sync::OnceLock::new(),
+            report: std::sync::OnceLock::new(),
         })
     }
 }
@@ -115,8 +114,15 @@ impl Kitsune for CoreKitsune {
                 )
                 .await?;
 
+            let report = self
+                .builder
+                .report
+                .create(self.builder.clone(), tx.clone())
+                .await?;
+
             self.handler.set(handler).map_err(|_| K2Error::other(ERR))?;
             self.tx.set(tx).map_err(|_| K2Error::other(ERR))?;
+            self.report.set(report).map_err(|_| K2Error::other(ERR))?;
 
             Ok(())
         })
@@ -143,9 +149,13 @@ impl Kitsune for CoreKitsune {
                         .get()
                         .ok_or_else(|| K2Error::other(ERR))?
                         .clone();
-                    let report = self.report.clone();
                     let tx = self
                         .tx
+                        .get()
+                        .ok_or_else(|| K2Error::other(ERR))?
+                        .clone();
+                    let report = self
+                        .report
                         .get()
                         .ok_or_else(|| K2Error::other(ERR))?
                         .clone();
@@ -294,6 +304,13 @@ impl Kitsune for CoreKitsune {
                 .cloned()
                 .ok_or_else(|| K2Error::other("Transport not registered yet"))
         })
+    }
+
+    fn report(&self) -> K2Result<DynReport> {
+        self.report
+            .get()
+            .cloned()
+            .ok_or_else(|| K2Error::other("Report not registered yet"))
     }
 }
 

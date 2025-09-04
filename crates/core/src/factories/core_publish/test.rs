@@ -371,7 +371,11 @@ async fn create_publish(
     builder: Arc<Builder>,
     transport: DynTransport,
 ) -> (CorePublish, DynOpStore, DynPeerStore, DynPeerMetaStore) {
-    let report = builder.report.create(builder.clone()).await.unwrap();
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
+        .await
+        .unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)

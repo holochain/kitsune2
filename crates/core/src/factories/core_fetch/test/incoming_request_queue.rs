@@ -28,7 +28,6 @@ struct TestCase {
 async fn setup_test() -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = MemOpStoreFactory::create()
         .create(builder.clone(), TEST_SPACE_ID)
         .await
@@ -40,6 +39,11 @@ async fn setup_test() -> TestCase {
         .unwrap();
     let responses_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(responses_sent.clone());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
     let config = CoreFetchConfig::default();
 
     let fetch = CoreFetch::new(
@@ -191,7 +195,6 @@ async fn fail_to_respond_once_then_succeed() {
 
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let report = builder.report.create(builder.clone()).await.unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -230,6 +233,11 @@ async fn fail_to_respond_once_then_succeed() {
         }
     });
     let mock_transport = Arc::new(mock_transport);
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
     let config = CoreFetchConfig::default();
 
     let op = make_op(vec![1; 128]);
