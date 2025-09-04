@@ -14,7 +14,7 @@
 
 use kitsune2_api::*;
 use kitsune2_core::{
-    factories::{self, MemOpStoreFactory},
+    factories::{self, MemOpStoreFactory, TestMemoryOp},
     Ed25519Verifier,
 };
 use kitsune2_gossip::K2GossipFactory;
@@ -49,7 +49,7 @@ pub fn default_builder() -> Builder {
         bootstrap: factories::CoreBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         transport: Tx5TransportFactory::create(),
-        op_store: MemOpStoreFactory::create(),
+        op_store: MemOpStoreFactory::<TestMemoryOp>::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
         gossip: K2GossipFactory::create(),
         local_agent_store: factories::CoreLocalAgentStoreFactory::create(),

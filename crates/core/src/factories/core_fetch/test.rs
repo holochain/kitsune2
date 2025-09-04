@@ -4,7 +4,7 @@ mod outgoing_request_queue;
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::factories::MemoryOp;
+    use crate::factories::TestMemoryOp;
     use kitsune2_api::{Timestamp, Url};
     use rand::RngCore;
 
@@ -13,7 +13,7 @@ pub(crate) mod test_utils {
         Url::from_str(format!("ws://test:80/{id}")).unwrap()
     }
 
-    pub fn make_op(data: Vec<u8>) -> MemoryOp {
-        MemoryOp::new(Timestamp::now(), data)
+    pub fn make_op(data: Vec<u8>) -> TestMemoryOp {
+        TestMemoryOp::new(Timestamp::now(), data)
     }
 }

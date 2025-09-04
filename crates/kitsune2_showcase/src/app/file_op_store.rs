@@ -4,7 +4,9 @@ use kitsune2_api::{
     BoxFut, Builder, Config, DhtArc, DynOpStore, DynOpStoreFactory, K2Error,
     K2Result, MetaOp, OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
 };
-use kitsune2_core::factories::{MemOpStoreFactory, MemoryOpRecord};
+use kitsune2_core::factories::{
+    MemOpStoreFactory, MemoryOpRecord, TestMemoryOp,
+};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -14,14 +16,14 @@ pub type FileStoreLookup = Arc<Mutex<HashMap<String, OpId>>>;
 
 #[derive(Debug)]
 pub struct FileOpStoreFactory {
-    mem_op_store_factory: Arc<MemOpStoreFactory>,
+    mem_op_store_factory: Arc<MemOpStoreFactory<TestMemoryOp>>,
     file_store_lookup: FileStoreLookup,
 }
 
 impl FileOpStoreFactory {
     pub fn create(file_store_lookup: FileStoreLookup) -> DynOpStoreFactory {
         let out: DynOpStoreFactory = Arc::new(FileOpStoreFactory {
-            mem_op_store_factory: Arc::new(MemOpStoreFactory {}),
+            mem_op_store_factory: Arc::new(MemOpStoreFactory::default()),
             file_store_lookup,
         });
         out
@@ -72,8 +74,8 @@ impl OpStore for FileOpStore {
             let file_names = op_list
                 .iter()
                 .map(|op| {
-                    let mem_op = MemoryOpRecord::from(op.clone());
-                     serde_json::from_slice::<FileData>(&mem_op.op_data)
+                    let record = MemoryOpRecord::<TestMemoryOp>::new(op.clone()).unwrap();
+                     serde_json::from_slice::<FileData>(record.op.to_bytes().as_ref())
                         .map(|f| f.name)
                 })
                 .collect::<Result<Vec<_>, _>>().map_err(|e| {

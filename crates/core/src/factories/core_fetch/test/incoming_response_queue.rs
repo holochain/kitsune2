@@ -3,7 +3,7 @@ use crate::{
     default_test_builder,
     factories::{
         core_fetch::{CoreFetch, CoreFetchConfig},
-        MemPeerMetaStore, MemoryOp,
+        MemPeerMetaStore, MemoryOp, TestMemoryOp,
     },
 };
 use kitsune2_api::*;
@@ -93,9 +93,9 @@ async fn incoming_ops_are_written_to_op_store() {
         fetch, op_store, ..
     } = setup_test().await;
 
-    let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
+    let incoming_op_1 = TestMemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id_1 = incoming_op_1.compute_op_id();
-    let incoming_op_2 = MemoryOp::new(Timestamp::now(), vec![2]);
+    let incoming_op_2 = TestMemoryOp::new(Timestamp::now(), vec![2]);
     let incoming_op_id_2 = incoming_op_2.compute_op_id();
 
     let incoming_op_ids =
@@ -156,7 +156,7 @@ async fn requests_for_received_ops_are_removed_from_state() {
     let another_peer_url = random_peer_url();
 
     // Add 1 op that'll be removed and another op that won't be.
-    let incoming_op = MemoryOp::new(Timestamp::now(), vec![1]);
+    let incoming_op = TestMemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id = incoming_op.compute_op_id();
     let another_op_id = random_op_id();
 
@@ -231,7 +231,7 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
 
     let peer_url = random_peer_url();
 
-    let incoming_op = MemoryOp::new(Timestamp::now(), vec![1]);
+    let incoming_op = TestMemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id = incoming_op.compute_op_id();
 
     fetch
