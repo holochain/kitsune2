@@ -30,9 +30,14 @@ serde_json = { workspace = true, optional = true }
 [dev-dependencies]
 kitsune2_gossip = { workspace = true }
 kitsune2_test_utils = { workspace = true }
+kitsune2_transport_tx5 = { workspace = true, default-features = false, features = [
+  "test-utils",
+] }
 sbd-server = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 jsonschema = { workspace = true }
+rmp-serde = { workspace = true }
+tracing = { workspace = true }
 
 [features]
 default = ["datachannel-vendored"]

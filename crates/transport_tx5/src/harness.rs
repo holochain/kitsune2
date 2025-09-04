@@ -39,7 +39,9 @@ impl Tx5TransportTestHarness {
             auth_material,
             transport: Tx5TransportFactory::create(),
             ..kitsune2_core::default_test_builder()
-        };
+        }
+        .with_default_config()
+        .unwrap();
 
         builder
             .config

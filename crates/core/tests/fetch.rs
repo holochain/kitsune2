@@ -18,6 +18,12 @@ impl TxBaseHandler for MockTxHandler {
 }
 impl TxHandler for MockTxHandler {}
 
+impl TxSpaceHandler for MockTxHandler {
+    fn are_all_agents_at_url_blocked(&self, _peer_url: &Url) -> K2Result<bool> {
+        Ok(false)
+    }
+}
+
 fn create_op_list(num_ops: u16) -> (Vec<MemoryOp>, Vec<OpId>) {
     let mut ops = Vec::new();
     let mut op_ids = Vec::new();
@@ -67,11 +73,15 @@ async fn make_peer(
         .create(builder.clone(), tx_handler.clone())
         .await
         .unwrap();
+
     let report = builder
         .report
         .create(builder.clone(), transport.clone())
         .await
         .unwrap();
+
+    transport.register_space_handler(TEST_SPACE_ID, tx_handler.clone());
+
     let peer_url = tx_handler.peer_url.lock().unwrap().clone();
     if let Some(config) = fetch_config {
         builder.config.set_module_config(&config).unwrap();

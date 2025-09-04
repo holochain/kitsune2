@@ -110,9 +110,9 @@ impl TxImpHnd {
                 ..
             } = data;
 
-            // Except for preflight and unspecified messages we should reject the
-            // message and close the connection if all agents are blocked for the
-            // given peer URL.
+            // Except for preflight, unspecified and disconnect messages we
+            // should reject the message and close the connection if all agents
+            // are blocked for the given peer URL.
             self.reject_message_if_all_agents_blocked(
                 &peer, &space_id, &module_id, &wire_type,
             )?;
@@ -227,8 +227,11 @@ impl TxImpHnd {
         match self.space_map.lock().expect("poisoned").get(&space_id) {
             Some(space_handler) => {
                 let space_handler = space_handler.clone();
+                tracing::warn!(
+                    "checking whether all agents are blocked at url"
+                );
                 if space_handler.are_all_agents_at_url_blocked(peer).inspect_err(|e| tracing::warn!(?space_id, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))? {
-                            tracing::warn!(?space_id, ?peer, "All agents at peer are blocked, peer connection will be closed.");
+                            tracing::warn!(?space_id, ?peer, ?wire_type, "All agents at peer are blocked, peer connection will be closed.");
                             return Err(K2Error::other(format!("all agents at peer URL '{peer}' are blocked")));
                         }
                 Ok(())
