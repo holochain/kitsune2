@@ -395,10 +395,12 @@ async fn transport_preflight_happy() {
         }),
     );
 
-    let _t1 = gen_tx(h.clone()).await;
+    let t1 = gen_tx(h.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h.clone());
     let u = h.url();
 
     let t2 = gen_tx(h.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h.clone());
 
     t2.send_space_notify(u, TEST_SPACE_ID, bytes::Bytes::from_static(b"hello"))
         .await
