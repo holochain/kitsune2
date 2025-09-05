@@ -10,6 +10,8 @@ enum Track {
     Disconnect(Url, Option<String>),
     SpaceRecv(Url, SpaceId, bytes::Bytes),
     ModRecv(Url, SpaceId, String, bytes::Bytes),
+    PreflightSend,
+    PreflightRecv,
 }
 
 type G = Box<dyn Fn(Url) -> K2Result<bytes::Bytes> + 'static + Send + Sync>;
@@ -51,6 +53,7 @@ impl TxHandler for TrackHnd {
         &self,
         peer_url: Url,
     ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        self.track.lock().unwrap().push(Track::PreflightSend);
         Box::pin(async { (self.preflight_gather_outgoing)(peer_url) })
     }
 
@@ -59,6 +62,7 @@ impl TxHandler for TrackHnd {
         peer_url: Url,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
+        self.track.lock().unwrap().push(Track::PreflightRecv);
         Box::pin(async { (self.preflight_validate_incoming)(peer_url, data) })
     }
 }
@@ -197,6 +201,29 @@ impl TrackHnd {
             String::from_utf8_lossy(msg),
             self.track.lock().unwrap(),
         )))
+    }
+
+    pub fn check_preflight_before_other_messages(&self) {
+        let lock = self.track.lock().unwrap();
+        let preflight_index = std::cmp::max(
+            lock.iter()
+                .position(|t| matches!(t, Track::PreflightSend))
+                .expect("no preflight send"),
+            lock.iter()
+                .position(|t| matches!(t, Track::PreflightRecv))
+                .expect("no preflight recv"),
+        );
+        let message_index = std::cmp::min(
+            lock.iter()
+                .position(|t| matches!(t, Track::SpaceRecv(_, _, _))),
+            lock.iter()
+                .position(|t| matches!(t, Track::ModRecv(_, _, _, _))),
+        )
+        .expect("No messages found");
+
+        if preflight_index > message_index {
+            panic!("Preflight messages were not sent/received before other messages");
+        }
     }
 }
 
@@ -392,4 +419,56 @@ async fn transport_preflight_reject() {
     }
 
     panic!("expected disconnect in reasonable time");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn preflight_before_other() {
+    let h1 = TrackHnd::new();
+    let t1 = gen_tx(h1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h1.clone());
+    t1.register_module_handler(TEST_SPACE_ID, "test".into(), h1.clone());
+    let u1 = h1.url();
+
+    let h2 = TrackHnd::new();
+    let t2 = gen_tx(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
+    t2.register_module_handler(TEST_SPACE_ID, "test".into(), h2.clone());
+    let u2 = h2.url();
+
+    t1.send_space_notify(
+        u2.clone(),
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+
+    t2.send_space_notify(
+        u1.clone(),
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"world"),
+    )
+    .await
+    .unwrap();
+
+    t1.send_module(
+        u2.clone(),
+        TEST_SPACE_ID,
+        "test".into(),
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+
+    t2.send_module(
+        u1.clone(),
+        TEST_SPACE_ID,
+        "test".into(),
+        bytes::Bytes::from_static(b"world"),
+    )
+    .await
+    .unwrap();
+
+    h1.check_preflight_before_other_messages();
+    h2.check_preflight_before_other_messages();
 }
