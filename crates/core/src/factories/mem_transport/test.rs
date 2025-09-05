@@ -1,4 +1,5 @@
 use kitsune2_api::*;
+use kitsune2_test_utils::enable_tracing;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::sync::{Arc, Mutex};
 
@@ -244,6 +245,8 @@ async fn transport_notify() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn transport_module() {
+    enable_tracing();
+
     let h1 = TrackHnd::new();
     let t1 = gen_tx(h1.clone()).await;
     t1.register_module_handler(TEST_SPACE_ID, "test".into(), h1.clone());

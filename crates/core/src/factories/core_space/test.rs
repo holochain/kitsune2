@@ -1,5 +1,7 @@
 use kitsune2_api::*;
-use kitsune2_test_utils::{agent::*, iter_check, space::TEST_SPACE_ID};
+use kitsune2_test_utils::{
+    agent::*, enable_tracing, iter_check, space::TEST_SPACE_ID,
+};
 use std::sync::{Arc, Mutex};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -93,6 +95,8 @@ async fn space_local_agent_join_leave() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn space_notify_send_recv() {
+    enable_tracing();
+
     type Item = (Url, SpaceId, bytes::Bytes);
     type Recv = Arc<Mutex<Vec<Item>>>;
     let recv = Arc::new(Mutex::new(Vec::new()));
