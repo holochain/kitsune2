@@ -7,6 +7,9 @@ use std::sync::Arc;
 
 /// Trait for implementing a report module in kitsune2.
 pub trait Report: 'static + Send + Sync + std::fmt::Debug {
+    /// To aid in concrete downcasting.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     /// Notify that a space was created.
     fn space(
         &self,
