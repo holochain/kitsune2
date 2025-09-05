@@ -87,6 +87,7 @@ impl SpaceFactory for CoreSpaceFactory {
         builder: Arc<Builder>,
         handler: DynSpaceHandler,
         space_id: SpaceId,
+        report: DynReport,
         tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
@@ -106,6 +107,7 @@ impl SpaceFactory for CoreSpaceFactory {
                 .await?;
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
+            report.space(space_id.clone(), local_agent_store.clone());
             let inner = Arc::new(RwLock::new(InnerData { current_url: None }));
             let op_store = builder
                 .op_store
@@ -120,6 +122,7 @@ impl SpaceFactory for CoreSpaceFactory {
                 .create(
                     builder.clone(),
                     space_id.clone(),
+                    report,
                     op_store.clone(),
                     peer_meta_store.clone(),
                     tx.clone(),

@@ -444,12 +444,19 @@ impl K2GossipFunctionalTestFactory {
             .await
             .unwrap();
 
+        let report = builder
+            .report
+            .create(builder.clone(), transport.clone())
+            .await
+            .unwrap();
+
         let space = builder
             .space
             .create(
                 builder.clone(),
                 Arc::new(NoopHandler),
                 self.space_id.clone(),
+                report,
                 transport.clone(),
             )
             .await

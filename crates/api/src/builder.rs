@@ -39,6 +39,10 @@ pub struct Builder {
     /// [Fetch] instances.
     pub fetch: DynFetchFactory,
 
+    /// The [ReportFactory] to be used for creating
+    /// the [Report] instance.
+    pub report: DynReportFactory,
+
     /// The [TransportFactory] to be used for creating
     /// [Transport] instances.
     pub transport: DynTransportFactory,
@@ -83,6 +87,7 @@ impl Builder {
                 peer_store,
                 bootstrap,
                 fetch,
+                report,
                 transport,
                 op_store,
                 peer_meta_store,
@@ -97,6 +102,7 @@ impl Builder {
             peer_store.default_config(config)?;
             bootstrap.default_config(config)?;
             fetch.default_config(config)?;
+            report.default_config(config)?;
             transport.default_config(config)?;
             op_store.default_config(config)?;
             peer_meta_store.default_config(config)?;
@@ -118,6 +124,7 @@ impl Builder {
         self.peer_store.validate_config(&self.config)?;
         self.bootstrap.validate_config(&self.config)?;
         self.fetch.validate_config(&self.config)?;
+        self.report.validate_config(&self.config)?;
         self.transport.validate_config(&self.config)?;
         self.op_store.validate_config(&self.config)?;
         self.peer_meta_store.validate_config(&self.config)?;

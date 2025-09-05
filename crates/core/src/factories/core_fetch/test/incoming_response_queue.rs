@@ -30,6 +30,11 @@ async fn setup_test() -> TestCase {
         Arc::new(default_test_builder().with_default_config().unwrap());
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = create_mock_transport(requests_sent.clone());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
     let op_store = builder
         .op_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -44,6 +49,7 @@ async fn setup_test() -> TestCase {
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),
         TEST_SPACE_ID.clone(),
+        report,
         op_store.clone(),
         peer_meta_store,
         mock_transport.clone(),
@@ -221,9 +227,18 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     let op_store = Arc::new(op_store);
     let peer_meta_store = MemPeerMetaStore::create();
 
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
+
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),
         TEST_SPACE_ID.clone(),
+        report,
         op_store,
         peer_meta_store,
         mock_transport,

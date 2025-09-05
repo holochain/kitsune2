@@ -120,6 +120,7 @@ pub trait SpaceFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<builder::Builder>,
         handler: DynSpaceHandler,
         space_id: SpaceId,
+        report: DynReport,
         tx: transport::DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>>;
 }
