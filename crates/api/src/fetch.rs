@@ -90,6 +90,11 @@ pub fn serialize_response_message(value: Vec<Bytes>) -> Bytes {
 /// Trait for implementing a fetch module to fetch ops from other agents.
 pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be fetched from a peer.
+    ///
+    /// This module internally manages communications between peers.
+    /// On receiving op data that was requested from a remote peer:
+    /// - store those ops in the op store
+    /// - invoke the fetched_op api in the report module
     fn request_ops(
         &self,
         op_ids: Vec<OpId>,
