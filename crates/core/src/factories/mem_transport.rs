@@ -4,6 +4,7 @@
 use kitsune2_api::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
+use tokio::sync::Semaphore;
 
 /// The core stub transport implementation provided by Kitsune2.
 ///
@@ -86,7 +87,11 @@ impl MemTransport {
                 listener.connection_recv.recv().await
             {
                 if cmd_send2
-                    .send(Cmd::RegisterConnection(url, data_send, data_recv))
+                    .send(Cmd::RegisterConnection(
+                        url,
+                        ReadyDataSend::new(data_send),
+                        data_recv,
+                    ))
                     .is_err()
                 {
                     break;
@@ -203,10 +208,50 @@ type ConnectionSend =
 type ConnectionRecv =
     tokio::sync::mpsc::UnboundedReceiver<(Url, DataSend, DataRecv)>;
 
+/// A wrapper around a [`DataSend`] that can be marked as "ready" when the connection preflight
+/// has been completed.
+#[derive(Clone)]
+struct ReadyDataSend {
+    /// A semaphore with no available permits that gets closed when the connection is ready.
+    ready: Arc<Semaphore>,
+    /// The sending end of the "data" channel to send messages to the other peer.
+    data_send: DataSend,
+}
+
+impl ReadyDataSend {
+    fn new(data_send: DataSend) -> Self {
+        Self {
+            ready: Arc::new(Semaphore::new(0)),
+            data_send,
+        }
+    }
+
+    /// Mark the connection as ready, allowing messages to be sent.
+    fn mark_ready(&self) {
+        self.ready.close();
+    }
+
+    /// Wait until the connection is marked as ready and return the [`DataSend`].
+    ///
+    /// If the connection is not ready after 5 seconds, return a timeout error.
+    async fn wait_ready(&self) -> K2Result<DataSend> {
+        tracing::info!("Entering wait_ready");
+
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.ready.acquire(),
+        )
+        .await
+        .map_err(|_| K2Error::other("Timeout waiting for ready"))?;
+
+        Ok(self.data_send.clone())
+    }
+}
+
 /// An open connection to another peer, containing the sending end of the
 /// "data" channel connected to their MemTransport instance.
 struct DropConnection {
-    data_send: DataSend,
+    ready_data_send: ReadyDataSend,
     handler: Arc<TxImpHnd>,
     peer: Url,
     reason: Option<String>,
@@ -228,13 +273,13 @@ impl Drop for DropConnection {
 
 impl DropConnection {
     fn new(
-        data_send: DataSend,
+        ready_data_send: ReadyDataSend,
         handler: Arc<TxImpHnd>,
         peer: Url,
         net_stats: Arc<Mutex<TransportStats>>,
     ) -> Self {
         Self {
-            data_send,
+            ready_data_send,
             handler,
             peer,
             reason: None,
@@ -251,7 +296,7 @@ enum Cmd {
     /// Contains a sender and a receiver for oppositely directed "data"
     /// channels to send messages to and receive messages from the other peer,
     /// respectively.
-    RegisterConnection(Url, DataSend, DataRecv),
+    RegisterConnection(Url, ReadyDataSend, DataRecv),
 
     /// Message bytes received from a peer to be handled, alongside with the
     /// ResultSender to be used to report the Result of handling the message.
@@ -318,13 +363,16 @@ async fn cmd_task(
 
     while let Some(cmd) = cmd_recv.recv().await {
         match cmd {
-            Cmd::RegisterConnection(url, data_send, mut data_recv) => {
+            Cmd::RegisterConnection(url, ready_data_send, mut data_recv) => {
                 match handler.peer_connect(url.clone()).await {
                     Err(_) => continue,
                     Ok(preflight) => {
                         let (result_sender, _) =
                             tokio::sync::oneshot::channel();
-                        let _ = data_send.send((preflight, result_sender));
+
+                        let _ = ready_data_send
+                            .data_send
+                            .send((preflight, result_sender));
                     }
                 }
 
@@ -334,10 +382,34 @@ async fn cmd_task(
                 // Spawn a task to listen on the receiving end of the "data" channel and
                 // send received messages through the command handler channel to the
                 // command runner task.
-                task_list.lock().unwrap().spawn(async move {
-                    while let Some((data, result_sender)) =
-                        data_recv.recv().await
-                    {
+                task_list.lock().unwrap().spawn({
+                    let ready_data_send = ready_data_send.clone();
+                    async move {
+                        let (data, result_sender) = match tokio::time::timeout(std::time::Duration::from_secs(5), data_recv.recv()).await {
+                            Ok(Some((data, result_sender))) => (data, result_sender),
+                            Ok(None) => {
+                                tracing::error!("Failed to receive preflight response - channel closed");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::error!("Failed to receive preflight response - timeout");
+                                return;
+                            }
+                        };
+
+                        match K2Proto::decode(&data) {
+                            Ok(d) => {
+                                if d.ty() != K2WireType::Preflight {
+                                    tracing::error!("Expected preflight message, got {:?}", d.ty());
+                                    return;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to decode message: {:?}", e);
+                                return;
+                            }
+                        }
+
                         if cmd_send2
                             .send(Cmd::RecvData(
                                 url2.clone(),
@@ -346,7 +418,24 @@ async fn cmd_task(
                             ))
                             .is_err()
                         {
-                            break;
+                            return;
+                        }
+
+                        ready_data_send.mark_ready();
+
+                        while let Some((data, result_sender)) =
+                            data_recv.recv().await
+                        {
+                            if cmd_send2
+                                .send(Cmd::RecvData(
+                                    url2.clone(),
+                                    data,
+                                    result_sender,
+                                ))
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
                     }
                 });
@@ -354,7 +443,7 @@ async fn cmd_task(
                 con_pool.insert(
                     url.clone(),
                     DropConnection::new(
-                        data_send,
+                        ready_data_send,
                         handler.clone(),
                         url,
                         net_stats.clone(),
@@ -379,23 +468,32 @@ async fn cmd_task(
                 if let Some(mut drop_send) = con_pool.remove(&url) {
                     if let Some((reason, payload)) = payload {
                         drop_send.reason = Some(reason);
-                        let _ =
-                            drop_send.data_send.send((payload, result_sender));
+                        let _ = drop_send
+                            .ready_data_send
+                            .data_send
+                            .send((payload, result_sender));
                     }
                 }
             }
             Cmd::Send(url, data, result_sender) => {
-                if let Some(data_send) = get_transport_instances().connect(
-                    &cmd_send,
-                    &mut con_pool,
-                    &url,
-                    &this_url,
-                ) {
+                if let Some(ready_data_send) = get_transport_instances()
+                    .connect(&cmd_send, &mut con_pool, &url, &this_url)
+                {
                     net_stat_ref(&net_stats, &url, |r| {
                         r.send_message_count += 1;
                         r.send_bytes += data.len() as u64;
                     });
-                    let _ = data_send.send((data, result_sender));
+
+                    tokio::task::spawn(async move {
+                        match ready_data_send.wait_ready().await {
+                            Ok(ds) => {
+                                let _ = ds.send((data, result_sender));
+                            }
+                            Err(e) => {
+                                let _ = result_sender.send(Err(e));
+                            }
+                        };
+                    });
                 }
             }
         }
@@ -492,9 +590,9 @@ impl TransportInstances {
         conn_pool: &mut HashMap<Url, DropConnection>,
         to_peer: &Url,
         from_peer: &Url,
-    ) -> Option<DataSend> {
+    ) -> Option<ReadyDataSend> {
         if let Some(open_connection) = conn_pool.get(to_peer) {
-            return Some(open_connection.data_send.clone());
+            return Some(open_connection.ready_data_send.clone());
         }
 
         let to_peer_id: u64 = match to_peer.peer_id() {
@@ -506,7 +604,7 @@ impl TransportInstances {
         };
 
         // Get the sender side of the connection establishment channel for the
-        // MemTranport associated with the to_peer Url, if an associated
+        // MemTransport associated with the to_peer Url, if an associated
         // MemTransport instance is found.
         let connection_send =
             match self.instances_map.lock().unwrap().get(&to_peer_id) {
@@ -532,16 +630,18 @@ impl TransportInstances {
             return None;
         }
 
+        let ready_send = ReadyDataSend::new(data_send_2.clone());
+
         // Send the sending end of the "data" channel "A > B" and the receiving
         // end of the "data" channel "B > A" to the MemTransport instance
         // of peer A.
         let _ = cmd_send.send(Cmd::RegisterConnection(
             to_peer.clone(),
-            data_send_2.clone(),
+            ready_send.clone(),
             data_recv_1,
         ));
 
-        Some(data_send_2)
+        Some(ready_send)
     }
 }
 
