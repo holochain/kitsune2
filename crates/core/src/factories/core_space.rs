@@ -260,7 +260,6 @@ impl TxSpaceHandler for TxHandlerTranslator {
                 .iter()
                 .map(|agent| BlockTarget::Agent(agent.agent.clone()))
                 .collect();
-        tracing::error!(?block_targets, "@are_all_agents_at_url_blocked");
         block_on(core_space.blocks.are_all_blocked(block_targets))
     }
 }
