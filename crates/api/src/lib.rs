@@ -77,6 +77,9 @@ pub use timestamp::*;
 mod fetch;
 pub use fetch::*;
 
+mod report;
+pub use report::*;
+
 mod peer_meta_store;
 pub use peer_meta_store::*;
 

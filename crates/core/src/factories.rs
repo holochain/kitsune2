@@ -26,6 +26,9 @@ pub use mem_peer_meta_store::*;
 mod core_fetch;
 pub use core_fetch::*;
 
+mod core_report;
+pub use core_report::*;
+
 mod core_gossip;
 pub use core_gossip::*;
 

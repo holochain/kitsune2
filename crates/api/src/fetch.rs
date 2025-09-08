@@ -1,8 +1,8 @@
 //! Kitsune2 fetch types.
 
 use crate::{
-    builder, config, transport::DynTransport, BoxFut, DynOpStore, K2Result,
-    OpId, SpaceId, Url,
+    builder, config, transport::DynTransport, BoxFut, DynOpStore, DynReport,
+    K2Result, OpId, SpaceId, Url,
 };
 use crate::{op_store, DynPeerMetaStore};
 use bytes::{Bytes, BytesMut};
@@ -88,6 +88,10 @@ pub fn serialize_response_message(value: Vec<Bytes>) -> Bytes {
 }
 
 /// Trait for implementing a fetch module to fetch ops from other agents.
+///
+/// On receiving op data that was requested from a remote peer:
+/// - store those ops in the op store
+/// - invoke the fetched_op api in the report module
 pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
     /// Add op ids to be fetched from a peer.
     fn request_ops(
@@ -125,6 +129,7 @@ pub trait FetchFactory: 'static + Send + Sync + std::fmt::Debug {
         &self,
         builder: Arc<builder::Builder>,
         space_id: SpaceId,
+        report: DynReport,
         op_store: DynOpStore,
         peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,

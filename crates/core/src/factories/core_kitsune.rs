@@ -32,7 +32,8 @@ impl KitsuneFactory for CoreKitsuneFactory {
         builder: Arc<Builder>,
     ) -> BoxFut<'static, K2Result<DynKitsune>> {
         Box::pin(async move {
-            let out: DynKitsune = Arc::new(CoreKitsune::new(builder));
+            let out = CoreKitsune::new(builder).await?;
+            let out: DynKitsune = Arc::new(out);
             Ok(out)
         })
     }
@@ -77,16 +78,18 @@ struct CoreKitsune {
     handler: std::sync::OnceLock<DynKitsuneHandler>,
     map: std::sync::Mutex<Map>,
     tx: std::sync::OnceLock<DynTransport>,
+    report: std::sync::OnceLock<DynReport>,
 }
 
 impl CoreKitsune {
-    pub fn new(builder: Arc<Builder>) -> Self {
-        Self {
+    pub async fn new(builder: Arc<Builder>) -> K2Result<Self> {
+        Ok(Self {
             builder,
             handler: std::sync::OnceLock::new(),
             map: std::sync::Mutex::new(HashMap::new()),
             tx: std::sync::OnceLock::new(),
-        }
+            report: std::sync::OnceLock::new(),
+        })
     }
 }
 
@@ -111,8 +114,15 @@ impl Kitsune for CoreKitsune {
                 )
                 .await?;
 
+            let report = self
+                .builder
+                .report
+                .create(self.builder.clone(), tx.clone())
+                .await?;
+
             self.handler.set(handler).map_err(|_| K2Error::other(ERR))?;
             self.tx.set(tx).map_err(|_| K2Error::other(ERR))?;
+            self.report.set(report).map_err(|_| K2Error::other(ERR))?;
 
             Ok(())
         })
@@ -144,13 +154,24 @@ impl Kitsune for CoreKitsune {
                         .get()
                         .ok_or_else(|| K2Error::other(ERR))?
                         .clone();
+                    let report = self
+                        .report
+                        .get()
+                        .ok_or_else(|| K2Error::other(ERR))?
+                        .clone();
                     e.insert(futures::future::FutureExt::shared(Box::pin(
                         async move {
                             let sh =
                                 handler.create_space(space_id.clone()).await?;
                             let s = builder
                                 .space
-                                .create(builder.clone(), sh, space_id, tx)
+                                .create(
+                                    builder.clone(),
+                                    sh,
+                                    space_id,
+                                    report,
+                                    tx,
+                                )
                                 .await?;
                             Ok(s)
                         },
@@ -283,6 +304,13 @@ impl Kitsune for CoreKitsune {
                 .cloned()
                 .ok_or_else(|| K2Error::other("Transport not registered yet"))
         })
+    }
+
+    fn report(&self) -> K2Result<DynReport> {
+        self.report
+            .get()
+            .cloned()
+            .ok_or_else(|| K2Error::other("Report not registered yet"))
     }
 }
 

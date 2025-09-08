@@ -86,6 +86,7 @@ impl FetchFactory for CoreFetchFactory {
         &self,
         builder: Arc<Builder>,
         space_id: SpaceId,
+        report: DynReport,
         op_store: DynOpStore,
         peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
@@ -96,6 +97,7 @@ impl FetchFactory for CoreFetchFactory {
             let out: DynFetch = Arc::new(CoreFetch::new(
                 config.core_fetch,
                 space_id,
+                report,
                 op_store,
                 peer_meta_store,
                 transport,
@@ -107,10 +109,12 @@ impl FetchFactory for CoreFetchFactory {
 
 type OutgoingRequest = (OpId, Url);
 type IncomingRequest = (Vec<OpId>, Url);
-type IncomingResponse = Vec<Op>;
+type IncomingResponse = (Vec<Op>, Url);
 
 #[derive(Debug)]
 struct State {
+    space_id: SpaceId,
+    report: DynReport,
     requests: HashSet<OutgoingRequest>,
     notify_when_drained_senders: Vec<futures::channel::oneshot::Sender<()>>,
 }
@@ -145,6 +149,7 @@ impl CoreFetch {
     fn new(
         config: CoreFetchConfig,
         space_id: SpaceId,
+        report: DynReport,
         op_store: DynOpStore,
         peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
@@ -152,6 +157,7 @@ impl CoreFetch {
         Self::spawn_tasks(
             config,
             space_id,
+            report,
             op_store,
             peer_meta_store,
             transport,
@@ -215,6 +221,7 @@ impl CoreFetch {
     pub fn spawn_tasks(
         config: CoreFetchConfig,
         space_id: SpaceId,
+        report: DynReport,
         op_store: DynOpStore,
         peer_meta_store: DynPeerMetaStore,
         transport: DynTransport,
@@ -236,6 +243,8 @@ impl CoreFetch {
             channel::<IncomingResponse>(16_384);
 
         let state = Arc::new(Mutex::new(State {
+            space_id: space_id.clone(),
+            report,
             requests: HashSet::new(),
             notify_when_drained_senders: vec![],
         }));
@@ -487,7 +496,7 @@ impl CoreFetch {
         op_store: DynOpStore,
         state: Arc<Mutex<State>>,
     ) {
-        while let Some(ops) = incoming_response_rx.recv().await {
+        while let Some((ops, peer)) = incoming_response_rx.recv().await {
             let op_count = ops.len();
             tracing::debug!(?op_count, "incoming op response");
             let ops_data = ops.clone().into_iter().map(|op| op.data).collect();
@@ -505,6 +514,16 @@ impl CoreFetch {
                     // Ops were processed successfully by op store. Op ids are returned.
                     // The op ids are removed from the set of ops to fetch.
                     let mut lock = state.lock().unwrap();
+                    for (op_id, op) in processed_op_ids.iter().zip(ops) {
+                        // report that we received valid op data
+                        // from the remote peer.
+                        lock.report.fetched_op(
+                            lock.space_id.clone(),
+                            peer.clone(),
+                            op_id.clone(),
+                            op.data.len() as u64,
+                        );
+                    }
                     lock.requests
                         .retain(|(op_id, _)| !processed_op_ids.contains(op_id));
                 }

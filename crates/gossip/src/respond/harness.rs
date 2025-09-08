@@ -97,6 +97,11 @@ impl RespondTestHarness {
                     .create(
                         builder.clone(),
                         TEST_SPACE_ID,
+                        builder
+                            .report
+                            .create(builder.clone(), transport.clone())
+                            .await
+                            .unwrap(),
                         op_store.clone(),
                         peer_meta_store.clone(),
                         transport.clone(),

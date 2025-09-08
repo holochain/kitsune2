@@ -43,10 +43,16 @@ async fn setup_test(config: &CoreFetchConfig) -> TestCase {
         .unwrap();
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = make_mock_transport(requests_sent.clone());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store.clone(),
         mock_transport.clone(),
@@ -303,6 +309,11 @@ async fn unresponsive_urls_are_filtered() {
         .expect_register_module_handler()
         .returning(|_, _, _| ());
     let transport = Arc::new(transport);
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
+        .await
+        .unwrap();
     let peer_meta_store = builder
         .peer_meta_store
         .create(builder.clone(), TEST_SPACE_ID)
@@ -311,6 +322,7 @@ async fn unresponsive_urls_are_filtered() {
     let fetch = CoreFetch::new(
         CoreFetchConfig::default(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store.clone(),
         transport.clone(),
@@ -499,10 +511,16 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
         .expect_register_module_handler()
         .returning(|_, _, _| ());
     let mock_transport = Arc::new(mock_transport);
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
 
     let fetch = CoreFetch::new(
         config.clone(),
         TEST_SPACE_ID,
+        report,
         op_store.clone(),
         peer_meta_store.clone(),
         mock_transport.clone(),
