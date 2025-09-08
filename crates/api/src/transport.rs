@@ -227,9 +227,6 @@ impl TxImpHnd {
         match self.space_map.lock().expect("poisoned").get(&space_id) {
             Some(space_handler) => {
                 let space_handler = space_handler.clone();
-                tracing::warn!(
-                    "checking whether all agents are blocked at url"
-                );
                 if space_handler.are_all_agents_at_url_blocked(peer).inspect_err(|e| tracing::warn!(?space_id, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))? {
                             tracing::warn!(?space_id, ?peer, ?wire_type, "All agents at peer are blocked, peer connection will be closed.");
                             return Err(K2Error::other(format!("all agents at peer URL '{peer}' are blocked")));

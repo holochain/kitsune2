@@ -316,6 +316,21 @@ async fn space_messages_of_blocked_peers_are_rejected() {
         }
     });
 
+    // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
+    // message over the old WebRTC connection still that Bob has already
+    // closed on his end and Bob won't ever receive it.
+    tokio::time::timeout(std::time::Duration::from_millis(300), async {
+        loop {
+            let net_stats_alice =
+                transport_alice.dump_network_stats().await.unwrap();
+            if net_stats_alice.connections.is_empty() {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
     // Verify that no message has been handled in the recv_notify() hook of
     // Bob. This is not a strictly reliable check since the receiver could
     // be delayed here and we check it momentarily with try_recv(). But since
@@ -350,13 +365,7 @@ async fn space_messages_of_blocked_peers_are_rejected() {
         .await
         .unwrap();
 
-    // This test has been observed to be flaky when running locally where the
-    // recv_notify_recv_bob.recv() below blocks forever and apparently, the
-    // recv_data() hook in TxImpHnd never gets invoked at all nor the
-    // preflight_validate_incoming() hook which would be expected to be
-    // invoked as part of connection establishment in tx5.
-    // The flakiness had shown to be independent of the tx5 backend
-    // (libdatachannel / go-pion)
+    // Verify that the message is being received correctly by Bob
     let payload_unblocked_received = recv_notify_recv_bob.recv().unwrap();
     assert_eq!(payload_unblocked, payload_unblocked_received);
 }
@@ -467,6 +476,21 @@ async fn module_messages_of_blocked_peers_are_rejected() {
             break;
         }
     });
+
+    // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
+    // message over the old WebRTC connection still that Bob has already
+    // closed on his end and Bob won't ever receive it.
+    tokio::time::timeout(std::time::Duration::from_millis(300), async {
+        loop {
+            let net_stats_alice =
+                transport_alice.dump_network_stats().await.unwrap();
+            if net_stats_alice.connections.is_empty() {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
 
     // Verify that no module message has been handled by Bob. This is not a
     // strictly reliable check since the receiver could be delayed here
