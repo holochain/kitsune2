@@ -34,9 +34,9 @@ kitsune2_transport_tx5 = { workspace = true, default-features = false, features 
   "test-utils",
 ] }
 sbd-server = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 jsonschema = { workspace = true }
-rmp-serde = { workspace = true }
 tracing = { workspace = true }
 
 [features]
