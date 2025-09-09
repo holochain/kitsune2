@@ -10,9 +10,6 @@ use std::sync::Arc;
 /// The first implemented report gathers op count and bytes transferred
 /// about ops fetched either as part of gossip or publish operations.
 pub trait Report: 'static + Send + Sync + std::fmt::Debug {
-    /// To aid in concrete downcasting.
-    fn as_any(&self) -> &dyn std::any::Any;
-
     /// Notify that a space was created.
     fn space(
         &self,

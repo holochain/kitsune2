@@ -35,9 +35,6 @@ mod tests {
         #[derive(Debug)]
         struct R;
         impl Report for R {
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
             fn space(
                 &self,
                 _space_id: SpaceId,

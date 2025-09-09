@@ -37,8 +37,4 @@ impl ReportFactory for CoreReportFactory {
 #[derive(Debug)]
 struct CoreReport;
 
-impl Report for CoreReport {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
+impl Report for CoreReport {}
