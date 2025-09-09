@@ -255,12 +255,31 @@ impl TxSpaceHandler for TxHandlerTranslator {
             .1
             .upgrade()
             .ok_or(K2Error::other("CoreSpace has been dropped."))?;
-        let block_targets: Vec<_> =
-            block_on(core_space.peer_store.get_by_url(peer_url))?
-                .iter()
-                .map(|agent| BlockTarget::Agent(agent.agent.clone()))
-                .collect();
-        block_on(core_space.blocks.are_all_blocked(block_targets))
+        block_on(async {
+            let block_targets: Vec<_> = match core_space
+                .peer_store
+                .get_by_url(peer_url.clone())
+                .await
+            {
+                Err(e) => return Err(e),
+                Ok(agents) => agents
+                    .iter()
+                    .map(|agent| BlockTarget::Agent(agent.agent.clone()))
+                    .collect(),
+            };
+
+            // If we find no agent for the peer url we need to throw an error
+            // here for the message to be rejected as a result. Otherwise,
+            // bad actors could omit their agent info in the preflight, and,
+            // depending on how the implementation of the blocks module treats
+            // an empty set, we'd wrongly not consider them blocked here (if
+            // we haven't received their agent info through other means).
+            if block_targets.is_empty() {
+                return Err(K2Error::other(format!("No agent found in peer store when checking for blocked agents at url {}", peer_url)));
+            }
+
+            core_space.blocks.are_all_blocked(block_targets).await
+        })
     }
 }
 
