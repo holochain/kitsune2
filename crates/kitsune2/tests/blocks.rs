@@ -113,9 +113,7 @@ impl TxHandler for MockTxHandler {
             let agents = space.peer_store().get_all().await.unwrap();
             let agents_encoded: Vec<String> =
                 agents.into_iter().map(|a| a.encode().unwrap()).collect();
-            let mut b = bytes::BufMut::writer(bytes::BytesMut::new());
-            rmp_serde::encode::write_named(&mut b, &agents_encoded).unwrap();
-            Ok(b.into_inner().freeze())
+            Ok(serde_json::to_vec(&agents_encoded).unwrap().into())
         })
     }
 
@@ -125,7 +123,7 @@ impl TxHandler for MockTxHandler {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         let agents_encoded: Vec<String> =
-            rmp_serde::decode::from_slice(&data).unwrap();
+            serde_json::from_slice(&data).unwrap();
 
         let agents: Vec<Arc<AgentInfoSigned>> = agents_encoded
             .iter()
