@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 /// Trait for implementing a report module in kitsune2.
 ///
-/// The first implemented report gathers data (op count, and bytes tranfered)
+/// The first implemented report gathers op count and bytes transferred
 /// about ops fetched either as part of gossip or publish operations.
 pub trait Report: 'static + Send + Sync + std::fmt::Debug {
     /// To aid in concrete downcasting.
