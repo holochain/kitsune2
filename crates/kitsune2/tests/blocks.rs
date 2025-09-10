@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 use std::collections::HashMap;
+=======
+>>>>>>> 47ca19c (refactor: switch to tokio's OnceCell in MockTxHandler of the blocks integration tests)
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
