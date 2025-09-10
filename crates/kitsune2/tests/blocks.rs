@@ -1,4 +1,3 @@
-use std::cell::OnceCell;
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
@@ -12,6 +11,7 @@ use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 use kitsune2_transport_tx5::harness::Tx5TransportTestHarness;
 use std::sync::mpsc::{Receiver, Sender};
+use tokio::sync::OnceCell;
 
 /// A default mock space handler that just drops received messages.
 #[derive(Debug)]
@@ -47,7 +47,7 @@ impl SpaceHandler for MockSpaceHandler {
 #[derive(Debug)]
 pub struct MockTxHandler {
     pub peer_url: std::sync::Mutex<Url>,
-    space: Arc<Mutex<OnceCell<DynSpace>>>,
+    space: Arc<OnceCell<DynSpace>>,
     recv_module_msg_sender: Sender<bytes::Bytes>,
     peer_disconnect_sender: Sender<Url>,
 }
@@ -55,7 +55,7 @@ pub struct MockTxHandler {
 impl MockTxHandler {
     fn create(
         peer_url: Mutex<Url>,
-        space: Arc<Mutex<OnceCell<DynSpace>>>,
+        space: Arc<OnceCell<DynSpace>>,
     ) -> (Arc<Self>, Receiver<bytes::Bytes>, Receiver<Url>) {
         let (recv_module_msg_sender, recv_module_msg_recv) =
             std::sync::mpsc::channel();
@@ -103,8 +103,9 @@ impl TxHandler for MockTxHandler {
         &self,
         _peer_url: Url,
     ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
-        let space = self.space.lock().expect("poisoned");
-        let space = space
+        // let space = self.space.lock().expect("poisoned");
+        let space = self
+            .space
             .get()
             .expect("Space OnceCell has not been initialized in time.")
             .clone();
@@ -134,8 +135,6 @@ impl TxHandler for MockTxHandler {
 
         let space = self
             .space
-            .lock()
-            .expect("poisoned")
             .get()
             .expect("Space OnceCell has not been initialized in time.")
             .clone();
@@ -160,7 +159,7 @@ pub struct TestPeer {
 }
 
 pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
-    let space_once_cell = Arc::new(Mutex::new(OnceCell::new()));
+    let space_once_cell = Arc::new(OnceCell::new());
 
     let (tx_handler, recv_module_msg_recv, peer_disconnect_recv) =
         MockTxHandler::create(
@@ -212,8 +211,7 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
     let agent_id = local_agent.agent().clone();
     space.local_agent_join(local_agent).await.unwrap();
 
-    let space_once_cell_lock = space_once_cell.lock().unwrap();
-    space_once_cell_lock.set(space.clone()).unwrap();
+    space_once_cell.set(space.clone()).unwrap();
 
     TestPeer {
         space,
