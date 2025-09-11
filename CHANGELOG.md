@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.3.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.2...v0.3.0-dev.3)\] - 2025-09-11
+
+### Features
+
+- \[**BREAKING**\] Add report module with fetched op api and no-op core report module by @neonphog
+
+### Bug Fixes
+
+- *(kitsune2_core)* Fix an issue in the `MemTransport` that allowed notify and module messages to be sent before the preflight exchange was complete by @ThetaSinner
+- \[**BREAKING**\] Remove as_any from report trait by @neonphog in [#331](https://github.com/holochain/kitsune2/pull/331)
+
+### Testing
+
+- *(kitsune2_core)* Add a new test that preflight messages are send and received before other messages by @ThetaSinner in [#330](https://github.com/holochain/kitsune2/pull/330)
+
+### Doc
+
+- Update crates/api/src/report.rs by @neonphog
+
 ## \[[0.3.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.1...v0.3.0-dev.2)\] - 2025-09-03
 
 ### Features
