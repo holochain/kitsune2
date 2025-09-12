@@ -5,7 +5,7 @@ use crate::{Dht, DhtApi, DhtSnapshotNextAction};
 use kitsune2_api::{
     AgentId, DhtArc, DynOpStore, K2Result, OpId, StoredOp, Timestamp,
 };
-use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::factories::TestMemoryOp;
 use rand::RngCore;
 use std::collections::HashMap;
 
@@ -49,7 +49,7 @@ impl DhtSyncHarness {
 
     pub(crate) async fn inject_ops(
         &mut self,
-        op_list: Vec<MemoryOp>,
+        op_list: Vec<TestMemoryOp>,
     ) -> K2Result<()> {
         self.store
             .process_incoming_ops(
@@ -416,7 +416,7 @@ async fn transfer_ops(
 
     let stored_ops = selected
         .into_iter()
-        .map(|op| MemoryOp::from(op).into())
+        .map(|op| TestMemoryOp::from(op).into())
         .collect::<Vec<StoredOp>>();
     target_dht.inform_ops_stored(stored_ops).await?;
 

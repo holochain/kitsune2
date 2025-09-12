@@ -16,7 +16,7 @@ use bytes::Bytes;
 use kitsune2_api::{
     decode_ids, DhtArc, Gossip, OpId, Timestamp, UNIX_TIMESTAMP,
 };
-use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::factories::TestMemoryOp;
 use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
 use kitsune2_test_utils::enable_tracing;
 use rand::RngCore;
@@ -53,7 +53,7 @@ async fn initiate_respect_size_limit_for_new_ops_and_disc() {
 
     let mut ops = Vec::new();
     for i in 0u8..(available_new_ops as u8) {
-        let op = MemoryOp::new(Timestamp::now(), vec![i; op_size]);
+        let op = TestMemoryOp::new(Timestamp::now(), vec![i; op_size]);
         ops.push(op);
     }
 
@@ -159,7 +159,7 @@ async fn initiate_respect_size_limit_for_new_ops_and_disc() {
         let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
         op_data.resize(op_size, 0);
 
-        let op = MemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
+        let op = TestMemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
         ops.push(op);
     }
 
@@ -277,7 +277,7 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
 
     let mut ops = Vec::new();
     for i in 0u8..(available_new_ops as u8) {
-        let op = MemoryOp::new(Timestamp::now(), vec![i; op_size]);
+        let op = TestMemoryOp::new(Timestamp::now(), vec![i; op_size]);
         ops.push(op);
     }
 
@@ -398,7 +398,7 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
         let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
         op_data.resize(op_size, 0);
 
-        let op = MemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
+        let op = TestMemoryOp::new(Timestamp::from_micros(100 + i as i64), op_data);
         ops.push(op);
     }
 

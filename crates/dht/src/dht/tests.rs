@@ -3,7 +3,7 @@ use crate::dht::tests::harness::SyncWithOutcome;
 use crate::test::test_store;
 use harness::DhtSyncHarness;
 use kitsune2_api::{DhtArc, UNIX_TIMESTAMP};
-use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::factories::{MemoryOp, TestMemoryOp};
 use std::time::Duration;
 
 mod harness;
@@ -21,9 +21,11 @@ async fn from_store_empty() {
 async fn take_minimal_snapshot() {
     let store = test_store().await;
     store
-        .process_incoming_ops(vec![
-            MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into()
-        ])
+        .process_incoming_ops(vec![TestMemoryOp::new(
+            UNIX_TIMESTAMP,
+            vec![7; 32],
+        )
+        .into()])
         .await
         .unwrap();
 
@@ -105,7 +107,7 @@ async fn one_way_disc_sync_from_initiator() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put historical data in the first DHT
-    let op = MemoryOp::new(UNIX_TIMESTAMP, vec![41; 32]);
+    let op = TestMemoryOp::new(UNIX_TIMESTAMP, vec![41; 32]);
     let op_id = op.compute_op_id();
     dht1.inject_ops(vec![op]).await.unwrap();
 
@@ -137,7 +139,7 @@ async fn one_way_disc_sync_from_acceptor() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put historical data in the second DHT
-    dht2.inject_ops(vec![MemoryOp::new(UNIX_TIMESTAMP, vec![41; 32])])
+    dht2.inject_ops(vec![TestMemoryOp::new(UNIX_TIMESTAMP, vec![41; 32])])
         .await
         .unwrap();
 
@@ -166,10 +168,10 @@ async fn two_way_disc_sync() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put historical data in both DHTs
-    dht1.inject_ops(vec![MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32])])
+    dht1.inject_ops(vec![TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32])])
         .await
         .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         // Two weeks later
         UNIX_TIMESTAMP + Duration::from_secs(14 * 24 * 60 * 60),
         vec![43; 32],
@@ -201,7 +203,7 @@ async fn one_way_ring_sync_from_initiator() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put recent data in the first ring of the first DHT
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![41; 32],
     )])
@@ -233,7 +235,7 @@ async fn one_way_ring_sync_from_acceptor() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put recent data in the first ring of the second DHT
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![41; 32],
     )])
@@ -265,13 +267,13 @@ async fn two_way_ring_sync() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put recent data in the first ring of both DHTs
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![7; 32],
     )])
     .await
     .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         // Two weeks later
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![43; 32],
@@ -304,8 +306,8 @@ async fn ring_sync_with_matching_disc() {
 
     // Put historical data in both DHTs
     let historical_ops = vec![
-        MemoryOp::new(UNIX_TIMESTAMP, vec![7; 4]),
-        MemoryOp::new(
+        TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 4]),
+        TestMemoryOp::new(
             UNIX_TIMESTAMP + Duration::from_secs(14 * 24 * 60 * 60),
             (u32::MAX / 2).to_le_bytes().to_vec(),
         ),
@@ -314,14 +316,14 @@ async fn ring_sync_with_matching_disc() {
     dht2.inject_ops(historical_ops).await.unwrap();
 
     // Put recent data in the first ring of both DHTs
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![17; 4],
     )])
     .await
     .unwrap();
 
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![13; 4],
     )])
@@ -352,21 +354,21 @@ async fn two_stage_sync_with_symmetry() {
     let mut dht2 = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
 
     // Put mismatched historical data in both DHTs
-    dht1.inject_ops(vec![MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32])])
+    dht1.inject_ops(vec![TestMemoryOp::new(UNIX_TIMESTAMP, vec![7; 32])])
         .await
         .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(UNIX_TIMESTAMP, vec![13; 32])])
+    dht2.inject_ops(vec![TestMemoryOp::new(UNIX_TIMESTAMP, vec![13; 32])])
         .await
         .unwrap();
 
     // Put mismatched recent data in the first ring of both DHTs
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![11; 32],
     )])
     .await
     .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         vec![17; 32],
     )])
@@ -430,13 +432,13 @@ async fn disc_sync_respects_arc() {
     .await;
 
     // Put mismatched historical data in both DHTs, but in sectors that don't overlap
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         UNIX_TIMESTAMP,
         SECTOR_SIZE.to_le_bytes().to_vec(),
     )])
     .await
     .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         UNIX_TIMESTAMP,
         (3 * SECTOR_SIZE).to_le_bytes().to_vec(),
     )])
@@ -447,13 +449,13 @@ async fn disc_sync_respects_arc() {
     assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
 
     // Now put mismatched data in the common sector
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         UNIX_TIMESTAMP,
         (2 * SECTOR_SIZE).to_le_bytes().to_vec(),
     )])
     .await
     .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         UNIX_TIMESTAMP,
         (2 * SECTOR_SIZE + 1).to_le_bytes().to_vec(),
     )])
@@ -484,13 +486,13 @@ async fn ring_sync_respects_arc() {
     .await;
 
     // Put mismatched recent data in both DHTs, but in sectors that don't overlap
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         SECTOR_SIZE.to_le_bytes().to_vec(),
     )])
     .await
     .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         (3 * SECTOR_SIZE).to_le_bytes().to_vec(),
     )])
@@ -501,13 +503,13 @@ async fn ring_sync_respects_arc() {
     assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
 
     // Now put mismatched data in the common sector
-    dht1.inject_ops(vec![MemoryOp::new(
+    dht1.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         (2 * SECTOR_SIZE).to_le_bytes().to_vec(),
     )])
     .await
     .unwrap();
-    dht2.inject_ops(vec![MemoryOp::new(
+    dht2.inject_ops(vec![TestMemoryOp::new(
         dht1.dht.partition.full_slice_end_timestamp(),
         (2 * SECTOR_SIZE + 1).to_le_bytes().to_vec(),
     )])

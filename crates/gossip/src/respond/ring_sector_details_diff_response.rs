@@ -192,7 +192,7 @@ mod tests {
     use crate::K2GossipConfig;
     use bytes::Bytes;
     use kitsune2_api::{decode_ids, DhtArc, Gossip, OpId};
-    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_core::factories::TestMemoryOp;
     use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
     use kitsune2_test_utils::enable_tracing;
     use std::collections::HashMap;
@@ -268,7 +268,7 @@ mod tests {
             let mut op_data = (i as u32 * SECTOR_SIZE).to_le_bytes().to_vec();
             op_data.resize(op_size, 0);
 
-            let op = MemoryOp::new(
+            let op = TestMemoryOp::new(
                 // Ops created just after the disc boundary so that they'll be in the first ring
                 disc_boundary + std::time::Duration::from_secs(30 + i as u64),
                 op_data,

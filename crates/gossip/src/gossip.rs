@@ -445,7 +445,7 @@ impl TxModuleHandler for K2Gossip {
 mod test {
     use super::*;
     use crate::harness::K2GossipFunctionalTestFactory;
-    use kitsune2_core::factories::MemoryOp;
+    use kitsune2_core::factories::{MemoryOp, TestMemoryOp};
     use kitsune2_dht::UNIT_TIME;
     use kitsune2_test_utils::space::TEST_SPACE_ID;
     use kitsune2_test_utils::{enable_tracing, iter_check};
@@ -524,7 +524,7 @@ mod test {
                 .await;
         let harness_1 = factory.new_instance().await;
         harness_1.join_local_agent(DhtArc::FULL).await;
-        let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
+        let op_1 = TestMemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
             .space
@@ -535,7 +535,7 @@ mod test {
 
         let harness_2 = factory.new_instance().await;
         harness_2.join_local_agent(DhtArc::FULL).await;
-        let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
+        let op_2 = TestMemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .space
@@ -564,7 +564,7 @@ mod test {
 
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
-        let op_1 = MemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
+        let op_1 = TestMemoryOp::new(Timestamp::from_micros(100), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
             .space
@@ -580,7 +580,7 @@ mod test {
 
         let harness_2 = factory.new_instance().await;
         let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
-        let op_2 = MemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
+        let op_2 = TestMemoryOp::new(Timestamp::from_micros(500), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .space
@@ -640,7 +640,7 @@ mod test {
                 .await;
         let harness_1 = factory.new_instance().await;
         let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
-        let op_1 = MemoryOp::new(
+        let op_1 = TestMemoryOp::new(
             (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
             vec![1; 128],
         );
@@ -659,7 +659,7 @@ mod test {
 
         let harness_2 = factory.new_instance().await;
         let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
-        let op_2 = MemoryOp::new(
+        let op_2 = TestMemoryOp::new(
             (Timestamp::now() - 2 * UNIT_TIME).unwrap(),
             vec![2; 128],
         );
@@ -725,7 +725,7 @@ mod test {
 
         let harness_2 = factory.new_instance().await;
         let local_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
-        let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
+        let op_2 = TestMemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .space
