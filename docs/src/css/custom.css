@@ -1,0 +1,30 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #8719F6;
+  --ifm-color-primary-dark: color-mix(in lch, #8719F6 90%, black 10%);
+  --ifm-color-primary-darker: color-mix(in lch, #8719F6 80%, black 20%);
+  --ifm-color-primary-darkest: color-mix(in lch, #8719F6 70%, black 30%);
+  --ifm-color-primary-light: color-mix(in lch, #8719F6 90%, white 10%);
+  --ifm-color-primary-lighter: color-mix(in lch, #8719F6 80%, white 20%);
+  --ifm-color-primary-lightest: color-mix(in lch, #8719F6 70%, white 30%);
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #0EDDD3;
+  --ifm-color-primary-dark: color-mix(in lch, #0EDDD3 90%, black 10%);
+  --ifm-color-primary-darker: color-mix(in lch, #0EDDD3 80%, black 20%);
+  --ifm-color-primary-darkest: color-mix(in lch, #0EDDD3 70%, black 30%);
+  --ifm-color-primary-light: color-mix(in lch, #0EDDD3 90%, white 10%);
+  --ifm-color-primary-lighter: color-mix(in lch, #0EDDD3 80%, white 20%);
+  --ifm-color-primary-lightest: color-mix(in lch, #0EDDD3 70%, white 30%);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
