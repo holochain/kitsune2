@@ -111,14 +111,17 @@ impl TxImpHnd {
             } = data;
 
             // Except for preflight, unspecified and disconnect messages we
-            // should reject the message and close the connection if all agents
-            // are blocked for the given peer URL.
-            self.check_message_permitted(
+            // should drop messages if all agents are blocked for the given
+            // peer URL and space id. We do not close the connection because
+            // agents in other spaces may not be blocked on the same conductor.
+            if let false = self.check_message_permitted(
                 &peer,
                 &space_id,
                 &module_id,
                 &message_type,
-            )?;
+            )? {
+                return Ok(());
+            }
 
             match message_type {
                 K2WireType::Unspecified => Ok(()),
@@ -183,16 +186,16 @@ impl TxImpHnd {
         })
     }
 
-    /// Check whether a message should be rejected and the connection closed
-    /// due to all agents of the given peer being blocked and the message not
-    /// being one of the message types that are allowed anyway.
+    /// Check whether a message should be dropped due to all agents associated
+    /// with the given peer and space id being blocked and the message not
+    /// being one of the message types that are allowed in any case.
     pub fn check_message_permitted(
         &self,
         peer: &Url,
         space_id: &Option<Bytes>,
         module_id: &Option<String>,
         message_type: &K2WireType,
-    ) -> K2Result<()> {
+    ) -> K2Result<bool> {
         // We accept the following messages also for peers at whose url all
         // agents are blocked:
         //
@@ -213,14 +216,17 @@ impl TxImpHnd {
                 | K2WireType::Unspecified
                 | K2WireType::Disconnect
         ) {
-            return Ok(());
+            return Ok(true);
         }
 
         // If a space id was not provided, we reject the message and return
         // an error, which will cause the connection to be closed.
+        // A missing space id indicates that the remote conductor is not
+        // following the protocol and must have been modified. Therefore none
+        // of the agents on that conductor should be trusted.
         let space_id = match space_id {
             None => {
-                tracing::warn!("Received a message of type {:?} without space id. Dropping the message and closing the connection.", message_type);
+                tracing::warn!(?peer, "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.", message_type);
                 return Err(K2Error::other(
                     "Received a message without space id.",
                 ));
@@ -230,21 +236,22 @@ impl TxImpHnd {
         match self.space_map.lock().expect("poisoned").get(&space_id) {
             Some(space_handler) => {
                 let space_handler = space_handler.clone();
-                let all_blocked = space_handler.are_all_agents_at_url_blocked(peer).inspect_err(|e| tracing::warn!(?space_id, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
+                let all_blocked = space_handler.are_all_agents_at_url_blocked(peer).inspect_err(|e| tracing::warn!(?space_id, ?peer, ?message_type, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
                 if all_blocked {
-                    tracing::warn!(?space_id, ?peer, ?message_type, "All agents at peer are blocked, peer connection will be closed.");
-                    return Err(K2Error::other(format!(
-                        "all agents at peer URL '{peer}' are blocked"
-                    )));
+                    tracing::warn!(?space_id, ?peer, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
+                    return Ok(false);
                 }
-                Ok(())
+                Ok(true)
             }
             None => {
-                tracing::error!(?space_id, "No space handler found. Message will be dropped and the connection closed.");
-                Err(K2Error::other(format!(
-                    "No space handler found for space {}. Rejecting message and closing peer connection because blocks cannot be checked without a space handler.",
-                    space_id
-                )))
+                tracing::error!(
+                    ?space_id,
+                    ?peer,
+                    ?module_id,
+                    ?message_type,
+                    "No space handler found. Message will be dropped."
+                );
+                Ok(false)
             }
         }
     }

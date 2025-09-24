@@ -484,6 +484,13 @@ mod test {
             .is_none());
 
         // Simulate peer discovery so that gossip can sync agents
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_info_2.clone()])
+            .await
+            .unwrap();
+
         harness_2
             .space
             .peer_store()
@@ -523,7 +530,7 @@ mod test {
             K2GossipFunctionalTestFactory::create(space.clone(), true, None)
                 .await;
         let harness_1 = factory.new_instance().await;
-        harness_1.join_local_agent(DhtArc::FULL).await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
@@ -534,13 +541,30 @@ mod test {
             .unwrap();
 
         let harness_2 = factory.new_instance().await;
-        harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .space
             .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        // Simulate peer discovery so that gossip messages won't be dropped
+        // due to no associated agents in the peer store when checking for
+        // blocks.
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_info_2.clone()])
+            .await
+            .unwrap();
+
+        harness_2
+            .space
+            .peer_store()
+            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 
@@ -618,6 +642,13 @@ mod test {
             .space
             .peer_store()
             .insert(vec![agent_info_2.clone()])
+            .await
+            .unwrap();
+
+        harness_2
+            .space
+            .peer_store()
+            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 
@@ -703,6 +734,13 @@ mod test {
             .await
             .unwrap();
 
+        harness_2
+            .space
+            .peer_store()
+            .insert(vec![agent_info_1.clone()])
+            .await
+            .unwrap();
+
         let received_ops = harness_1.wait_for_ops(vec![op_id_2]).await;
         assert_eq!(1, received_ops.len());
         assert_eq!(op_2, received_ops[0]);
@@ -721,16 +759,33 @@ mod test {
             K2GossipFunctionalTestFactory::create(space.clone(), true, None)
                 .await;
         let harness_1 = factory.new_instance().await;
-        harness_1.join_local_agent(DhtArc::FULL).await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
         let harness_2 = factory.new_instance().await;
-        let local_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
         let op_2 = MemoryOp::new(Timestamp::now(), vec![2; 128]);
         let op_id_2 = op_2.compute_op_id();
         harness_2
             .space
             .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
+            .await
+            .unwrap();
+
+        // Simulate peer discovery so that gossip messages won't be dropped
+        // due to no associated agents in the peer store when checking for
+        // blocks.
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_info_2.clone()])
+            .await
+            .unwrap();
+
+        harness_2
+            .space
+            .peer_store()
+            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 
@@ -749,7 +804,7 @@ mod test {
         assert!(summary.dht_summary.contains_key("0..4294967295"));
         let meta = summary
             .peer_meta
-            .get(&local_agent_2.url.clone().unwrap())
+            .get(&agent_info_2.url.clone().unwrap())
             .cloned()
             .unwrap();
 
