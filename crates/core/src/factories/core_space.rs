@@ -268,14 +268,13 @@ impl TxSpaceHandler for TxHandlerTranslator {
                     .collect(),
             };
 
-            // If we find no agent for the peer url we need to throw an error
-            // here for the message to be rejected as a result. Otherwise,
-            // bad actors could omit their agent info in the preflight, and,
-            // depending on how the implementation of the blocks module treats
-            // an empty set, we'd wrongly not consider them blocked here (if
-            // we haven't received their agent info through other means).
+            // If we find no agent for the peer url in the peer store yet, we
+            // consider the peer to be blocked by default. This has the
+            // consequence that we will drop any messages from them until we've
+            // received agent infos for that peer that allow us check for
+            // blocks.
             if block_targets.is_empty() {
-                return Err(K2Error::other(format!("No agent found in peer store when checking for blocked agents at url {}", peer_url)));
+                return Ok(true);
             }
 
             core_space.blocks.are_all_blocked(block_targets).await

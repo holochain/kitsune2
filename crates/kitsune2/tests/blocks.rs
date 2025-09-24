@@ -103,7 +103,6 @@ impl TxHandler for MockTxHandler {
         &self,
         _peer_url: Url,
     ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
-        // let space = self.space.lock().expect("poisoned");
         let space = self
             .space
             .get()

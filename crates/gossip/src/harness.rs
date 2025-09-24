@@ -6,7 +6,7 @@ use crate::{K2GossipConfig, K2GossipFactory, K2GossipModConfig};
 use kitsune2_api::{
     AgentId, AgentInfoSigned, DhtArc, DynGossip, DynSpace,
     GossipStateSummaryRequest, LocalAgent, OpId, SpaceHandler, SpaceId,
-    StoredOp, TxBaseHandler, TxHandler, TxSpaceHandler, UNIX_TIMESTAMP,
+    StoredOp, TxBaseHandler, TxHandler, UNIX_TIMESTAMP,
 };
 use kitsune2_core::factories::MemoryOp;
 use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
@@ -415,14 +415,6 @@ impl K2GossipFunctionalTestFactory {
         struct NoopHandler;
         impl TxBaseHandler for NoopHandler {}
         impl TxHandler for NoopHandler {}
-        impl TxSpaceHandler for NoopHandler {
-            fn are_all_agents_at_url_blocked(
-                &self,
-                _peer_url: &kitsune2_api::Url,
-            ) -> kitsune2_api::K2Result<bool> {
-                Ok(false)
-            }
-        }
         impl SpaceHandler for NoopHandler {}
 
         let mut builder = default_test_builder();
