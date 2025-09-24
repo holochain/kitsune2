@@ -202,6 +202,15 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+
+    /// Increment the count of blocked messages for the given peer URL.
+    ///
+    /// The count of blocked messages should then be exposed via the
+    /// [`TransportStats`].
+    fn incr_blocked_message_count(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [TxImp].
@@ -271,6 +280,15 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+
+    /// Increment the count of blocked messages for the given peer URL.
+    ///
+    /// The count of blocked messages should then be exposed via the
+    /// [`TransportStats`].
+    fn incr_blocked_message_count(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Transport].
@@ -421,6 +439,13 @@ impl Transport for DefaultTransport {
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         self.imp.dump_network_stats()
     }
+
+    fn incr_blocked_message_count(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.imp.incr_blocked_message_count(peer_url)
+    }
 }
 
 /// Base trait for transport handler events.
@@ -504,6 +529,16 @@ pub trait TxSpaceHandler: TxBaseHandler {
         drop((peer, when));
         Box::pin(async move { Ok(()) })
     }
+
+    /// Increment the counter of blocked messages for the given peer URL in the
+    /// space's peer meta store
+    fn incr_blocked_message_count(
+        &self,
+        peer: Url,
+    ) -> BoxFut<'_, K2Result<()>> {
+        drop(peer);
+        Box::pin(async move { Ok(()) })
+    }
 }
 
 /// Trait-object [TxSpaceHandler].
@@ -562,6 +597,9 @@ pub struct TransportStats {
 
     /// The list of current connections.
     pub connections: Vec<TransportConnectionStats>,
+
+    /// Number of blocked messages per Url
+    pub blocked_message_counts: HashMap<Url, u32>,
 }
 
 /// Stats for a single transport connection.

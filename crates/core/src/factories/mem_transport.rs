@@ -78,6 +78,7 @@ impl MemTransport {
             backend: "kitsune2-core-mem".into(),
             peer_urls: vec![this_url.clone()],
             connections: vec![],
+            blocked_message_counts: HashMap::new(),
         }));
 
         // listen for incoming connections
@@ -168,6 +169,21 @@ impl TxImp for MemTransport {
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move { Ok(self.net_stats.lock().unwrap().clone()) })
+    }
+
+    fn incr_blocked_message_count(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let mut net_stats = self.net_stats.lock().expect("poisoned");
+            net_stats
+                .blocked_message_counts
+                .entry(peer_url)
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+            Ok(())
+        })
     }
 }
 

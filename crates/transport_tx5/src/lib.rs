@@ -3,8 +3,9 @@
 
 use base64::Engine;
 use kitsune2_api::*;
-use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
+use std::{collections::HashMap, sync::Arc};
 
 trait PeerUrlExt {
     fn to_kitsune(&self) -> K2Result<Url>;
@@ -210,6 +211,7 @@ struct Tx5Transport {
     pre_task: tokio::task::AbortHandle,
     evt_task: tokio::task::AbortHandle,
     handler: Arc<TxImpHnd>,
+    blocked_message_counts: Mutex<HashMap<Url, u32>>,
 }
 
 impl Drop for Tx5Transport {
@@ -308,6 +310,7 @@ impl Tx5Transport {
             pre_task,
             evt_task,
             handler,
+            blocked_message_counts: Mutex::new(HashMap::new()),
         });
 
         Ok(out)
@@ -367,6 +370,8 @@ impl TxImp for Tx5Transport {
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
             let tx5_stats = self.ep.get_stats();
+            let blocked_message_counts =
+                self.blocked_message_counts.lock().expect("poisoned");
 
             Ok(TransportStats {
                 backend: format!("{:?}", tx5_stats.backend),
@@ -389,7 +394,23 @@ impl TxImp for Tx5Transport {
                         is_webrtc: conn.is_webrtc,
                     })
                     .collect(),
+                blocked_message_counts: blocked_message_counts.clone(),
             })
+        })
+    }
+
+    fn incr_blocked_message_count(
+        &self,
+        peer_url: Url,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async {
+            let mut blocked_message_counts =
+                self.blocked_message_counts.lock().expect("poisoned");
+            blocked_message_counts
+                .entry(peer_url)
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+            Ok(())
         })
     }
 }
