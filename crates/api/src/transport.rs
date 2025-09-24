@@ -114,7 +114,7 @@ impl TxImpHnd {
             // should drop messages if all agents are blocked for the given
             // peer URL and space id. We do not close the connection because
             // agents in other spaces may not be blocked on the same conductor.
-            if let false = self.check_message_permitted(
+            if !self.check_message_permitted(
                 &peer,
                 &space_id,
                 &module_id,
