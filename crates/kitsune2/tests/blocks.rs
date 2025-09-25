@@ -187,6 +187,7 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
                 if let Some(url) = peer_url {
                     return url.clone();
                 }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
         })
         .await
@@ -264,6 +265,7 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
                 if let Some(url) = peer_url {
                     return url.clone();
                 }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
         })
         .await

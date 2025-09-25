@@ -149,6 +149,8 @@ mod tests {
                     if let Some(url) = peer_url {
                         return url.clone();
                     }
+                    tokio::time::sleep(std::time::Duration::from_millis(20))
+                        .await;
                 }
             },
         )
