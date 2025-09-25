@@ -592,7 +592,7 @@ pub type DynTransportFactory = Arc<dyn TransportFactory>;
 /// Extended transport stats exposed via the API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiTransportStats {
-    /// Stats from the low-level transport implementation
+    /// Stats from the configured transport implementation.
     pub transport_stats: TransportStats,
 
     /// Blocked message counts.
