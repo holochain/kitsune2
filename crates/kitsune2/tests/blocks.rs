@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
-use kitsune2_api::{AgentId, LocalAgent};
+use kitsune2_api::{AgentId, Id, LocalAgent, SpaceId};
 use kitsune2_api::{
     AgentInfoSigned, BlockTarget, BoxFut, Builder, DynSpace, DynTransport,
     K2Result, SpaceHandler, TxBaseHandler, TxHandler, TxModuleHandler, Url,
@@ -181,9 +182,8 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
     let peer_url =
         tokio::time::timeout(std::time::Duration::from_millis(200), async {
             loop {
-                let transport_stats =
-                    transport.dump_network_stats().await.unwrap();
-                let peer_url = transport_stats.peer_urls.first();
+                let stats = transport.dump_network_stats().await.unwrap();
+                let peer_url = stats.transport_stats.peer_urls.first();
                 if let Some(url) = peer_url {
                     return url.clone();
                 }
@@ -194,12 +194,19 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
 
     let (space_handler, recv_notify_recv) = MockSpaceHandler::create();
 
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
+        .await
+        .unwrap();
+
     let space = builder
         .space
         .create(
             builder.clone(),
             Arc::new(space_handler),
             TEST_SPACE_ID,
+            report,
             transport.clone(),
         )
         .await
@@ -223,8 +230,203 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
     }
 }
 
+const TEST_SPACE_ID_1: SpaceId =
+    SpaceId(Id(Bytes::from_static(b"test_space_1")));
+const TEST_SPACE_ID_2: SpaceId =
+    SpaceId(Id(Bytes::from_static(b"test_space_2")));
+
+pub struct TestPeerLight {
+    space1: DynSpace,
+    space2: DynSpace,
+    transport: DynTransport,
+    peer_url: Url,
+}
+
+pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
+    #[derive(Debug)]
+    struct NoopHandler;
+    impl TxHandler for NoopHandler {}
+    impl TxBaseHandler for NoopHandler {}
+    impl SpaceHandler for NoopHandler {}
+
+    let transport = builder
+        .transport
+        .create(builder.clone(), Arc::new(NoopHandler))
+        .await
+        .unwrap();
+
+    // It may take a while until the peer url shows up in the transport stats
+    let peer_url =
+        tokio::time::timeout(std::time::Duration::from_millis(200), async {
+            loop {
+                let stats = transport.dump_network_stats().await.unwrap();
+                let peer_url = stats.transport_stats.peer_urls.first();
+                if let Some(url) = peer_url {
+                    return url.clone();
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
+        .await
+        .unwrap();
+
+    let space1 = builder
+        .space
+        .create(
+            builder.clone(),
+            Arc::new(NoopHandler),
+            TEST_SPACE_ID_1,
+            report.clone(),
+            transport.clone(),
+        )
+        .await
+        .unwrap();
+
+    let space2 = builder
+        .space
+        .create(
+            builder.clone(),
+            Arc::new(NoopHandler),
+            TEST_SPACE_ID_2,
+            report,
+            transport.clone(),
+        )
+        .await
+        .unwrap();
+
+    TestPeerLight {
+        space1,
+        space2,
+        transport,
+        peer_url,
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn space_messages_of_blocked_peers_are_rejected() {
+async fn message_block_count_increases_correctly() {
+    enable_tracing();
+
+    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+
+    let TestPeerLight {
+        transport: transport_alice,
+        peer_url: peer_url_alice,
+        ..
+    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    let TestPeerLight {
+        transport: transport_bob,
+        peer_url: peer_url_bob,
+        ..
+    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    let TestPeerLight {
+        space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
+        space2: _space_carol_2, // -- dito --
+        transport: transport_carol,
+        peer_url: peer_url_carol,
+    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    // Verify that Carol's message blocks count is empty initially
+    let stats = transport_carol.dump_network_stats().await.unwrap();
+    assert_eq!(stats.blocked_message_counts.len(), 0);
+
+    // Now have Alice send a message to Carol. Since Alice didn't join with a local
+    // agent, there shouldn't be any agent infos be sent in the preflight and
+    // the message should be dropped as a result since Carol can't check for
+    // blocks without agent infos.
+    transport_alice
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_1,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+
+    // Check that the blocks count goes up on Carols side
+    let expected_blocked_message_counts: HashMap<Url, HashMap<SpaceId, u32>> =
+        [(peer_url_alice.clone(), [(TEST_SPACE_ID_1, 1)].into())].into();
+    iter_check!(500, {
+        let net_stats = transport_carol.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+
+    // Send another one, the count should go up
+    transport_alice
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_1,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+    let expected_blocked_message_counts: HashMap<Url, HashMap<SpaceId, u32>> =
+        [(peer_url_alice.clone(), [(TEST_SPACE_ID_1, 2)].into())].into();
+    iter_check!(500, {
+        let net_stats = transport_carol.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+
+    // Now send one to the second space
+    transport_alice
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_2,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+    let expected_blocked_message_counts: HashMap<Url, HashMap<SpaceId, u32>> =
+        [(
+            peer_url_alice.clone(),
+            [(TEST_SPACE_ID_1, 2), (TEST_SPACE_ID_2, 1)].into(),
+        )]
+        .into();
+    iter_check!(500, {
+        let net_stats = transport_carol.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+
+    // And finally have Bob send one also and verify that the HashMap gets updated correctly
+    transport_bob
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_1,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+    let expected_blocked_message_counts: HashMap<Url, HashMap<SpaceId, u32>> =
+        [
+            (
+                peer_url_alice.clone(),
+                [(TEST_SPACE_ID_1, 2), (TEST_SPACE_ID_2, 1)].into(),
+            ),
+            (peer_url_bob, [(TEST_SPACE_ID_1, 1)].into()),
+        ]
+        .into();
+    iter_check!(500, {
+        let net_stats = transport_carol.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn space_messages_of_blocked_peers_are_dropped() {
     enable_tracing();
 
     let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
@@ -243,7 +445,7 @@ async fn space_messages_of_blocked_peers_are_rejected() {
         transport: transport_bob,
         peer_url: peer_url_bob,
         recv_notify_recv: recv_notify_recv_bob,
-        peer_disconnect_recv: peer_disconnect_recv_bob,
+        peer_disconnect_recv: _peer_disconnect_recv_bob,
         ..
     } = make_test_peer(tx5_harness.builder).await;
 
@@ -259,9 +461,10 @@ async fn space_messages_of_blocked_peers_are_rejected() {
     let payload_received = recv_notify_recv_bob.recv().unwrap();
     assert_eq!(payload, payload_received);
 
-    // Bob should have one open connection to Alice now.
+    // Bob should have one open connection now and hasn't blocked any messages
     let net_stats_bob = transport_bob.dump_network_stats().await.unwrap();
-    assert!(net_stats_bob.connections.len() == 1);
+    assert_eq!(net_stats_bob.transport_stats.connections.len(), 1);
+    assert_eq!(net_stats_bob.blocked_message_counts.len(), 0);
 
     // Verify that Bob's peer store contains 2 agents now, his own agent as well as
     // Alice's agent that should have been added via the preflight.
@@ -305,14 +508,18 @@ async fn space_messages_of_blocked_peers_are_rejected() {
         .await
         .unwrap();
 
-    // Verify that Bob has closed the connection to Alice after the message has been rejected
+    // Verify that Bob has blocked the message
     iter_check!(500, {
-        if let Ok(peer_url) = peer_disconnect_recv_bob.try_recv() {
-            if peer_url == peer_url_alice {
-                break;
-            }
+        let net_stats = transport_bob.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts.len() == 1 {
+            break;
         }
     });
+
+    // Now have Bob close the connection so that we can verify later that
+    // resending a message from Alice succeeds after she joins with a new
+    // agent.
+    transport_bob.disconnect(peer_url_alice, None).await;
 
     // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
     // message over the old WebRTC connection still that Bob has already
@@ -325,12 +532,8 @@ async fn space_messages_of_blocked_peers_are_rejected() {
         }
     });
 
-    // Verify that no message has been handled in the recv_notify() hook of
-    // Bob. This is not a strictly reliable check since the receiver could
-    // be delayed here and we check it momentarily with try_recv(). But since
-    // we check it after the connection had been closed above, we can probably
-    // assume that we would at least sometimes catch it here if the
-    // message had been handled nevertheless.
+    // To double-check, verify additionally that no space message has been
+    // handled by Bob.
     assert!(recv_notify_recv_bob.try_recv().is_err());
 
     // Now have Alice join the space with a second agent which Bob should then
@@ -338,7 +541,7 @@ async fn space_messages_of_blocked_peers_are_rejected() {
     // again.
     let alice_local_agent_2 = Arc::new(Ed25519LocalAgent::default());
     space_alice
-        .local_agent_join(alice_local_agent_2)
+        .local_agent_join(alice_local_agent_2.clone())
         .await
         .unwrap();
 
@@ -361,7 +564,7 @@ async fn space_messages_of_blocked_peers_are_rejected() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn module_messages_of_blocked_peers_are_rejected() {
+async fn module_messages_of_blocked_peers_are_dropped() {
     enable_tracing();
 
     let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
@@ -380,7 +583,7 @@ async fn module_messages_of_blocked_peers_are_rejected() {
         transport: transport_bob,
         peer_url: peer_url_bob,
         recv_module_msg_recv: recv_module_msg_recv_bob,
-        peer_disconnect_recv: peer_disconnect_recv_bob,
+        peer_disconnect_recv: _peer_disconnect_recv_bob,
         ..
     } = make_test_peer(tx5_harness.builder).await;
 
@@ -400,9 +603,10 @@ async fn module_messages_of_blocked_peers_are_rejected() {
     let payload_module_received = recv_module_msg_recv_bob.recv().unwrap();
     assert_eq!(payload_module, payload_module_received);
 
-    // Bob should have one open connection now.
+    // Bob should have one open connection now and hasn't blocked any messages
     let net_stats_bob = transport_bob.dump_network_stats().await.unwrap();
-    assert!(net_stats_bob.connections.len() == 1);
+    assert_eq!(net_stats_bob.transport_stats.connections.len(), 1);
+    assert_eq!(net_stats_bob.blocked_message_counts.len(), 0);
 
     // Verify that Bob's peer store contains 2 agents now, his own agent as well as
     // Alice's agent that should have been added via the preflight.
@@ -447,14 +651,18 @@ async fn module_messages_of_blocked_peers_are_rejected() {
         .await
         .unwrap();
 
-    // Verify that Bob has closed the connection to Alice after the message has been rejected
+    // Verify that Bob has blocked the message
     iter_check!(500, {
-        if let Ok(peer_url) = peer_disconnect_recv_bob.try_recv() {
-            if peer_url == peer_url_alice {
-                break;
-            }
+        let net_stats = transport_bob.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts.len() == 1 {
+            break;
         }
     });
+
+    // Now have Bob close the connection so that we can verify later that
+    // resending a message from Alice succeeds after she joins with a new
+    // agent.
+    transport_bob.disconnect(peer_url_alice, None).await;
 
     // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
     // message over the old WebRTC connection still that Bob has already
@@ -467,12 +675,8 @@ async fn module_messages_of_blocked_peers_are_rejected() {
         }
     });
 
-    // Verify that no module message has been handled by Bob. This is not a
-    // strictly reliable check since the receiver could be delayed here
-    // and we check it momentarily with try_recv(). But since we check
-    // it after the connection had been closed above, we can probably
-    // assume that we would at least sometimes catch it here if the
-    // message had been handled nevertheless.
+    // To double-check, verify additionally that no module message has been
+    // handled by Bob.
     assert!(recv_module_msg_recv_bob.try_recv().is_err());
 
     // Now have Alice join the space with a second agent which Bob should then
@@ -480,7 +684,7 @@ async fn module_messages_of_blocked_peers_are_rejected() {
     // again.
     let alice_local_agent_2 = Arc::new(Ed25519LocalAgent::default());
     space_alice
-        .local_agent_join(alice_local_agent_2)
+        .local_agent_join(alice_local_agent_2.clone())
         .await
         .unwrap();
 
