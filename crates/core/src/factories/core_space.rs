@@ -246,20 +246,6 @@ impl TxSpaceHandler for TxHandlerTranslator {
             }
         })
     }
-
-    fn incr_blocked_message_count(
-        &self,
-        peer_url: Url,
-    ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move {
-            let core_space = self
-                .1
-                .upgrade()
-                .ok_or(K2Error::other("CoreSpace has been dropped."))?;
-
-            core_space.tx.incr_blocked_message_count(peer_url).await
-        })
-    }
 }
 
 struct InnerData {

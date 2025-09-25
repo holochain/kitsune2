@@ -478,38 +478,3 @@ async fn dump_network_stats() {
     assert!(connection_list_1.contains(peer_id_2));
     assert!(connection_list_2.contains(peer_id_1));
 }
-
-#[tokio::test(flavor = "multi_thread")]
-async fn increment_blocked_message_count() {
-    let test = Tx5TransportTestHarness::new(None, None).await;
-
-    let h1 = Arc::new(MockTxHandler {
-        ..Default::default()
-    });
-    let t1 = test.build_transport(h1.clone()).await;
-
-    let stats_0 = t1.dump_network_stats().await.unwrap();
-    assert_eq!(stats_0.blocked_message_counts.len(), 0);
-
-    // Increment the counter twice and check that it shows up correctly in the network stats
-    let url1 = Url::from_str("ws://bla.bla:38/1").unwrap();
-    t1.incr_blocked_message_count(url1.clone()).await.unwrap();
-    let stats_1 = t1.dump_network_stats().await.unwrap();
-
-    assert_eq!(stats_1.blocked_message_counts.len(), 1);
-    assert_eq!(stats_1.blocked_message_counts.get(&url1), Some(&1));
-
-    t1.incr_blocked_message_count(url1.clone()).await.unwrap();
-    let stats_2 = t1.dump_network_stats().await.unwrap();
-
-    assert_eq!(stats_2.blocked_message_counts.len(), 1);
-    assert_eq!(stats_2.blocked_message_counts.get(&url1), Some(&2));
-
-    // And now increment the counter for another url as well
-    let url2 = Url::from_str("ws://bla.bla:38/2").unwrap();
-    t1.incr_blocked_message_count(url2.clone()).await.unwrap();
-    let stats_3 = t1.dump_network_stats().await.unwrap();
-
-    assert_eq!(stats_3.blocked_message_counts.len(), 2);
-    assert_eq!(stats_3.blocked_message_counts.get(&url2), Some(&1));
-}

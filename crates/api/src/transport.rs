@@ -14,6 +14,7 @@ pub struct TxImpHnd {
     handler: DynTxHandler,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
+    blocked_message_counts: Arc<Mutex<HashMap<(Url, SpaceId), u32>>>,
 }
 
 impl TxImpHnd {
@@ -25,6 +26,7 @@ impl TxImpHnd {
             handler,
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
+            blocked_message_counts: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -202,15 +204,6 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
-
-    /// Increment the count of blocked messages for the given peer URL.
-    ///
-    /// The count of blocked messages should then be exposed via the
-    /// [`TransportStats`].
-    fn incr_blocked_message_count(
-        &self,
-        peer_url: Url,
-    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [TxImp].
@@ -282,13 +275,18 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 
     /// Increment the count of blocked messages for the given peer URL.
-    ///
-    /// The count of blocked messages should then be exposed via the
-    /// [`TransportStats`].
     fn incr_blocked_message_count(
         &self,
         peer_url: Url,
+        space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Read the count of blocked messages for a given peer URL and space.
+    fn blocked_message_count(
+        &self,
+        peer_url: Url,
+        space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<u32>>;
 }
 
 /// Trait-object [Transport].
@@ -309,6 +307,7 @@ pub struct DefaultTransport {
     imp: DynTxImp,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
+    blocked_message_counts: Arc<Mutex<HashMap<(Url, SpaceId), u32>>>,
 }
 
 impl DefaultTransport {
@@ -322,6 +321,7 @@ impl DefaultTransport {
             imp,
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
+            blocked_message_counts: hnd.blocked_message_counts.clone(),
         });
         out
     }
@@ -443,8 +443,32 @@ impl Transport for DefaultTransport {
     fn incr_blocked_message_count(
         &self,
         peer_url: Url,
+        space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>> {
-        self.imp.incr_blocked_message_count(peer_url)
+        Box::pin(async {
+            let mut blocked_message_counts =
+                self.blocked_message_counts.lock().expect("poisoned");
+            blocked_message_counts
+                .entry((peer_url, space_id))
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
+            Ok(())
+        })
+    }
+
+    /// Read the count of blocked messages for a given peer URL and space.
+    fn blocked_message_count(
+        &self,
+        peer_url: Url,
+        space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<u32>> {
+        Box::pin(async {
+            let blocked_message_counts =
+                self.blocked_message_counts.lock().expect("poisoned");
+            Ok(*blocked_message_counts
+                .get(&(peer_url, space_id))
+                .unwrap_or(&0))
+        })
     }
 }
 
@@ -529,16 +553,6 @@ pub trait TxSpaceHandler: TxBaseHandler {
         drop((peer, when));
         Box::pin(async move { Ok(()) })
     }
-
-    /// Increment the counter of blocked messages for the given peer URL in the
-    /// space's peer meta store
-    fn incr_blocked_message_count(
-        &self,
-        peer: Url,
-    ) -> BoxFut<'_, K2Result<()>> {
-        drop(peer);
-        Box::pin(async move { Ok(()) })
-    }
 }
 
 /// Trait-object [TxSpaceHandler].
@@ -597,9 +611,6 @@ pub struct TransportStats {
 
     /// The list of current connections.
     pub connections: Vec<TransportConnectionStats>,
-
-    /// Number of blocked messages per Url
-    pub blocked_message_counts: HashMap<Url, u32>,
 }
 
 /// Stats for a single transport connection.
