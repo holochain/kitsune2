@@ -14,7 +14,7 @@ pub struct TxImpHnd {
     handler: DynTxHandler,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
-    blocked_message_counts: Arc<Mutex<HashMap<Url, u32>>>,
+    blocked_message_counts: Arc<Mutex<HashMap<Url, HashMap<SpaceId, u32>>>>,
 }
 
 impl TxImpHnd {
@@ -278,6 +278,7 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     fn incr_blocked_message_count(
         &self,
         peer_url: Url,
+        space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>>;
 }
 
@@ -299,7 +300,7 @@ pub struct DefaultTransport {
     imp: DynTxImp,
     space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
     mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
-    blocked_message_counts: Arc<Mutex<HashMap<Url, u32>>>,
+    blocked_message_counts: Arc<Mutex<HashMap<Url, HashMap<SpaceId, u32>>>>,
 }
 
 impl DefaultTransport {
@@ -443,14 +444,20 @@ impl Transport for DefaultTransport {
     fn incr_blocked_message_count(
         &self,
         peer_url: Url,
+        space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async {
             let mut blocked_message_counts =
                 self.blocked_message_counts.lock().expect("poisoned");
             blocked_message_counts
                 .entry(peer_url)
-                .and_modify(|c| *c += 1)
-                .or_insert(1);
+                .and_modify(|space_counts| {
+                    space_counts
+                        .entry(space_id.clone())
+                        .and_modify(|c| *c += 1)
+                        .or_insert(1);
+                })
+                .or_insert([(space_id, 1)].into());
             Ok(())
         })
     }
@@ -589,7 +596,7 @@ pub struct ApiTransportStats {
     pub transport_stats: TransportStats,
 
     /// Blocked message counts.
-    pub blocked_message_counts: HashMap<Url, u32>,
+    pub blocked_message_counts: HashMap<Url, HashMap<SpaceId, u32>>,
 }
 
 /// Stats for a transport connection.
