@@ -21,10 +21,12 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use kitsune2_api::*;
+    use kitsune2_test_utils::{agent::AgentBuilder, enable_tracing};
     use std::sync::Arc;
 
     #[tokio::test]
     async fn invoke_report_module() {
+        enable_tracing();
         static GOT_SPACE: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
         static FETCHED_OP_COUNT: std::sync::atomic::AtomicU64 =
@@ -33,8 +35,8 @@ mod tests {
             std::sync::atomic::AtomicU64::new(0);
 
         #[derive(Debug)]
-        struct R;
-        impl Report for R {
+        struct MockReport;
+        impl Report for MockReport {
             fn space(
                 &self,
                 _space_id: SpaceId,
@@ -56,8 +58,8 @@ mod tests {
             }
         }
         #[derive(Debug)]
-        struct RF;
-        impl ReportFactory for RF {
+        struct MockReportFactory;
+        impl ReportFactory for MockReportFactory {
             fn default_config(&self, _config: &mut Config) -> K2Result<()> {
                 Ok(())
             }
@@ -70,23 +72,23 @@ mod tests {
                 _tx: crate::DynTransport,
             ) -> BoxFut<'static, K2Result<DynReport>> {
                 Box::pin(async move {
-                    let out: DynReport = Arc::new(R);
+                    let out: DynReport = Arc::new(MockReport);
                     Ok(out)
                 })
             }
         }
         let builder = Builder {
-            report: Arc::new(RF),
+            report: Arc::new(MockReportFactory),
             ..crate::default_test_builder()
         }
         .with_default_config()
         .unwrap();
 
-        let k = builder.build().await.unwrap();
+        let kitsune = builder.build().await.unwrap();
 
         #[derive(Debug)]
-        struct S;
-        impl SpaceHandler for S {
+        struct MockSpaceHandler;
+        impl SpaceHandler for MockSpaceHandler {
             fn recv_notify(
                 &self,
                 _from_peer: Url,
@@ -97,40 +99,70 @@ mod tests {
             }
         }
         #[derive(Debug)]
-        struct K;
-        impl KitsuneHandler for K {
+        struct MockKitsuneHandler;
+        impl KitsuneHandler for MockKitsuneHandler {
             fn create_space(
                 &self,
                 _space_id: SpaceId,
             ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
-                let s: DynSpaceHandler = Arc::new(S);
+                let s: DynSpaceHandler = Arc::new(MockSpaceHandler);
                 Box::pin(async move { Ok(s) })
             }
         }
-        k.register_handler(Arc::new(K)).await.unwrap();
-        let s = k
+        kitsune
+            .register_handler(Arc::new(MockKitsuneHandler))
+            .await
+            .unwrap();
+        let space = kitsune
             .space(kitsune2_test_utils::space::TEST_SPACE_ID)
             .await
             .unwrap();
         let local_agent: DynLocalAgent =
             Arc::new(kitsune2_test_utils::agent::TestLocalAgent::default());
-        s.local_agent_join(local_agent.clone()).await.unwrap();
+        space.local_agent_join(local_agent.clone()).await.unwrap();
 
-        let url = s.current_url().unwrap();
+        let url = space.current_url().unwrap();
 
         assert!(GOT_SPACE.load(std::sync::atomic::Ordering::SeqCst));
 
         #[derive(Debug)]
-        struct T;
-        impl TxBaseHandler for T {}
-        impl TxHandler for T {}
+        struct MockTxHandler;
+        impl TxBaseHandler for MockTxHandler {}
+        impl TxHandler for MockTxHandler {}
 
         let builder = Arc::new(crate::default_test_builder());
-        let tx = builder
+        let tx: Arc<dyn Transport> = builder
             .transport
-            .create(builder.clone(), Arc::new(T))
+            .create(builder.clone(), Arc::new(MockTxHandler))
             .await
             .unwrap();
+
+        // We need to add an agent info of the sending peer to the receiving
+        // peer's peer store so that it won't consider the peer blocked and
+        // drop the message.
+        let url_sender = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            async {
+                loop {
+                    let stats = tx.dump_network_stats().await.unwrap();
+                    let peer_url = stats.transport_stats.peer_urls.first();
+                    if let Some(url) = peer_url {
+                        return url.clone();
+                    }
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        let local_agent_2: DynLocalAgent =
+            Arc::new(kitsune2_test_utils::agent::TestLocalAgent::default());
+
+        let agent_sender = AgentBuilder::default()
+            .with_url(Some(url_sender.clone()))
+            .build(local_agent_2);
+
+        space.peer_store().insert(vec![agent_sender]).await.unwrap();
 
         tx.send_module(
             url,
