@@ -191,7 +191,7 @@ impl TxImpHnd {
     /// being one of the message types that are allowed in any case.
     pub fn check_message_permitted(
         &self,
-        peer: &Url,
+        peer_url: &Url,
         space_id: &Option<Bytes>,
         module_id: &Option<String>,
         message_type: &K2WireType,
@@ -226,7 +226,7 @@ impl TxImpHnd {
         // of the agents on that conductor should be trusted.
         let space_id = match space_id {
             None => {
-                tracing::warn!(?peer, "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.", message_type);
+                tracing::warn!(?peer_url, "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.", message_type);
                 return Err(K2Error::other(
                     "Received a message without space id.",
                 ));
@@ -236,9 +236,10 @@ impl TxImpHnd {
         match self.space_map.lock().expect("poisoned").get(&space_id) {
             Some(space_handler) => {
                 let space_handler = space_handler.clone();
-                let all_blocked = space_handler.are_all_agents_at_url_blocked(peer).inspect_err(|e| tracing::warn!(?space_id, ?peer, ?message_type, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
+                let all_blocked = space_handler.are_all_agents_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
                 if all_blocked {
-                    tracing::warn!(?space_id, ?peer, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
+                    tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
+                    self.incr_blocked_message_count(peer_url.clone(), space_id);
                     return Ok(false);
                 }
                 Ok(true)
@@ -246,7 +247,7 @@ impl TxImpHnd {
             None => {
                 tracing::error!(
                     ?space_id,
-                    ?peer,
+                    ?peer_url,
                     ?module_id,
                     ?message_type,
                     "No space handler found. Message will be dropped."
@@ -254,6 +255,20 @@ impl TxImpHnd {
                 Ok(false)
             }
         }
+    }
+
+    fn incr_blocked_message_count(&self, peer_url: Url, space_id: SpaceId) {
+        let mut blocked_message_counts =
+            self.blocked_message_counts.lock().expect("poisoned");
+        blocked_message_counts
+            .entry(peer_url)
+            .and_modify(|space_counts| {
+                space_counts
+                    .entry(space_id.clone())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+            })
+            .or_insert([(space_id, 1)].into());
     }
 }
 
@@ -357,13 +372,6 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
-
-    /// Increment the count of blocked messages for the given peer URL.
-    fn incr_blocked_message_count(
-        &self,
-        peer_url: Url,
-        space_id: SpaceId,
-    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Transport].
@@ -522,27 +530,6 @@ impl Transport for DefaultTransport {
                 transport_stats: low_level_stats,
                 blocked_message_counts: blocked_message_counts.clone(),
             })
-        })
-    }
-
-    fn incr_blocked_message_count(
-        &self,
-        peer_url: Url,
-        space_id: SpaceId,
-    ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async {
-            let mut blocked_message_counts =
-                self.blocked_message_counts.lock().expect("poisoned");
-            blocked_message_counts
-                .entry(peer_url)
-                .and_modify(|space_counts| {
-                    space_counts
-                        .entry(space_id.clone())
-                        .and_modify(|c| *c += 1)
-                        .or_insert(1);
-                })
-                .or_insert([(space_id, 1)].into());
-            Ok(())
         })
     }
 }
