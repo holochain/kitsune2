@@ -272,7 +272,7 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     fn unregister_space(&self, space_id: SpaceId) -> BoxFut<'_, ()>;
 
     /// Dump network stats.
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
 
     /// Increment the count of blocked messages for the given peer URL.
     fn incr_blocked_message_count(
@@ -280,13 +280,6 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         peer_url: Url,
         space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>>;
-
-    /// Read the count of blocked messages for a given peer URL and space.
-    fn blocked_message_count(
-        &self,
-        peer_url: Url,
-        space_id: SpaceId,
-    ) -> BoxFut<'_, K2Result<u32>>;
 }
 
 /// Trait-object [Transport].
@@ -436,8 +429,16 @@ impl Transport for DefaultTransport {
         })
     }
 
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
-        self.imp.dump_network_stats()
+    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>> {
+        Box::pin(async {
+            let low_level_stats = self.imp.dump_network_stats().await?;
+            let blocked_message_counts =
+                self.blocked_message_counts.lock().expect("poisoned");
+            Ok(ApiTransportStats {
+                transport_stats: low_level_stats,
+                blocked_message_counts: blocked_message_counts.clone(),
+            })
+        })
     }
 
     fn incr_blocked_message_count(
@@ -453,21 +454,6 @@ impl Transport for DefaultTransport {
                 .and_modify(|c| *c += 1)
                 .or_insert(1);
             Ok(())
-        })
-    }
-
-    /// Read the count of blocked messages for a given peer URL and space.
-    fn blocked_message_count(
-        &self,
-        peer_url: Url,
-        space_id: SpaceId,
-    ) -> BoxFut<'_, K2Result<u32>> {
-        Box::pin(async {
-            let blocked_message_counts =
-                self.blocked_message_counts.lock().expect("poisoned");
-            Ok(*blocked_message_counts
-                .get(&(peer_url, space_id))
-                .unwrap_or(&0))
         })
     }
 }
@@ -597,6 +583,16 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
 
 /// Trait-object [TransportFactory].
 pub type DynTransportFactory = Arc<dyn TransportFactory>;
+
+///
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTransportStats {
+    /// Stats from the low-level transport implementation
+    pub transport_stats: TransportStats,
+
+    /// Blocked message counts.
+    pub blocked_message_counts: HashMap<(Url, SpaceId), u32>,
+}
 
 /// Stats for a transport connection.
 ///

@@ -404,7 +404,7 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     assert_eq!(faulty_url, url);
 
-    assert!(transport1.dump_network_stats().await.unwrap().connections.is_empty(), "Expected no connections to be present in the transport after sending to a non-existent peer, but found some.");
+    assert!(transport1.dump_network_stats().await.unwrap().transport_stats.connections.is_empty(), "Expected no connections to be present in the transport after sending to a non-existent peer, but found some.");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -446,30 +446,32 @@ async fn dump_network_stats() {
         feature = "backend-libdatachannel",
         not(feature = "backend-go-pion")
     ))]
-    assert_eq!(stats_1.backend, "BackendLibDataChannel");
+    assert_eq!(stats_1.transport_stats.backend, "BackendLibDataChannel");
     #[cfg(all(
         feature = "backend-go-pion",
         not(feature = "backend-libdatachannel")
     ))]
-    assert_eq!(stats_1.backend, "BackendGoPion");
+    assert_eq!(stats_1.transport_stats.backend, "BackendGoPion");
     #[cfg(all(
         feature = "backend-go-pion",
         feature = "backend-libdatachannel"
     ))]
     panic!("This test must be run with either libdatachannel or go-pion enabled, but not both.");
 
-    let peer_url_1 = stats_1.peer_urls.first().unwrap();
+    let peer_url_1 = stats_1.transport_stats.peer_urls.first().unwrap();
     let peer_id_1 = peer_url_1.peer_id().unwrap();
 
-    let peer_url_2 = stats_2.peer_urls.first().unwrap();
+    let peer_url_2 = stats_2.transport_stats.peer_urls.first().unwrap();
     let peer_id_2 = peer_url_2.peer_id().unwrap();
 
     let connection_list_1 = stats_1
+        .transport_stats
         .connections
         .iter()
         .map(|c| c.pub_key.clone())
         .collect::<HashSet<_>>();
     let connection_list_2 = stats_2
+        .transport_stats
         .connections
         .iter()
         .map(|c| c.pub_key.clone())
