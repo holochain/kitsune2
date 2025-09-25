@@ -23,7 +23,7 @@ async fn two_new_agents_sync() {
     .await;
 
     let harness_1 = factory.new_instance().await;
-    harness_1.join_local_agent(DhtArc::FULL).await;
+    let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
     const NUM_OPS: usize = 20;
     let mut ops = Vec::<MemoryOpRecord>::with_capacity(NUM_OPS);
@@ -49,7 +49,24 @@ async fn two_new_agents_sync() {
         .extend(ops.iter().map(|op| (op.op_id.clone(), op.clone())));
 
     let harness_2 = factory.new_instance().await;
-    harness_2.join_local_agent(DhtArc::FULL).await;
+    let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+
+    // Simulate peer discovery so that gossip messages won't be dropped
+    // due to no associated agents in the peer store when checking for
+    // blocks.
+    harness_1
+        .space
+        .peer_store()
+        .insert(vec![agent_info_2.clone()])
+        .await
+        .unwrap();
+
+    harness_2
+        .space
+        .peer_store()
+        .insert(vec![agent_info_1.clone()])
+        .await
+        .unwrap();
 
     // Wait for data to be synced.
     harness_1
@@ -79,12 +96,12 @@ async fn new_agent_joins_existing_network() {
     .await;
 
     let harness_1 = factory.new_instance().await;
-    let agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+    let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
 
     // Force the first agent to have a full arc, to simulate an existing network where there are
     // agents that are already synced.
     harness_1
-        .force_storage_arc(agent_1.agent.clone(), DhtArc::FULL)
+        .force_storage_arc(agent_info_1.agent.clone(), DhtArc::FULL)
         .await;
 
     const NUM_OPS: usize = 20;
@@ -112,7 +129,24 @@ async fn new_agent_joins_existing_network() {
 
     // Join a new agent that wants to reach full arc, and let them try to sync with the first agent.
     let harness_2 = factory.new_instance().await;
-    harness_2.join_local_agent(DhtArc::FULL).await;
+    let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+
+    // Simulate peer discovery so that gossip messages won't be dropped
+    // due to no associated agents in the peer store when checking for
+    // blocks.
+    harness_1
+        .space
+        .peer_store()
+        .insert(vec![agent_info_2.clone()])
+        .await
+        .unwrap();
+
+    harness_2
+        .space
+        .peer_store()
+        .insert(vec![agent_info_1.clone()])
+        .await
+        .unwrap();
 
     // Wait for data to be synced.
     harness_1
