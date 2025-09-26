@@ -61,6 +61,11 @@ async fn two_new_agents_sync() {
         .await
         .unwrap();
 
+    // TODO remove this second insert once a "hello" message logic is
+    // implemented (along the lines of what's described in
+    // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
+    // Gossip shouldn't in general depend on both peers knowing about each
+    // other's agent infos.
     harness_2
         .space
         .peer_store()
@@ -141,6 +146,11 @@ async fn new_agent_joins_existing_network() {
         .await
         .unwrap();
 
+    // TODO remove this second insert once a "hello" message logic is
+    // implemented (along the lines of what's described in
+    // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
+    // Gossip shouldn't in general depend on both peers knowing about each
+    // other's agent infos.
     harness_2
         .space
         .peer_store()
