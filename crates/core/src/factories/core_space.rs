@@ -271,7 +271,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
             // If we find no agent for the peer url in the peer store yet, we
             // consider the peer to be blocked by default. This has the
             // consequence that we will drop any messages from them until we've
-            // received agent infos for that peer that allow us check for
+            // received agent infos for that peer that allow us to check for
             // blocks.
             if block_targets.is_empty() {
                 return Ok(true);

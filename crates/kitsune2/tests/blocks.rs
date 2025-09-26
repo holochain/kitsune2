@@ -179,19 +179,13 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
     transport.register_module_handler(TEST_SPACE_ID, "test".into(), tx_handler);
 
     // It may take a while until the peer url shows up in the transport stats
-    let peer_url =
-        tokio::time::timeout(std::time::Duration::from_millis(200), async {
-            loop {
-                let stats = transport.dump_network_stats().await.unwrap();
-                let peer_url = stats.transport_stats.peer_urls.first();
-                if let Some(url) = peer_url {
-                    return url.clone();
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .unwrap();
+    let peer_url = iter_check!(200, {
+        let stats = transport.dump_network_stats().await.unwrap();
+        let peer_url = stats.transport_stats.peer_urls.first();
+        if let Some(url) = peer_url {
+            return url.clone();
+        }
+    });
 
     let (space_handler, recv_notify_recv) = MockSpaceHandler::create();
 
@@ -257,19 +251,13 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         .unwrap();
 
     // It may take a while until the peer url shows up in the transport stats
-    let peer_url =
-        tokio::time::timeout(std::time::Duration::from_millis(200), async {
-            loop {
-                let stats = transport.dump_network_stats().await.unwrap();
-                let peer_url = stats.transport_stats.peer_urls.first();
-                if let Some(url) = peer_url {
-                    return url.clone();
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .unwrap();
+    let peer_url = iter_check!(200, {
+        let stats = transport.dump_network_stats().await.unwrap();
+        let peer_url = stats.transport_stats.peer_urls.first();
+        if let Some(url) = peer_url {
+            return url.clone();
+        }
+    });
 
     let report = builder
         .report
