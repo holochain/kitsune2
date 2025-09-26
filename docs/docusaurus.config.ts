@@ -60,7 +60,7 @@ const config: Config = {
     navbar: {
       title: 'Documentation',
       logo: {
-        alt: 'My Site Logo',
+        alt: 'Kitsune2',
         src: 'img/kitsune2-logo.svg',
       },
       items: [
