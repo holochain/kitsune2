@@ -21,7 +21,9 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use kitsune2_api::*;
-    use kitsune2_test_utils::{agent::AgentBuilder, enable_tracing};
+    use kitsune2_test_utils::{
+        agent::AgentBuilder, enable_tracing, iter_check,
+    };
     use std::sync::Arc;
 
     #[tokio::test]
@@ -140,22 +142,13 @@ mod tests {
         // We need to add an agent info of the sending peer to the receiving
         // peer's peer store so that it won't consider the peer blocked and
         // drop the message.
-        let url_sender = tokio::time::timeout(
-            std::time::Duration::from_millis(200),
-            async {
-                loop {
-                    let stats = tx.dump_network_stats().await.unwrap();
-                    let peer_url = stats.transport_stats.peer_urls.first();
-                    if let Some(url) = peer_url {
-                        return url.clone();
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(20))
-                        .await;
-                }
-            },
-        )
-        .await
-        .unwrap();
+        let url_sender = iter_check!(200, {
+            let stats = tx.dump_network_stats().await.unwrap();
+            let peer_url = stats.transport_stats.peer_urls.first();
+            if let Some(url) = peer_url {
+                return url.clone();
+            }
+        });
 
         let local_agent_2: DynLocalAgent =
             Arc::new(kitsune2_test_utils::agent::TestLocalAgent::default());
