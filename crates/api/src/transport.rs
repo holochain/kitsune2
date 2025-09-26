@@ -1,6 +1,7 @@
 //! Kitsune2 transport related types.
 
 use crate::{protocol::*, *};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
@@ -101,7 +102,7 @@ impl TxImpHnd {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let data = K2Proto::decode(&data)?;
-            let ty = data.ty();
+            let message_type = data.ty();
             let K2Proto {
                 space_id,
                 module_id,
@@ -109,7 +110,20 @@ impl TxImpHnd {
                 ..
             } = data;
 
-            match ty {
+            // Except for preflight, unspecified and disconnect messages we
+            // should drop messages if all agents are blocked for the given
+            // peer URL and space id. We do not close the connection because
+            // agents in other spaces may not be blocked on the same conductor.
+            if !self.check_message_permitted(
+                &peer,
+                &space_id,
+                &module_id,
+                &message_type,
+            )? {
+                return Ok(());
+            }
+
+            match message_type {
                 K2WireType::Unspecified => Ok(()),
                 K2WireType::Preflight => {
                     self.handler.preflight_validate_incoming(peer, data).await
@@ -170,6 +184,91 @@ impl TxImpHnd {
             }
             Ok(())
         })
+    }
+
+    /// Check whether a message should be dropped due to all agents associated
+    /// with the given peer and space id being blocked and the message not
+    /// being one of the message types that are allowed in any case.
+    pub fn check_message_permitted(
+        &self,
+        peer_url: &Url,
+        space_id: &Option<Bytes>,
+        module_id: &Option<String>,
+        message_type: &K2WireType,
+    ) -> K2Result<bool> {
+        // We accept the following messages also for peers at whose url all
+        // agents are blocked:
+        //
+        // - Preflight: Such that we can discover any new agent infos available
+        //   at that peer URL (agent infos are sent via preflight messages and
+        //   a blocked agent cannot gossip, so we couldn't otherwise reliably
+        //    learn about new agents at a peer URL).
+        // - Unspecified: We allow unspecified messages in order to ensure that
+        //   we're not constraining us with regards to updates in the
+        //   networking protocol. And since we ignore unspecified messages
+        //   anyway, we wouldn't gain much from blocking.
+        // - Disconnect: If we receive a Disconnect message, we disconnect
+        //   anyway and a disconnect message also wouldn't include a space id
+        //   for which we could check for blocked agents.
+        if matches!(
+            message_type,
+            K2WireType::Preflight
+                | K2WireType::Unspecified
+                | K2WireType::Disconnect
+        ) {
+            return Ok(true);
+        }
+
+        // If a space id was not provided, we reject the message and return
+        // an error, which will cause the connection to be closed.
+        // A missing space id indicates that the remote conductor is not
+        // following the protocol and must have been modified. Therefore none
+        // of the agents on that conductor should be trusted.
+        let space_id = match space_id {
+            None => {
+                tracing::warn!(?peer_url, "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.", message_type);
+                return Err(K2Error::other(
+                    "Received a message without space id.",
+                ));
+            }
+            Some(id) => SpaceId::from(id.clone()),
+        };
+        match self.space_map.lock().expect("poisoned").get(&space_id) {
+            Some(space_handler) => {
+                let space_handler = space_handler.clone();
+                let all_blocked = space_handler.are_all_agents_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
+                if all_blocked {
+                    tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
+                    self.incr_blocked_message_count(peer_url.clone(), space_id);
+                    return Ok(false);
+                }
+                Ok(true)
+            }
+            None => {
+                tracing::error!(
+                    ?space_id,
+                    ?peer_url,
+                    ?module_id,
+                    ?message_type,
+                    "No space handler found. Message will be dropped."
+                );
+                Ok(false)
+            }
+        }
+    }
+
+    fn incr_blocked_message_count(&self, peer_url: Url, space_id: SpaceId) {
+        let mut blocked_message_counts =
+            self.blocked_message_counts.lock().expect("poisoned");
+        blocked_message_counts
+            .entry(peer_url)
+            .and_modify(|space_counts| {
+                space_counts
+                    .entry(space_id.clone())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+            })
+            .or_insert([(space_id, 1)].into());
     }
 }
 
@@ -273,13 +372,6 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
-
-    /// Increment the count of blocked messages for the given peer URL.
-    fn incr_blocked_message_count(
-        &self,
-        peer_url: Url,
-        space_id: SpaceId,
-    ) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Transport].
@@ -440,27 +532,6 @@ impl Transport for DefaultTransport {
             })
         })
     }
-
-    fn incr_blocked_message_count(
-        &self,
-        peer_url: Url,
-        space_id: SpaceId,
-    ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async {
-            let mut blocked_message_counts =
-                self.blocked_message_counts.lock().expect("poisoned");
-            blocked_message_counts
-                .entry(peer_url)
-                .and_modify(|space_counts| {
-                    space_counts
-                        .entry(space_id.clone())
-                        .and_modify(|c| *c += 1)
-                        .or_insert(1);
-                })
-                .or_insert([(space_id, 1)].into());
-            Ok(())
-        })
-    }
 }
 
 /// Base trait for transport handler events.
@@ -544,6 +615,9 @@ pub trait TxSpaceHandler: TxBaseHandler {
         drop((peer, when));
         Box::pin(async move { Ok(()) })
     }
+
+    /// Return `true` if every agent using the passed peer [`Url`] is blocked.
+    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool>;
 }
 
 /// Trait-object [TxSpaceHandler].
