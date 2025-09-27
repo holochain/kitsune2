@@ -8,7 +8,7 @@ use kitsune2_api::{
     GossipStateSummaryRequest, LocalAgent, OpId, SpaceHandler, SpaceId,
     StoredOp, TxBaseHandler, TxHandler, TxSpaceHandler, UNIX_TIMESTAMP,
 };
-use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::factories::TestMemoryOp;
 use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use std::collections::HashSet;
@@ -117,7 +117,7 @@ impl K2GossipFunctionalTestHarness {
     }
 
     /// Wait for the given ops to be in our op store.
-    pub async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<MemoryOp> {
+    pub async fn wait_for_ops(&self, op_ids: Vec<OpId>) -> Vec<TestMemoryOp> {
         tokio::time::timeout(Duration::from_millis(500), {
             let this = self.clone();
             async move {
@@ -143,7 +143,7 @@ impl K2GossipFunctionalTestHarness {
                     return ops
                         .into_iter()
                         .map(|op| {
-                            let out: MemoryOp = op.op_data.into();
+                            let out: TestMemoryOp = op.op_data.into();
 
                             out
                         })

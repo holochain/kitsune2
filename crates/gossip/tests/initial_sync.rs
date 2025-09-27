@@ -3,7 +3,7 @@
 //! This is a UX test more than a functional test.
 
 use kitsune2_api::{DhtArc, Timestamp};
-use kitsune2_core::factories::MemoryOp;
+use kitsune2_core::factories::{MemoryOp, TestMemoryOp};
 use kitsune2_gossip::harness::{K2GossipFunctionalTestFactory, MemoryOpRecord};
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use kitsune2_test_utils::{enable_tracing_with_default_level, random_bytes};
@@ -30,7 +30,8 @@ async fn two_new_agents_sync() {
     for _ in 0..NUM_OPS {
         let op_size = rand::random::<usize>() % 1000 + 500;
 
-        let op = MemoryOp::new(Timestamp::now(), random_bytes(op_size as u16));
+        let op =
+            TestMemoryOp::new(Timestamp::now(), random_bytes(op_size as u16));
         ops.push(MemoryOpRecord {
             op_id: op.compute_op_id(),
             op_data: op.op_data,
@@ -92,7 +93,8 @@ async fn new_agent_joins_existing_network() {
     for _ in 0..NUM_OPS {
         let op_size = rand::random::<usize>() % 1000 + 500;
 
-        let op = MemoryOp::new(Timestamp::now(), random_bytes(op_size as u16));
+        let op =
+            TestMemoryOp::new(Timestamp::now(), random_bytes(op_size as u16));
         ops.push(MemoryOpRecord {
             op_id: op.compute_op_id(),
             op_data: op.op_data,

@@ -4,7 +4,10 @@ use chrono::{DateTime, Local};
 use file_data::FileData;
 use file_op_store::{FileOpStoreFactory, FileStoreLookup};
 use kitsune2_api::*;
-use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
+use kitsune2_core::{
+    factories::{MemoryOp, TestMemoryOp},
+    get_all_remote_agents,
+};
 use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
 use std::{ffi::OsStr, fmt::Debug, path::Path, sync::Arc, time::SystemTime};
 use tokio::{
@@ -272,7 +275,7 @@ impl App {
             .await
             .expect("Failed to print message");
 
-        let op = MemoryOp::new(Timestamp::now(), data.into_bytes());
+        let op = TestMemoryOp::new(Timestamp::now(), data.into_bytes());
         let op_id = op.compute_op_id();
 
         self.space
@@ -346,7 +349,7 @@ impl App {
                 .expect("Failed to print message");
 
             for op in stored_ops {
-                let mem_op = MemoryOp::from(op.op_data);
+                let mem_op = TestMemoryOp::from(op.op_data);
                 let created_at = DateTime::<Local>::from(SystemTime::from(
                     mem_op.created_at,
                 ));
@@ -388,7 +391,7 @@ impl App {
             if let Some(file_data) = stored_ops
                 .into_iter()
                 .filter_map(|op| {
-                    let mem_op = MemoryOp::from(op.op_data);
+                    let mem_op = TestMemoryOp::from(op.op_data);
                     serde_json::from_slice::<FileData>(&mem_op.op_data).ok()
                 })
                 .find(|file_data| file_data.name == file_name)

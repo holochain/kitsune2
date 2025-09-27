@@ -2,7 +2,7 @@ use crate::{
     default_test_builder,
     factories::{
         core_fetch::{test::test_utils::make_op, CoreFetch, CoreFetchConfig},
-        MemOpStoreFactory, MemoryOp,
+        MemOpStoreFactory, TestMemoryOp,
     },
 };
 use bytes::Bytes;
@@ -28,7 +28,7 @@ struct TestCase {
 async fn setup_test() -> TestCase {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let op_store = MemOpStoreFactory::create()
+    let op_store = MemOpStoreFactory::<TestMemoryOp>::create()
         .create(builder.clone(), TEST_SPACE_ID)
         .await
         .unwrap();
@@ -226,7 +226,7 @@ async fn fail_to_respond_once_then_succeed() {
                 K2FetchMessage::decode(data).unwrap().data,
             )
             .unwrap();
-            let ops: Vec<MemoryOp> =
+            let ops: Vec<TestMemoryOp> =
                 response.ops.into_iter().map(Into::into).collect::<Vec<_>>();
             responses_sent.lock().unwrap().push((ops, peer));
             Box::pin(async move { Ok(()) })
