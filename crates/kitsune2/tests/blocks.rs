@@ -448,7 +448,9 @@ async fn space_messages_of_blocked_peers_are_dropped() {
         .unwrap();
 
     // Verify that the space message has been handled by Bob's recv_space_notify hook
-    let payload_received = recv_notify_recv_bob.recv().unwrap();
+    let payload_received = recv_notify_recv_bob
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("timed out waiting for space message");
     assert_eq!(payload, payload_received);
 
     // Bob should have one open connection now and hasn't blocked any messages
@@ -549,7 +551,9 @@ async fn space_messages_of_blocked_peers_are_dropped() {
         .unwrap();
 
     // Verify that the message is being received correctly by Bob
-    let payload_unblocked_received = recv_notify_recv_bob.recv().unwrap();
+    let payload_unblocked_received = recv_notify_recv_bob
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("timed out waiting for space message");
     assert_eq!(payload_unblocked, payload_unblocked_received);
 }
 
@@ -590,7 +594,9 @@ async fn module_messages_of_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    let payload_module_received = recv_module_msg_recv_bob.recv().unwrap();
+    let payload_module_received = recv_module_msg_recv_bob
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("timed out waiting for module message");
     assert_eq!(payload_module, payload_module_received);
 
     // Bob should have one open connection now and hasn't blocked any messages
@@ -692,6 +698,8 @@ async fn module_messages_of_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    let payload_unblocked_received = recv_module_msg_recv_bob.recv().unwrap();
+    let payload_unblocked_received = recv_module_msg_recv_bob
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("timed out waiting for module message");
     assert_eq!(payload_unblocked, payload_unblocked_received);
 }
