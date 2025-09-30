@@ -26,16 +26,4 @@ This command generates static content into the `build` directory and can be serv
 
 ## Deployment
 
-Using SSH:
-
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+The `holochain/kitsune2` GitHub repo is set up with continuous deployment to Netlify Pages; as soon as a PR is merged to `main`, it'll be live at the URL https://kitsune2.holochain.org .
