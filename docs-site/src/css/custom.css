@@ -28,3 +28,11 @@
   --ifm-color-primary-lightest: color-mix(in lch, #0EDDD3 70%, white 30%);
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+/* Out of the box, the Infima theme doesn't support readable links in a hero component. Why?! */
+@layer docusaurus.infima {
+  .hero__subtitle a {
+    color: var(--ifm-color-primary-inverse);
+    text-decoration: underline;
+  }
+}

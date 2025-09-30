@@ -6,7 +6,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Kitsune2',
-  tagline: 'A peer-to-peer communication framework designed for managing communication and state across multiple spaces.',
+  tagline: 'A peer-to-peer framework for managing messages and state. Created by the Holochain Foundation.',
   favicon: 'img/favicon.ico',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
