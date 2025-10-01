@@ -317,7 +317,7 @@ async fn message_block_count_increases_correctly() {
 
     let TestPeerLight {
         space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
-        space2: _space_carol_2, // -- dito --
+        space2: _space_carol_2, // -- ditto --
         transport: transport_carol,
         peer_url: peer_url_carol,
     } = make_test_peer_light(tx5_harness.builder.clone()).await;
