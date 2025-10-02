@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 
+type SpaceMap = Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>;
+type ModMap = Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>;
+type MessageBlocksMap =
+    Arc<Mutex<HashMap<Url, HashMap<SpaceId, MessageBlockCount>>>>;
+
 /// This is the low-level backend transport handler designed to work
 /// with [DefaultTransport].
 /// Construct using ([TxImpHnd::new]), with a high-level [DynTxHandler],
@@ -13,9 +18,9 @@ use std::sync::{Arc, Mutex, Weak};
 /// from the [TransportFactory].
 pub struct TxImpHnd {
     handler: DynTxHandler,
-    space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
-    mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
-    blocked_message_counts: Arc<Mutex<HashMap<Url, HashMap<SpaceId, u32>>>>,
+    space_map: SpaceMap,
+    mod_map: ModMap,
+    blocked_message_counts: MessageBlocksMap,
 }
 
 impl TxImpHnd {
@@ -245,50 +250,15 @@ impl TxImpHnd {
             }
             Some(id) => SpaceId::from(id.clone()),
         };
-        match self.space_map.lock().expect("poisoned").get(&space_id) {
-            Some(space_handler) => {
-                let space_handler = space_handler.clone();
-                let all_blocked = match space_handler
-                    .are_all_agents_at_url_blocked(peer_url)
-                {
-                    Ok(blocked) => blocked,
-                    Err(e) => {
-                        tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "Failed to check whether all agents are blocked. Message will be dropped: {e}");
-                        return Ok(false);
-                    }
-                };
-                if all_blocked {
-                    tracing::debug!(?space_id, ?peer_url, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
-                    self.incr_blocked_message_count(peer_url.clone(), space_id);
-                    return Ok(false);
-                }
-                Ok(true)
-            }
-            None => {
-                tracing::error!(
-                    ?space_id,
-                    ?peer_url,
-                    ?module_id,
-                    ?message_type,
-                    "No space handler found. Message will be dropped."
-                );
-                Ok(false)
-            }
-        }
-    }
-
-    fn incr_blocked_message_count(&self, peer_url: Url, space_id: SpaceId) {
-        let mut blocked_message_counts =
-            self.blocked_message_counts.lock().expect("poisoned");
-        blocked_message_counts
-            .entry(peer_url)
-            .and_modify(|space_counts| {
-                space_counts
-                    .entry(space_id.clone())
-                    .and_modify(|c| *c += 1)
-                    .or_insert(1);
-            })
-            .or_insert([(space_id, 1)].into());
+        let is_blocked = is_peer_blocked(
+            self.space_map.clone(),
+            self.blocked_message_counts.clone(),
+            peer_url,
+            &space_id,
+            module_id,
+            false,
+        )?;
+        Ok(!is_blocked)
     }
 }
 
@@ -298,6 +268,115 @@ impl std::fmt::Debug for TxImpHnd {
     }
 }
 
+/// Check whether all agents associated with the given peer url are blocked
+/// for a space and increase the message blocks count by one if so.
+fn is_peer_blocked(
+    space_map: SpaceMap,
+    message_blocks_map: MessageBlocksMap,
+    peer_url: &Url,
+    space_id: &SpaceId,
+    module_id: &Option<String>,
+    outgoing: bool,
+) -> K2Result<bool> {
+    match space_map.lock().expect("poisoned").get(space_id) {
+        Some(space_handler) => {
+            let space_handler: Arc<dyn TxSpaceHandler> = space_handler.clone();
+            let all_blocked = space_handler.are_all_agents_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
+            if all_blocked {
+                tracing::debug!(
+                    ?space_id,
+                    ?peer_url,
+                    ?module_id,
+                    "All agents at peer are blocked, message will be dropped."
+                );
+                if outgoing {
+                    incr_blocked_message_count_outgoing(
+                        message_blocks_map,
+                        peer_url.clone(),
+                        space_id,
+                    );
+                } else {
+                    incr_blocked_message_count_incoming(
+                        message_blocks_map,
+                        peer_url.clone(),
+                        space_id,
+                    );
+                }
+                return Ok(true);
+            }
+            Ok(false)
+        }
+        None => {
+            tracing::error!(
+                ?space_id,
+                ?peer_url,
+                ?module_id,
+                "No space handler found. Message will be dropped."
+            );
+            Ok(true)
+        }
+    }
+}
+
+fn incr_blocked_message_count_incoming(
+    message_blocks_map: MessageBlocksMap,
+    peer_url: Url,
+    space_id: &SpaceId,
+) {
+    let mut blocked_message_counts =
+        message_blocks_map.lock().expect("poisoned");
+    blocked_message_counts
+        .entry(peer_url)
+        .and_modify(|space_counts| {
+            space_counts
+                .entry(space_id.clone())
+                .and_modify(|c| c.incoming += 1)
+                .or_insert(MessageBlockCount {
+                    incoming: 1,
+                    outgoing: 0,
+                });
+        })
+        .or_insert(
+            [(
+                space_id.clone(),
+                MessageBlockCount {
+                    incoming: 1,
+                    outgoing: 0,
+                },
+            )]
+            .into(),
+        );
+}
+
+fn incr_blocked_message_count_outgoing(
+    message_blocks_map: MessageBlocksMap,
+    peer_url: Url,
+    space_id: &SpaceId,
+) {
+    let mut blocked_message_counts =
+        message_blocks_map.lock().expect("poisoned");
+    blocked_message_counts
+        .entry(peer_url)
+        .and_modify(|space_counts| {
+            space_counts
+                .entry(space_id.clone())
+                .and_modify(|c| c.outgoing += 1)
+                .or_insert(MessageBlockCount {
+                    incoming: 0,
+                    outgoing: 1,
+                });
+        })
+        .or_insert(
+            [(
+                space_id.clone(),
+                MessageBlockCount {
+                    incoming: 0,
+                    outgoing: 1,
+                },
+            )]
+            .into(),
+        );
+}
 /// A low-level transport implementation.
 pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// Get the current url if any.
@@ -410,9 +489,9 @@ pub type WeakDynTransport = Weak<dyn Transport>;
 #[derive(Clone, Debug)]
 pub struct DefaultTransport {
     imp: DynTxImp,
-    space_map: Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>,
-    mod_map: Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>,
-    blocked_message_counts: Arc<Mutex<HashMap<Url, HashMap<SpaceId, u32>>>>,
+    space_map: SpaceMap,
+    mod_map: ModMap,
+    blocked_message_counts: MessageBlocksMap,
 }
 
 impl DefaultTransport {
@@ -488,11 +567,26 @@ impl Transport for DefaultTransport {
 
     fn send_space_notify(
         &self,
-        peer: Url,
+        peer_url: Url,
         space_id: SpaceId,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            if is_peer_blocked(
+                self.space_map.clone(),
+                self.blocked_message_counts.clone(),
+                &peer_url,
+                &space_id,
+                &None,
+                true,
+            )? {
+                tracing::warn!(
+                    ?peer_url,
+                    ?space_id,
+                    "Attempted to send space notify message to a peer that is blocked in that space. Dropping message."
+                );
+                return Ok(());
+            }
             let enc = (K2Proto {
                 ty: K2WireType::Notify as i32,
                 data,
@@ -500,18 +594,34 @@ impl Transport for DefaultTransport {
                 module_id: None,
             })
             .encode()?;
-            self.imp.send(peer, enc).await
+            self.imp.send(peer_url, enc).await
         })
     }
 
     fn send_module(
         &self,
-        peer: Url,
+        peer_url: Url,
         space_id: SpaceId,
         module: String,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            if is_peer_blocked(
+                self.space_map.clone(),
+                self.blocked_message_counts.clone(),
+                &peer_url,
+                &space_id,
+                &None,
+                true,
+            )? {
+                tracing::warn!(
+                    ?peer_url,
+                    ?space_id,
+                    ?module,
+                    "Attempted to send module message to a peer that is blocked in the associated space. Dropping message."
+                );
+                return Ok(());
+            }
             let enc = (K2Proto {
                 ty: K2WireType::Module as i32,
                 data,
@@ -519,7 +629,7 @@ impl Transport for DefaultTransport {
                 module_id: Some(module),
             })
             .encode()?;
-            self.imp.send(peer, enc).await
+            self.imp.send(peer_url, enc).await
         })
     }
 
@@ -683,6 +793,16 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
 /// Trait-object [TransportFactory].
 pub type DynTransportFactory = Arc<dyn TransportFactory>;
 
+/// A count for incoming and outgoing blocked messages.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MessageBlockCount {
+    /// Count of incoming messages that have been blocked and dropped.
+    pub incoming: u32,
+
+    ///Count of outgoing messages that have been blocked and dropped.
+    pub outgoing: u32,
+}
+
 /// Extended transport stats exposed via the API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiTransportStats {
@@ -690,7 +810,8 @@ pub struct ApiTransportStats {
     pub transport_stats: TransportStats,
 
     /// Blocked message counts.
-    pub blocked_message_counts: HashMap<Url, HashMap<SpaceId, u32>>,
+    pub blocked_message_counts:
+        HashMap<Url, HashMap<SpaceId, MessageBlockCount>>,
 }
 
 /// Stats for a transport connection.
