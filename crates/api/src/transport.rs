@@ -258,7 +258,7 @@ impl TxImpHnd {
                     }
                 };
                 if all_blocked {
-                    tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
+                    tracing::debug!(?space_id, ?peer_url, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
                     self.incr_blocked_message_count(peer_url.clone(), space_id);
                     return Ok(false);
                 }

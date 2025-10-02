@@ -416,7 +416,7 @@ async fn message_block_count_increases_correctly() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn space_messages_of_blocked_peers_are_dropped() {
+async fn notify_messages_of_blocked_peers_are_dropped() {
     enable_tracing();
 
     let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
