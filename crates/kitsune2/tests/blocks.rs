@@ -473,7 +473,7 @@ async fn notify_messages_of_blocked_peers_are_dropped() {
         .unwrap();
     assert!(!all_blocked);
 
-    // Then block the dummy agent
+    // Then block Alice's agent
     space_bob
         .blocks()
         .block(BlockTarget::Agent(agent_id_alice.clone()))
@@ -621,7 +621,7 @@ async fn module_messages_of_blocked_peers_are_dropped() {
         .unwrap();
     assert!(!all_blocked);
 
-    // Then block the dummy agent
+    // Then block Alice's agent
     space_bob
         .blocks()
         .block(BlockTarget::Agent(agent_id_alice.clone()))
