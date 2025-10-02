@@ -1,7 +1,7 @@
 use super::CorePublishConfig;
 use crate::{
     default_test_builder,
-    factories::{core_publish::CorePublish, MemoryOp},
+    factories::{core_publish::CorePublish, MemoryOp, TestMemoryOp},
 };
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
@@ -34,9 +34,9 @@ async fn published_ops_can_be_retrieved() {
         ..
     } = Test::setup().await;
 
-    let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
+    let incoming_op_1 = TestMemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id_1 = incoming_op_1.compute_op_id();
-    let incoming_op_2 = MemoryOp::new(Timestamp::now(), vec![2]);
+    let incoming_op_2 = TestMemoryOp::new(Timestamp::now(), vec![2]);
     let incoming_op_id_2 = incoming_op_2.compute_op_id();
 
     op_store_1
@@ -87,9 +87,9 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
         ..
     } = Test::setup().await;
 
-    let incoming_op_1 = MemoryOp::new(Timestamp::now(), vec![1]);
+    let incoming_op_1 = TestMemoryOp::new(Timestamp::now(), vec![1]);
     let incoming_op_id_1 = incoming_op_1.compute_op_id();
-    let incoming_op_2 = MemoryOp::new(Timestamp::now(), vec![2]);
+    let incoming_op_2 = TestMemoryOp::new(Timestamp::now(), vec![2]);
     let incoming_op_id_2 = incoming_op_2.compute_op_id();
 
     op_store_1
@@ -318,7 +318,7 @@ async fn no_publish_to_unresponsive_url() {
     let (publish, _, _, peer_meta_store) =
         create_publish(builder, transport).await;
 
-    let op = MemoryOp::new(Timestamp::now(), vec![1]);
+    let op = TestMemoryOp::new(Timestamp::now(), vec![1]);
     let op_id = op.compute_op_id();
     // Set unresponsive URL in peer meta store.
     peer_meta_store
