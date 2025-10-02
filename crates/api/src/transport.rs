@@ -248,7 +248,15 @@ impl TxImpHnd {
         match self.space_map.lock().expect("poisoned").get(&space_id) {
             Some(space_handler) => {
                 let space_handler = space_handler.clone();
-                let all_blocked = space_handler.are_all_agents_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
+                let all_blocked = match space_handler
+                    .are_all_agents_at_url_blocked(peer_url)
+                {
+                    Ok(blocked) => blocked,
+                    Err(e) => {
+                        tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "Failed to check whether all agents are blocked. Message will be dropped: {e}");
+                        return Ok(false);
+                    }
+                };
                 if all_blocked {
                     tracing::warn!(?space_id, ?peer_url, ?message_type, ?module_id, "All agents at peer are blocked, message will be dropped.");
                     self.incr_blocked_message_count(peer_url.clone(), space_id);
