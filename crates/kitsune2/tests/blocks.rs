@@ -526,7 +526,9 @@ async fn notify_messages_of_blocked_peers_are_dropped() {
 
     // To double-check, verify additionally that no space message has been
     // handled by Bob.
-    assert!(recv_notify_recv_bob.try_recv().is_err());
+    assert!(recv_notify_recv_bob
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err());
 
     // Now have Alice join the space with a second agent which Bob should then
     // receive via the preflight and consequently let further messages through
@@ -673,7 +675,9 @@ async fn module_messages_of_blocked_peers_are_dropped() {
 
     // To double-check, verify additionally that no module message has been
     // handled by Bob.
-    assert!(recv_module_msg_recv_bob.try_recv().is_err());
+    assert!(recv_module_msg_recv_bob
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err());
 
     // Now have Alice join the space with a second agent which Bob should then
     // receive via the preflight and consequently let further messages through
