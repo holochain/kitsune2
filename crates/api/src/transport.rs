@@ -113,7 +113,8 @@ impl TxImpHnd {
             // Except for preflight, unspecified and disconnect messages we
             // should drop messages if all agents are blocked for the given
             // peer URL and space id. We do not close the connection because
-            // agents in other spaces may not be blocked on the same conductor.
+            // agents in other spaces may not be blocked on the same kitsune
+            // instance.
             if !self.check_message_permitted(
                 &peer,
                 &space_id,
@@ -186,9 +187,12 @@ impl TxImpHnd {
         })
     }
 
-    /// Check whether a message should be dropped due to all agents associated
-    /// with the given peer and space id being blocked and the message not
-    /// being one of the message types that are allowed in any case.
+    /// Check whether a message is permitted for a given peer and space
+    ///
+    /// If all agents associated with the given peer and space id are blocked
+    /// and the message is not of one of the explicitly allowed message types,
+    /// this function will return false and increase the count of blocked
+    /// messages by one.
     pub fn check_message_permitted(
         &self,
         peer_url: &Url,
@@ -221,9 +225,17 @@ impl TxImpHnd {
 
         // If a space id was not provided, we reject the message and return
         // an error, which will cause the connection to be closed.
-        // A missing space id indicates that the remote conductor is not
-        // following the protocol and must have been modified. Therefore none
-        // of the agents on that conductor should be trusted.
+        //
+        // Since both notify and module messages are scoped to a space and
+        // therefore require a space id, a missing space id indicates that
+        // the remote kitsune instance is not following the protocol and must
+        // have been modified. Therefore none of the agents on that kitsune
+        // instance should be trusted.
+        //
+        // NOTE: This logic may need to be modified, if at a later point
+        // a new message type gets introduced that is not scoped to a space
+        // but does need to undergo a (in that case not space-scoped) check
+        // for blocks.
         let space_id = match space_id {
             None => {
                 tracing::warn!(?peer_url, "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.", message_type);
