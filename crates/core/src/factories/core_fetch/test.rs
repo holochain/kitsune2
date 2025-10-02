@@ -142,6 +142,8 @@ mod tests {
         // We need to add an agent info of the sending peer to the receiving
         // peer's peer store so that it won't consider the peer blocked and
         // drop the message.
+        // TODO: Change kitsune to be able to deal with that case without
+        // requiring manual insert, then remove it.
         let url_sender = iter_check!(200, {
             let stats = tx.dump_network_stats().await.unwrap();
             let peer_url = stats.transport_stats.peer_urls.first();
