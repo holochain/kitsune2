@@ -890,13 +890,10 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
         {
-            match space_blocks.get(&TEST_SPACE_ID) {
-                Some(c) => {
-                    if c.outgoing == 1 {
-                        break;
-                    }
+            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
+                if c.outgoing == 1 {
+                    break;
                 }
-                None => (),
             }
         }
     });
@@ -956,13 +953,10 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
         {
-            match space_blocks.get(&TEST_SPACE_ID) {
-                Some(c) => {
-                    if c.outgoing == 1 {
-                        break;
-                    }
+            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
+                if c.outgoing == 1 {
+                    break;
                 }
-                None => (),
             }
         }
     });
@@ -1044,13 +1038,10 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
         {
-            match space_blocks.get(&TEST_SPACE_ID) {
-                Some(c) => {
-                    if c.outgoing == 1 {
-                        break;
-                    }
+            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
+                if c.outgoing == 1 {
+                    break;
                 }
-                None => (),
             }
         }
     });
@@ -1111,13 +1102,10 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
         {
-            match space_blocks.get(&TEST_SPACE_ID) {
-                Some(c) => {
-                    if c.outgoing == 1 {
-                        break;
-                    }
+            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
+                if c.outgoing == 1 {
+                    break;
                 }
-                None => (),
             }
         }
     });
