@@ -14,13 +14,13 @@ use kitsune2_transport_tx5::harness::Tx5TransportTestHarness;
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OnceCell;
 
-/// A default mock space handler that just drops received messages.
+/// A default test space handler that just drops received messages.
 #[derive(Debug)]
-struct MockSpaceHandler {
+struct TestSpaceHandler {
     recv_notify_sender: Sender<bytes::Bytes>,
 }
 
-impl MockSpaceHandler {
+impl TestSpaceHandler {
     fn create() -> (Self, Receiver<bytes::Bytes>) {
         let (send, recv) = std::sync::mpsc::channel();
         (
@@ -32,7 +32,7 @@ impl MockSpaceHandler {
     }
 }
 
-impl SpaceHandler for MockSpaceHandler {
+impl SpaceHandler for TestSpaceHandler {
     fn recv_notify(
         &self,
         _from_peer: Url,
@@ -44,16 +44,16 @@ impl SpaceHandler for MockSpaceHandler {
     }
 }
 
-/// A mock TxHandler
+/// A test TxHandler
 #[derive(Debug)]
-pub struct MockTxHandler {
+pub struct TestTxHandler {
     pub peer_url: std::sync::Mutex<Url>,
     space: Arc<OnceCell<DynSpace>>,
     recv_module_msg_sender: Sender<bytes::Bytes>,
     peer_disconnect_sender: Sender<Url>,
 }
 
-impl MockTxHandler {
+impl TestTxHandler {
     fn create(
         peer_url: Mutex<Url>,
         space: Arc<OnceCell<DynSpace>>,
@@ -76,7 +76,7 @@ impl MockTxHandler {
     }
 }
 
-impl TxModuleHandler for MockTxHandler {
+impl TxModuleHandler for TestTxHandler {
     fn recv_module_msg(
         &self,
         _peer: Url,
@@ -89,7 +89,7 @@ impl TxModuleHandler for MockTxHandler {
     }
 }
 
-impl TxBaseHandler for MockTxHandler {
+impl TxBaseHandler for TestTxHandler {
     fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         *(self.peer_url.lock().unwrap()) = this_url;
         Box::pin(async {})
@@ -99,7 +99,7 @@ impl TxBaseHandler for MockTxHandler {
         self.peer_disconnect_sender.send(peer).unwrap();
     }
 }
-impl TxHandler for MockTxHandler {
+impl TxHandler for TestTxHandler {
     fn preflight_gather_outgoing(
         &self,
         _peer_url: Url,
@@ -162,7 +162,7 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
     let space_once_cell = Arc::new(OnceCell::new());
 
     let (tx_handler, recv_module_msg_recv, peer_disconnect_recv) =
-        MockTxHandler::create(
+        TestTxHandler::create(
             Mutex::new(
                 // Placeholder URL which will be overwritten when the transport is created.
                 Url::from_str("ws://127.0.0.1:80").unwrap(),
@@ -187,7 +187,7 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
         }
     });
 
-    let (space_handler, recv_notify_recv) = MockSpaceHandler::create();
+    let (space_handler, recv_notify_recv) = TestSpaceHandler::create();
 
     let report = builder
         .report
