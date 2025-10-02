@@ -131,6 +131,14 @@ mod tests {
         struct MockTxHandler;
         impl TxBaseHandler for MockTxHandler {}
         impl TxHandler for MockTxHandler {}
+        impl TxSpaceHandler for MockTxHandler {
+            fn are_all_agents_at_url_blocked(
+                &self,
+                _peer_url: &Url,
+            ) -> K2Result<bool> {
+                Ok(false)
+            }
+        }
 
         let builder = Arc::new(crate::default_test_builder());
         let tx: Arc<dyn Transport> = builder
@@ -138,6 +146,12 @@ mod tests {
             .create(builder.clone(), Arc::new(MockTxHandler))
             .await
             .unwrap();
+
+        tx.register_space_handler(
+            kitsune2_test_utils::space::TEST_SPACE_ID,
+            Arc::new(MockTxHandler),
+        )
+        .unwrap();
 
         // We need to add an agent info of the sending peer to the receiving
         // peer's peer store so that it won't consider the peer blocked and
