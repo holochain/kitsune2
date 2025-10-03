@@ -32,13 +32,9 @@
 //!     - In case the op to request has been received in the meantime and no longer needs to be
 //!       fetched, it will have been removed from the set. Do nothing.
 //!     - Otherwise proceed.
-//! - Check if the peer is on a back off list of unresponsive peers. If so, do not send a request.
+//! - Check if the peer is unresponsive. If so, do not send a request.
 //! - Dispatch request for op id from peer to transport module.
-//! - If the peer is unresponsive, put them on back off list. If maximum back off has been reached,
-//!   remove this and all other requests to the peer from the set.
-//! - Re-insert requested ([OpId], [Url]) into the queue. It will be removed
-//!   from the set of requests if it is received in the meantime, and thus prevent redundant
-//!   fetch requests.
+//! - If the request fails, remove this and all other requests to the peer from the set.
 //!
 //! #### Incoming requests
 //!
