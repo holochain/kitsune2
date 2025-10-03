@@ -192,11 +192,9 @@ impl Fetch for CoreFetch {
                         "could not insert fetch request into fetch queue"
                     );
                     // Remove request from state.
-                    self.state
-                        .lock()
-                        .unwrap()
-                        .requests
-                        .remove(&(op_id, source.clone()));
+                    let mut lock = self.state.lock().unwrap();
+                    lock.requests.remove(&(op_id, source.clone()));
+                    Self::notify_listeners_if_queue_drained(lock);
                 }
             }
 
