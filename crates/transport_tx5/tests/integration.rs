@@ -64,7 +64,7 @@ async fn offline_peer_marked_unresponsive() {
     );
 
     let url2: Url = url2.lock().unwrap().clone();
-    println!("got url2: {}", url2);
+    println!("got url2: {url2}");
 
     // check that send works initially while peer 2 is still online
     transport1

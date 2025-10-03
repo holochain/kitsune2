@@ -124,8 +124,7 @@ impl K2Gossip {
                 Ok((state, accepted))
             }
             None => Err(K2GossipError::peer_behavior(format!(
-                "Unsolicited DiscSectorsDiff message from peer: {:?}",
-                from_peer
+                "Unsolicited DiscSectorsDiff message from peer: {from_peer:?}"
             ))),
         }
     }
@@ -193,8 +192,7 @@ impl GossipRoundState {
                 Ok(out)
             }
             stage => Err(K2GossipError::peer_behavior(format!(
-                "Unexpected round state for accept: Accepted != {:?}",
-                stage
+                "Unexpected round state for accept: Accepted != {stage:?}"
             ))),
         }
     }

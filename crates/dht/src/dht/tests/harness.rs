@@ -215,7 +215,7 @@ impl DhtSyncHarness {
             | DhtSnapshotNextAction::CannotCompare => {
                 // A real implementation would treat these as errors because they are logic
                 // errors
-                panic!("Unexpected outcome: {:?}", outcome);
+                panic!("Unexpected outcome: {outcome:?}");
             }
         };
 
@@ -251,7 +251,7 @@ impl DhtSyncHarness {
             | DhtSnapshotNextAction::CannotCompare => {
                 // A real implementation would treat these as errors because they are logic
                 // errors
-                panic!("Unexpected outcome: {:?}", outcome);
+                panic!("Unexpected outcome: {outcome:?}");
             }
         };
 
@@ -285,7 +285,7 @@ impl DhtSyncHarness {
             | DhtSnapshotNextAction::CannotCompare => {
                 // A real implementation would treat these as errors because they are logic
                 // errors
-                panic!("Unexpected outcome: {:?}", outcome);
+                panic!("Unexpected outcome: {outcome:?}");
             }
         };
 
@@ -344,7 +344,7 @@ impl DhtSyncHarness {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::HashList(_)
             | DhtSnapshotNextAction::NewSnapshot(_) => {
-                panic!("Unexpected outcome: {:?}", outcome);
+                panic!("Unexpected outcome: {outcome:?}");
             }
         };
 
@@ -376,7 +376,7 @@ impl DhtSyncHarness {
             DhtSnapshotNextAction::CannotCompare
             | DhtSnapshotNextAction::NewSnapshotAndHashList(_, _)
             | DhtSnapshotNextAction::NewSnapshot(_) => {
-                panic!("Unexpected outcome: {:?}", outcome);
+                panic!("Unexpected outcome: {outcome:?}");
             }
         };
 

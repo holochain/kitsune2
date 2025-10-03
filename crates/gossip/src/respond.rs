@@ -135,12 +135,9 @@ impl K2Gossip {
         let mut accepted_states = self.accepted_round_states.write().await;
         let accepted_entry = accepted_states.entry(from_peer.clone());
         match accepted_entry {
-            std::collections::hash_map::Entry::Occupied(_) => {
-                Err(K2Error::other(format!(
-                    "peer {:?} already accepted",
-                    from_peer
-                )))
-            }
+            std::collections::hash_map::Entry::Occupied(_) => Err(
+                K2Error::other(format!("peer {from_peer:?} already accepted")),
+            ),
             std::collections::hash_map::Entry::Vacant(entry) => {
                 let state =
                     Arc::new(Mutex::new(GossipRoundState::new_accepted(

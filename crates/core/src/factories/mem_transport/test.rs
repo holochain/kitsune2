@@ -244,8 +244,7 @@ impl TrackHnd {
             .iter()
             .find(|t| matches!(t, Track::AreBlocked(url) if peer_url == url))
             .ok_or(K2Error::other(format!(
-                "matching AreBlocked not found {peer_url}, out of {:#?}",
-                track
+                "matching AreBlocked not found {peer_url}, out of {track:#?}"
             )))?;
         Ok(())
     }

@@ -263,7 +263,7 @@ mod tests {
                 );
             }
             other => {
-                panic!("Unexpected response: {:?}", other);
+                panic!("Unexpected response: {other:?}");
             }
         };
 
@@ -300,7 +300,7 @@ mod tests {
                 );
             }
             other => {
-                panic!("Unexpected round stage: {:?}", other);
+                panic!("Unexpected round stage: {other:?}");
             }
         }
     }
@@ -312,7 +312,7 @@ mod tests {
         // Fill up our accepted round states.
         for i in 0..harness.gossip.config.max_concurrent_accepted_rounds {
             let url =
-                Url::from_str(format!("ws://test-host:80/init-{}", i)).unwrap();
+                Url::from_str(format!("ws://test-host:80/init-{i}")).unwrap();
             harness.gossip.accepted_round_states.write().await.insert(
                 url.clone(),
                 Arc::new(Mutex::new(GossipRoundState::new_accepted(
@@ -492,7 +492,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         let initiate = match response {
             GossipMessage::Initiate(initiate) => initiate,
-            other => panic!("Expected initiate message, got: {:?}", other),
+            other => panic!("Expected initiate message, got: {other:?}"),
         };
 
         assert!(initiate.tie_breaker > 0, "Expected tie breaker to be set");
@@ -552,7 +552,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         let initiate = match response {
             GossipMessage::Initiate(initiate) => initiate,
-            other => panic!("Expected initiate message, got: {:?}", other),
+            other => panic!("Expected initiate message, got: {other:?}"),
         };
 
         // Send an initiate message with a higher tie-breaker
@@ -579,7 +579,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         match response {
             GossipMessage::Accept(accept) => accept,
-            other => panic!("Expected accept message, got: {:?}", other),
+            other => panic!("Expected accept message, got: {other:?}"),
         };
 
         // Check that we removed our initiated state
@@ -610,7 +610,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         let initiate = match response {
             GossipMessage::Initiate(initiate) => initiate,
-            other => panic!("Expected initiate message, got: {:?}", other),
+            other => panic!("Expected initiate message, got: {other:?}"),
         };
 
         assert!(initiate.tie_breaker > 0, "Expected tie breaker to be set");
@@ -641,7 +641,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         match response {
             GossipMessage::Accept(accept) => accept,
-            other => panic!("Expected accept message, got: {:?}", other),
+            other => panic!("Expected accept message, got: {other:?}"),
         };
 
         // Check that we are now in an accepted state.
@@ -770,7 +770,7 @@ mod tests {
         let accept = accept.unwrap();
         let accept = match accept {
             GossipMessage::Accept(accept) => accept,
-            _ => panic!("Expected an Accept message, got: {:?}", accept),
+            _ => panic!("Expected an Accept message, got: {accept:?}"),
         };
         let sent_ops = decode_ids::<OpId>(accept.new_ops);
         assert_eq!(

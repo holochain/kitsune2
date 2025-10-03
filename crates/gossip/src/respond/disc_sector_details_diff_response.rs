@@ -116,8 +116,7 @@ impl K2Gossip {
                 Ok((state, disc_sector_details))
             }
             None => Err(K2GossipError::peer_behavior(format!(
-                "Unsolicited DiscSectorDetailsDiffResponse message from peer: {:?}",
-                from_peer
+                "Unsolicited DiscSectorDetailsDiffResponse message from peer: {from_peer:?}"
             ))),
         }
     }
@@ -166,8 +165,7 @@ impl GossipRoundState {
                 Ok(state)
             }
             stage => Err(K2GossipError::peer_behavior(format!(
-                "Unexpected round state for disc sector details diff response: DiscSectorDetailsDiff != {:?}",
-                stage
+                "Unexpected round state for disc sector details diff response: DiscSectorDetailsDiff != {stage:?}"
             ))),
         }
     }
@@ -321,7 +319,7 @@ mod tests {
         let diff_details = diff_details.unwrap();
         let diff_details = match diff_details {
             GossipMessage::Hashes(diff_details) => diff_details,
-            _ => panic!("Expected a Hashes message, got: {:?}", diff_details),
+            _ => panic!("Expected a Hashes message, got: {diff_details:?}"),
         };
         let sent_ops = decode_ids::<OpId>(diff_details.missing_ids);
         assert_eq!(

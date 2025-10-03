@@ -143,8 +143,7 @@ mod tests {
         let error = response.unwrap_err();
         assert!(
             error.to_string().contains("Busy message from wrong peer"),
-            "Expected error for busy message from wrong peer, got: {}",
-            error
+            "Expected error for busy message from wrong peer, got: {error}"
         );
 
         let busy = harness
@@ -184,8 +183,7 @@ mod tests {
             error
                 .to_string()
                 .contains(" Busy message with wrong session id"),
-            "Expected error for busy message with wrong session id, got: {}",
-            error
+            "Expected error for busy message with wrong session id, got: {error}"
         );
 
         let busy = harness
@@ -218,8 +216,7 @@ mod tests {
         let error = response.unwrap_err();
         assert!(
             matches!(error, K2GossipError::PeerBehaviorError { .. }),
-            "Expected PeerBehaviorError for unsolicited Busy message, got: {}",
-            error
+            "Expected PeerBehaviorError for unsolicited Busy message, got: {error}"
         );
     }
 }

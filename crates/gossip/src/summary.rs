@@ -65,7 +65,7 @@ impl K2Gossip {
                                 || K2Error::other("empty arc set"),
                             )? {
                                 DhtArc::Arc(start, end) => {
-                                    format!("{}..{}", start, end)
+                                    format!("{start}..{end}")
                                 }
                                 DhtArc::Empty => {
                                     return Err(K2Error::other("empty arc"))
