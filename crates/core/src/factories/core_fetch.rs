@@ -169,25 +169,34 @@ impl Fetch for CoreFetch {
             let new_op_ids =
                 self.op_store.filter_out_existing_ops(op_ids).await?;
 
-            // Add requests to set.
-            {
-                let requests = &mut self.state.lock().unwrap().requests;
-                requests.extend(
-                    new_op_ids
-                        .clone()
-                        .into_iter()
-                        .map(|op_id| (op_id.clone(), source.clone())),
-                );
-            }
+            // Add requests to state.
+            // These need to be added up front, before sending them to the outgoing
+            // request queue, otherwise the queue processes them faster than they're
+            // being added to state and the request logic fails.
+            self.state.lock().unwrap().requests.extend(
+                new_op_ids
+                    .clone()
+                    .into_iter()
+                    .map(|op_id| (op_id.clone(), source.clone())),
+            );
 
             // Insert requests into fetch queue.
             for op_id in new_op_ids {
-                if let Err(err) =
-                    self.outgoing_request_tx.send((op_id, source.clone())).await
+                if let Err(err) = self
+                    .outgoing_request_tx
+                    .send((op_id.clone(), source.clone()))
+                    .await
                 {
                     tracing::warn!(
-                        "could not insert fetch request into fetch queue: {err}"
+                        ?err,
+                        "could not insert fetch request into fetch queue"
                     );
+                    // Remove request from state.
+                    self.state
+                        .lock()
+                        .unwrap()
+                        .requests
+                        .remove(&(op_id, source.clone()));
                 }
             }
 
