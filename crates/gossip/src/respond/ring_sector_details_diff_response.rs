@@ -174,8 +174,7 @@ impl GossipRoundState {
                 Ok(state)
             }
             stage => Err(K2GossipError::peer_behavior(format!(
-                "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {:?}",
-                stage
+                "Unexpected round state for ring sector details diff response: RingSectorDetailsDiff != {stage:?}"
             ))),
         }
     }
@@ -325,7 +324,7 @@ mod tests {
         let hashes = hashes.unwrap();
         let hashes = match hashes {
             GossipMessage::Hashes(diff_details) => diff_details,
-            _ => panic!("Expected a Hashes message, got: {:?}", hashes),
+            _ => panic!("Expected a Hashes message, got: {hashes:?}"),
         };
         let sent_ops = decode_ids::<OpId>(hashes.missing_ids);
         assert_eq!(

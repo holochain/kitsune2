@@ -132,9 +132,9 @@ async fn peer_connect_disconnect() {
     let t2 = test.build_transport(h2.clone()).await;
 
     let u1: Url = u1.lock().unwrap().clone();
-    println!("got u1: {}", u1);
+    println!("got u1: {u1}");
     let u2: Url = u2.lock().unwrap().clone();
-    println!("got u2: {}", u2);
+    println!("got u2: {u2}");
 
     // trigger a connection establish
     t1.send_space_notify(
@@ -208,7 +208,7 @@ async fn message_send_recv() {
     t2.register_module_handler(TEST_SPACE_ID, "mod".into(), h2.clone());
 
     let u2: Url = u2.lock().unwrap().clone();
-    println!("got u2: {}", u2);
+    println!("got u2: {u2}");
 
     // checks that send works
     t1.send_space_notify(
@@ -260,7 +260,7 @@ async fn message_send_recv_auth() {
     t2.register_module_handler(TEST_SPACE_ID, "mod".into(), h2.clone());
 
     let u2: Url = u2.lock().unwrap().clone();
-    println!("got u2: {}", u2);
+    println!("got u2: {u2}");
 
     // checks that send works
     t1.send_space_notify(
@@ -322,7 +322,7 @@ async fn preflight_send_recv() {
     let _t2 = test.build_transport(h2.clone()).await;
 
     let u2: Url = u2.lock().unwrap().clone();
-    println!("got u2: {}", u2);
+    println!("got u2: {u2}");
 
     // establish a connection
     t1.send_space_notify(

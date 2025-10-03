@@ -667,7 +667,7 @@ fn default_storage_rollover() {
 
     let addr = s.listen_addrs()[0];
     let get = move || {
-        let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+        let addr = format!("http://{addr:?}/bootstrap/{S1}");
         let res = ureq::get(&addr)
             .call()
             .unwrap()
@@ -740,7 +740,7 @@ fn multi_thread_stress() {
 
         all_r.push(std::thread::spawn(move || {
             while !w_done.load(std::sync::atomic::Ordering::SeqCst) {
-                let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+                let addr = format!("http://{addr:?}/bootstrap/{S1}");
                 let res = ureq::get(&addr)
                     .call()
                     .unwrap()
@@ -794,7 +794,7 @@ fn multi_thread_stress() {
         j.join().unwrap();
     }
 
-    let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+    let addr = format!("http://{addr:?}/bootstrap/{S1}");
     let res = ureq::get(&addr)
         .call()
         .unwrap()
@@ -823,7 +823,7 @@ fn expiration_prune() {
     })
     .unwrap();
     let addr = s.listen_addrs()[0];
-    let addr = format!("http://{:?}/bootstrap/{}", addr, S1);
+    let addr = format!("http://{addr:?}/bootstrap/{S1}");
 
     // -- the entry that WILL get pruned -- //
 
@@ -947,7 +947,7 @@ fn use_bootstrap_and_sbd() {
     .call()
     .unwrap();
 
-    let bootstrap_url = format!("http://{:?}/bootstrap/{}", addr, S1);
+    let bootstrap_url = format!("http://{addr:?}/bootstrap/{S1}");
     let res = ureq::get(&bootstrap_url)
         .call()
         .unwrap()

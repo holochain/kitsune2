@@ -46,8 +46,7 @@ impl K2Gossip {
             let accepted_states = self.accepted_round_states.read().await;
             if !accepted_states.contains_key(&from_peer) {
                 return Err(K2GossipError::peer_behavior(format!(
-                    "Unsolicited NoDiff message from peer: {:?}",
-                    from_peer
+                    "Unsolicited NoDiff message from peer: {from_peer:?}"
                 )));
             }
 
@@ -108,8 +107,7 @@ impl GossipRoundState {
             }
             stage => {
                 return Err(K2GossipError::peer_behavior(format!(
-                    "Unexpected round state for accept: Accepted != {:?}",
-                    stage
+                    "Unexpected round state for accept: Accepted != {stage:?}"
                 )));
             }
         }

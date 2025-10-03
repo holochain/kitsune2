@@ -281,9 +281,7 @@ mod tests {
             assert_eq!(
                 *dist,
                 arc.dist(*loc),
-                "While checking the distance from {} to arc {:?}",
-                loc,
-                arc
+                "While checking the distance from {loc} to arc {arc:?}"
             );
         }
     }
@@ -325,9 +323,7 @@ mod tests {
             assert_eq!(
                 *do_overlap,
                 a.overlaps(b),
-                "While checking that {:?} overlaps {:?}",
-                a,
-                b
+                "While checking that {a:?} overlaps {b:?}"
             );
         }
     }

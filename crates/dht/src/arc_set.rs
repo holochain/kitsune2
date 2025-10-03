@@ -54,8 +54,7 @@ impl ArcSet {
                         && !(end == u32::MAX && start == 0)
                     {
                         return Err(K2Error::other(format!(
-                            "Invalid arc, expected end at {} but arc specifies {}",
-                            start, end
+                            "Invalid arc, expected end at {start} but arc specifies {end}"
                         )));
                     }
                 }

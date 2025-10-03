@@ -179,8 +179,7 @@ impl GossipRoundState {
                 Ok(stage)
             }
             stage => Err(K2GossipError::peer_behavior(format!(
-                "Unexpected round state for disc sector details diff: DiscSectorsDiff != {:?}",
-                stage
+                "Unexpected round state for disc sector details diff: DiscSectorsDiff != {stage:?}"
             ))),
         }
     }
@@ -325,8 +324,7 @@ mod tests {
                 diff_details
             }
             _ => panic!(
-                "Expected a DiscSectorDetailsDiffResponse message, got: {:?}",
-                diff_details
+                "Expected a DiscSectorDetailsDiffResponse message, got: {diff_details:?}"
             ),
         };
         let sent_ops = decode_ids::<OpId>(diff_details.missing_ids);

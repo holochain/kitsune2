@@ -141,8 +141,7 @@ impl K2Gossip {
                 Ok((state, out))
             }
             None => Err(K2GossipError::peer_behavior(format!(
-                "Unsolicited RingSectorDetailsDiff message from peer: {:?}",
-                from_peer
+                "Unsolicited RingSectorDetailsDiff message from peer: {from_peer:?}"
             ))),
         }
     }
@@ -215,8 +214,7 @@ impl GossipRoundState {
                 Ok(stage)
             }
             stage => Err(K2GossipError::peer_behavior(format!(
-                "Unexpected round state for ring sector details diff: Accepted != {:?}",
-                stage
+                "Unexpected round state for ring sector details diff: Accepted != {stage:?}"
             ))),
         }
     }
@@ -363,8 +361,7 @@ mod tests {
                 diff_details
             }
             _ => panic!(
-                "Expected a RingSectorDetailsDiffResponse message, got: {:?}",
-                diff_response
+                "Expected a RingSectorDetailsDiffResponse message, got: {diff_response:?}"
             ),
         };
         let sent_ops = decode_ids::<OpId>(diff_response.missing_ids);

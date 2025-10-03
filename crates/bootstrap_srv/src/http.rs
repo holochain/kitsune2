@@ -42,10 +42,7 @@ pub struct HttpReceiver(HRecv);
 
 impl HttpReceiver {
     pub fn recv(&self) -> Option<(HttpRequest, HttpRespondCb)> {
-        match self.0.recv_blocking() {
-            Ok(r) => Some(r),
-            Err(_) => None,
-        }
+        self.0.recv_blocking().ok()
     }
 }
 
@@ -399,7 +396,7 @@ async fn handle_boot_get(
 
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
-        Err(err) => return err,
+        Err(err) => return *err,
     };
     handle_dispatch(&state.h_send, HttpRequest::BootstrapGet { space }).await
 }
@@ -426,11 +423,11 @@ async fn handle_boot_put(
 
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
-        Err(err) => return err,
+        Err(err) => return *err,
     };
     let agent = match b64_to_bytes(&agent) {
         Ok(agent) => agent,
-        Err(err) => return err,
+        Err(err) => return *err,
     };
     handle_dispatch(
         &state.h_send,
@@ -441,17 +438,19 @@ async fn handle_boot_put(
 
 fn b64_to_bytes(
     s: &str,
-) -> Result<bytes::Bytes, response::Response<body::Body>> {
+) -> Result<bytes::Bytes, Box<response::Response<body::Body>>> {
     use base64::prelude::*;
     Ok(bytes::Bytes::copy_from_slice(
         &match BASE64_URL_SAFE_NO_PAD.decode(s) {
             Ok(b) => b,
             Err(err) => {
-                return Err(HttpResponse {
-                    status: 400,
-                    body: err.to_string().into_bytes(),
-                }
-                .respond());
+                return Err(Box::new(
+                    HttpResponse {
+                        status: 400,
+                        body: err.to_string().into_bytes(),
+                    }
+                    .respond(),
+                ));
             }
         },
     ))

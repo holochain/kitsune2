@@ -44,7 +44,7 @@ async fn take_minimal_snapshot() {
             assert_eq!(bytes::Bytes::from(vec![7; 32]), disc_top_hash);
             assert!(!ring_top_hashes.is_empty());
         }
-        s => panic!("Unexpected snapshot type: {:?}", s),
+        s => panic!("Unexpected snapshot type: {s:?}"),
     }
 }
 

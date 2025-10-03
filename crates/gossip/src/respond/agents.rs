@@ -53,13 +53,12 @@ impl GossipRoundState {
         }
 
         match &self.stage {
-            RoundStage::NoDiff { .. } => {
+            RoundStage::NoDiff => {
                 tracing::trace!(?agents.session_id, "NoDiff round state found");
             }
             stage => {
                 return Err(K2GossipError::peer_behavior(format!(
-                    "Unexpected round stage for agents: NoDiff != {:?}",
-                    stage
+                    "Unexpected round stage for agents: NoDiff != {stage:?}"
                 )));
             }
         }
@@ -125,7 +124,7 @@ mod tests {
             )
             .await;
 
-        assert!(response.is_ok(), "Response is: {:?}", response);
+        assert!(response.is_ok(), "Response is: {response:?}");
 
         // Check that the agents were added to the peer store.
         let all_agents = harness.gossip.peer_store.get_all().await.unwrap();
@@ -181,8 +180,7 @@ mod tests {
 
         assert!(
             error.to_string().contains("Agents message from wrong peer"),
-            "Expected error for agents message from wrong peer, got: {:?}",
-            error
+            "Expected error for agents message from wrong peer, got: {error:?}"
         );
 
         // Should not have added any agents to the peer store,
@@ -232,8 +230,7 @@ mod tests {
 
         assert!(
             error.to_string().contains("Session id mismatch"),
-            "Expected error for mismatched session id, got: {:?}",
-            error
+            "Expected error for mismatched session id, got: {error:?}"
         );
 
         // Should not have added any agents to the peer store,
@@ -277,8 +274,7 @@ mod tests {
             error.to_string().contains(
                 "Unexpected round stage for agents: NoDiff != Initiated"
             ),
-            "Expected error for wrong round stage, got: {:?}",
-            error
+            "Expected error for wrong round stage, got: {error:?}"
         );
 
         // Should not have added any agents to the peer store,
@@ -314,8 +310,7 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, K2GossipError::PeerBehaviorError{ .. }),
-            "Expected PeerBehavior error for unsolicited Agents message, got: {:?}",
-            error
+            "Expected PeerBehavior error for unsolicited Agents message, got: {error:?}"
         );
 
         // Should not have added any agents to the peer store,

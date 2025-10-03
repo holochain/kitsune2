@@ -120,7 +120,7 @@ async fn initiate_respect_size_limit_for_new_ops_and_disc() {
     let no_diff = no_diff.unwrap();
     let no_diff = match no_diff {
         GossipMessage::NoDiff(accept) => accept,
-        _ => panic!("Expected a NoDiff message, got: {:?}", no_diff),
+        _ => panic!("Expected a NoDiff message, got: {no_diff:?}"),
     };
     let sent_ops = decode_ids::<OpId>(no_diff.accept_response.unwrap().new_ops);
     assert_eq!(
@@ -235,8 +235,7 @@ async fn initiate_respect_size_limit_for_new_ops_and_disc() {
             diff_details
         }
         _ => panic!(
-            "Expected a DiscSectorDetailsDiffResponse message, got: {:?}",
-            diff_details
+            "Expected a DiscSectorDetailsDiffResponse message, got: {diff_details:?}"
         ),
     };
     let sent_ops = decode_ids::<OpId>(diff_details.missing_ids);
@@ -334,7 +333,7 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
     let accept = accept.unwrap();
     let accept = match accept {
         GossipMessage::Accept(accept) => accept,
-        _ => panic!("Expected an Accept message, got: {:?}", accept),
+        _ => panic!("Expected an Accept message, got: {accept:?}"),
     };
     let sent_ops = decode_ids::<OpId>(accept.new_ops);
     assert_eq!(
@@ -471,7 +470,7 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
     let diff_details = diff_details.unwrap();
     let diff_details = match diff_details {
         GossipMessage::Hashes(diff_details) => diff_details,
-        _ => panic!("Expected a Hashes message, got: {:?}", diff_details),
+        _ => panic!("Expected a Hashes message, got: {diff_details:?}"),
     };
     let sent_ops = decode_ids::<OpId>(diff_details.missing_ids);
     assert_eq!(

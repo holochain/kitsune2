@@ -303,8 +303,7 @@ impl GossipRoundState {
                 Ok(stage)
             }
             stage => Err(K2GossipError::peer_behavior(format!(
-                "Unexpected round state for accept: Initiated != {:?}",
-                stage
+                "Unexpected round state for accept: Initiated != {stage:?}"
             ))),
         }
     }
@@ -430,7 +429,7 @@ mod tests {
         let no_diff = no_diff.unwrap();
         let no_diff = match no_diff {
             GossipMessage::NoDiff(accept) => accept,
-            _ => panic!("Expected a NoDiff message, got: {:?}", no_diff),
+            _ => panic!("Expected a NoDiff message, got: {no_diff:?}"),
         };
         let sent_ops =
             decode_ids::<OpId>(no_diff.accept_response.unwrap().new_ops);

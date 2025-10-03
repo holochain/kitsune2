@@ -424,10 +424,7 @@ impl TxModuleHandler for K2Gossip {
         }
 
         if module != MOD_NAME {
-            return Err(K2Error::other(format!(
-                "wrong module name: {}",
-                module
-            )));
+            return Err(K2Error::other(format!("wrong module name: {module}")));
         }
 
         let msg = deserialize_gossip_message(data)?;
@@ -865,7 +862,7 @@ mod test {
             let junk_harness = factory.new_instance().await;
             let junk_agent = junk_harness.join_local_agent(DhtArc::FULL).await;
 
-            println!("Created a junk agent: {:#?}", junk_agent);
+            println!("Created a junk agent: {junk_agent:#?}");
 
             junk_agents.push(junk_agent);
 

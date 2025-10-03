@@ -31,14 +31,14 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 /// - `report` - The default report module is [factories::CoreReportFactory].
 /// - `transport` - The default transport is [Tx5TransportFactory].
 /// - `op_store` - The default op store is [MemOpStoreFactory].
-///                Note: you will likely want to implement your own op store.
+///   Note: you will likely want to implement your own op store.
 /// - `peer_meta_store` - The default peer meta store is [factories::MemPeerMetaStoreFactory].
-///                       Note: you will likely want to implement your own peer meta store.
+///   Note: you will likely want to implement your own peer meta store.
 /// - `gossip` - The default gossip module is [K2GossipFactory].
 /// - `local_agent_store` - The default local agent store is [factories::CoreLocalAgentStoreFactory].
 /// - `publish` - The default publish module is [factories::CorePublishFactory].
 /// - `blocks` - The default blocks module is [factories::MemBlocksFactory].
-///              Note: you will likely want to implement your own [`Blocks`] module.
+///   Note: you will likely want to implement your own [`Blocks`] module.
 pub fn default_builder() -> Builder {
     Builder {
         config: Config::default(),

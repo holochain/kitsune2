@@ -159,8 +159,7 @@ impl TransportFactory for Tx5TransportFactory {
 
         if !uses_tls && !config.tx5_transport.signal_allow_plain_text {
             return Err(K2Error::other(format!(
-                "disallowed plaintext signal url, either specify wss or set signal_allow_plain_text to true: {}",
-                sig,
+                "disallowed plaintext signal url, either specify wss or set signal_allow_plain_text to true: {sig}",
             )));
         }
 

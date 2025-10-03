@@ -233,8 +233,7 @@ impl K2PeerMetaStore {
                 serde_json::from_slice::<T>(&v).map_err(|e| {
                     K2Error::other_src(
                         format!(
-                            "failed to deserialize peer meta value for {}",
-                            name
+                            "failed to deserialize peer meta value for {name}"
                         ),
                         e,
                     )

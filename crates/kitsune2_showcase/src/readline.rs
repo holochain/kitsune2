@@ -184,11 +184,11 @@ impl rustyline::highlight::Highlighter for Helper {
         prompt: &'p str,
         _default: bool,
     ) -> Cow<'b, str> {
-        Cow::Owned(format!("\x1b[1;36m{}\x1b[0m", prompt))
+        Cow::Owned(format!("\x1b[1;36m{prompt}\x1b[0m"))
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        Cow::Owned(format!("\x1b[1;90m{}\x1b[0m", hint))
+        Cow::Owned(format!("\x1b[1;90m{hint}\x1b[0m"))
     }
 }
 

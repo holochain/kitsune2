@@ -115,7 +115,7 @@ pub fn serialize_gossip_message(value: GossipMessage) -> K2Result<Bytes> {
     }
     .encode(&mut out)
     .map_err(|e| {
-        K2Error::other(format!("Failed to serialize gossip message: {:?}", e))
+        K2Error::other(format!("Failed to serialize gossip message: {e:?}"))
     })?;
 
     Ok(out.freeze())
@@ -128,10 +128,7 @@ fn serialize_inner_gossip_message(
 
     fn encode<T: prost::Message>(msg: T, mut out: BytesMut) -> K2Result<Bytes> {
         msg.encode(&mut out).map_err(|e| {
-            K2Error::other(format!(
-                "Failed to serialize gossip message: {:?}",
-                e
-            ))
+            K2Error::other(format!("Failed to serialize gossip message: {e:?}"))
         })?;
 
         Ok(out.freeze())

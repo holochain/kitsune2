@@ -140,7 +140,7 @@ impl LocalAgent for Ed25519LocalAgent {
 ///
 /// - `verifier` - The default verifier is [Ed25519Verifier].
 /// - `kitsune` - The default top-level kitsune module is
-///               [factories::CoreKitsuneFactory].
+///   [factories::CoreKitsuneFactory].
 /// - `space` - The default space module is [factories::CoreSpaceFactory].
 /// - `peer_store` - The default peer store is [factories::MemPeerStoreFactory].
 /// - `bootstrap` - The default bootstrap is [factories::MemBootstrapFactory].

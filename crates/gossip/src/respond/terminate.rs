@@ -134,7 +134,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         let initiate = match response {
             GossipMessage::Initiate(initiate) => initiate,
-            other => panic!("Expected initiate message, got: {:?}", other),
+            other => panic!("Expected initiate message, got: {other:?}"),
         };
 
         {
@@ -157,7 +157,7 @@ mod tests {
             .await;
 
         // We should accept the terminate but not send a response
-        assert!(response.is_ok(), "Wanted ok response, got: {:?}", response);
+        assert!(response.is_ok(), "Wanted ok response, got: {response:?}");
         assert!(response.unwrap().is_none());
 
         // Check that the peer terminated count was incremented
@@ -194,7 +194,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         match response {
             GossipMessage::Initiate(_) => {}
-            other => panic!("Expected initiate message, got: {:?}", other),
+            other => panic!("Expected initiate message, got: {other:?}"),
         };
 
         // Now simulate receiving a terminate message from some other peer
@@ -213,8 +213,7 @@ mod tests {
         // We should reject the termination
         assert!(
             response.is_err(),
-            "Wanted error response, got: {:?}",
-            response
+            "Wanted error response, got: {response:?}"
         );
         let err = response.unwrap_err();
         assert!(err
@@ -246,7 +245,7 @@ mod tests {
         let response = harness.wait_for_sent_response().await;
         match response {
             GossipMessage::Initiate(_) => {}
-            other => panic!("Expected initiate message, got: {:?}", other),
+            other => panic!("Expected initiate message, got: {other:?}"),
         };
 
         // Now simulate receiving a terminate message with a different session id
@@ -264,15 +263,13 @@ mod tests {
         // We should accept the terminate and send an error response
         assert!(
             response.is_err(),
-            "Wanted error response, got: {:?}",
-            response
+            "Wanted error response, got: {response:?}"
         );
         let err = response.unwrap_err();
         assert!(
             err.to_string()
                 .contains("Unsolicited terminate message from"),
-            "Error is: {:?}",
-            err
+            "Error is: {err:?}"
         );
 
         // Check that the session is no longer in the initiated state
@@ -317,7 +314,7 @@ mod tests {
         let our_accept = harness.wait_for_sent_response().await;
         let our_accept = match our_accept {
             GossipMessage::Accept(accept) => accept,
-            other => panic!("Expected accept message, got: {:?}", other),
+            other => panic!("Expected accept message, got: {other:?}"),
         };
 
         {
@@ -345,7 +342,7 @@ mod tests {
             )
             .await;
 
-        assert!(response.is_ok(), "Wanted ok response, got: {:?}", response);
+        assert!(response.is_ok(), "Wanted ok response, got: {response:?}");
         assert!(response.unwrap().is_none());
 
         // Check that the peer terminated count was incremented
@@ -405,7 +402,7 @@ mod tests {
         let our_accept = harness.wait_for_sent_response().await;
         match our_accept {
             GossipMessage::Accept(_) => {}
-            other => panic!("Expected accept message, got: {:?}", other),
+            other => panic!("Expected accept message, got: {other:?}"),
         };
 
         {
@@ -433,13 +430,12 @@ mod tests {
             )
             .await;
 
-        assert!(response.is_err(), "Wanted ok response, got: {:?}", response);
+        assert!(response.is_err(), "Wanted ok response, got: {response:?}");
         let err = response.unwrap_err();
         assert!(
             err.to_string()
                 .contains("Unsolicited terminate message from"),
-            "Error is: {:?}",
-            err
+            "Error is: {err:?}"
         );
 
         // Check that the session is no longer in the accepted state
