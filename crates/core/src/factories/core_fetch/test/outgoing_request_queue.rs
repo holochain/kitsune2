@@ -7,10 +7,7 @@ use crate::{
 };
 use kitsune2_api::*;
 use kitsune2_test_utils::{
-    enable_tracing,
-    id::{create_op_id_list, random_op_id},
-    iter_check,
-    space::TEST_SPACE_ID,
+    enable_tracing, id::create_op_id_list, iter_check, space::TEST_SPACE_ID,
 };
 use prost::Message;
 use std::{
@@ -107,66 +104,9 @@ fn make_mock_transport(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn outgoing_request_queue() {
-    let config = CoreFetchConfig {
-        re_insert_outgoing_request_delay_ms: 50,
-        ..Default::default()
-    };
-    let TestCase {
-        fetch,
-        requests_sent,
-        _transport,
-        ..
-    } = setup_test(&config).await;
-
-    let op_id = random_op_id();
-    let op_list = vec![op_id.clone()];
-    let peer_url = random_peer_url();
-
-    assert!(requests_sent.lock().unwrap().is_empty());
-
-    // Add 1 op.
-    fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
-
-    // Let the fetch request be sent multiple times. As only 1 op was added to the queue,
-    // this proves that it is being re-added to the queue after sending a request for it.
-    iter_check!(500, {
-        if requests_sent.lock().unwrap().len() >= 2 {
-            break;
-        }
-    });
-
-    // Clear set of ops to fetch to stop sending requests.
-    fetch.state.lock().unwrap().requests.clear();
-
-    let num_requests_sent = requests_sent.lock().unwrap().len();
-
-    // Check that all requests have been made for the 1 op to the agent.
-    assert!(requests_sent
-        .lock()
-        .unwrap()
-        .iter()
-        .all(|request| request == &(op_id.clone(), peer_url.clone())));
-
-    // Give time for more requests to be sent, which shouldn't happen now that the set of
-    // ops to fetch is cleared.
-    tokio::time::sleep(Duration::from_millis(
-        (config.re_insert_outgoing_request_delay_ms * 2) as u64,
-    ))
-    .await;
-
-    // No more requests should have been sent.
-    // Ideally it were possible to check that no more fetch request have been passed back into
-    // the internal channel, but that would require a custom wrapper around the channel.
-    let requests_sent = requests_sent.lock().unwrap().clone();
-    assert_eq!(requests_sent.len(), num_requests_sent);
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn happy_op_fetch_from_multiple_agents() {
     let config = CoreFetchConfig {
         parallel_request_count: 5,
-        ..Default::default()
     };
     let TestCase {
         fetch,
@@ -364,10 +304,7 @@ async fn unresponsive_urls_are_filtered() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn requests_are_dropped_when_peer_url_unresponsive() {
-    let config = CoreFetchConfig {
-        re_insert_outgoing_request_delay_ms: 10,
-        ..Default::default()
-    };
+    let config = CoreFetchConfig::default();
     let TestCase {
         fetch,
         peer_meta_store,
@@ -420,10 +357,7 @@ async fn requests_are_dropped_when_peer_url_unresponsive() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn empty_fetch_queue_notifies_drained() {
-    let config = CoreFetchConfig {
-        re_insert_outgoing_request_delay_ms: 10,
-        ..Default::default()
-    };
+    let config = CoreFetchConfig::default();
     let TestCase {
         fetch, _transport, ..
     } = setup_test(&config).await;
@@ -439,10 +373,7 @@ async fn empty_fetch_queue_notifies_drained() {
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue_notify_on_last_op_fetched() {
     enable_tracing();
-    let config = CoreFetchConfig {
-        re_insert_outgoing_request_delay_ms: 10,
-        ..Default::default()
-    };
+    let config = CoreFetchConfig::default();
     let TestCase {
         fetch, _transport, ..
     } = setup_test(&config).await;
@@ -482,10 +413,7 @@ async fn fetch_queue_notify_on_last_op_fetched() {
 #[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue_notify_when_all_peers_unresponsive() {
     enable_tracing();
-    let config = CoreFetchConfig {
-        re_insert_outgoing_request_delay_ms: 10,
-        ..Default::default()
-    };
+    let config = CoreFetchConfig::default();
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
     let op_store = builder
@@ -547,12 +475,6 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
 
     let (tx, rx) = futures::channel::oneshot::channel();
     fetch.notify_on_drained(tx);
-
-    tokio::time::sleep(Duration::from_millis(5)).await;
-
-    // Successfully fetched ops will clear the requests set.
-    // That should trigger the notification.
-    // fetch.state.lock().unwrap().requests.clear();
 
     tokio::time::timeout(Duration::from_secs(1), rx)
         .await

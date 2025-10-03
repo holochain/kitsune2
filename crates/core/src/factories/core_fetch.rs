@@ -5,7 +5,6 @@ use std::sync::MutexGuard;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
@@ -32,11 +31,6 @@ mod config {
         /// Default: 2.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub parallel_request_count: u8,
-        /// Delay before re-inserting ops to request back into the outgoing request queue.
-        ///
-        /// Default: 30 s.
-        #[cfg_attr(feature = "schema", schemars(default))]
-        pub re_insert_outgoing_request_delay_ms: u32,
     }
 
     impl Default for CoreFetchConfig {
@@ -44,7 +38,6 @@ mod config {
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
-                re_insert_outgoing_request_delay_ms: 30000,
             }
         }
     }
@@ -176,24 +169,32 @@ impl Fetch for CoreFetch {
             let new_op_ids =
                 self.op_store.filter_out_existing_ops(op_ids).await?;
 
-            // Add requests to set.
-            {
-                let requests = &mut self.state.lock().unwrap().requests;
-                requests.extend(
-                    new_op_ids
-                        .clone()
-                        .into_iter()
-                        .map(|op_id| (op_id.clone(), source.clone())),
-                );
-            }
+            // Add requests to state.
+            // These need to be added up front, before sending them to the outgoing
+            // request queue, otherwise the queue processes them faster than they're
+            // being added to state and the request logic fails.
+            self.state.lock().unwrap().requests.extend(
+                new_op_ids
+                    .clone()
+                    .into_iter()
+                    .map(|op_id| (op_id.clone(), source.clone())),
+            );
+
             // Insert requests into fetch queue.
             for op_id in new_op_ids {
-                if let Err(err) =
-                    self.outgoing_request_tx.send((op_id, source.clone())).await
+                if let Err(err) = self
+                    .outgoing_request_tx
+                    .send((op_id.clone(), source.clone()))
+                    .await
                 {
                     tracing::warn!(
-                        "could not insert fetch request into fetch queue: {err}"
+                        ?err,
+                        "could not insert fetch request into fetch queue"
                     );
+                    // Remove request from state.
+                    let mut lock = self.state.lock().unwrap();
+                    lock.requests.remove(&(op_id, source.clone()));
+                    Self::notify_listeners_if_queue_drained(lock);
                 }
             }
 
@@ -256,12 +257,10 @@ impl CoreFetch {
             let request_task =
                 tokio::task::spawn(CoreFetch::outgoing_request_task(
                     state.clone(),
-                    outgoing_request_tx.clone(),
                     outgoing_request_rx.clone(),
                     space_id.clone(),
                     peer_meta_store.clone(),
                     Arc::downgrade(&transport),
-                    config.re_insert_outgoing_request_delay_ms,
                 ));
             tasks.push(request_task);
         }
@@ -308,12 +307,10 @@ impl CoreFetch {
 
     async fn outgoing_request_task(
         state: Arc<Mutex<State>>,
-        outgoing_request_tx: Sender<OutgoingRequest>,
         outgoing_request_rx: Arc<tokio::sync::Mutex<Receiver<OutgoingRequest>>>,
         space_id: SpaceId,
         peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
-        re_insert_outgoing_request_delay: u32,
     ) {
         while let Some((op_id, peer_url)) =
             outgoing_request_rx.lock().await.recv().await
@@ -348,8 +345,7 @@ impl CoreFetch {
             // Do nothing if op id is no longer in the set of requests to send.
             //
             // If the peer URL is unresponsive, the current request will have been removed
-            // from state and no request will be sent and the request
-            // will not be re-inserted into the queue.
+            // from state and no request will be sent.
             {
                 let lock = state.lock().expect("poisoned");
                 if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
@@ -383,45 +379,13 @@ impl CoreFetch {
                     ?peer_url,
                     "could not send fetch request: {err}."
                 );
+                // Remove all requests to that peer.
                 state
                     .lock()
                     .expect("poisoned")
                     .requests
                     .retain(|(_, a)| *a != peer_url);
             }
-
-            // Re-insert the fetch request into the queue after a delay.
-            let outgoing_request_tx = outgoing_request_tx.clone();
-
-            tokio::task::spawn({
-                let state = state.clone();
-                async move {
-                    tokio::time::sleep(Duration::from_millis(
-                        re_insert_outgoing_request_delay as u64,
-                    ))
-                    .await;
-                    let mut lock = state.lock().expect("poisoned");
-                    // Only re-insert the request if it is still in the state, meaning that it
-                    // has not been removed from state because the requested op has come in or
-                    // the peer URL has been set as unresponsive.
-                    if lock
-                        .requests
-                        .contains(&(op_id.clone(), peer_url.clone()))
-                    {
-                        if let Err(err) = outgoing_request_tx
-                            .try_send((op_id.clone(), peer_url.clone()))
-                        {
-                            tracing::warn!(
-                                "could not re-insert fetch request for op {op_id} to peer {peer_url} into queue: {err}"
-                            );
-                            // Remove request from set to prevent build-up of state.
-                            lock.requests.remove(&(op_id, peer_url));
-
-                            Self::notify_listeners_if_queue_drained(lock);
-                        }
-                    }
-                }
-            });
         }
     }
 
