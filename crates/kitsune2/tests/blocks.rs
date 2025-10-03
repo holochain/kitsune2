@@ -8,6 +8,7 @@ use kitsune2_api::{
     K2Result, SpaceHandler, TxBaseHandler, TxHandler, TxModuleHandler, Url,
 };
 use kitsune2_core::{Ed25519LocalAgent, Ed25519Verifier};
+use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 use kitsune2_transport_tx5::harness::Tx5TransportTestHarness;
@@ -234,6 +235,8 @@ const TEST_SPACE_ID_2: SpaceId =
 pub struct TestPeerLight {
     space1: DynSpace,
     space2: DynSpace,
+    dummy_agent_info_1: Arc<AgentInfoSigned>,
+    dummy_agent_info_2: Arc<AgentInfoSigned>,
     transport: DynTransport,
     peer_url: Url,
 }
@@ -266,8 +269,6 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         .await
         .unwrap();
 
-    let local_agent = Arc::new(Ed25519LocalAgent::default());
-
     let space1 = builder
         .space
         .create(
@@ -279,8 +280,6 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         )
         .await
         .unwrap();
-
-    space1.local_agent_join(local_agent.clone()).await.unwrap();
 
     let space2 = builder
         .space
@@ -294,11 +293,34 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         .await
         .unwrap();
 
-    space2.local_agent_join(local_agent.clone()).await.unwrap();
+    // Create two dummy agents that can be used to be added to the peer store
+    // of a sending peer such that the message doesn't get blocked before
+    // actually sending, due to missing peers in the peer store.
+    //
+    // Using the normal local_agent_join() method on a space would lead to
+    // agent infos getting published via module messages and these module
+    // messages would in turn get blocked due to missing agent infos in the
+    // peer store which would consequently distort the blocks count that we
+    // want to test the proper functioning of.
+    let local_agent_1 = Ed25519LocalAgent::default();
+
+    let dummy_agent_info_1 = AgentBuilder::default()
+        .with_space(TEST_SPACE_ID_1)
+        .with_url(Some(peer_url.clone()))
+        .build(local_agent_1);
+
+    let local_agent_2 = Ed25519LocalAgent::default();
+
+    let dummy_agent_info_2 = AgentBuilder::default()
+        .with_space(TEST_SPACE_ID_2)
+        .with_url(Some(peer_url.clone()))
+        .build(local_agent_2);
 
     TestPeerLight {
         space1,
         space2,
+        dummy_agent_info_1,
+        dummy_agent_info_2,
         transport,
         peer_url,
     }
@@ -316,15 +338,14 @@ async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
         .unwrap();
     assert!(!all_blocked);
 
-    // Then block Bob's agent
+    // Then block the agent
     space
         .blocks()
         .block(BlockTarget::Agent(agent.clone()))
         .await
         .unwrap();
 
-    // Check that all agents at Bob's peer URL are indeed blocked now
-    // according to Bob's Blocks module
+    // Check that all agents are considered blocked now
     let all_blocked =
         space.blocks().are_all_blocked(block_targets).await.unwrap();
     assert!(all_blocked);
@@ -364,22 +385,22 @@ async fn join_new_local_agent_and_wait_for_agent_info(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn outgoing_message_block_count_increases_correctly() {
+async fn incoming_message_block_count_increases_correctly() {
     enable_tracing();
 
     let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
 
     let TestPeerLight {
-        space1: _space_alice_1, // Need to keep the space in memory here since it's being used to check for blocks
-        space2: _space_alice_2, // -- ditto --
+        space1: space_alice_1,
+        space2: space_alice_2,
         transport: transport_alice,
         peer_url: peer_url_alice,
         ..
     } = make_test_peer_light(tx5_harness.builder.clone()).await;
 
     let TestPeerLight {
-        space1: _space_bob_1, // Need to keep the space in memory here since it's being used to check for blocks
-        space2: _space_bob_2, // -- ditto --
+        space1: space_bob_1,
+        space2: _space_bob_2, // Need to keep the space in memory here since it's being used to check for blocks
         transport: transport_bob,
         peer_url: peer_url_bob,
         ..
@@ -388,18 +409,34 @@ async fn outgoing_message_block_count_increases_correctly() {
     let TestPeerLight {
         space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
         space2: _space_carol_2, // -- ditto --
+        dummy_agent_info_1: dummy_agent_info_carol_1,
+        dummy_agent_info_2: dummy_agent_info_carol_2,
         transport: transport_carol,
         peer_url: peer_url_carol,
     } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    // Add Carol's dummy agent infos to Alice's peer stores in both spaces
+    // to not have Alice consider Carol blocked when sending a messge
+    // due to missing agents in the peer store.
+    space_alice_1
+        .peer_store()
+        .insert(vec![dummy_agent_info_carol_1.clone()])
+        .await
+        .unwrap();
+
+    space_alice_2
+        .peer_store()
+        .insert(vec![dummy_agent_info_carol_2.clone()])
+        .await
+        .unwrap();
 
     // Verify that Carol's message blocks count is empty initially
     let stats = transport_carol.dump_network_stats().await.unwrap();
     assert_eq!(stats.blocked_message_counts.len(), 0);
 
-    // Now have Alice send a message to Carol. Since Alice didn't join with a local
-    // agent, there shouldn't be any agent infos sent in the preflight and
-    // the message should be dropped as a result since Carol can't check for
-    // blocks without agent infos.
+    // Then have Alice send a message to Carol. Since we didn't add any agent
+    // info of Alice to Carol's peer store, Alice is expected to be considered
+    // blocked by Carol and Alice's message should be dropped by Carol.
     transport_alice
         .send_space_notify(
             peer_url_carol.clone(),
@@ -409,7 +446,7 @@ async fn outgoing_message_block_count_increases_correctly() {
         .await
         .unwrap();
 
-    // Check that the blocks count goes up on Carols side
+    // Check that the incoming message blocks count goes up on Carol's side
     let expected_blocked_message_counts: HashMap<
         Url,
         HashMap<SpaceId, MessageBlockCount>,
@@ -425,6 +462,7 @@ async fn outgoing_message_block_count_increases_correctly() {
         .into(),
     )]
     .into();
+
     iter_check!(500, {
         let net_stats = transport_carol.dump_network_stats().await.unwrap();
         if net_stats.blocked_message_counts == expected_blocked_message_counts {
@@ -432,7 +470,7 @@ async fn outgoing_message_block_count_increases_correctly() {
         }
     });
 
-    // Send another one, the count should go up
+    // Send another one, the count should go up again
     transport_alice
         .send_space_notify(
             peer_url_carol.clone(),
@@ -503,7 +541,16 @@ async fn outgoing_message_block_count_increases_correctly() {
         }
     });
 
-    // And finally have Bob send one also and verify that the HashMap gets updated correctly
+    // Add Carol's dummy agent infos to Bob's peer store in space 1
+    // to not have Bob consider Carol blocked when sending a messge
+    // due to missing agents in the peer store.
+    space_bob_1
+        .peer_store()
+        .insert(vec![dummy_agent_info_carol_1.clone()])
+        .await
+        .unwrap();
+
+    // And finally send one to Bob and verify that the HashMap gets updated correctly as well
     transport_bob
         .send_space_notify(
             peer_url_carol.clone(),
@@ -512,6 +559,7 @@ async fn outgoing_message_block_count_increases_correctly() {
         )
         .await
         .unwrap();
+
     let expected_blocked_message_counts: HashMap<
         Url,
         HashMap<SpaceId, MessageBlockCount>,
@@ -551,6 +599,194 @@ async fn outgoing_message_block_count_increases_correctly() {
     .into();
     iter_check!(500, {
         let net_stats = transport_carol.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn outgoing_message_block_count_increases_correctly() {
+    enable_tracing();
+
+    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+
+    let TestPeerLight {
+        space1: _space_alice_1, // Need to keep the space in memory here since it's being used to check for blocks
+        space2: _space_alice_2, // -- ditto --
+        transport: transport_alice,
+        ..
+    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    let TestPeerLight {
+        space1: _space_bob_1, // Need to keep the space in memory here since it's being used to check for blocks
+        space2: _space_bob_2, // -- ditto --
+        peer_url: peer_url_bob,
+        ..
+    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    let TestPeerLight {
+        space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
+        space2: _space_carol_2, // -- ditto --
+        peer_url: peer_url_carol,
+        ..
+    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+
+    // Verify that Alice's message blocks count is empty initially
+    let stats = transport_alice.dump_network_stats().await.unwrap();
+    assert_eq!(stats.blocked_message_counts.len(), 0);
+
+    // Now have Alice send a message to Carol. Since we didn't add any agent
+    // info of Carol to Alice's peer store, Carol is expected to be considered
+    // blocked and the message should be dropped before being sent.
+    transport_alice
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_1,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+
+    // Check that the blocks count goes up on Alice's side
+    let expected_blocked_message_counts: HashMap<
+        Url,
+        HashMap<SpaceId, MessageBlockCount>,
+    > = [(
+        peer_url_carol.clone(),
+        [(
+            TEST_SPACE_ID_1,
+            MessageBlockCount {
+                incoming: 0,
+                outgoing: 1,
+            },
+        )]
+        .into(),
+    )]
+    .into();
+    iter_check!(500, {
+        let net_stats = transport_alice.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+        tracing::error!(?net_stats, "net stats");
+    });
+
+    // Send another one, the count should go up
+    transport_alice
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_1,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+    let expected_blocked_message_counts: HashMap<
+        Url,
+        HashMap<SpaceId, MessageBlockCount>,
+    > = [(
+        peer_url_carol.clone(),
+        [(
+            TEST_SPACE_ID_1,
+            MessageBlockCount {
+                incoming: 0,
+                outgoing: 2,
+            },
+        )]
+        .into(),
+    )]
+    .into();
+    iter_check!(500, {
+        let net_stats = transport_alice.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+
+    // Now send one to the second space
+    transport_alice
+        .send_space_notify(
+            peer_url_carol.clone(),
+            TEST_SPACE_ID_2,
+            Bytes::new(),
+        )
+        .await
+        .unwrap();
+    let expected_blocked_message_counts: HashMap<
+        Url,
+        HashMap<SpaceId, MessageBlockCount>,
+    > = [(
+        peer_url_carol.clone(),
+        [
+            (
+                TEST_SPACE_ID_1,
+                MessageBlockCount {
+                    incoming: 0,
+                    outgoing: 2,
+                },
+            ),
+            (
+                TEST_SPACE_ID_2,
+                MessageBlockCount {
+                    incoming: 0,
+                    outgoing: 1,
+                },
+            ),
+        ]
+        .into(),
+    )]
+    .into();
+    iter_check!(500, {
+        let net_stats = transport_alice.dump_network_stats().await.unwrap();
+        if net_stats.blocked_message_counts == expected_blocked_message_counts {
+            break;
+        }
+    });
+
+    // And finally send one to Bob and verify that the HashMap gets updated correctly as well
+    transport_alice
+        .send_space_notify(peer_url_bob.clone(), TEST_SPACE_ID_1, Bytes::new())
+        .await
+        .unwrap();
+    let expected_blocked_message_counts: HashMap<
+        Url,
+        HashMap<SpaceId, MessageBlockCount>,
+    > = [
+        (
+            peer_url_carol.clone(),
+            [
+                (
+                    TEST_SPACE_ID_1,
+                    MessageBlockCount {
+                        incoming: 0,
+                        outgoing: 2,
+                    },
+                ),
+                (
+                    TEST_SPACE_ID_2,
+                    MessageBlockCount {
+                        incoming: 0,
+                        outgoing: 1,
+                    },
+                ),
+            ]
+            .into(),
+        ),
+        (
+            peer_url_bob,
+            [(
+                TEST_SPACE_ID_1,
+                MessageBlockCount {
+                    incoming: 0,
+                    outgoing: 1,
+                },
+            )]
+            .into(),
+        ),
+    ]
+    .into();
+    iter_check!(500, {
+        let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if net_stats.blocked_message_counts == expected_blocked_message_counts {
             break;
         }
