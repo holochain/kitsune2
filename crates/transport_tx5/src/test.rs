@@ -285,13 +285,14 @@ async fn message_send_recv_auth() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn preflight_send_recv() {
+    enable_tracing();
     use std::sync::atomic::*;
     let test = Tx5TransportTestHarness::new(None, None).await;
 
     let r1 = Arc::new(AtomicBool::new(false));
     let r1_2 = r1.clone();
 
-    let h1 = Arc::new(MockTxHandler {
+    let tx_handler_1 = Arc::new(MockTxHandler {
         pre_out: Arc::new(|_| Ok(bytes::Bytes::from_static(b"hello"))),
         pre_in: Arc::new(move |_, data| {
             assert_eq!(b"world", data.as_ref());
@@ -300,7 +301,9 @@ async fn preflight_send_recv() {
         }),
         ..Default::default()
     });
-    let t1 = test.build_transport(h1.clone()).await;
+    let t1 = test.build_transport(tx_handler_1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, tx_handler_1.clone())
+        .unwrap();
 
     let r2 = Arc::new(AtomicBool::new(false));
     let r2_2 = r2.clone();
@@ -415,6 +418,7 @@ async fn dump_network_stats() {
         ..Default::default()
     });
     let t1 = test.build_transport(h1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h1);
 
     let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
     let h2 = Arc::new(MockTxHandler {
@@ -427,6 +431,7 @@ async fn dump_network_stats() {
         ..Default::default()
     });
     let t2 = test.build_transport(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2);
 
     // establish a connection
     let url2 = u2.lock().unwrap().clone();
