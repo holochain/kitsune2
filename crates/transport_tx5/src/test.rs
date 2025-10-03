@@ -418,6 +418,7 @@ async fn dump_network_stats() {
         ..Default::default()
     });
     let t1 = test.build_transport(h1.clone()).await;
+    t1.register_space_handler(TEST_SPACE_ID, h1);
 
     let u2 = Arc::new(Mutex::new(Url::from_str("ws://bla.bla:38/1").unwrap()));
     let h2 = Arc::new(MockTxHandler {
@@ -430,6 +431,7 @@ async fn dump_network_stats() {
         ..Default::default()
     });
     let t2 = test.build_transport(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2);
 
     // establish a connection
     let url2 = u2.lock().unwrap().clone();
