@@ -269,7 +269,7 @@ impl std::fmt::Debug for TxImpHnd {
 }
 
 /// Check whether all agents associated with the given peer url are blocked
-/// for a space and increase the message blocks count by one if so.
+/// for a space and increase the message blocks count by one if they are.
 fn is_peer_blocked(
     space_map: SpaceMap,
     message_blocks_map: MessageBlocksMap,
