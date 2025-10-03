@@ -1,5 +1,5 @@
 use kitsune2_api::*;
-use kitsune2_core::factories::{CoreFetchConfig, CoreFetchModConfig};
+use kitsune2_core::factories::CoreFetchModConfig;
 use kitsune2_core::{default_test_builder, factories::MemoryOp};
 use kitsune2_test_utils::{
     enable_tracing, iter_check, random_bytes, space::TEST_SPACE_ID,
@@ -207,12 +207,7 @@ async fn two_peer_fetch() {
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_comes_online_after_being_unresponsive() {
     enable_tracing();
-    let fetch_config_alice = CoreFetchModConfig {
-        core_fetch: CoreFetchConfig {
-            re_insert_outgoing_request_delay_ms: 10,
-            ..Default::default()
-        },
-    };
+    let fetch_config_alice = CoreFetchModConfig::default();
     let Peer {
         fetch: fetch_alice,
         op_store: op_store_alice,
