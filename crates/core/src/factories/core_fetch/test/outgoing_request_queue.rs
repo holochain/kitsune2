@@ -7,10 +7,14 @@ use crate::{
 };
 use kitsune2_api::*;
 use kitsune2_test_utils::{
-    enable_tracing, id::create_op_id_list, iter_check, space::TEST_SPACE_ID,
+    enable_tracing,
+    id::{create_op_id_list, random_op_id},
+    iter_check,
+    space::TEST_SPACE_ID,
 };
 use prost::Message;
 use std::{
+    collections::HashSet,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -101,6 +105,46 @@ fn make_mock_transport(
         .expect_register_module_handler()
         .returning(|_, _, _| ());
     Arc::new(mock_transport)
+}
+
+// Test that ops that couldn't be added to the request queue are purged from state.
+#[tokio::test(flavor = "multi_thread")]
+async fn request_op_failures_are_purged_from_state() {
+    enable_tracing();
+    let TestCase { fetch, .. } = setup_test(&CoreFetchConfig::default()).await;
+
+    // Request an op that will get added to state.
+    let successful_op_id = random_op_id();
+    let successful_peer_url = random_peer_url();
+    fetch
+        .request_ops(
+            vec![successful_op_id.clone()],
+            successful_peer_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    let mut expected_state = HashSet::new();
+    expected_state.insert((successful_op_id, successful_peer_url));
+    assert_eq!(fetch.state.lock().unwrap().requests, expected_state);
+
+    // Drop the channel receiver, which makes sending to the channel fail.
+    fetch.tasks.iter().for_each(|t| t.abort());
+    // Wait until tasks are actually aborted.
+    iter_check!({
+        if fetch.tasks.iter().all(|t| t.is_finished()) {
+            break;
+        }
+    });
+
+    // Request an op that will get added to state.
+    fetch
+        .request_ops(create_op_id_list(1), random_peer_url())
+        .await
+        .unwrap();
+
+    // State should still only contain the successfully added op id.
+    assert_eq!(fetch.state.lock().unwrap().requests, expected_state);
 }
 
 #[tokio::test(flavor = "multi_thread")]
