@@ -187,7 +187,7 @@ impl Fetch for CoreFetch {
                     .send((op_id.clone(), source.clone()))
                     .await
                 {
-                    tracing::warn!(
+                    tracing::error!(
                         ?err,
                         "could not insert fetch request into fetch queue"
                     );
@@ -379,12 +379,10 @@ impl CoreFetch {
                     ?peer_url,
                     "could not send fetch request: {err}."
                 );
-                // Remove all requests to that peer.
-                state
-                    .lock()
-                    .expect("poisoned")
-                    .requests
-                    .retain(|(_, a)| *a != peer_url);
+                // Remove all requests to that peer and notify if drained.
+                let mut lock = state.lock().expect("poisoned");
+                lock.requests.retain(|(_, a)| *a != peer_url);
+                Self::notify_listeners_if_queue_drained(lock);
             }
         }
     }
