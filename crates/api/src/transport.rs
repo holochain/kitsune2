@@ -799,7 +799,7 @@ pub struct MessageBlockCount {
     /// Count of incoming messages that have been blocked and dropped.
     pub incoming: u32,
 
-    ///Count of outgoing messages that have been blocked and dropped.
+    /// Count of outgoing messages that have been blocked and dropped.
     pub outgoing: u32,
 }
 

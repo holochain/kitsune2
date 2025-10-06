@@ -326,6 +326,9 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
     }
 }
 
+/// A helper function that blocks an agent in the given space and also checks that:
+/// - the agent block was not considered blocked in the blocks module before
+/// - the agent is indeed considered blocked in the blocks module afterwards
 async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
     // Now we block Bob's agent
     let block_targets = vec![BlockTarget::Agent(agent.clone())];
@@ -351,6 +354,9 @@ async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
     assert!(all_blocked);
 }
 
+/// A helper function that joins with a new local agent to the given space,
+/// then waits for the signed agent info to have been inserted into the peer
+/// store and returns the signed agent info.
 async fn join_new_local_agent_and_wait_for_agent_info(
     space: DynSpace,
 ) -> Arc<AgentInfoSigned> {
@@ -416,7 +422,7 @@ async fn incoming_message_block_count_increases_correctly() {
     } = make_test_peer_light(tx5_harness.builder.clone()).await;
 
     // Add Carol's dummy agent infos to Alice's peer stores in both spaces
-    // to not have Alice consider Carol blocked when sending a messge
+    // to not have Alice consider Carol blocked when sending a message
     // due to missing agents in the peer store.
     space_alice_1
         .peer_store()
@@ -542,7 +548,7 @@ async fn incoming_message_block_count_increases_correctly() {
     });
 
     // Add Carol's dummy agent infos to Bob's peer store in space 1
-    // to not have Bob consider Carol blocked when sending a messge
+    // to not have Bob consider Carol blocked when sending a message
     // due to missing agents in the peer store.
     space_bob_1
         .peer_store()
