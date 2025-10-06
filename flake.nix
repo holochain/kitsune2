@@ -31,7 +31,7 @@
             ];
             buildInputs = [
               pkgs.openssl
-            ] ++ (pkgs.lib.optional (system == "x86_64-darwin") pkgs.apple-sdk_10_15);
+            ];
             doCheck = false;
           };
         in
