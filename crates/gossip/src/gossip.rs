@@ -513,14 +513,24 @@ mod test {
             .await
             .unwrap()
             .unwrap_or_default();
-        assert_eq!(1, completed_1);
+        // TODO once the second peer store insert above gets removed, make this
+        // a strict check for 1 completed gossip round again. The completed
+        // rounds count currently can be 2 because both peers may initiate
+        // at the same time and losing the tie break and abandoning the
+        // initiate attempt counts as a completed round.
+        assert!(1 == completed_1 || 2 == completed_1);
         let completed_2 = harness_2
             .peer_meta_store
             .completed_rounds(agent_info_1.url.clone().unwrap())
             .await
             .unwrap()
             .unwrap_or_default();
-        assert_eq!(1, completed_2);
+        // TODO once the second peer store insert above gets removed, make this
+        // a strict check for 1 completed gossip round again. The completed
+        // rounds count currently can be 2 because both peers may initiate
+        // at the same time and losing the tie break and abandoning the
+        // initiate attempt counts as a completed round.
+        assert!(1 == completed_2 || 2 == completed_2);
     }
 
     #[tokio::test]
