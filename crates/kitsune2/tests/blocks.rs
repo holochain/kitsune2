@@ -141,9 +141,7 @@ impl TxHandler for TestTxHandler {
             .clone();
 
         Box::pin(async move {
-            for agent in agents.clone() {
-                space.peer_store().insert(vec![agent]).await?;
-            }
+            space.peer_store().insert(agents).await?;
             Ok(())
         })
     }
@@ -368,12 +366,12 @@ async fn join_new_local_agent_and_wait_for_agent_info(
         let agent_id = local_agent.agent().clone();
         let peer_store = space.peer_store().clone();
         async move {
-            while !peer_store
+            while peer_store
                 .get_all()
                 .await
                 .unwrap()
                 .iter()
-                .any(|a| a.agent.clone() == agent_id)
+                .all(|a| a.agent.clone() != agent_id)
             {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }

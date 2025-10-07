@@ -68,12 +68,12 @@ impl K2GossipFunctionalTestHarness {
             let agent_id = local_agent.agent().clone();
             let peer_store = self.space.peer_store().clone();
             async move {
-                while !peer_store
+                while peer_store
                     .get_all()
                     .await
                     .unwrap()
                     .iter()
-                    .any(|a| a.agent.clone() == agent_id)
+                    .all(|a| a.agent.clone() != agent_id)
                 {
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 }
