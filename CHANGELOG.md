@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.3.0-dev.4](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.3...v0.3.0-dev.4)\] - 2025-10-08
+
+### Features
+
+- Bare-bones Docusaurus site with kitsune2 styling (#336) by @pdaoust in [#336](https://github.com/holochain/kitsune2/pull/336)
+  - Feat: bare-bones Docusaurus site with kitsune2 styling
+  - Fix: temporarily set root URL to kitsune2.pages.dev
+  - Fix: change logo alt text
+  - Fix: change to kitsune2.holochain.org
+  - Fix: update Docusaurus edit URL
+  - Fix: move docs to docs-site
+  - Fix: remove unused GitHub Pages config
+  - Fix: remove sidebar boilerplate
+  - Fix: remove boilerplate Docusaurus images
+  - Fix: change tagline and attribution text
+  - Fix: switch to yarn to make the readme not lie
+  - Fix: update readme for actual deployment instructions
+  - Fix: remove unnecessary nojekyll file
+  - Chore: update yarn deps
+  - Fix: pin/use yarn 4.9.1 via corepack
+  - Chore: update to docusaurus 3.9.1
+- Notify drained queue listeners when sending fetch request fails by @jost-s in [#338](https://github.com/holochain/kitsune2/pull/338)
+- Check if agents are blocked when receiving a message (#320) by @matthme in [#320](https://github.com/holochain/kitsune2/pull/320)
+  - Feat: check if agents are blocked when receiving a message
+  - Test: add tests for blocking logic if all agents are blocked at a given url
+  - Test: fix flaky test where Alice can end up unknowingly sending the second message over a stale WebRTC connection
+  - Style: smaller renamings and code readability improvements
+  - Refactor: return error in are_all_agents_at_url_blocked in case of an empty block target list, refactor blocks tests to join the space with a local agent and listen to the peer disconnect event in kitsune
+  - Refactor: use serde_json instead of rmp-serde in tests to encode agent infos for preflight messages
+  - Refactor: switch to tokio's OnceCell in MockTxHandler of the blocks integration tests
+  - Refactor: only drop messages instead of disconnecting if all agents are blocked, add manual bootstrapping logic to gossip tests
+  - Style: clippy suggestion
+  - Refactor: increase block message count when message is blocked, refactor tests to use that counter and test the counter logic itself
+  - Fix: insert agent info to receiving peer in invoke_report_module test to not have the message be blocked
+  - Fix: more gossip test agent bootstrapping fixes
+  - Docs: Add TODO comments about removing manual peer store inserts once possible
+  - Style: use iter_check to get peer url from network stats
+  - Test: add timeouts to receivers in blocks tests
+  - Docs: fix typo in inline comment
+  - Docs: improve inline docs
+  - Refactor: Drop message if checking for blocks fails, rather than throwing an error which would close the connection
+  - Fix: Change tracing level if messages are blocked, to reduce noise, and function rename
+  - Docs: Add TODO to remove manual peer insert in invoke_report_module test once kitsune is able to handle that case by itself
+  - Feat: rename Mock* to Test* in blocks tests.
+  - Test: Add a 50ms timeout when checking that message hasn't been handled in the blocks tests
+  - Docs: fix wrong doc comment
+
+- Add counter for blocked messages to the Transport trait (#335) by @matthme in [#335](https://github.com/holochain/kitsune2/pull/335)
+  - Feat: add counter for blocked messages to the Transport trait
+  - Refactor: move blocked messages counter direclty to the DefaultTransport
+  - Refactor: move blocked message count into shared ApiTransportStats type and return it as part of dump_network_stats
+  - Refactor: remove space id from blocked message counts map key
+  - Refactor: re-add space id, now with nested HashMap
+  - Docs: rephrase ApiTransportStats field documentation
+
+### Bug Fixes
+
+- Remove requests from state if they could not be sent to queue by @jost-s
+
+### Miscellaneous Tasks
+
+- Remove MacOS specific overrides, not required at nixos-25.05 by @ThetaSinner in [#341](https://github.com/holochain/kitsune2/pull/341)
+- Upgrade to Rust 1.88 by @ThetaSinner
+
+### Testing
+
+- Purge state when request_ops fails by @jost-s
+
+### Refactor
+
+- Remove re-insertion-logic from outgoing request in fetch module by @jost-s
+
+### Documentation
+
+- Remove mention of re-insertion from docs by @jost-s
+
+### Automated Changes
+
+- *(deps)* Bump holochain/actions from 1.1.0 to 1.3.0 by @dependabot[bot] in [#337](https://github.com/holochain/kitsune2/pull/337)
+  - Bumps [holochain/actions](https://github.com/holochain/actions) from 1.1.0 to 1.3.0. - [Release notes](https://github.com/holochain/actions/releases) - [Commits](https://github.com/holochain/actions/compare/v1.1.0...v1.3.0)
+  - Updated-dependencies: - dependency-name: holochain/actions   dependency-version: 1.3.0   dependency-type: direct:production   update-type: version-update:semver-minor ...
+- *(deps)* Bump actions/setup-go from 5 to 6 by @dependabot[bot] in [#332](https://github.com/holochain/kitsune2/pull/332)
+  - Bumps [actions/setup-go](https://github.com/actions/setup-go) from 5 to 6. - [Release notes](https://github.com/actions/setup-go/releases) - [Commits](https://github.com/actions/setup-go/compare/v5...v6)
+  - Updated-dependencies: - dependency-name: actions/setup-go   dependency-version: '6'   dependency-type: direct:production   update-type: version-update:semver-major ...
+
+### First-time Contributors
+
+- @pdaoust made their first contribution in [#336](https://github.com/holochain/kitsune2/pull/336)
+
 ## \[[0.3.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.2...v0.3.0-dev.3)\] - 2025-09-11
 
 ### Features
