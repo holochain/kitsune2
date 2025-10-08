@@ -673,7 +673,6 @@ async fn outgoing_message_block_count_increases_correctly() {
         if net_stats.blocked_message_counts == expected_blocked_message_counts {
             break;
         }
-        tracing::error!(?net_stats, "net stats");
     });
 
     // Send another one, the count should go up
@@ -910,14 +909,23 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     // should get through and Bob consequently add the new agent to its peer store
     // and not consider all agents blocked anymore at Alice's peer url.
     let payload_unblocked = Bytes::from("Sending to unblocked");
-    transport_alice
-        .send_space_notify(
-            peer_url_bob.clone(),
-            TEST_SPACE_ID,
-            payload_unblocked.clone(),
-        )
-        .await
-        .unwrap();
+
+    // Sending too shortly after a disconnect can lead to a tx5 send error
+    // sporadically and would leave the test flaky. Therefore, we wrap the
+    // send into an iter_check in order to make sure it makes it through.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_space_notify(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                payload_unblocked.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     // Verify that the message is being received correctly by Bob
     let payload_unblocked_received = recv_notify_recv_bob
@@ -1044,15 +1052,24 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     // should get through and Bob consequently add the new agent to its peer store
     // and not consider all agents blocked anymore at Alice's peer url.
     let payload_unblocked = Bytes::from("Sending to unblocked");
-    transport_alice
-        .send_module(
-            peer_url_bob.clone(),
-            TEST_SPACE_ID,
-            "test".into(),
-            payload_unblocked.clone(),
-        )
-        .await
-        .unwrap();
+
+    // Sending too shortly after a disconnect can lead to a tx5 send error
+    // sporadically and would leave the test flaky. Therefore, we wrap the
+    // send into an iter_check in order to make sure it makes it through.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_module(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                payload_unblocked.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     let payload_unblocked_received = recv_module_msg_recv_bob
         .recv_timeout(std::time::Duration::from_secs(2))
@@ -1156,7 +1173,9 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
 
     // To double-check, verify additionally that no space message has been
     // handled by Bob in the meantime.
-    assert!(recv_notify_recv_bob.try_recv().is_err());
+    assert!(recv_notify_recv_bob
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err());
 
     // Now have Bob join the space with a second agent and insert it to Alice's
     // peer store to simulate bootstrapping.
@@ -1172,14 +1191,23 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
     // Now send yet another message that should get through again since not
     // all of Bob's agents are blocked anymore by Alice.
     let payload_unblocked = Bytes::from("Sending to unblocked");
-    transport_alice
-        .send_space_notify(
-            peer_url_bob.clone(),
-            TEST_SPACE_ID,
-            payload_unblocked.clone(),
-        )
-        .await
-        .unwrap();
+
+    // Sending too shortly after a disconnect can lead to a tx5 send error
+    // sporadically and would leave the test flaky. Therefore, we wrap the
+    // send into an iter_check in order to make sure it makes it through.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_space_notify(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                payload_unblocked.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     // Verify that the message is being received correctly by Bob
     let payload_unblocked_received = recv_notify_recv_bob
@@ -1304,7 +1332,9 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
 
     // To double-check, verify additionally that no module message has been
     // handled by Bob in the meantime.
-    assert!(recv_module_msg_recv_bob.try_recv().is_err());
+    assert!(recv_module_msg_recv_bob
+        .recv_timeout(std::time::Duration::from_millis(50))
+        .is_err());
 
     // Now have Bob join the space with a second agent and insert it to Alice's
     // peer store to simulate bootstrapping.
@@ -1320,15 +1350,24 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
     // Now send yet another message that should get through again since not
     // all of Bob's agents are blocked anymore by Alice.
     let payload_unblocked = Bytes::from("Sending to unblocked");
-    transport_alice
-        .send_module(
-            peer_url_bob.clone(),
-            TEST_SPACE_ID,
-            "test".into(),
-            payload_unblocked.clone(),
-        )
-        .await
-        .unwrap();
+
+    // Sending too shortly after a disconnect can lead to a tx5 send error
+    // sporadically and would leave the test flaky. Therefore, we wrap the
+    // send into an iter_check in order to make sure it makes it through.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_module(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                payload_unblocked.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     // Verify that the message is being received correctly by Bob
     let payload_unblocked_received = recv_module_msg_recv_bob
