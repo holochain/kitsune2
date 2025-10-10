@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.3.0-dev.4](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.3...v0.3.0-dev.4)\] - 2025-10-09
+
+### Features
+
+- Bare-bones Docusaurus site with kitsune2 styling (#336) by @pdaoust in [#336](https://github.com/holochain/kitsune2/pull/336)
+- Notify drained queue listeners when sending fetch request fails by @jost-s in [#338](https://github.com/holochain/kitsune2/pull/338)
+- Check if agents are blocked when receiving a message (#320) by @matthme in [#320](https://github.com/holochain/kitsune2/pull/320)
+- Add counter for blocked messages to the Transport trait (#335) by @matthme in [#335](https://github.com/holochain/kitsune2/pull/335)
+
+### Bug Fixes
+
+- Remove requests from state if they could not be sent to queue by @jost-s
+
+### Miscellaneous Tasks
+
+- Remove MacOS specific overrides, not required at nixos-25.05 by @ThetaSinner in [#341](https://github.com/holochain/kitsune2/pull/341)
+- Upgrade to Rust 1.88 by @ThetaSinner
+
+### Testing
+
+- Purge state when request_ops fails by @jost-s
+
+### Refactor
+
+- Remove re-insertion-logic from outgoing request in fetch module by @jost-s
+
+### Documentation
+
+- Remove mention of re-insertion from docs by @jost-s
+
+### Automated Changes
+
+- *(deps)* Bump holochain/actions from 1.1.0 to 1.3.0 by @dependabot[bot] in [#337](https://github.com/holochain/kitsune2/pull/337)
+  - Bumps [holochain/actions](https://github.com/holochain/actions) from 1.1.0 to 1.3.0. - [Release notes](https://github.com/holochain/actions/releases) - [Commits](https://github.com/holochain/actions/compare/v1.1.0...v1.3.0)
+  - Updated-dependencies: - dependency-name: holochain/actions   dependency-version: 1.3.0   dependency-type: direct:production   update-type: version-update:semver-minor ...
+- *(deps)* Bump actions/setup-go from 5 to 6 by @dependabot[bot] in [#332](https://github.com/holochain/kitsune2/pull/332)
+  - Bumps [actions/setup-go](https://github.com/actions/setup-go) from 5 to 6. - [Release notes](https://github.com/actions/setup-go/releases) - [Commits](https://github.com/actions/setup-go/compare/v5...v6)
+  - Updated-dependencies: - dependency-name: actions/setup-go   dependency-version: '6'   dependency-type: direct:production   update-type: version-update:semver-major ...
+
+### First-time Contributors
+
+- @pdaoust made their first contribution in [#336](https://github.com/holochain/kitsune2/pull/336)
+
 ## \[[0.3.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.3.0-dev.2...v0.3.0-dev.3)\] - 2025-09-11
 
 ### Features
