@@ -11,7 +11,8 @@ use kitsune2_core::{Ed25519LocalAgent, Ed25519Verifier};
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
-use kitsune2_transport_tx5::harness::Tx5TransportTestHarness;
+use kitsune2_transport_tx5::Tx5TransportFactory;
+use sbd_server::SbdServer;
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OnceCell;
 
@@ -97,7 +98,9 @@ impl TxBaseHandler for TestTxHandler {
     }
 
     fn peer_disconnect(&self, peer: Url, _reason: Option<String>) {
-        self.peer_disconnect_sender.send(peer).unwrap();
+        if self.peer_disconnect_sender.send(peer).is_err() {
+            tracing::error!("Failed to send peer disconnect. This is okay if it happens at the end of a test if the receiver has been dropped before the connection got dropped.");
+        };
     }
 }
 impl TxHandler for TestTxHandler {
@@ -145,6 +148,39 @@ impl TxHandler for TestTxHandler {
             Ok(())
         })
     }
+}
+
+async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
+    let sbd_server = SbdServer::new(Arc::new(sbd_server::Config {
+        bind: vec!["127.0.0.1:0".to_string()],
+        ..Default::default()
+    }))
+    .await
+    .unwrap();
+    let signal_server_url = format!("ws://{}", sbd_server.bind_addrs()[0]);
+
+    let builder = Builder {
+        transport: Tx5TransportFactory::create(),
+        ..kitsune2_core::default_test_builder()
+    }
+    .with_default_config()
+    .unwrap();
+
+    builder
+        .config
+        .set_module_config(
+            &kitsune2_transport_tx5::config::Tx5TransportModConfig {
+                tx5_transport:
+                    kitsune2_transport_tx5::config::Tx5TransportConfig {
+                        signal_allow_plain_text: true,
+                        server_url: signal_server_url,
+                        ..Default::default()
+                    },
+            },
+        )
+        .unwrap();
+
+    (Arc::new(builder), sbd_server)
 }
 
 pub struct TestPeer {
@@ -392,7 +428,7 @@ async fn join_new_local_agent_and_wait_for_agent_info(
 async fn incoming_message_block_count_increases_correctly() {
     enable_tracing();
 
-    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+    let (builder, _sbd_server) = builder_with_tx5().await;
 
     let TestPeerLight {
         space1: space_alice_1,
@@ -400,7 +436,7 @@ async fn incoming_message_block_count_increases_correctly() {
         transport: transport_alice,
         peer_url: peer_url_alice,
         ..
-    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+    } = make_test_peer_light(builder.clone()).await;
 
     let TestPeerLight {
         space1: space_bob_1,
@@ -408,7 +444,7 @@ async fn incoming_message_block_count_increases_correctly() {
         transport: transport_bob,
         peer_url: peer_url_bob,
         ..
-    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+    } = make_test_peer_light(builder.clone()).await;
 
     let TestPeerLight {
         space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
@@ -417,7 +453,7 @@ async fn incoming_message_block_count_increases_correctly() {
         dummy_agent_info_2: dummy_agent_info_carol_2,
         transport: transport_carol,
         peer_url: peer_url_carol,
-    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+    } = make_test_peer_light(builder.clone()).await;
 
     // Add Carol's dummy agent infos to Alice's peer stores in both spaces
     // to not have Alice consider Carol blocked when sending a message
@@ -613,28 +649,28 @@ async fn incoming_message_block_count_increases_correctly() {
 async fn outgoing_message_block_count_increases_correctly() {
     enable_tracing();
 
-    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+    let (builder, _sbd_server) = builder_with_tx5().await;
 
     let TestPeerLight {
         space1: _space_alice_1, // Need to keep the space in memory here since it's being used to check for blocks
         space2: _space_alice_2, // -- ditto --
         transport: transport_alice,
         ..
-    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+    } = make_test_peer_light(builder.clone()).await;
 
     let TestPeerLight {
         space1: _space_bob_1, // Need to keep the space in memory here since it's being used to check for blocks
         space2: _space_bob_2, // -- ditto --
         peer_url: peer_url_bob,
         ..
-    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+    } = make_test_peer_light(builder.clone()).await;
 
     let TestPeerLight {
         space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
         space2: _space_carol_2, // -- ditto --
         peer_url: peer_url_carol,
         ..
-    } = make_test_peer_light(tx5_harness.builder.clone()).await;
+    } = make_test_peer_light(builder.clone()).await;
 
     // Verify that Alice's message blocks count is empty initially
     let stats = transport_alice.dump_network_stats().await.unwrap();
@@ -800,7 +836,7 @@ async fn outgoing_message_block_count_increases_correctly() {
 async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+    let (builder, _sbd_server) = builder_with_tx5().await;
 
     let TestPeer {
         space: space_alice,
@@ -809,7 +845,7 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         agent_id: agent_id_alice,
         peer_disconnect_recv: peer_disconnect_recv_alice,
         ..
-    } = make_test_peer(tx5_harness.builder.clone()).await;
+    } = make_test_peer(builder.clone()).await;
 
     let TestPeer {
         space: space_bob,
@@ -819,7 +855,7 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         recv_notify_recv: recv_notify_recv_bob,
         peer_disconnect_recv: _peer_disconnect_recv_bob,
         ..
-    } = make_test_peer(tx5_harness.builder).await;
+    } = make_test_peer(builder).await;
 
     // Add Bob's agent to Alice's peer store.
     space_alice
@@ -938,7 +974,7 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
 async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+    let (builder, _sbd_server) = builder_with_tx5().await;
 
     let TestPeer {
         space: space_alice,
@@ -947,7 +983,7 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         agent_id: agent_id_alice,
         peer_disconnect_recv: peer_disconnect_recv_alice,
         ..
-    } = make_test_peer(tx5_harness.builder.clone()).await;
+    } = make_test_peer(builder.clone()).await;
 
     let TestPeer {
         space: space_bob,
@@ -957,7 +993,7 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         recv_module_msg_recv: recv_module_msg_recv_bob,
         peer_disconnect_recv: _peer_disconnect_recv_bob,
         ..
-    } = make_test_peer(tx5_harness.builder).await;
+    } = make_test_peer(builder).await;
 
     // Add Bob's agent to Alice's peer store.
     space_alice
@@ -1081,7 +1117,7 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
 async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+    let (builder, _sbd_server) = builder_with_tx5().await;
 
     let TestPeer {
         space: space_alice,
@@ -1089,7 +1125,7 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         peer_url: peer_url_alice,
         peer_disconnect_recv: peer_disconnect_recv_alice,
         ..
-    } = make_test_peer(tx5_harness.builder.clone()).await;
+    } = make_test_peer(builder.clone()).await;
 
     let TestPeer {
         space: space_bob,
@@ -1100,7 +1136,7 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         recv_notify_recv: recv_notify_recv_bob,
         peer_disconnect_recv: _peer_disconnect_recv_bob,
         ..
-    } = make_test_peer(tx5_harness.builder).await;
+    } = make_test_peer(builder).await;
 
     space_alice
         .peer_store()
@@ -1234,7 +1270,7 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
 async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let tx5_harness = Tx5TransportTestHarness::new(None, Some(5)).await;
+    let (builder, _sbd_server) = builder_with_tx5().await;
 
     let TestPeer {
         space: space_alice,
@@ -1242,7 +1278,7 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         peer_url: peer_url_alice,
         peer_disconnect_recv: peer_disconnect_recv_alice,
         ..
-    } = make_test_peer(tx5_harness.builder.clone()).await;
+    } = make_test_peer(builder.clone()).await;
 
     let TestPeer {
         space: space_bob,
@@ -1253,7 +1289,7 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         recv_module_msg_recv: recv_module_msg_recv_bob,
         peer_disconnect_recv: _peer_disconnect_recv_bob,
         ..
-    } = make_test_peer(tx5_harness.builder).await;
+    } = make_test_peer(builder).await;
 
     space_alice
         .peer_store()
