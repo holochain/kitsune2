@@ -867,10 +867,25 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     // Alice sends a space message that should go through normally and establish
     // a connection with Bob
     let payload = Bytes::from("Hello world");
-    transport_alice
-        .send_space_notify(peer_url_bob.clone(), TEST_SPACE_ID, payload.clone())
-        .await
-        .unwrap();
+
+    // This send here fails relatively often in CI, presumably due to a race
+    // condition in tx5: https://github.com/holochain/tx5/issues/193
+    // The working hypothesis is that agent info gossip which starts in the background
+    // after the local agent join may lead to an incoming connection being established
+    // more or less simultaneously, thereby evoking the race condition.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_space_notify(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                payload.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     // Verify that the space message has been handled by Bob's recv_space_notify hook
     let payload_received = recv_notify_recv_bob
@@ -1005,15 +1020,26 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     // Alice sends a module message that should go through normally and establish
     // a connection with Bob
     let payload_module = Bytes::from("Hello module world");
-    transport_alice
-        .send_module(
-            peer_url_bob.clone(),
-            TEST_SPACE_ID,
-            "test".into(),
-            payload_module.clone(),
-        )
-        .await
-        .unwrap();
+
+    // This send here fails relatively often in CI, presumably due to a race
+    // condition in tx5: https://github.com/holochain/tx5/issues/193
+    // The working hypothesis is that agent info gossip which starts in the background
+    // after the local agent join may lead to an incoming connection being established
+    // more or less simultaneously, thereby evoking the race condition.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_module(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                payload_module.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     let payload_module_received = recv_module_msg_recv_bob
         .recv_timeout(std::time::Duration::from_secs(2))
@@ -1146,10 +1172,25 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
 
     // Alice sends a space message that should go through normally
     let payload = Bytes::from("Hello world");
-    transport_alice
-        .send_space_notify(peer_url_bob.clone(), TEST_SPACE_ID, payload.clone())
-        .await
-        .unwrap();
+
+    // This send here fails relatively often in CI, presumably due to a race
+    // condition in tx5: https://github.com/holochain/tx5/issues/193
+    // The working hypothesis is that agent info gossip which starts in the background
+    // after the local agent join may lead to an incoming connection being established
+    // more or less simultaneously, thereby evoking the race condition.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_space_notify(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                payload.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     // Verify that the space message has been handled by Bob's recv_module_msg hook
     let payload_received = recv_notify_recv_bob
@@ -1299,15 +1340,26 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
 
     // Alice sends a module message that should go through normally
     let payload = Bytes::from("Hello module world");
-    transport_alice
-        .send_module(
-            peer_url_bob.clone(),
-            TEST_SPACE_ID,
-            "test".into(),
-            payload.clone(),
-        )
-        .await
-        .unwrap();
+
+    // This send here fails relatively often in CI, presumably due to a race
+    // condition in tx5: https://github.com/holochain/tx5/issues/193
+    // The working hypothesis is that agent info gossip which starts in the background
+    // after the local agent join may lead to an incoming connection being established
+    // more or less simultaneously, thereby evoking the race condition.
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_module(
+                peer_url_bob.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                payload.clone(),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 
     // Verify that the module message has been handled by Bob's recv_module_msg hook
     let payload_received = recv_module_msg_recv_bob
