@@ -97,3 +97,18 @@ impl From<Timestamp> for std::time::SystemTime {
             + std::time::Duration::from_micros(t.0 as u64)
     }
 }
+
+impl TryFrom<bytes::Bytes> for Timestamp {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(value: bytes::Bytes) -> Result<Self, Self::Error> {
+        let array: [u8; 8] = value.as_ref().try_into()?;
+        Ok(Self(i64::from_ne_bytes(array)))
+    }
+}
+
+impl From<Timestamp> for bytes::Bytes {
+    fn from(val: Timestamp) -> Self {
+        bytes::Bytes::copy_from_slice(&val.0.to_ne_bytes())
+    }
+}

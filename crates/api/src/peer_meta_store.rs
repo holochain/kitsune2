@@ -52,7 +52,7 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
             self.put(
                 peer.clone(),
                 format!("{KEY_PREFIX_ROOT}:{META_KEY_UNRESPONSIVE}"),
-                serde_json::to_vec(&when).map_err(K2Error::other)?.into(),
+                when.into(),
                 Some(expiry),
             )
             .await?;
@@ -73,10 +73,7 @@ pub trait PeerMetaStore: 'static + Send + Sync + std::fmt::Debug {
             match maybe_value {
                 None => Ok(None),
                 Some(value) => {
-                    match serde_json::from_slice::<Timestamp>(&value) {
-                        Ok(when) => Ok(Some(when)),
-                        Err(err) => Err(K2Error::other(err)),
-                    }
+                    Ok(Some(value.try_into().map_err(K2Error::other)?))
                 }
             }
         })
