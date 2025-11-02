@@ -2,7 +2,9 @@ use crate::tls::TlsConfig;
 use crate::Config;
 use axum::*;
 use axum_server::tls_rustls::RustlsAcceptor;
+use http::{HeaderName, HeaderValue, Method};
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 pub struct HttpResponse {
@@ -140,6 +142,40 @@ fn tokio_thread(
 ) {
     tracing::trace!(?config, "Starting tokio thread");
 
+    let allowed_headers =
+        match ["Authorization", "Content-Type", "Content-Length", "Accept"]
+            .iter()
+            .map(|h| HeaderName::from_str(h))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(values) => tower_http::cors::AllowHeaders::list(values),
+            Err(err) => {
+                if ready.send(Err(std::io::Error::other(err))).is_err() {
+                    tracing::error!("Failed to send ready error");
+                }
+                return;
+            }
+        };
+
+    let origin = match &config.allowed_origins {
+        Some(origins) if !origins.is_empty() => {
+            match origins
+                .iter()
+                .map(|o| HeaderValue::from_str(o.as_str()))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(values) => tower_http::cors::AllowOrigin::list(values),
+                Err(err) => {
+                    if ready.send(Err(std::io::Error::other(err))).is_err() {
+                        tracing::error!("Failed to send ready error");
+                    }
+                    return;
+                }
+            }
+        }
+        _ => tower_http::cors::AllowOrigin::any(),
+    };
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -178,6 +214,12 @@ fn tokio_thread(
                 .route(
                     "/bootstrap/{space}/{agent}",
                     routing::put(handle_boot_put),
+                )
+                .layer(tower_http::cors::CorsLayer::new()
+                    .allow_methods(tower_http::cors::AllowMethods::list([Method::GET, Method::PUT, Method::OPTIONS]))
+                    .allow_headers(allowed_headers)
+                    .allow_origin(origin)
+                    .allow_credentials(config.sbd.authentication_hook_server.is_some())
                 );
 
             let app = if config.no_sbd {

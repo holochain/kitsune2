@@ -77,6 +77,11 @@ pub struct Config {
     /// Disable the SBD server.
     pub no_sbd: bool,
 
+    /// The allowed origins for CORS requests.
+    ///
+    /// If `None`, defaults to allowing any origin.
+    pub allowed_origins: Option<Vec<String>>,
+
     /// The SBD server configuration.
     pub sbd: sbd_server::Config,
 }
@@ -93,6 +98,7 @@ impl Config {
             tls_cert: None,
             tls_key: None,
             no_sbd: false,
+            allowed_origins: None,
             sbd: sbd_server::Config::default(),
         }
     }
@@ -111,6 +117,7 @@ impl Config {
             tls_cert: None,
             tls_key: None,
             no_sbd: false,
+            allowed_origins: None,
             sbd: sbd_server::Config::default(),
         }
     }

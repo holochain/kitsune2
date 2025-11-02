@@ -45,6 +45,10 @@ kitsune2_bootstrap_client = { version = "0.3.0-dev.1", path = "crates/bootstrap_
 async-channel = "2.3.1"
 # this is used by bootstrap_srv as the http server implementation.
 axum = { version = "0.8", default-features = false }
+# CORS support for axum
+tower-http = "0.6"
+# Used with tower-http for constants
+http = "1.3"
 # debugging is far easier when you can see short byte arrays
 # as base64 instead of decimal u8s.
 base64 = "0.22.1"

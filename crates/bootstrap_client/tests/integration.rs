@@ -142,6 +142,7 @@ async fn auth_with_real_token_provider() {
     let mut config = Config::testing();
     config.sbd.authentication_hook_server =
         Some(format!("http://{hook_addr:?}/authenticate"));
+    config.allowed_origins = Some(vec!["http://localhost".into()]);
 
     let s =
         tokio::task::block_in_place(move || BootstrapSrv::new(config).unwrap());

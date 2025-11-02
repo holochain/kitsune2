@@ -62,6 +62,12 @@ pub struct Args {
     #[arg(long)]
     pub prune_interval_ms: Option<u32>,
 
+    /// The allowed origins for CORS requests.
+    ///
+    /// If `None`, defaults to allowing any origin.
+    #[arg(long)]
+    pub allowed_origins: Option<Vec<String>>,
+
     /// If specified, this server will only handle bootstrap requests,
     /// dropping websocket upgrade requests from sbd clients.
     #[arg(long)]
@@ -150,6 +156,9 @@ fn main() {
     }
     if let Some(ms) = args.prune_interval_ms {
         config.prune_interval = std::time::Duration::from_millis(ms as u64);
+    }
+    if let Some(allowed_origins) = args.allowed_origins {
+        config.allowed_origins = Some(allowed_origins);
     }
 
     // Apply SBD command line arguments
