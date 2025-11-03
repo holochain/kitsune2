@@ -34,6 +34,7 @@ command = "cargo"
 args = ["test"]
 
 [tasks.test-go-pion]
+workspace = false
 command = "cargo"
 args = [
   "test",
@@ -75,10 +76,12 @@ args = ["format"]
 
 [tasks.static]
 description = "Run all static checks"
+workspace = false
 dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
 
 [tasks.verify]
 description = "Run all static checks and tests"
+workspace = false
 dependencies = ["static", "test", "test-go-pion"]
 
 [tasks.fix]
