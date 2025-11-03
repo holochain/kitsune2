@@ -55,6 +55,8 @@ jobs:
           cmake-version: '3.31.x'
 
       - name: Test
+        env:
+          RUST_LOG: info
         run: |
           cargo make test
           cargo make test-go-pion
