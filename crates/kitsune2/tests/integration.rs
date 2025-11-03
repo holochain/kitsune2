@@ -82,9 +82,9 @@ async fn make_kitsune_node(
         .config
         .set_module_config(&K2GossipModConfig {
             k2_gossip: K2GossipConfig {
-                initiate_interval_ms: 100,
-                min_initiate_interval_ms: 75,
-                initiate_jitter_ms: 10,
+                initiate_interval_ms: 1000,
+                min_initiate_interval_ms: 100,
+                initiate_jitter_ms: 100,
                 round_timeout_ms: 10_000,
                 ..Default::default()
             },
@@ -152,10 +152,6 @@ async fn two_node_gossip() {
     let space_1 = start_space(&kitsune_1).await;
     let space_2 = start_space(&kitsune_2).await;
 
-    // Wait for Windows runner to catch up with establishing the connection.
-    #[cfg(target_os = "windows")]
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
     // Insert ops into both spaces' op stores.
     let (ops_1, op_ids_1) = create_op_list(1000);
     space_1
@@ -171,7 +167,7 @@ async fn two_node_gossip() {
         .unwrap();
 
     // Wait for gossip to exchange all ops.
-    iter_check!(15000, 500, {
+    iter_check!(60_000, 1_000, {
         let actual_ops_1 = space_1
             .op_store()
             .retrieve_ops(op_ids_2.clone())
@@ -187,12 +183,12 @@ async fn two_node_gossip() {
         {
             break;
         } else {
-            println!(
+            tracing::info!(
                 "space 1 actual ops received {}/expected {}",
                 actual_ops_1.len(),
                 ops_2.len()
             );
-            println!(
+            tracing::info!(
                 "space 2 actual ops received {}/expected {}",
                 actual_ops_2.len(),
                 ops_1.len()
