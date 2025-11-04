@@ -302,8 +302,7 @@ async fn preflight_send_recv() {
         ..Default::default()
     });
     let t1 = test.build_transport(tx_handler_1.clone()).await;
-    t1.register_space_handler(TEST_SPACE_ID, tx_handler_1.clone())
-        .unwrap();
+    t1.register_space_handler(TEST_SPACE_ID, tx_handler_1.clone());
 
     let r2 = Arc::new(AtomicBool::new(false));
     let r2_2 = r2.clone();
