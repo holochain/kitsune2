@@ -274,7 +274,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
             // received agent infos for that peer that allow us to check for
             // blocks.
             if block_targets.is_empty() {
-                return Ok(true);
+                return Ok(false);
             }
 
             core_space.blocks.are_all_blocked(block_targets).await
