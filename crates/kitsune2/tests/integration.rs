@@ -74,6 +74,7 @@ async fn make_kitsune_node(
                 server_url: signal_server_url.to_owned(),
                 signal_allow_plain_text: true,
                 timeout_s: 5,
+                webrtc_connect_timeout_s: 3,
                 ..Default::default()
             },
         })
