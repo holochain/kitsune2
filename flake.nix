@@ -67,6 +67,7 @@
                 cargo-make
                 taplo
                 perl
+                go
                 cmake
                 openssl
                 llvmPackages.clang
