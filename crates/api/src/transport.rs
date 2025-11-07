@@ -120,14 +120,28 @@ impl TxImpHnd {
             // peer URL and space id. We do not close the connection because
             // agents in other spaces may not be blocked on the same kitsune
             // instance.
+            let start = std::time::Instant::now();
             if !self.check_message_permitted(
                 &peer,
                 &space_id,
                 &module_id,
                 &message_type,
             )? {
+                let elapsed = start.elapsed();
+                tracing::debug!(
+                    ?peer,
+                    "Checked message not permitted in {:?}",
+                    elapsed
+                );
                 return Ok(());
             }
+
+            let elapsed = start.elapsed();
+            tracing::debug!(
+                ?peer,
+                "Checked message permitted in {:?}",
+                elapsed
+            );
 
             match message_type {
                 K2WireType::Unspecified => Ok(()),
@@ -278,9 +292,10 @@ fn is_peer_blocked(
     module_id: &Option<String>,
     outgoing: bool,
 ) -> K2Result<bool> {
-    match space_map.lock().expect("poisoned").get(space_id) {
+    let space_handler =
+        space_map.lock().expect("poisoned").get(space_id).cloned();
+    match space_handler {
         Some(space_handler) => {
-            let space_handler: Arc<dyn TxSpaceHandler> = space_handler.clone();
             let all_blocked = space_handler.are_all_agents_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
             if all_blocked {
                 tracing::debug!(
