@@ -61,9 +61,27 @@ pub mod config {
         /// The internal time in seconds to use as a maximum for operations,
         /// connecting, and idleing.
         ///
-        /// Default: 60s.
+        /// Default: 60 seconds.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub timeout_s: u32,
+
+        /// The timeout for establishing a WebRTC connection to a peer.
+        ///
+        /// This value *must* be less than [`Tx5TransportConfig::timeout_s`], otherwise the connection attempt will
+        /// be treated as failed without attempting to fall back to the signal relay.
+        ///
+        /// A lower value for this timeout will make tx5 fall back to the signal relay faster. That
+        /// makes tx5 more responsive when direct connections are not possible. It also increases
+        /// the chance that connections end up being relayed unnecessarily when a direct connection
+        /// could have been established with a bit more time.
+        ///
+        /// The default of 45 seconds is a trade-off that gives WebRTC plenty of time to establish a
+        /// direct connection in most situations while still leaving some time for the signal relay to
+        /// be used within the overall timeout.
+        ///
+        /// Default: 45 seconds.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub webrtc_connect_timeout_s: u32,
 
         /// WebRTC peer connection config.
         ///
@@ -106,6 +124,7 @@ pub mod config {
                 signal_allow_plain_text: false,
                 server_url: "<wss://your.sbd.url>".into(),
                 timeout_s: 60,
+                webrtc_connect_timeout_s: 45,
                 webrtc_config: WebRtcConfig {
                     ice_servers: vec![],
                     ice_transport_policy: Default::default(),
@@ -161,6 +180,15 @@ impl TransportFactory for Tx5TransportFactory {
             return Err(K2Error::other(format!(
                 "disallowed plaintext signal url, either specify wss or set signal_allow_plain_text to true: {sig}",
             )));
+        }
+
+        if config.tx5_transport.timeout_s
+            <= config.tx5_transport.webrtc_connect_timeout_s
+        {
+            return Err(K2Error::other(
+                "webrtc_connect_timeout_s must be less than timeout_s"
+                    .to_string(),
+            ));
         }
 
         Ok(())
@@ -271,6 +299,9 @@ impl Tx5Transport {
                 }),
             )
             .with_timeout(Duration::from_secs(config.timeout_s as u64))
+            .with_webrtc_connect_timeout(Duration::from_secs(
+                config.webrtc_connect_timeout_s as u64,
+            ))
             .with_backend_module_config(
                 tx5::backend::BackendModule::default().default_config(),
             )

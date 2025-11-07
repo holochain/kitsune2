@@ -63,6 +63,59 @@ fn validate_plain_server_url() {
     assert!(result.contains("disallowed plaintext signal url"));
 }
 
+#[test]
+fn validate_bad_timeout_s_and_webrtc_connect_timeout_s() {
+    let builder = Builder {
+        transport: Tx5TransportFactory::create(),
+        ..kitsune2_core::default_test_builder()
+    };
+
+    // webrtc_connect_timeout_s cannot be equal to timeout_s
+    builder
+        .config
+        .set_module_config(&Tx5TransportModConfig {
+            tx5_transport: Tx5TransportConfig {
+                server_url: "ws://test.url".into(),
+                signal_allow_plain_text: true,
+                timeout_s: 10,
+                webrtc_connect_timeout_s: 10,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    assert!(builder.validate_config().is_err());
+
+    // webrtc_connect_timeout_s cannot be greater than timeout_s
+    builder
+        .config
+        .set_module_config(&Tx5TransportModConfig {
+            tx5_transport: Tx5TransportConfig {
+                server_url: "ws://test.url".into(),
+                signal_allow_plain_text: true,
+                timeout_s: 10,
+                webrtc_connect_timeout_s: 20,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    assert!(builder.validate_config().is_err());
+
+    // webrtc_connect_timeout_s must be less than timeout_s
+    builder
+        .config
+        .set_module_config(&Tx5TransportModConfig {
+            tx5_transport: Tx5TransportConfig {
+                server_url: "ws://test.url".into(),
+                signal_allow_plain_text: true,
+                timeout_s: 20,
+                webrtc_connect_timeout_s: 10,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    assert!(builder.validate_config().is_ok());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_addr() {
     let mut test = Tx5TransportTestHarness::new(None, None).await;
