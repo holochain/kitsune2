@@ -274,6 +274,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
             // received agent infos for that peer that allow us to check for
             // blocks.
             if block_targets.is_empty() {
+                tracing::debug!(?peer_url, "No agents found for peer url in peer store, treating all agents at this url as blocked.");
                 return Ok(true);
             }
 
