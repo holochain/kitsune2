@@ -11,11 +11,24 @@
     };
   };
 
-  outputs = inputs@{ nixpkgs, flake-parts, crane, rust-overlay, ... }:
+  outputs =
+    inputs@{
+      nixpkgs,
+      flake-parts,
+      crane,
+      rust-overlay,
+      ...
+    }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
 
-      perSystem = { pkgs, system, ... }:
+      perSystem =
+        { pkgs, system, ... }:
         let
           rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
@@ -37,31 +50,36 @@
         in
         {
           # Override the per system packages to include the rust overlay
-          _module.args.pkgs = import nixpkgs { inherit system; overlays = [ (import rust-overlay) ]; };
+          _module.args.pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ (import rust-overlay) ];
+          };
 
           packages = {
             inherit bootstrap-srv;
           };
 
-          devShells = {
-            default = pkgs.mkShell {
-              packages = with pkgs; [
+          devShells.default =
+            with pkgs;
+            mkShell {
+              packages = [
                 rustup
                 cargo-make
                 taplo
                 perl
                 cmake
                 openssl
+                llvmPackages.clang
+                llvmPackages.libclang
               ];
 
-              LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+              LIBCLANG_PATH = "${lib.getLib llvmPackages.libclang}/lib";
 
               shellHook = ''
-                ${pkgs.rustup}/bin/rustup toolchain install ${rust.version}
-                ${pkgs.rustup}/bin/rustup toolchain install nightly
+                ${rustup}/bin/rustup toolchain install ${rust.version}
+                ${rustup}/bin/rustup toolchain install nightly
               '';
             };
-          };
         };
     };
 }
