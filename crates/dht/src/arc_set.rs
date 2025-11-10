@@ -6,7 +6,7 @@ use std::collections::HashSet;
 ///
 /// A set of [DhtArc]s is combined as a set union into an [ArcSet].
 ///
-/// To restrict [crate::dht::Dht] operations to a specific set of sectors, the [ArcSet]s of two
+/// To restrict [`crate::dht::Dht`] operations to a specific set of sectors, the [`ArcSet`]s of two
 /// DHTs can be intersected to find the common sectors, using [ArcSet::intersection].
 #[derive(Clone, PartialEq)]
 pub struct ArcSet {
@@ -479,6 +479,23 @@ mod test {
                 DhtArc::Arc(0, 2 * SECTOR_SIZE - 1),
                 DhtArc::Arc(510 * SECTOR_SIZE, u32::MAX)
             ]
+        );
+    }
+
+    #[test]
+    fn debug_arc_set() {
+        assert_eq!(
+            "ArcSet { sectors: \"Empty\" }",
+            format!("{:?}", ArcSet::new(vec![DhtArc::Empty]).unwrap())
+        );
+
+        let set =
+            ArcSet::new(vec![DhtArc::Arc(0, 2 * SECTOR_SIZE - 1)]).unwrap();
+        assert_eq!("ArcSet { sectors: 2 }", format!("{set:?}"));
+
+        assert_eq!(
+            "ArcSet { sectors: \"Full\" }",
+            format!("{:?}", ArcSet::new(vec![DhtArc::FULL]).unwrap())
         );
     }
 }
