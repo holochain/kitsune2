@@ -8,9 +8,22 @@ use std::collections::HashSet;
 ///
 /// To restrict [crate::dht::Dht] operations to a specific set of sectors, the [ArcSet]s of two
 /// DHTs can be intersected to find the common sectors, using [ArcSet::intersection].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ArcSet {
     inner: HashSet<u32>,
+}
+
+impl std::fmt::Debug for ArcSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("ArcSet");
+        match self.inner.len() {
+            0 => dbg.field("sectors", &"Empty").finish(),
+            len if len == (u32::MAX / SECTOR_SIZE + 1) as usize => {
+                dbg.field("sectors", &"Full").finish()
+            }
+            _ => dbg.field("sectors", &self.inner.len()).finish(),
+        }
+    }
 }
 
 impl ArcSet {
