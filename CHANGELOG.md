@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.3.1](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.3.1)\] - 2025-11-10
+
+### Bug Fixes
+
+- Reduce lock hold on `space_map`
+
 ## \[[0.3.0](https://github.com/holochain/kitsune2/compare/v0.2.11...v0.3.0)\] - 2025-11-04
 
 ### Features
