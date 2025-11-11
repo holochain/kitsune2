@@ -1,7 +1,6 @@
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::collections::HashMap;
-use std::sync::MutexGuard;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
@@ -173,12 +172,15 @@ impl Fetch for CoreFetch {
             // These need to be added up front, before sending them to the outgoing
             // request queue, otherwise the queue processes them faster than they're
             // being added to state and the request logic fails.
-            self.state.lock().unwrap().requests.extend(
-                new_op_ids
-                    .clone()
-                    .into_iter()
-                    .map(|op_id| (op_id.clone(), source.clone())),
-            );
+            {
+                let requests = &mut self.state.lock().unwrap().requests;
+                requests.extend(
+                    new_op_ids
+                        .clone()
+                        .into_iter()
+                        .map(|op_id| (op_id.clone(), source.clone())),
+                );
+            }
 
             // Insert requests into fetch queue.
             for op_id in new_op_ids {
@@ -191,12 +193,14 @@ impl Fetch for CoreFetch {
                         ?err,
                         "could not insert fetch request into fetch queue"
                     );
+
                     // Remove request from state.
                     let mut lock = self.state.lock().unwrap();
                     lock.requests.remove(&(op_id, source.clone()));
-                    Self::notify_listeners_if_queue_drained(lock);
                 }
             }
+
+            Self::notify_listeners_if_queue_drained(self.state.clone());
 
             Ok(())
         })
@@ -346,14 +350,16 @@ impl CoreFetch {
             //
             // If the peer URL is unresponsive, the current request will have been removed
             // from state and no request will be sent.
-            {
+            let requests_contains_op_and_peer = {
                 let lock = state.lock().expect("poisoned");
-                if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
-                    // Check if the fetch queue is drained and notify listeners.
-                    Self::notify_listeners_if_queue_drained(lock);
+                lock.requests.contains(&(op_id.clone(), peer_url.clone()))
+            };
 
-                    continue;
-                }
+            if !requests_contains_op_and_peer {
+                // Check if the fetch queue is drained and notify listeners.
+                Self::notify_listeners_if_queue_drained(state.clone());
+
+                continue;
             }
 
             tracing::debug!(
@@ -379,19 +385,23 @@ impl CoreFetch {
                     ?peer_url,
                     "could not send fetch request: {err}."
                 );
+
                 // Remove all requests to that peer and notify if drained.
-                let mut lock = state.lock().expect("poisoned");
-                lock.requests.retain(|(_, a)| *a != peer_url);
-                Self::notify_listeners_if_queue_drained(lock);
+                {
+                    let mut lock = state.lock().expect("poisoned");
+                    lock.requests.retain(|(_, a)| *a != peer_url);
+                }
+                Self::notify_listeners_if_queue_drained(state.clone());
             }
         }
     }
 
-    fn notify_listeners_if_queue_drained(mut state: MutexGuard<State>) {
+    fn notify_listeners_if_queue_drained(state: Arc<Mutex<State>>) {
         // Check if the fetch queue is drained.
-        if state.requests.is_empty() {
+        let mut lock = state.lock().expect("Poisoned");
+        if lock.requests.is_empty() {
             // Notify all listeners that the fetch queue is drained.
-            for notify in state.notify_when_drained_senders.drain(..) {
+            for notify in lock.notify_when_drained_senders.drain(..) {
                 if notify.send(()).is_err() {
                     tracing::warn!("Failed to send notification on drained");
                 }
