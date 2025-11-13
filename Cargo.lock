@@ -1774,6 +1774,7 @@ dependencies = [
  "futures",
  "kitsune2_api",
  "rand 0.8.5",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
