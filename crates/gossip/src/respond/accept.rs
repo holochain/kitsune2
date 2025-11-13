@@ -237,9 +237,9 @@ impl K2Gossip {
                 state.validate_accept(from_peer.clone(), accept)?.clone()
             }
             None => {
-                return Err(K2GossipError::peer_behavior(
-                    "Unsolicited Accept message",
-                ));
+                return Err(K2GossipError::peer_behavior(format!(
+                    "Unsolicited Accept message from peer: {from_peer}",
+                )));
             }
         };
 
