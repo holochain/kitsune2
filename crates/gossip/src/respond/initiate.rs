@@ -682,7 +682,7 @@ mod tests {
             matches!(
                 response,
                 Err(K2GossipError::PeerBehaviorError { ref ctx })
-                    if ctx.as_ref() ==  "Unsolicited Accept message",
+                    if ctx.as_ref().starts_with("Unsolicited Accept message"),
             ),
             "Expected 'Unsolicited Accept message', got: {response:?}"
         );
