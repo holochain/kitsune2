@@ -107,7 +107,7 @@ axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
 # embedded in the bootstrap server and to test the tx5 integration
-sbd-server = { version = "0.3.2" }
+sbd-server = { version = "0.4.0" }
 # axum-server integration with the SBD server
 tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
@@ -116,6 +116,8 @@ schemars = { version = "0.9", features = ["preserve_order"] }
 rustyline = { version = "16.0" }
 # Used in showcase app for the commands
 strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
+# Used for telemetry in sbd server
+opentelemetry = "0.30"
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.

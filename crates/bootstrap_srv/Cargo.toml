@@ -43,6 +43,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
 sbd-server = { workspace = true, features = ["tungstenite"] }
+opentelemetry = { workspace = true }
 
 [dev-dependencies]
 ureq = { workspace = true }

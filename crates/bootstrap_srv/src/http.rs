@@ -130,6 +130,7 @@ pub struct AppState {
     pub token_tracker: sbd_server::AuthTokenTracker,
     pub sbd_config: Arc<sbd_server::Config>,
     pub sbd_state: Option<crate::sbd::SbdState>,
+    pub auth_failures: opentelemetry::metrics::Counter<u64>,
 }
 
 type BoxFut<'a, T> =
@@ -188,10 +189,12 @@ fn tokio_thread(
 
             let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
 
+            let sbd_server_meter = opentelemetry::global::meter("sbd-server");
+
             let c_slot = if config.no_sbd {
                 None
             } else {
-                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone()))
+                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone(), sbd_server_meter.clone()))
             };
 
             let (rustls_config, tls_reload_handle) = if let Some(tls_config) = server_config.tls_config {
@@ -238,11 +241,16 @@ fn tokio_thread(
                         Some(crate::sbd::SbdState {
                             config: sbd_config.clone(),
                             ip_rate: ip_rate.clone(),
-                            c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),
+                            c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),   
                         })
                     } else {
                         None
-                    }
+                    },
+                    auth_failures: sbd_server_meter
+                        .u64_counter("sbd.server.auth_failures")
+                        .with_description("Number of failed authentication attempts")
+                        .with_unit("count")
+                        .build(),
                 });
 
             let receiver = HttpReceiver(h_recv);
@@ -345,6 +353,7 @@ async fn handle_auth(
     match sbd_server::process_authenticate_token(
         &state.sbd_config,
         &state.token_tracker,
+        state.auth_failures,
         body,
     )
     .await

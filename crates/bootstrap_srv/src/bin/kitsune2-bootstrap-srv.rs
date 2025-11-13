@@ -101,6 +101,10 @@ pub struct Args {
     #[arg(long)]
     pub sbd_limit_ip_byte_burst: Option<i32>,
 
+    /// If specified, this will enable exporting metrics to an OpenTelemetry endpoint.
+    #[arg(long)]
+    pub otlp_endpoint: Option<String>,
+
     /// The authentication "Hook Server" as defined by
     /// <https://github.com/holochain/sbd/blob/main/spec-auth.md>
     #[arg(long)]
@@ -177,9 +181,14 @@ fn main() {
     if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
         config.sbd.limit_ip_byte_burst = byte_burst;
     }
+    config.sbd.otlp_endpoint = args.otlp_endpoint;
     config.sbd.authentication_hook_server = args.authentication_hook_server;
 
     tracing::info!(?config);
+
+    // Setup opentelemetry metrics
+    sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
+        .expect("Failed to initialize OTLP metrics");
 
     let (send, recv) = std::sync::mpsc::channel();
 
