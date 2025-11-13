@@ -43,3 +43,6 @@ pub use mem_op_store::*;
 
 mod mem_blocks;
 pub use mem_blocks::*;
+
+mod core_access;
+pub use core_access::*;

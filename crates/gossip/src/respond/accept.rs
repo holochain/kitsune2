@@ -99,6 +99,8 @@ impl K2Gossip {
                 // Then pick an appropriate response message based on the snapshot
                 match next_action {
                     DhtSnapshotNextAction::Identical => {
+                        tracing::debug!(?accept.session_id, "Snapshots identical, no diff needed");
+
                         if let Some(state) = lock.as_mut() {
                             state.stage = RoundStage::NoDiff;
                         }

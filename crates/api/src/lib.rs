@@ -35,6 +35,9 @@ pub(crate) mod serde_bytes_base64 {
     }
 }
 
+mod access;
+pub use access::*;
+
 mod agent;
 pub use agent::*;
 

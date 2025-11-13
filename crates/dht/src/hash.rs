@@ -318,6 +318,10 @@ impl HashPartition {
                 if let Some(hash) = partial.next() {
                     if !hash.is_empty() {
                         combine_hashes(&mut combined, hash);
+
+                        if combined.iter().all(|b| *b == 0) {
+                            tracing::warn!("Blank combined hash, has the DHT model been informed about the same op(s) more than once?");
+                        }
                     }
                 }
             }
