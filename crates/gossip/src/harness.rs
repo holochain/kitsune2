@@ -6,11 +6,12 @@ use crate::{K2GossipConfig, K2GossipFactory, K2GossipModConfig};
 use kitsune2_api::{
     AgentId, AgentInfoSigned, DhtArc, DynGossip, DynSpace,
     GossipStateSummaryRequest, LocalAgent, OpId, SpaceHandler, SpaceId,
-    StoredOp, TxBaseHandler, TxHandler, UNIX_TIMESTAMP,
+    StoredOp, UNIX_TIMESTAMP,
 };
 use kitsune2_core::factories::MemoryOp;
-use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
+use kitsune2_core::{default_test_builder, Ed25519LocalAgent, Ed25519Verifier};
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
+use kitsune2_test_utils::tx_handler::TestTxHandler;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -413,8 +414,6 @@ impl K2GossipFunctionalTestFactory {
     pub async fn new_instance(&self) -> K2GossipFunctionalTestHarness {
         #[derive(Debug)]
         struct NoopHandler;
-        impl TxBaseHandler for NoopHandler {}
-        impl TxHandler for NoopHandler {}
         impl SpaceHandler for NoopHandler {}
 
         let mut builder = default_test_builder();
@@ -437,9 +436,15 @@ impl K2GossipFunctionalTestFactory {
 
         let builder = Arc::new(builder);
 
+        let space_lock = Arc::new(tokio::sync::OnceCell::new());
+        let tx_handler = TestTxHandler::create(
+            space_lock.clone(),
+            Arc::new(Ed25519Verifier),
+        );
+
         let transport = builder
             .transport
-            .create(builder.clone(), Arc::new(NoopHandler))
+            .create(builder.clone(), tx_handler)
             .await
             .unwrap();
 
@@ -460,6 +465,10 @@ impl K2GossipFunctionalTestFactory {
             )
             .await
             .unwrap();
+
+        space_lock
+            .set(Arc::downgrade(&space))
+            .expect("Failed to set space in tx handler");
 
         let peer_meta_store =
             K2PeerMetaStore::new(space.peer_meta_store().clone());

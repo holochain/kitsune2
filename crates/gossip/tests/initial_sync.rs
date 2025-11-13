@@ -29,7 +29,7 @@ async fn two_new_agents_sync() {
     .await;
 
     let harness_1 = factory.new_instance().await;
-    let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+    harness_1.join_local_agent(DhtArc::FULL).await;
 
     const NUM_OPS: usize = 20;
     let mut ops = Vec::<MemoryOpRecord>::with_capacity(NUM_OPS);
@@ -64,18 +64,6 @@ async fn two_new_agents_sync() {
         .space
         .peer_store()
         .insert(vec![agent_info_2.clone()])
-        .await
-        .unwrap();
-
-    // TODO remove this second insert once a "hello" message logic is
-    //      implemented (along the lines of what's described in
-    //      https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-    //      Gossip shouldn't in general depend on both peers knowing about each
-    //      other's agent infos.
-    harness_2
-        .space
-        .peer_store()
-        .insert(vec![agent_info_1.clone()])
         .await
         .unwrap();
 
@@ -154,18 +142,6 @@ async fn new_agent_joins_existing_network() {
         .space
         .peer_store()
         .insert(vec![agent_info_2.clone()])
-        .await
-        .unwrap();
-
-    // TODO remove this second insert once a "hello" message logic is
-    //      implemented (along the lines of what's described in
-    //      https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-    //      Gossip shouldn't in general depend on both peers knowing about each
-    //      other's agent infos.
-    harness_2
-        .space
-        .peer_store()
-        .insert(vec![agent_info_1.clone()])
         .await
         .unwrap();
 
