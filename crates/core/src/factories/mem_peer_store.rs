@@ -2,6 +2,7 @@
 
 use kitsune2_api::*;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -115,12 +116,39 @@ impl PeerStore for MemPeerStore {
         &self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
     ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async move { self.0.lock().await.insert(agent_list).await })
+        Box::pin(async move {
+            let mut guard = self.0.lock().await;
+            let inserted = guard.insert(agent_list.clone()).await?;
+
+            if !inserted.is_empty() && !guard.listeners.is_empty() {
+                let listeners = guard.listeners.to_vec();
+                drop(guard);
+
+                for agent in inserted {
+                    for listener in &listeners {
+                        listener(agent.clone()).await;
+                    }
+                }
+            }
+
+            Ok(())
+        })
     }
 
     fn remove(&self, agent_id: AgentId) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            self.0.lock().await.remove(&agent_id);
+            let mut guard = self.0.lock().await;
+            let removed = guard.remove(&agent_id);
+
+            if let Some(removed) = removed {
+                let listeners = guard.listeners.to_vec();
+                drop(guard);
+
+                for listener in &listeners {
+                    listener(removed.clone()).await;
+                }
+            }
+
             Ok(())
         })
     }
@@ -161,12 +189,29 @@ impl PeerStore for MemPeerStore {
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>> {
         Box::pin(async move { Ok(self.0.lock().await.get_by_url(&peer_url)) })
     }
+
+    fn register_peer_update_listener(
+        &self,
+        listener: Arc<
+            dyn (Fn(Arc<AgentInfoSigned>) -> BoxFut<'static, ()>) + Send + Sync,
+        >,
+    ) -> K2Result<()> {
+        let mut inner = self.0.try_lock().map_err(|e| {
+            K2Error::other_src("Unable to lock MemPeerStore", e)
+        })?;
+        inner.listeners.push(listener);
+        Ok(())
+    }
 }
+
+type Listener =
+    Arc<dyn (Fn(Arc<AgentInfoSigned>) -> BoxFut<'static, ()>) + Send + Sync>;
 
 struct Inner {
     config: MemPeerStoreConfig,
     store: HashMap<AgentId, Arc<AgentInfoSigned>>,
     no_prune_until: std::time::Instant,
+    listeners: Vec<Listener>,
     blocks: DynBlocks,
 }
 
@@ -181,6 +226,7 @@ impl Inner {
             config,
             store: HashMap::new(),
             no_prune_until,
+            listeners: Vec::new(),
             blocks,
         }
     }
@@ -214,11 +260,12 @@ impl Inner {
     pub async fn insert(
         &mut self,
         agent_list: Vec<Arc<AgentInfoSigned>>,
-    ) -> K2Result<()> {
+    ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
         self.check_prune();
 
         let now = Timestamp::now();
 
+        let mut inserted = Vec::new();
         for agent in agent_list {
             // Don't insert blocked agents.
             if self
@@ -251,14 +298,18 @@ impl Inner {
                 }
             }
 
-            self.store.insert(agent.agent.clone(), agent);
+            self.store.insert(agent.agent.clone(), agent.clone());
+            inserted.push(agent);
         }
 
-        Ok(())
+        Ok(inserted)
     }
 
-    pub fn remove(&mut self, agent_id: &AgentId) {
-        self.store.remove(agent_id);
+    pub fn remove(
+        &mut self,
+        agent_id: &AgentId,
+    ) -> Option<Arc<AgentInfoSigned>> {
+        self.store.remove(agent_id)
     }
 
     pub fn get(&mut self, agent: AgentId) -> Option<Arc<AgentInfoSigned>> {
