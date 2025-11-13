@@ -456,6 +456,8 @@ async fn cmd_task(
                     r.recv_bytes += data.len() as u64;
                 });
                 if let Err(err) = handler.recv_data(url.clone(), data).await {
+                    tracing::error!(?url, "Error receiving data: {err:?}");
+
                     if let Some(mut drop_send) = con_pool.remove(&url) {
                         drop_send.reason = Some(format!("{err:?}"));
                     }
