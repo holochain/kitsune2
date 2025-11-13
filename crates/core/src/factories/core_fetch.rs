@@ -173,7 +173,7 @@ impl Fetch for CoreFetch {
             // These need to be added up front, before sending them to the outgoing
             // request queue, otherwise the queue processes them faster than they're
             // being added to state and the request logic fails.
-            self.state.lock().unwrap().requests.extend(
+            self.state.lock().expect("poisoned").requests.extend(
                 new_op_ids
                     .clone()
                     .into_iter()
@@ -205,6 +205,7 @@ impl Fetch for CoreFetch {
     fn notify_on_drained(&self, notify: futures::channel::oneshot::Sender<()>) {
         let mut lock = self.state.lock().expect("poisoned");
         if lock.requests.is_empty() {
+            drop(lock);
             if let Err(err) = notify.send(()) {
                 tracing::warn!(?err, "Failed to send notification on drained");
             }
@@ -391,7 +392,10 @@ impl CoreFetch {
         // Check if the fetch queue is drained.
         if state.requests.is_empty() {
             // Notify all listeners that the fetch queue is drained.
-            for notify in state.notify_when_drained_senders.drain(..) {
+            let senders =
+                std::mem::take(&mut state.notify_when_drained_senders);
+            drop(state);
+            for notify in senders {
                 if notify.send(()).is_err() {
                     tracing::warn!("Failed to send notification on drained");
                 }
