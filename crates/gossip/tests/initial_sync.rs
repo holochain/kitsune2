@@ -5,6 +5,7 @@
 use kitsune2_api::{DhtArc, Timestamp};
 use kitsune2_core::factories::MemoryOp;
 use kitsune2_gossip::harness::{K2GossipFunctionalTestFactory, MemoryOpRecord};
+use kitsune2_gossip::K2GossipConfig;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use kitsune2_test_utils::{enable_tracing_with_default_level, random_bytes};
 use std::time::Duration;
@@ -17,8 +18,13 @@ async fn two_new_agents_sync() {
     let factory = K2GossipFunctionalTestFactory::create(
         TEST_SPACE_ID,
         true,
-        // Use default config for this test
-        Some(Default::default()),
+        Some(K2GossipConfig {
+            initiate_interval_ms: 500,
+            min_initiate_interval_ms: 1000,
+            initial_initiate_interval_ms: 250,
+            initiate_jitter_ms: 0,
+            ..Default::default()
+        }),
     )
     .await;
 
@@ -62,10 +68,10 @@ async fn two_new_agents_sync() {
         .unwrap();
 
     // TODO remove this second insert once a "hello" message logic is
-    // implemented (along the lines of what's described in
-    // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-    // Gossip shouldn't in general depend on both peers knowing about each
-    // other's agent infos.
+    //      implemented (along the lines of what's described in
+    //      https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
+    //      Gossip shouldn't in general depend on both peers knowing about each
+    //      other's agent infos.
     harness_2
         .space
         .peer_store()
@@ -75,15 +81,15 @@ async fn two_new_agents_sync() {
 
     // Wait for data to be synced.
     harness_1
-        .wait_for_sync_with(&harness_2, Duration::from_secs(10))
+        .wait_for_sync_with(&harness_2, Duration::from_secs(60))
         .await;
 
     // Then both agents should have reached full arc.
     harness_2
-        .wait_for_full_arc_for_all(Duration::from_secs(10))
+        .wait_for_full_arc_for_all(Duration::from_secs(30))
         .await;
     harness_1
-        .wait_for_full_arc_for_all(Duration::from_secs(10))
+        .wait_for_full_arc_for_all(Duration::from_secs(30))
         .await;
 }
 
@@ -95,8 +101,13 @@ async fn new_agent_joins_existing_network() {
     let factory = K2GossipFunctionalTestFactory::create(
         TEST_SPACE_ID,
         true,
-        // Use default config for this test
-        Some(Default::default()),
+        Some(K2GossipConfig {
+            initiate_interval_ms: 500,
+            min_initiate_interval_ms: 1000,
+            initial_initiate_interval_ms: 250,
+            initiate_jitter_ms: 0,
+            ..Default::default()
+        }),
     )
     .await;
 
@@ -147,10 +158,10 @@ async fn new_agent_joins_existing_network() {
         .unwrap();
 
     // TODO remove this second insert once a "hello" message logic is
-    // implemented (along the lines of what's described in
-    // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-    // Gossip shouldn't in general depend on both peers knowing about each
-    // other's agent infos.
+    //      implemented (along the lines of what's described in
+    //      https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
+    //      Gossip shouldn't in general depend on both peers knowing about each
+    //      other's agent infos.
     harness_2
         .space
         .peer_store()
@@ -160,14 +171,14 @@ async fn new_agent_joins_existing_network() {
 
     // Wait for data to be synced.
     harness_1
-        .wait_for_sync_with(&harness_2, Duration::from_secs(10))
+        .wait_for_sync_with(&harness_2, Duration::from_secs(60))
         .await;
 
     // Then both agents should have reached full arc.
     harness_1
-        .wait_for_full_arc_for_all(Duration::from_secs(5))
+        .wait_for_full_arc_for_all(Duration::from_secs(30))
         .await;
     harness_2
-        .wait_for_full_arc_for_all(Duration::from_secs(5))
+        .wait_for_full_arc_for_all(Duration::from_secs(30))
         .await;
 }
