@@ -235,8 +235,6 @@ impl ReadyDataSend {
     ///
     /// If the connection is not ready after 5 seconds, return a timeout error.
     async fn wait_ready(&self) -> K2Result<DataSend> {
-        tracing::info!("Entering wait_ready");
-
         let _ = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             self.ready.acquire(),
