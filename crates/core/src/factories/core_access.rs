@@ -49,7 +49,7 @@ impl CorePeerAccessState {
                         Some(url) => url,
                         None => {
                             if !agent_info.is_tombstone {
-                                tracing::info!("AgentInfo has no URL: {:?}", agent_info);
+                                tracing::warn!("AgentInfo has no URL: {:?}", agent_info);
                             }
                             return;
                         }
@@ -58,7 +58,7 @@ impl CorePeerAccessState {
                     tracing::debug!("Making access decision for peer URL: {:?}", peer_url);
 
                     // fetch peers by url
-                    let block_targets: Vec<_> = match peer_store
+                    let agents_by_url: Vec<_> = match peer_store
                         .get_by_url(peer_url.clone())
                         .await {
                         Ok(peers) => peers.into_iter()
@@ -74,7 +74,7 @@ impl CorePeerAccessState {
                         }
                     };
 
-                    if block_targets.is_empty() {
+                    if agents_by_url.is_empty() {
                         tracing::debug!("No agents found for url, clearing decision because they will be treated as blocked anyway: {:?}", peer_url);
 
                         // Any existing decision can be removed
@@ -83,7 +83,7 @@ impl CorePeerAccessState {
                             .expect("poisoned")
                             .remove(&peer_url);
                     } else {
-                        let all_blocked = match blocks.are_all_blocked(block_targets).await {
+                        let all_blocked = match blocks.are_all_blocked(agents_by_url).await {
                             Ok(all_blocked) => all_blocked,
                             Err(e) => {
                                 tracing::error!(
@@ -158,9 +158,12 @@ impl PeerAccessState for CorePeerAccessState {
         &self,
         peer_url: Url,
     ) -> K2Result<Option<PeerAccess>> {
-        let decisions = self.decisions.clone();
-        let decision =
-            decisions.read().expect("poisoned").get(&peer_url).cloned();
+        let decision = self
+            .decisions
+            .read()
+            .expect("poisoned")
+            .get(&peer_url)
+            .cloned();
         Ok(decision)
     }
 }
