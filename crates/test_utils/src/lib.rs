@@ -8,6 +8,7 @@ pub mod bootstrap;
 pub mod id;
 pub mod noop_bootstrap;
 pub mod space;
+pub mod tx_handler;
 
 /// Enable tracing with the RUST_LOG environment variable.
 ///

@@ -7,9 +7,11 @@ use kitsune2_api::{
     AgentInfoSigned, BlockTarget, BoxFut, Builder, DynSpace, DynTransport,
     K2Result, SpaceHandler, TxBaseHandler, TxHandler, TxModuleHandler, Url,
 };
+use kitsune2_core::factories::CoreGossipStubFactory;
 use kitsune2_core::{Ed25519LocalAgent, Ed25519Verifier};
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::iter_check;
+use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 use kitsune2_transport_tx5::Tx5TransportFactory;
 use sbd_server::SbdServer;
@@ -161,6 +163,8 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
 
     let builder = Builder {
         transport: Tx5TransportFactory::create(),
+        gossip: CoreGossipStubFactory::create(),
+        bootstrap: Arc::new(NoopBootstrapFactory {}),
         ..kitsune2_core::default_test_builder()
     }
     .with_default_config()
@@ -381,6 +385,8 @@ async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
         .block(BlockTarget::Agent(agent.clone()))
         .await
         .unwrap();
+    // After blocking, the agent must be removed from the peer store
+    space.peer_store().remove(agent.clone()).await.unwrap();
 
     // Check that all agents are considered blocked now
     let all_blocked =

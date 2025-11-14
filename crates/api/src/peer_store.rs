@@ -56,6 +56,16 @@ pub trait PeerStore: 'static + Send + Sync + std::fmt::Debug {
         &self,
         peer_url: Url,
     ) -> BoxFut<'_, K2Result<Vec<Arc<AgentInfoSigned>>>>;
+
+    /// Register a listener that will be called whenever a peer is added or updated in the store.
+    fn register_peer_update_listener(
+        &self,
+        _listener: Arc<
+            dyn (Fn(Arc<AgentInfoSigned>) -> BoxFut<'static, ()>) + Send + Sync,
+        >,
+    ) -> K2Result<()> {
+        Ok(())
+    }
 }
 
 /// Trait-object [PeerStore].

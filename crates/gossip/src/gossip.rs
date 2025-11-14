@@ -461,8 +461,7 @@ mod test {
         let harness_2 = factory.new_instance().await;
         let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
 
-        // Join extra agents for each peer. These will take a few seconds to be
-        // found by bootstrap. Try to sync them with gossip.
+        // Join extra agents for each peer. Try to sync them with gossip.
         let secret_agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
         assert!(harness_2
             .space
@@ -488,18 +487,6 @@ mod test {
             .await
             .unwrap();
 
-        // TODO remove this second insert once a "hello" message logic is
-        // implemented (along the lines of what's described in
-        // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-        // Gossip shouldn't in general depend on both peers knowing about each
-        // other's agent infos.
-        harness_2
-            .space
-            .peer_store()
-            .insert(vec![agent_info_1.clone()])
-            .await
-            .unwrap();
-
         harness_1
             .wait_for_agent_in_peer_store(secret_agent_2.agent.clone())
             .await;
@@ -507,30 +494,31 @@ mod test {
             .wait_for_agent_in_peer_store(secret_agent_1.agent.clone())
             .await;
 
-        let completed_1 = harness_1
-            .peer_meta_store
-            .completed_rounds(agent_info_2.url.clone().unwrap())
-            .await
-            .unwrap()
-            .unwrap_or_default();
-        // TODO once the second peer store insert above gets removed, make this
-        // a strict check for 1 completed gossip round again. The completed
-        // rounds count currently can be 2 because both peers may initiate
-        // at the same time and losing the tie break and abandoning the
-        // initiate attempt counts as a completed round.
-        assert!(1 == completed_1 || 2 == completed_1);
-        let completed_2 = harness_2
-            .peer_meta_store
-            .completed_rounds(agent_info_1.url.clone().unwrap())
-            .await
-            .unwrap()
-            .unwrap_or_default();
-        // TODO once the second peer store insert above gets removed, make this
-        // a strict check for 1 completed gossip round again. The completed
-        // rounds count currently can be 2 because both peers may initiate
-        // at the same time and losing the tie break and abandoning the
-        // initiate attempt counts as a completed round.
-        assert!(1 == completed_2 || 2 == completed_2);
+        iter_check!(1000, {
+            let completed_1 = harness_1
+                .peer_meta_store
+                .completed_rounds(agent_info_2.url.clone().unwrap())
+                .await
+                .unwrap()
+                .unwrap_or_default();
+
+            if completed_1 >= 1 {
+                break;
+            }
+        });
+
+        iter_check!(1000, {
+            let completed_2 = harness_2
+                .peer_meta_store
+                .completed_rounds(agent_info_1.url.clone().unwrap())
+                .await
+                .unwrap()
+                .unwrap_or_default();
+
+            if completed_2 >= 1 {
+                break;
+            }
+        });
     }
 
     #[tokio::test]
@@ -542,7 +530,7 @@ mod test {
             K2GossipFunctionalTestFactory::create(space.clone(), true, None)
                 .await;
         let harness_1 = factory.new_instance().await;
-        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        harness_1.join_local_agent(DhtArc::FULL).await;
         let op_1 = MemoryOp::new(Timestamp::now(), vec![1; 128]);
         let op_id_1 = op_1.compute_op_id();
         harness_1
@@ -570,18 +558,6 @@ mod test {
             .space
             .peer_store()
             .insert(vec![agent_info_2.clone()])
-            .await
-            .unwrap();
-
-        // TODO remove this second insert once a "hello" message logic is
-        // implemented (along the lines of what's described in
-        // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-        // Gossip shouldn't in general depend on both peers knowing about each
-        // other's agent infos.
-        harness_2
-            .space
-            .peer_store()
-            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 
@@ -613,11 +589,6 @@ mod test {
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
-        harness_1
-            .space
-            .inform_ops_stored(vec![op_1.clone().into()])
-            .await
-            .unwrap();
 
         let harness_2 = factory.new_instance().await;
         let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
@@ -627,11 +598,6 @@ mod test {
             .space
             .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
-            .await
-            .unwrap();
-        harness_2
-            .space
-            .inform_ops_stored(vec![op_2.clone().into()])
             .await
             .unwrap();
 
@@ -659,18 +625,6 @@ mod test {
             .space
             .peer_store()
             .insert(vec![agent_info_2.clone()])
-            .await
-            .unwrap();
-
-        // TODO remove this second insert once a "hello" message logic is
-        // implemented (along the lines of what's described in
-        // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-        // Gossip shouldn't in general depend on both peers knowing about each
-        // other's agent infos.
-        harness_2
-            .space
-            .peer_store()
-            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 
@@ -704,11 +658,6 @@ mod test {
             .process_incoming_ops(vec![op_1.clone().into()])
             .await
             .unwrap();
-        harness_1
-            .space
-            .inform_ops_stored(vec![op_1.clone().into()])
-            .await
-            .unwrap();
 
         let harness_2 = factory.new_instance().await;
         let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
@@ -721,11 +670,6 @@ mod test {
             .space
             .op_store()
             .process_incoming_ops(vec![op_2.clone().into()])
-            .await
-            .unwrap();
-        harness_2
-            .space
-            .inform_ops_stored(vec![op_2.clone().into()])
             .await
             .unwrap();
 
@@ -756,18 +700,6 @@ mod test {
             .await
             .unwrap();
 
-        // TODO remove this second insert once a "hello" message logic is
-        // implemented (along the lines of what's described in
-        // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-        // Gossip shouldn't in general depend on both peers knowing about each
-        // other's agent infos.
-        harness_2
-            .space
-            .peer_store()
-            .insert(vec![agent_info_1.clone()])
-            .await
-            .unwrap();
-
         let received_ops = harness_1.wait_for_ops(vec![op_id_2]).await;
         assert_eq!(1, received_ops.len());
         assert_eq!(op_2, received_ops[0]);
@@ -786,7 +718,7 @@ mod test {
             K2GossipFunctionalTestFactory::create(space.clone(), true, None)
                 .await;
         let harness_1 = factory.new_instance().await;
-        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+        harness_1.join_local_agent(DhtArc::FULL).await;
 
         let harness_2 = factory.new_instance().await;
         let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
@@ -806,18 +738,6 @@ mod test {
             .space
             .peer_store()
             .insert(vec![agent_info_2.clone()])
-            .await
-            .unwrap();
-
-        // TODO remove this second insert once a "hello" message logic is
-        // implemented (along the lines of what's described in
-        // https://github.com/holochain/kitsune2/issues/263#issuecomment-3090033837).
-        // Gossip shouldn't in general depend on both peers knowing about each
-        // other's agent infos.
-        harness_2
-            .space
-            .peer_store()
-            .insert(vec![agent_info_1.clone()])
             .await
             .unwrap();
 

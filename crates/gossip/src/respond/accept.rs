@@ -99,6 +99,8 @@ impl K2Gossip {
                 // Then pick an appropriate response message based on the snapshot
                 match next_action {
                     DhtSnapshotNextAction::Identical => {
+                        tracing::debug!(?accept.session_id, "Snapshots identical, no diff needed");
+
                         if let Some(state) = lock.as_mut() {
                             state.stage = RoundStage::NoDiff;
                         }
@@ -237,9 +239,9 @@ impl K2Gossip {
                 state.validate_accept(from_peer.clone(), accept)?.clone()
             }
             None => {
-                return Err(K2GossipError::peer_behavior(
-                    "Unsolicited Accept message",
-                ));
+                return Err(K2GossipError::peer_behavior(format!(
+                    "Unsolicited Accept message from peer: {from_peer}",
+                )));
             }
         };
 
