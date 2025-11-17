@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.3.2](https://github.com/holochain/kitsune2/compare/v0.3.1...v0.3.2)\] - 2025-11-17
+
+### Features
+
+- Implement tracking peer access state as peers are added and removed in the peer store, so that the access check can be sync without needing to use `block_on`
+
+### Bug Fixes
+
+- Drop locks as soon as possible when sending fetch queue drained notifications
+
+### Miscellaneous Tasks
+
+- Stop printing on entry to `wait_ready`
+- Bump tx5 to v0.8.1 & sbd to v0.4.0
+
+### CI
+
+- Release from release branches
+
+### Testing
+
+- Improve error messaging in tests
+- Add new `TestTxHandler` that can be used in tests that need a preflight implementation that shares agents
+- Improve flaky gossip tests for sync (#373)
+
 ## \[[0.3.1](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.3.1)\] - 2025-11-10
 
 ### Bug Fixes
