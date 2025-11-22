@@ -10,9 +10,9 @@ fn tc<S: serde::Serialize, D: serde::de::DeserializeOwned>(
 ) -> K2Result<D> {
     serde_json::from_str(
         &serde_json::to_string(s)
-            .map_err(|e| K2Error::other_src("encode", e))?,
+            .map_err(|e| K2Error::other_src("encode config", e))?,
     )
-    .map_err(|e| K2Error::other_src("decode", e))
+    .map_err(|e| K2Error::other_src("decode config", e))
 }
 
 /// A callback to be invoked if the config value is updated at runtime.
