@@ -1,5 +1,39 @@
-use super::{decode_frame, FrameType, FRAME_HEADER_LEN, MAX_FRAME_BYTES};
+use super::{
+    decode_frame, encode_frame_header, FrameType, FRAME_HEADER_LEN,
+    MAX_FRAME_BYTES,
+};
 use bytes::Bytes;
+
+#[test]
+fn encode_frame_header_valid_peer_url() {
+    let ty = FrameType::PeerUrl;
+    let data_len = 100;
+    let header = encode_frame_header(ty, data_len).unwrap();
+    assert_eq!(header[0], ty as u8);
+    assert_eq!(
+        u32::from_be_bytes([header[1], header[2], header[3], header[4]]),
+        data_len as u32
+    );
+}
+
+#[test]
+fn encode_frame_header_valid_payload() {
+    let ty = FrameType::Payload;
+    let data_len = 0;
+    let header = encode_frame_header(ty, data_len).unwrap();
+    assert_eq!(header[0], ty as u8);
+    assert_eq!(
+        u32::from_be_bytes([header[1], header[2], header[3], header[4]]),
+        data_len as u32
+    );
+}
+
+#[test]
+fn encode_frame_header_too_large() {
+    let data_len = MAX_FRAME_BYTES - FRAME_HEADER_LEN + 1;
+    let err = encode_frame_header(FrameType::Payload, data_len).unwrap_err();
+    assert!(err.to_string().contains("frame too large"));
+}
 
 #[test]
 fn decode_frame_valid_peer_url() {

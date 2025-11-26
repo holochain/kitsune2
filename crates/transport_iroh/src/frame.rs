@@ -55,6 +55,26 @@ pub(super) fn decode_frame(data: Vec<u8>) -> K2Result<(FrameType, Bytes)> {
     Ok((frame_type, payload))
 }
 
+/// Encodes a frame header for the given frame type and payload length.
+///
+/// The frame format consists of:
+/// - 1 byte for frame type (0 for PeerUrl, 1 for Payload)
+/// - 4 bytes for payload length (big-endian u32)
+///
+/// Returns an error if the total frame size exceeds [`MAX_FRAME_BYTES`].
+pub(super) fn encode_frame_header(
+    ty: FrameType,
+    data_len: usize,
+) -> K2Result<[u8; FRAME_HEADER_LEN]> {
+    if data_len + FRAME_HEADER_LEN > MAX_FRAME_BYTES {
+        return Err(K2Error::other("frame too large"));
+    }
+    let mut header = [0u8; FRAME_HEADER_LEN];
+    header[0] = ty as u8;
+    header[1..5].copy_from_slice(&(data_len as u32).to_be_bytes());
+    Ok(header)
+}
+
 /// Sends a frame over the iroh connection.
 ///
 /// The frame format consists of:
@@ -72,12 +92,7 @@ pub(super) async fn send_frame(
     let mut stream = conn.open_uni().await.map_err(|err| {
         K2Error::other_src("failed to open iroh send stream", err)
     })?;
-    if data.len() + FRAME_HEADER_LEN > MAX_FRAME_BYTES {
-        return Err(K2Error::other("frame too large"));
-    }
-    let mut header = [0u8; FRAME_HEADER_LEN];
-    header[0] = ty as u8;
-    header[1..5].copy_from_slice(&(data.len() as u32).to_be_bytes());
+    let header = encode_frame_header(ty, data.len())?;
     stream.write_all(&header).await.map_err(|err| {
         K2Error::other_src("failed to send frame header", err)
     })?;
