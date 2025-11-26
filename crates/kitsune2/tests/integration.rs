@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use kitsune2::default_builder;
 use kitsune2_api::{
-    BoxFut, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, K2Result,
+    BoxFut, Builder, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, K2Result,
     KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId, Timestamp,
 };
 use kitsune2_core::{
@@ -13,11 +13,17 @@ use kitsune2_core::{
 };
 use kitsune2_gossip::{K2GossipConfig, K2GossipModConfig};
 use kitsune2_test_utils::{
-    bootstrap::TestBootstrapSrv, enable_tracing, iter_check, random_bytes,
+    bootstrap::TestBootstrapSrv, enable_tracing,
+    iroh_relay::spawn_iroh_relay_server, iter_check, random_bytes,
     space::TEST_SPACE_ID,
 };
-use kitsune2_transport_tx5::config::{
-    Tx5TransportConfig, Tx5TransportModConfig,
+use kitsune2_transport_iroh::{
+    config::{IrohTransportConfig, IrohTransportModConfig},
+    IrohTransportFactory,
+};
+use kitsune2_transport_tx5::{
+    config::{Tx5TransportConfig, Tx5TransportModConfig},
+    Tx5TransportFactory,
 };
 use sbd_server::SbdServer;
 use std::sync::Arc;
@@ -52,11 +58,25 @@ impl KitsuneHandler for TestKitsuneHandler {
 struct TestSpaceHandler;
 impl SpaceHandler for TestSpaceHandler {}
 
+enum Transport {
+    Tx5,
+    Iroh,
+}
+
 async fn make_kitsune_node(
-    signal_server_url: &str,
+    relay_server_url: &str,
     bootstrap_server_url: &str,
+    transport: Transport,
 ) -> DynKitsune {
-    let kitsune_builder = default_builder().with_default_config().unwrap();
+    let kitsune_builder = Builder {
+        transport: match transport {
+            Transport::Iroh => IrohTransportFactory::create(),
+            Transport::Tx5 => Tx5TransportFactory::create(),
+        },
+        ..default_builder()
+    }
+    .with_default_config()
+    .unwrap();
     kitsune_builder
         .config
         .set_module_config(&CoreBootstrapModConfig {
@@ -67,18 +87,33 @@ async fn make_kitsune_node(
             },
         })
         .unwrap();
-    kitsune_builder
-        .config
-        .set_module_config(&Tx5TransportModConfig {
-            tx5_transport: Tx5TransportConfig {
-                server_url: signal_server_url.to_owned(),
-                signal_allow_plain_text: true,
-                timeout_s: 5,
-                webrtc_connect_timeout_s: 3,
-                ..Default::default()
-            },
-        })
-        .unwrap();
+    match transport {
+        Transport::Iroh => {
+            kitsune_builder
+                .config
+                .set_module_config(&IrohTransportModConfig {
+                    iroh_transport: IrohTransportConfig {
+                        relay_url: Some(relay_server_url.to_string()),
+                        relay_allow_plain_text: true,
+                    },
+                })
+                .unwrap();
+        }
+        Transport::Tx5 => {
+            kitsune_builder
+                .config
+                .set_module_config(&Tx5TransportModConfig {
+                    tx5_transport: Tx5TransportConfig {
+                        server_url: relay_server_url.to_owned(),
+                        signal_allow_plain_text: true,
+                        timeout_s: 5,
+                        webrtc_connect_timeout_s: 3,
+                        ..Default::default()
+                    },
+                })
+                .unwrap();
+        }
+    }
     kitsune_builder
         .config
         .set_module_config(&K2GossipModConfig {
@@ -114,14 +149,25 @@ async fn start_space(kitsune: &DynKitsune) -> DynSpace {
 
     // Wait for agent to publish their info to the bootstrap & peer store.
     iter_check!(5000, 100, {
-        if space
-            .peer_store()
-            .get(local_agent.agent().clone())
-            .await
-            .unwrap()
-            .is_some()
-        {
-            break;
+        let agent = local_agent.agent().clone();
+        match space.peer_store().get(agent.clone()).await {
+            Ok(Some(peer)) => {
+                tracing::info!("Found local agent in peer store: {:?}", peer);
+                break;
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    "Local agent not yet in peer store: {:?}",
+                    agent
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Error getting local agent from peer store: {:?}",
+                    e
+                );
+                panic!("Peer store error: {e:?}");
+            }
         }
     });
 
@@ -144,10 +190,85 @@ async fn two_node_gossip() {
     let bootstrap_server_url = bootstrap_server.addr().to_string();
 
     // Create 2 Kitsune instances...
+    let kitsune_1 = make_kitsune_node(
+        &signal_server_url,
+        &bootstrap_server_url,
+        Transport::Tx5,
+    )
+    .await;
+    let kitsune_2 = make_kitsune_node(
+        &signal_server_url,
+        &bootstrap_server_url,
+        Transport::Tx5,
+    )
+    .await;
+
+    // and 1 space with 1 joined agent each.
+    let space_1 = start_space(&kitsune_1).await;
+    let space_2 = start_space(&kitsune_2).await;
+
+    // Insert ops into both spaces' op stores.
+    let (ops_1, op_ids_1) = create_op_list(1000);
+    space_1
+        .op_store()
+        .process_incoming_ops(ops_1.clone())
+        .await
+        .unwrap();
+    let (ops_2, op_ids_2) = create_op_list(1000);
+    space_2
+        .op_store()
+        .process_incoming_ops(ops_2.clone())
+        .await
+        .unwrap();
+
+    // Wait for gossip to exchange all ops.
+    iter_check!(60_000, 1_000, {
+        let actual_ops_1 = space_1
+            .op_store()
+            .retrieve_ops(op_ids_2.clone())
+            .await
+            .unwrap();
+        let actual_ops_2 = space_2
+            .op_store()
+            .retrieve_ops(op_ids_1.clone())
+            .await
+            .unwrap();
+        if actual_ops_1.len() == ops_2.len()
+            && actual_ops_2.len() == ops_1.len()
+        {
+            break;
+        } else {
+            tracing::info!(
+                "space 1 actual ops received {}/expected {}",
+                actual_ops_1.len(),
+                ops_2.len()
+            );
+            tracing::info!(
+                "space 2 actual ops received {}/expected {}",
+                actual_ops_2.len(),
+                ops_1.len()
+            );
+        }
+    });
+}
+
+#[tokio::test]
+async fn two_node_gossip_iroh() {
+    enable_tracing();
+
+    let relay_server = spawn_iroh_relay_server().await;
+    let relay_url = format!("http://{}", relay_server.http_addr().unwrap());
+
+    let bootstrap_server = TestBootstrapSrv::new(false).await;
+    let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+    // Create 2 Kitsune instances...
     let kitsune_1 =
-        make_kitsune_node(&signal_server_url, &bootstrap_server_url).await;
+        make_kitsune_node(&relay_url, &bootstrap_server_url, Transport::Iroh)
+            .await;
     let kitsune_2 =
-        make_kitsune_node(&signal_server_url, &bootstrap_server_url).await;
+        make_kitsune_node(&relay_url, &bootstrap_server_url, Transport::Iroh)
+            .await;
 
     // and 1 space with 1 joined agent each.
     let space_1 = start_space(&kitsune_1).await;
@@ -228,10 +349,18 @@ async fn shutdown_space() {
     let bootstrap_server_url = bootstrap_server.addr().to_string();
 
     // Create 2 Kitsune instances..
-    let kitsune_1 =
-        make_kitsune_node(&signal_server_url, &bootstrap_server_url).await;
-    let kitsune_2 =
-        make_kitsune_node(&signal_server_url, &bootstrap_server_url).await;
+    let kitsune_1 = make_kitsune_node(
+        &signal_server_url,
+        &bootstrap_server_url,
+        Transport::Tx5,
+    )
+    .await;
+    let kitsune_2 = make_kitsune_node(
+        &signal_server_url,
+        &bootstrap_server_url,
+        Transport::Tx5,
+    )
+    .await;
 
     let metrics = tokio::runtime::Handle::current().metrics();
     let initial_tasks = metrics.num_alive_tasks();

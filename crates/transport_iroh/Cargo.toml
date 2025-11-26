@@ -1,0 +1,38 @@
+[package]
+name = "kitsune2_transport_iroh"
+description = "The iroh-based transport implementation for kitsune2"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+iroh = { workspace = true }
+kitsune2_api = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = [
+  "macros",
+  "rt",
+  "rt-multi-thread",
+  "sync",
+  "time",
+  "io-util",
+] }
+tracing = { workspace = true }
+url = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+kitsune2_core = { workspace = true }
+kitsune2_test_utils = { workspace = true }
+
+futures = { workspace = true }
+iroh-relay = { workspace = true, features = ["server"] }
+
+[features]
+schema = ["dep:schemars"]

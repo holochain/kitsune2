@@ -10,6 +10,7 @@ members = [
   "crates/kitsune2_showcase",
   "crates/test_utils",
   "crates/tool_proto_build",
+  "crates/transport_iroh",
   "crates/transport_tx5",
 ]
 
@@ -39,6 +40,7 @@ kitsune2_api = { version = "0.3.0-dev.1", path = "crates/api" }
 kitsune2_dht = { version = "0.3.0-dev.1", path = "crates/dht" }
 kitsune2_gossip = { version = "0.3.0-dev.1", path = "crates/gossip" }
 kitsune2_transport_tx5 = { version = "0.3.0-dev.1", path = "crates/transport_tx5", default-features = false }
+kitsune2_transport_iroh = { version = "0.3.0-dev.1", path = "crates/transport_iroh" }
 kitsune2_bootstrap_client = { version = "0.3.0-dev.1", path = "crates/bootstrap_client" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
@@ -64,6 +66,10 @@ clap = "4.5.21"
 ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
+# alternative transport implementation using iroh
+iroh = "0.95.1"
+# iroh relay for testing iroh transport
+iroh-relay = "0.95.1"
 # automock traits for tests
 mockall = "0.13"
 # bootstrap_srv uses this to determine worker thread count.

@@ -116,7 +116,10 @@ impl Url {
         })?;
 
         let scheme = match parsed.scheme() {
-            scheme @ "ws" | scheme @ "wss" => scheme,
+            scheme @ "ws"
+            | scheme @ "wss"
+            | scheme @ "http"
+            | scheme @ "https" => scheme,
             oth => {
                 return Err(K2Error::other(format!(
                     "Invalid Kitsune2 Url Scheme: {oth}",
@@ -179,9 +182,10 @@ impl Url {
         unsafe { std::str::from_utf8_unchecked(&self.0) }
     }
 
-    /// Returns true if the protocol scheme is `wss`.
+    /// Returns true if the protocol scheme is TLS-enabled (`wss` or `https`).
     pub fn uses_tls(&self) -> bool {
-        &self.0[..3] == b"wss"
+        let s = self.as_str();
+        s.starts_with("wss://") || s.starts_with("https://")
     }
 
     /// Returns true if this is a peer url. Otherwise, this is a server url.

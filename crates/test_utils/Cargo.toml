@@ -18,6 +18,7 @@ axum = { workspace = true, default-features = false, features = [
 ] }
 bytes = { workspace = true }
 futures = { workspace = true }
+iroh-relay = { workspace = true, features = ["server"] }
 kitsune2_api = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
