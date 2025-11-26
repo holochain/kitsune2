@@ -4,9 +4,9 @@ use iroh::endpoint::Connection;
 use kitsune2_api::{K2Error, K2Result};
 use std::sync::Arc;
 
-const FRAME_HEADER_LEN: usize = 5;
+pub(super) const FRAME_HEADER_LEN: usize = 5;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum FrameType {
     PeerUrl = 0,
     Payload = 1,

@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod frame;
 mod url;
 
 #[test]
