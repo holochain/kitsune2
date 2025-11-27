@@ -17,7 +17,7 @@ use kitsune2_test_utils::{
     space::TEST_SPACE_ID,
 };
 use std::sync::Arc;
-#[cfg(feature = "iroh")]
+#[cfg(feature = "transport-iroh")]
 use {
     kitsune2_test_utils::iroh_relay::{spawn_iroh_relay_server, Server},
     kitsune2_transport_iroh::{
@@ -26,9 +26,9 @@ use {
     },
 };
 #[cfg(any(
-    feature = "backend-libdatachannel",
-    feature = "backend-go-pion",
-    feature = "datachannel-vendored"
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
 ))]
 use {
     kitsune2_transport_tx5::{
@@ -74,12 +74,12 @@ async fn make_kitsune_node(
 ) -> DynKitsune {
     let kitsune_builder = Builder {
         #[cfg(any(
-            feature = "backend-libdatachannel",
-            feature = "backend-go-pion",
-            feature = "datachannel-vendored"
+            feature = "transport-tx5-backend-libdatachannel",
+            feature = "transport-tx5-backend-go-pion",
+            feature = "transport-tx5-datachannel-vendored"
         ))]
         transport: Tx5TransportFactory::create(),
-        #[cfg(feature = "iroh")]
+        #[cfg(feature = "transport-iroh")]
         transport: IrohTransportFactory::create(),
         ..default_builder()
     }
@@ -97,9 +97,9 @@ async fn make_kitsune_node(
         .unwrap();
 
     #[cfg(any(
-        feature = "backend-libdatachannel",
-        feature = "backend-go-pion",
-        feature = "datachannel-vendored"
+        feature = "transport-tx5-backend-libdatachannel",
+        feature = "transport-tx5-backend-go-pion",
+        feature = "transport-tx5-datachannel-vendored"
     ))]
     kitsune_builder
         .config
@@ -113,7 +113,7 @@ async fn make_kitsune_node(
             },
         })
         .unwrap();
-    #[cfg(feature = "iroh")]
+    #[cfg(feature = "transport-iroh")]
     kitsune_builder
         .config
         .set_module_config(&IrohTransportModConfig {
@@ -148,11 +148,11 @@ async fn make_kitsune_node(
 }
 
 #[cfg(any(
-    feature = "backend-libdatachannel",
-    feature = "backend-go-pion",
-    feature = "datachannel-vendored"
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
 ))]
-async fn sbd_signal_server() -> (SbdServer, String) {
+async fn sbd_signal_server() -> (String, SbdServer) {
     let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
         bind: vec!["127.0.0.1:0".to_string()],
         ..Default::default()
@@ -160,15 +160,33 @@ async fn sbd_signal_server() -> (SbdServer, String) {
     .await
     .unwrap();
     let relay_server_url = format!("ws://{}", signal_server.bind_addrs()[0]);
-    (signal_server, relay_server_url)
+    (relay_server_url, signal_server)
 }
 
-#[cfg(feature = "iroh")]
-async fn iroh_relay_server() -> (Server, String) {
+#[cfg(feature = "transport-iroh")]
+async fn iroh_relay_server() -> (String, Server) {
     let relay_server = spawn_iroh_relay_server().await;
     let relay_server_url =
         format!("http://{}", relay_server.http_addr().unwrap());
-    (relay_server, relay_server_url)
+    (relay_server_url, relay_server)
+}
+
+macro_rules! relay_server_with_url {
+    () => {{
+        #[cfg(any(
+            feature = "transport-tx5-backend-libdatachannel",
+            feature = "transport-tx5-backend-go-pion",
+            feature = "transport-tx5-datachannel-vendored"
+        ))]
+        {
+            sbd_signal_server().await
+        }
+
+        #[cfg(feature = "transport-iroh")]
+        {
+            iroh_relay_server().await
+        }
+    }};
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {
@@ -212,15 +230,7 @@ async fn start_space(kitsune: &DynKitsune) -> DynSpace {
 async fn two_node_gossip() {
     enable_tracing();
 
-    #[cfg(any(
-        feature = "backend-libdatachannel",
-        feature = "backend-go-pion",
-        feature = "datachannel-vendored"
-    ))]
-    let (_signal_server, relay_server_url) = sbd_signal_server().await;
-
-    #[cfg(feature = "iroh")]
-    let (_relay_server, relay_server_url) = iroh_relay_server().await;
+    let (relay_server_url, _relay_server) = relay_server_with_url!();
 
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
@@ -295,15 +305,15 @@ async fn two_node_gossip() {
 /// This isn't a perfect check for shutdown, but it's a reasonable expectation that if all the
 /// Tokio tasks for a space are gone, then it's not actively doing work in the background.
 #[cfg(any(
-    feature = "backend-libdatachannel",
-    feature = "backend-go-pion",
-    feature = "datachannel-vendored"
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
 ))]
 #[tokio::test]
 async fn shutdown_space() {
     enable_tracing();
 
-    let (_signal_server, relay_server_url) = sbd_signal_server().await;
+    let (relay_server_url, _relay_server) = relay_server_with_url!();
 
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();

@@ -59,7 +59,8 @@ jobs:
           RUST_LOG: info
         run: |
           cargo make test
-          cargo make test-go-pion
+          cargo make test-transport-tx5-go-pion
+          cargo make test-transport-iroh
 
       - name: Examples
         run: cargo run --example schema --features schema
@@ -104,7 +105,8 @@ jobs:
         run: |-
           $env:SODIUM_LIB_DIR="$(pwd)\vcpkg\packages\libsodium_x64-windows-release\lib"
           cargo make test
-          cargo make test-go-pion
+          cargo make test-transport-tx5-go-pion
+          cargo make test-transport-iroh
 
   nix-build:
     needs: static

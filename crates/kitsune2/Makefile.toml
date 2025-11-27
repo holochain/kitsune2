@@ -5,10 +5,15 @@ args = [
   "clippy",
   "--all-targets",
   "--features",
-  "datachannel-vendored",
+  "transport-tx5-datachannel-vendored",
   "--",
   "--deny=warnings",
 ]
 
 [tasks.test]
-args = ["test", "--no-default-features", "--features", "datachannel-vendored"]
+args = [
+  "test",
+  "--no-default-features",
+  "--features",
+  "transport-tx5-datachannel-vendored",
+]

@@ -33,7 +33,7 @@ install_crate = false
 command = "cargo"
 args = ["test"]
 
-[tasks.test-go-pion]
+[tasks.test-transport-tx5-go-pion]
 workspace = false
 command = "cargo"
 args = [
@@ -44,7 +44,21 @@ args = [
   "kitsune2",
   "--no-default-features",
   "--features",
-  "backend-go-pion",
+  "transport-tx5-backend-go-pion",
+  "--",
+  "--nocapture",
+]
+
+[tasks.test-transport-iroh]
+workspace = false
+command = "cargo"
+args = [
+  "test",
+  "--package",
+  "kitsune2",
+  "--no-default-features",
+  "--features",
+  "transport-iroh",
   "--",
   "--nocapture",
 ]

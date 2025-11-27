@@ -1,3 +1,11 @@
+// These tests require transport stats to be implemented.
+// Pending for iroh transport.
+#![cfg(any(
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
+))]
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -13,10 +21,23 @@ use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
-use kitsune2_transport_tx5::Tx5TransportFactory;
-use sbd_server::SbdServer;
+#[cfg(feature = "transport-iroh")]
+use {
+    kitsune2_test_utils::iroh_relay::{spawn_iroh_relay_server, Server},
+    kitsune2_transport_iroh::{
+        config::{IrohTransportConfig, IrohTransportModConfig},
+        IrohTransportFactory,
+    },
+};
+
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OnceCell;
+#[cfg(any(
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
+))]
+use {kitsune2_transport_tx5::Tx5TransportFactory, sbd_server::SbdServer};
 
 /// A default test space handler that just drops received messages.
 #[derive(Debug)]
@@ -152,6 +173,11 @@ impl TxHandler for TestTxHandler {
     }
 }
 
+#[cfg(any(
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
+))]
 async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
     let sbd_server = SbdServer::new(Arc::new(sbd_server::Config {
         bind: vec!["127.0.0.1:0".to_string()],
@@ -185,6 +211,53 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
         .unwrap();
 
     (Arc::new(builder), sbd_server)
+}
+
+#[cfg(feature = "transport-iroh")]
+async fn builder_with_iroh() -> (Arc<Builder>, Server) {
+    let relay_server = spawn_iroh_relay_server().await;
+    let relay_server_url =
+        format!("http://{}", relay_server.http_addr().unwrap());
+
+    let builder = Builder {
+        transport: IrohTransportFactory::create(),
+        gossip: CoreGossipStubFactory::create(),
+        bootstrap: Arc::new(NoopBootstrapFactory {}),
+        ..kitsune2_core::default_test_builder()
+    }
+    .with_default_config()
+    .unwrap();
+
+    builder
+        .config
+        .set_module_config(&IrohTransportModConfig {
+            iroh_transport: IrohTransportConfig {
+                relay_allow_plain_text: true,
+                relay_url: Some(relay_server_url),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    (Arc::new(builder), relay_server)
+}
+
+macro_rules! builder_with_relay {
+    () => {{
+        #[cfg(any(
+            feature = "transport-tx5-backend-libdatachannel",
+            feature = "transport-tx5-backend-go-pion",
+            feature = "transport-tx5-datachannel-vendored"
+        ))]
+        {
+            builder_with_tx5().await
+        }
+
+        #[cfg(feature = "transport-iroh")]
+        {
+            builder_with_iroh().await
+        }
+    }};
 }
 
 pub struct TestPeer {
@@ -434,7 +507,7 @@ async fn join_new_local_agent_and_wait_for_agent_info(
 async fn incoming_message_block_count_increases_correctly() {
     enable_tracing();
 
-    let (builder, _sbd_server) = builder_with_tx5().await;
+    let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeerLight {
         space1: space_alice_1,
@@ -655,7 +728,7 @@ async fn incoming_message_block_count_increases_correctly() {
 async fn outgoing_message_block_count_increases_correctly() {
     enable_tracing();
 
-    let (builder, _sbd_server) = builder_with_tx5().await;
+    let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeerLight {
         space1: _space_alice_1, // Need to keep the space in memory here since it's being used to check for blocks
@@ -842,7 +915,7 @@ async fn outgoing_message_block_count_increases_correctly() {
 async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let (builder, _sbd_server) = builder_with_tx5().await;
+    let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeer {
         space: space_alice,
@@ -995,7 +1068,7 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
 async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let (builder, _sbd_server) = builder_with_tx5().await;
+    let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeer {
         space: space_alice,
@@ -1149,7 +1222,7 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
 async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let (builder, _sbd_server) = builder_with_tx5().await;
+    let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeer {
         space: space_alice,
@@ -1317,7 +1390,7 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
 async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
     enable_tracing();
 
-    let (builder, _sbd_server) = builder_with_tx5().await;
+    let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeer {
         space: space_alice,

@@ -18,12 +18,12 @@ use kitsune2_core::{
     Ed25519Verifier,
 };
 use kitsune2_gossip::K2GossipFactory;
-#[cfg(feature = "iroh")]
+#[cfg(feature = "transport-iroh")]
 use kitsune2_transport_iroh::IrohTransportFactory;
 #[cfg(any(
-    feature = "backend-libdatachannel",
-    feature = "backend-go-pion",
-    feature = "datachannel-vendored"
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion",
+    feature = "transport-tx5-datachannel-vendored"
 ))]
 use kitsune2_transport_tx5::Tx5TransportFactory;
 
@@ -48,11 +48,11 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 ///   Note: you will likely want to implement your own [`Blocks`] module.
 pub fn default_builder() -> Builder {
     #[cfg(all(
-        feature = "iroh",
+        feature = "transport-iroh",
         any(
-            feature = "backend-libdatachannel",
-            feature = "backend-go-pion",
-            feature = "datachannel-vendored"
+            feature = "transport-tx5-backend-libdatachannel",
+            feature = "transport-tx5-backend-go-pion",
+            feature = "transport-tx5-datachannel-vendored"
         )
     ))]
     compile_error!("Only one transport feature can be enabled. Choose either datachannel-vendored, backend-libdatachannel, backend-go-pion or iroh.");
@@ -67,12 +67,12 @@ pub fn default_builder() -> Builder {
         bootstrap: factories::CoreBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         report: factories::CoreReportFactory::create(),
-        #[cfg(feature = "iroh")]
+        #[cfg(feature = "transport-iroh")]
         transport: IrohTransportFactory::create(),
         #[cfg(any(
-            feature = "backend-libdatachannel",
-            feature = "backend-go-pion",
-            feature = "datachannel-vendored"
+            feature = "transport-tx5-backend-libdatachannel",
+            feature = "transport-tx5-backend-go-pion",
+            feature = "transport-tx5-datachannel-vendored"
         ))]
         transport: Tx5TransportFactory::create(),
         op_store: MemOpStoreFactory::create(),
