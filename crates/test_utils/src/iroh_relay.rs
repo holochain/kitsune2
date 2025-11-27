@@ -1,9 +1,9 @@
 //! Test utilities associated with iroh relay servers.
 
-use iroh_relay::server::{
-    AccessConfig, Limits, RelayConfig, Server, ServerConfig,
-};
+use iroh_relay::server::{AccessConfig, Limits, RelayConfig, ServerConfig};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
+pub use iroh_relay::server::Server;
 
 /// Spawn an iroh relay server at 127.0.0.1.
 pub async fn spawn_iroh_relay_server() -> Server {
