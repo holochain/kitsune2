@@ -1,8 +1,9 @@
 use bytes::Bytes;
 use kitsune2::default_builder;
 use kitsune2_api::{
-    BoxFut, Builder, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, K2Result,
-    KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId, Timestamp,
+    BoxFut, Builder, Config, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, Id,
+    K2Result, KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId,
+    Timestamp,
 };
 use kitsune2_core::{
     factories::{
@@ -54,6 +55,7 @@ impl KitsuneHandler for TestKitsuneHandler {
     fn create_space(
         &self,
         _space_id: SpaceId,
+        _config_override: Option<&Config>,
     ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
         Box::pin(async {
             let space_handler: DynSpaceHandler = Arc::new(TestSpaceHandler);
@@ -87,7 +89,7 @@ async fn make_kitsune_node(
         .config
         .set_module_config(&CoreBootstrapModConfig {
             core_bootstrap: CoreBootstrapConfig {
-                server_url: bootstrap_server_url.to_owned(),
+                server_url: Some(bootstrap_server_url.to_owned()),
                 backoff_max_ms: 1000,
                 ..Default::default()
             },
@@ -188,7 +190,7 @@ macro_rules! relay_server_with_url {
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {
-    let space = kitsune.space(TEST_SPACE_ID).await.unwrap();
+    let space = kitsune.space(TEST_SPACE_ID, None).await.unwrap();
 
     // Create an agent.
     let local_agent = Arc::new(Ed25519LocalAgent::default());
@@ -441,4 +443,201 @@ async fn shutdown_space() {
     // The spaces should be gone.
     assert!(kitsune_1.space_if_exists(TEST_SPACE_ID).await.is_none());
     assert!(kitsune_2.space_if_exists(TEST_SPACE_ID).await.is_none());
+}
+
+#[tokio::test]
+async fn test_space_should_not_start_without_bootstrap_url_configured() {
+    enable_tracing();
+
+    // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
+    let kitsune_builder = default_builder().with_default_config().unwrap();
+
+    #[cfg(any(
+        feature = "transport-tx5-backend-libdatachannel",
+        feature = "transport-tx5-backend-go-pion",
+        feature = "transport-tx5-datachannel-vendored"
+    ))]
+    {
+        let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
+            bind: vec!["127.0.0.1:0".to_string()],
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+        let signal_server_url =
+            format!("ws://{}", signal_server.bind_addrs()[0]);
+        kitsune_builder
+            .config
+            .set_module_config(&Tx5TransportModConfig {
+                tx5_transport: Tx5TransportConfig {
+                    server_url: signal_server_url.to_owned(),
+                    signal_allow_plain_text: true,
+                    timeout_s: 5,
+                    webrtc_connect_timeout_s: 3,
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+    }
+    kitsune_builder
+        .config
+        .set_module_config(&K2GossipModConfig {
+            k2_gossip: K2GossipConfig {
+                initiate_interval_ms: 1000,
+                min_initiate_interval_ms: 100,
+                initiate_jitter_ms: 100,
+                round_timeout_ms: 10_000,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    // Build should succeed.
+    let kitsune = kitsune_builder.build().await.expect("Build Kitsune2");
+
+    // register handler
+    let kitsune_handler = Arc::new(TestKitsuneHandler);
+    kitsune
+        .register_handler(kitsune_handler.clone())
+        .await
+        .expect("Register handler");
+
+    // Creating a space MUST fail because there is no bootstrap config.
+    let result = kitsune.space(TEST_SPACE_ID, None).await;
+
+    assert!(
+        result.is_err(),
+        "Expected creating a space to fail when no bootstrap URL is configured"
+    );
+}
+
+#[tokio::test]
+async fn test_should_start_space_with_different_bootstrap_urls() {
+    enable_tracing();
+
+    // Create two independent bootstrap servers
+    let bootstrap_a = TestBootstrapSrv::new(false).await;
+    let bootstrap_b = TestBootstrapSrv::new(false).await;
+    let bootstrap_url_a = bootstrap_a.addr().to_string();
+    let bootstrap_url_b = bootstrap_b.addr().to_string();
+
+    // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
+    let kitsune_builder = default_builder().with_default_config().unwrap();
+
+    #[cfg(any(
+        feature = "transport-tx5-backend-libdatachannel",
+        feature = "transport-tx5-backend-go-pion",
+        feature = "transport-tx5-datachannel-vendored"
+    ))]
+    {
+        let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
+            bind: vec!["127.0.0.1:0".to_string()],
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+        let signal_server_url =
+            format!("ws://{}", signal_server.bind_addrs()[0]);
+        kitsune_builder
+            .config
+            .set_module_config(&Tx5TransportModConfig {
+                tx5_transport: Tx5TransportConfig {
+                    server_url: signal_server_url.to_owned(),
+                    signal_allow_plain_text: true,
+                    timeout_s: 5,
+                    webrtc_connect_timeout_s: 3,
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+    }
+    kitsune_builder
+        .config
+        .set_module_config(&K2GossipModConfig {
+            k2_gossip: K2GossipConfig {
+                initiate_interval_ms: 1000,
+                min_initiate_interval_ms: 100,
+                initiate_jitter_ms: 100,
+                round_timeout_ms: 10_000,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    let kitsune = kitsune_builder.build().await.unwrap();
+    kitsune
+        .register_handler(Arc::new(TestKitsuneHandler))
+        .await
+        .unwrap();
+
+    // Custom configs for the two spaces
+    let config_a = Config::default();
+    config_a
+        .set_module_config(&CoreBootstrapModConfig {
+            core_bootstrap: CoreBootstrapConfig {
+                server_url: Some(bootstrap_url_a.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    let config_b = Config::default();
+    config_b
+        .set_module_config(&CoreBootstrapModConfig {
+            core_bootstrap: CoreBootstrapConfig {
+                server_url: Some(bootstrap_url_b.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    // Create the two spaces with different bootstrap URLs
+    let space_a = kitsune
+        .space(TEST_SPACE_ID, Some(config_a))
+        .await
+        .expect("Create space A");
+
+    let space_b = kitsune
+        .space(SpaceId(Id(Bytes::from("space_b"))), Some(config_b))
+        .await
+        .expect("Create space B");
+
+    // Attach a local agent to each space
+    let agent_a = Arc::new(Ed25519LocalAgent::default());
+    agent_a.set_tgt_storage_arc_hint(DhtArc::FULL);
+    iter_check!(60_000, 1_000, {
+        if space_a.local_agent_join(agent_a.clone()).await.is_ok() {
+            break;
+        }
+    });
+    let agent_b = Arc::new(Ed25519LocalAgent::default());
+    agent_b.set_tgt_storage_arc_hint(DhtArc::FULL);
+    iter_check!(60_000, 1_000, {
+        if space_b.local_agent_join(agent_b.clone()).await.is_ok() {
+            break;
+        }
+    });
+
+    let agent_a_id = agent_a.agent();
+    let agent_b_id = agent_b.agent();
+    assert!(space_a.peer_store().get(agent_a_id.clone()).await.is_ok());
+    assert!(space_b.peer_store().get(agent_b_id.clone()).await.is_ok());
+    assert!(
+        space_a
+            .peer_store()
+            .get(agent_b_id.clone())
+            .await
+            .unwrap()
+            .is_none(),
+        "Agent B should not be in space A's peer store"
+    );
+    assert!(
+        space_b
+            .peer_store()
+            .get(agent_a_id.clone())
+            .await
+            .unwrap()
+            .is_none(),
+        "Agent A should not be in space B's peer store"
+    );
 }

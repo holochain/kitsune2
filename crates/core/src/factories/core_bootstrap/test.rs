@@ -2,6 +2,27 @@ use kitsune2_api::*;
 use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
 use std::sync::Arc;
 
+use crate::factories::{CoreBootstrapConfig, CoreBootstrapModConfig};
+
+#[derive(Debug)]
+struct TestSpaceHandler;
+impl SpaceHandler for TestSpaceHandler {}
+
+#[derive(Debug)]
+struct TestKitsuneHandler;
+impl KitsuneHandler for TestKitsuneHandler {
+    fn create_space(
+        &self,
+        _space_id: SpaceId,
+        _config_override: Option<&Config>,
+    ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
+        Box::pin(async {
+            let space_handler: DynSpaceHandler = Arc::new(TestSpaceHandler);
+            Ok(space_handler)
+        })
+    }
+}
+
 #[derive(Debug)]
 struct TestCrypto;
 
@@ -60,7 +81,7 @@ impl Test {
             .config
             .set_module_config(&super::CoreBootstrapModConfig {
                 core_bootstrap: super::CoreBootstrapConfig {
-                    server_url: server.into(),
+                    server_url: Some(server.into()),
                     backoff_min_ms: 10,
                     backoff_max_ms: 10,
                 },
@@ -151,7 +172,7 @@ fn validate_bad_server_url() {
         .config
         .set_module_config(&super::config::CoreBootstrapModConfig {
             core_bootstrap: super::config::CoreBootstrapConfig {
-                server_url: "<bad-url>".into(),
+                server_url: Some("<bad-url>".into()),
                 ..Default::default()
             },
         })
@@ -242,4 +263,51 @@ async fn bootstrap_auth() {
     }
 
     panic!("failed to bootstrap both created agents in time");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_should_validate_config_without_bootstrap_url_configured() {
+    // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
+    let kitsune_builder =
+        crate::default_test_builder().with_default_config().unwrap();
+
+    // Build should succeed.
+    kitsune_builder
+        .build()
+        .await
+        .expect("Failed to build config");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_should_override_bootstrap_url_per_space() {
+    // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
+    let kitsune_builder =
+        crate::default_test_builder().with_default_config().unwrap();
+
+    // Build should succeed.
+    let kitsune = kitsune_builder.build().await.expect("Build Kitsune2");
+
+    let bootstrap_server = TestBootstrapSrv::new(false).await;
+    let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+    let space_config = Config::default();
+    space_config
+        .set_module_config(&CoreBootstrapModConfig {
+            core_bootstrap: CoreBootstrapConfig {
+                server_url: Some(bootstrap_server_url.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    // register handler
+    let kitsune_handler = Arc::new(TestKitsuneHandler);
+    kitsune
+        .register_handler(kitsune_handler.clone())
+        .await
+        .expect("Register handler");
+
+    // Creating a space MUST succeed because there we provided bootstrap config for space.
+    kitsune.space(kitsune2_test_utils::space::TEST_SPACE_ID, Some(space_config)).await
+    .expect("Expected creating a space to succeed after setting bootstrap URL per space");
 }

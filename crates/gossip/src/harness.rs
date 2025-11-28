@@ -458,6 +458,7 @@ impl K2GossipFunctionalTestFactory {
             .space
             .create(
                 builder.clone(),
+                None,
                 Arc::new(NoopHandler),
                 self.space_id.clone(),
                 report,

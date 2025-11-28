@@ -6,7 +6,7 @@ use std::sync::Arc;
 /// The general Kitsune2 builder.
 /// This contains both configuration and factory instances,
 /// allowing construction of runtime module instances.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Builder {
     /// The module configuration to be used when building modules.
     /// This can be loaded from disk or modified before freezing the builder.
@@ -136,6 +136,21 @@ impl Builder {
         self.config.mark_validated();
 
         Ok(())
+    }
+
+    /// Merge in configuration overrides.
+    ///
+    /// Merged config is validated before returning.
+    pub fn with_config_overrides(&self, overrides: Config) -> K2Result<Self> {
+        let mut builder = self.clone();
+
+        // merge config
+        builder.config = builder.config.merge_config_overrides(&overrides)?;
+
+        // validate
+        builder.validate_config()?;
+
+        Ok(builder)
     }
 
     /// Generate the actual kitsune instance, validating configuration

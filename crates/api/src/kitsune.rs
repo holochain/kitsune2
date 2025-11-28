@@ -45,10 +45,13 @@ pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
         Box::pin(async { Ok(()) })
     }
 
-    /// Kitsune would like to construct a space. Provide a handler.
+    /// Creates a space handler for the given space.
+    ///
+    /// Optionally, override configuration values for this space.
     fn create_space(
         &self,
         space_id: SpaceId,
+        config_override: Option<&Config>,
     ) -> BoxFut<'_, K2Result<space::DynSpaceHandler>>;
 }
 
@@ -74,10 +77,14 @@ pub trait Kitsune: 'static + Send + Sync + std::fmt::Debug {
     /// List the active spaces.
     fn list_spaces(&self) -> Vec<SpaceId>;
 
-    /// Get an existing space with the provided [SpaceId] or create
-    /// a new one.
-    fn space(&self, space_id: SpaceId)
-        -> BoxFut<'_, K2Result<space::DynSpace>>;
+    /// Get an existing space with the provided [`SpaceId`] or create a new one.
+    ///
+    /// Optionally, override configuration values for this space.
+    fn space(
+        &self,
+        space_id: SpaceId,
+        config_override: Option<Config>,
+    ) -> BoxFut<'_, K2Result<space::DynSpace>>;
 
     /// Get a space, only if it exists.
     fn space_if_exists(
