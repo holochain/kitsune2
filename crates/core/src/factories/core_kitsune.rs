@@ -132,7 +132,11 @@ impl Kitsune for CoreKitsune {
         self.map.lock().unwrap().keys().cloned().collect()
     }
 
-    fn space(&self, space_id: SpaceId) -> BoxFut<'_, K2Result<DynSpace>> {
+    fn space(
+        &self,
+        space_id: SpaceId,
+        config_override: Option<Config>,
+    ) -> BoxFut<'_, K2Result<DynSpace>> {
         Box::pin(async move {
             const ERR: &str = "handler not registered";
             use std::collections::hash_map::Entry;
@@ -161,12 +165,17 @@ impl Kitsune for CoreKitsune {
                         .clone();
                     e.insert(futures::future::FutureExt::shared(Box::pin(
                         async move {
-                            let sh =
-                                handler.create_space(space_id.clone()).await?;
+                            let sh = handler
+                                .create_space(
+                                    space_id.clone(),
+                                    config_override.as_ref(),
+                                )
+                                .await?;
                             let s = builder
                                 .space
                                 .create(
                                     builder.clone(),
+                                    config_override,
                                     sh,
                                     space_id,
                                     report,
@@ -346,6 +355,7 @@ mod test {
             fn create_space(
                 &self,
                 _space_id: SpaceId,
+                _config_override: Option<&Config>,
             ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
                 Box::pin(async move {
                     let s: DynSpaceHandler = Arc::new(S);
@@ -365,6 +375,6 @@ mod test {
 
         k.register_handler(h).await.unwrap();
 
-        k.space(TEST_SPACE_ID).await.unwrap();
+        k.space(TEST_SPACE_ID, None).await.unwrap();
     }
 }

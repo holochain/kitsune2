@@ -11,7 +11,7 @@ pub mod config {
     #[serde(rename_all = "camelCase")]
     pub struct CoreBootstrapConfig {
         /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
-        pub server_url: String,
+        pub server_url: Option<String>,
 
         /// Minimum backoff in ms to use for both push and poll retry loops.
         ///
@@ -29,7 +29,7 @@ pub mod config {
     impl Default for CoreBootstrapConfig {
         fn default() -> Self {
             Self {
-                server_url: "<https://your.bootstrap.url>".into(),
+                server_url: None,
                 backoff_min_ms: 1000 * 5,
                 backoff_max_ms: 1000 * 60 * 5,
             }
@@ -70,6 +70,39 @@ impl CoreBootstrapFactory {
         let out: DynBootstrapFactory = Arc::new(CoreBootstrapFactory {});
         out
     }
+
+    /// Validate the bootstrap configuration for the given context.
+    ///
+    /// If `is_space` is true, the `bootstrap.server_url` must be set.
+    fn validate_config_for_context(
+        config: &Config,
+        is_space: bool,
+    ) -> K2Result<()> {
+        const ERR: &str = "invalid bootstrap server_url";
+
+        let config: CoreBootstrapModConfig = config.get_module_config()?;
+
+        if is_space && config.core_bootstrap.server_url.is_none() {
+            return Err(K2Error::other(
+                "bootstrap server_url must be set before creating a space",
+            ));
+        }
+
+        if let Some(server_url) = &config.core_bootstrap.server_url {
+            let url = url::Url::parse(server_url)
+                .map_err(|e| K2Error::other_src(ERR, e))?;
+
+            if url.cannot_be_a_base() {
+                return Err(K2Error::other(ERR));
+            }
+
+            if !matches!(url.scheme(), "http" | "https") {
+                return Err(K2Error::other(ERR));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl BootstrapFactory for CoreBootstrapFactory {
@@ -78,21 +111,7 @@ impl BootstrapFactory for CoreBootstrapFactory {
     }
 
     fn validate_config(&self, config: &Config) -> K2Result<()> {
-        const ERR: &str = "invalid bootstrap server_url";
-
-        let config: CoreBootstrapModConfig = config.get_module_config()?;
-
-        let url = url::Url::parse(&config.core_bootstrap.server_url)
-            .map_err(|e| K2Error::other_src(ERR, e))?;
-
-        if url.cannot_be_a_base() {
-            return Err(K2Error::other(ERR));
-        }
-
-        match url.scheme() {
-            "http" | "https" => Ok(()),
-            _ => Err(K2Error::other(ERR)),
-        }
+        Self::validate_config_for_context(config, false)
     }
 
     fn create(
@@ -102,6 +121,7 @@ impl BootstrapFactory for CoreBootstrapFactory {
         space_id: SpaceId,
     ) -> BoxFut<'static, K2Result<DynBootstrap>> {
         Box::pin(async move {
+            Self::validate_config_for_context(&builder.config, true)?;
             let config: CoreBootstrapModConfig =
                 builder.config.get_module_config()?;
             let out: DynBootstrap = Arc::new(CoreBootstrap::new(
@@ -198,9 +218,13 @@ async fn push_task(
     auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
 ) {
     // Already checked to be a valid URL by the config validation.
-    let server_url =
-        url::Url::parse(&config.server_url).expect("invalid server url");
-
+    let server_url = url::Url::parse(
+        config
+            .server_url
+            .as_ref()
+            .expect("bootstrap url not checked"),
+    )
+    .expect("invalid server url");
     let mut wait = None;
 
     while let Some(info) = push_recv.recv().await {
@@ -265,8 +289,13 @@ async fn poll_task(
     auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
 ) {
     // Already checked to be a valid URL by the config validation.
-    let server_url =
-        url::Url::parse(&config.server_url).expect("invalid server url");
+    let server_url = url::Url::parse(
+        config
+            .server_url
+            .as_ref()
+            .expect("bootstrap url not checked"),
+    )
+    .expect("invalid server url");
 
     let mut wait = config.backoff_min();
 

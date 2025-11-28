@@ -138,6 +138,43 @@ impl Builder {
         Ok(())
     }
 
+    /// Try to clone this [`Builder`].
+    pub fn try_clone(&self) -> K2Result<Self> {
+        Ok(Self {
+            config: self.config.try_clone()?,
+            verifier: self.verifier.clone(),
+            auth_material: self.auth_material.clone(),
+            kitsune: self.kitsune.clone(),
+            space: self.space.clone(),
+            peer_store: self.peer_store.clone(),
+            bootstrap: self.bootstrap.clone(),
+            fetch: self.fetch.clone(),
+            report: self.report.clone(),
+            transport: self.transport.clone(),
+            op_store: self.op_store.clone(),
+            peer_meta_store: self.peer_meta_store.clone(),
+            gossip: self.gossip.clone(),
+            local_agent_store: self.local_agent_store.clone(),
+            publish: self.publish.clone(),
+            blocks: self.blocks.clone(),
+        })
+    }
+
+    /// Merge in configuration overrides.
+    ///
+    /// Merged config is validated before returning.
+    pub fn with_config_overrides(&self, overrides: Config) -> K2Result<Self> {
+        let mut builder = self.try_clone()?;
+
+        // merge config
+        builder.config = builder.config.merge_config_overrides(&overrides)?;
+
+        // validate
+        builder.validate_config()?;
+
+        Ok(builder)
+    }
+
     /// Generate the actual kitsune instance, validating configuration
     /// if that has not already explicitly been done.
     pub async fn build(self) -> K2Result<DynKitsune> {

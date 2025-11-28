@@ -106,6 +106,7 @@ mod tests {
             fn create_space(
                 &self,
                 _space_id: SpaceId,
+                _config_override: Option<&Config>,
             ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
                 let s: DynSpaceHandler = Arc::new(MockSpaceHandler);
                 Box::pin(async move { Ok(s) })
@@ -116,7 +117,7 @@ mod tests {
             .await
             .unwrap();
         let space = kitsune
-            .space(kitsune2_test_utils::space::TEST_SPACE_ID)
+            .space(kitsune2_test_utils::space::TEST_SPACE_ID, None)
             .await
             .unwrap();
         let local_agent: DynLocalAgent =

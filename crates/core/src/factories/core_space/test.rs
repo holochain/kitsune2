@@ -18,6 +18,7 @@ async fn space_local_agent_join_leave() {
         fn create_space(
             &self,
             _space_id: SpaceId,
+            _config_override: Option<&Config>,
         ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S);
@@ -44,7 +45,7 @@ async fn space_local_agent_join_leave() {
     assert!(k1.space_if_exists(TEST_SPACE_ID).await.is_none());
     assert_eq!(0, k1.list_spaces().len());
 
-    let s1 = k1.space(TEST_SPACE_ID).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID, None).await.unwrap();
 
     assert!(k1.space_if_exists(TEST_SPACE_ID).await.is_some());
     assert!(k1
@@ -130,6 +131,7 @@ async fn space_notify_send_recv() {
         fn create_space(
             &self,
             _space_id: SpaceId,
+            _config_override: Option<&Config>,
         ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S(self.0.clone()));
@@ -149,7 +151,7 @@ async fn space_notify_send_recv() {
     .await
     .unwrap();
     k1.register_handler(h).await.unwrap();
-    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID.clone(), None).await.unwrap();
     let u1 = u_r.recv().await.unwrap();
 
     let h: DynKitsuneHandler = Arc::new(K(recv.clone(), u_s.clone()));
@@ -163,7 +165,7 @@ async fn space_notify_send_recv() {
     .await
     .unwrap();
     k2.register_handler(h).await.unwrap();
-    let s2 = k2.space(TEST_SPACE_ID.clone()).await.unwrap();
+    let s2 = k2.space(TEST_SPACE_ID.clone(), None).await.unwrap();
     let u2 = u_r.recv().await.unwrap();
 
     println!("url: {u1}, {u2}");
@@ -251,6 +253,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
         fn create_space(
             &self,
             _space_id: SpaceId,
+            _config_override: Option<&Config>,
         ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S);
@@ -289,7 +292,7 @@ async fn space_local_agent_periodic_re_sign_and_bootstrap() {
 
     let bob = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
 
-    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID.clone(), None).await.unwrap();
 
     s1.local_agent_join(bob.clone()).await.unwrap();
 
@@ -315,6 +318,7 @@ async fn broadcast_new_agent_info_on_resign() {
         fn create_space(
             &self,
             _space_id: SpaceId,
+            _config_override: Option<&Config>,
         ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
             Box::pin(async move {
                 let s: DynSpaceHandler = Arc::new(S);
@@ -399,7 +403,7 @@ async fn broadcast_new_agent_info_on_resign() {
     let k1 = builder.build().await.unwrap();
     k1.register_handler(h).await.unwrap();
 
-    let s1 = k1.space(TEST_SPACE_ID.clone()).await.unwrap();
+    let s1 = k1.space(TEST_SPACE_ID.clone(), None).await.unwrap();
 
     // Join alice to the space and then remove her from the local agent store.
     // This is a quick way to create a new agent info into the peer store for alice.
