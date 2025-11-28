@@ -795,6 +795,9 @@ pub trait TransportFactory: 'static + Send + Sync + std::fmt::Debug {
     fn default_config(&self, config: &mut config::Config) -> K2Result<()>;
 
     /// Validate configuration.
+    ///
+    /// The implementation should check only for values which are set,
+    /// while missing values should be ignored.
     fn validate_config(&self, config: &config::Config) -> K2Result<()>;
 
     /// Construct a transport instance.

@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use kitsune2::default_builder;
 use kitsune2_api::{
-    BoxFut, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, K2Result,
+    BoxFut, Config, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, K2Result,
     KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId, Timestamp,
 };
 use kitsune2_core::{
@@ -40,6 +40,7 @@ impl KitsuneHandler for TestKitsuneHandler {
     fn create_space(
         &self,
         _space_id: SpaceId,
+        _config_override: Option<&Config>,
     ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
         Box::pin(async {
             let space_handler: DynSpaceHandler = Arc::new(TestSpaceHandler);
@@ -103,7 +104,7 @@ async fn make_kitsune_node(
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {
-    let space = kitsune.space(TEST_SPACE_ID).await.unwrap();
+    let space = kitsune.space(TEST_SPACE_ID, None).await.unwrap();
 
     // Create an agent.
     let local_agent = Arc::new(Ed25519LocalAgent::default());

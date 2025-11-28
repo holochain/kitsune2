@@ -86,14 +86,22 @@ impl SpaceFactory for CoreSpaceFactory {
     fn create(
         &self,
         builder: Arc<Builder>,
+        config_override: Option<Config>,
         handler: DynSpaceHandler,
         space_id: SpaceId,
         report: DynReport,
         tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
+            let config_clone = builder.config.try_clone()?;
+            let builder_config = Arc::new(match config_override {
+                Some(config_override) => {
+                    config_clone.merge_config_overrides(&config_override)?
+                }
+                None => config_clone,
+            });
             let config: CoreSpaceModConfig =
-                builder.config.get_module_config()?;
+                builder_config.get_module_config()?;
             let blocks = builder
                 .blocks
                 .create(builder.clone(), space_id.clone())

@@ -239,6 +239,7 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
         .space
         .create(
             builder.clone(),
+            None,
             Arc::new(space_handler),
             TEST_SPACE_ID,
             report,
@@ -311,6 +312,7 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         .space
         .create(
             builder.clone(),
+            None,
             Arc::new(NoopHandler),
             TEST_SPACE_ID_1,
             report.clone(),
@@ -323,6 +325,7 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         .space
         .create(
             builder.clone(),
+            None,
             Arc::new(NoopHandler),
             TEST_SPACE_ID_2,
             report,

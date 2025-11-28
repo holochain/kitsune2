@@ -81,6 +81,7 @@ impl App {
             fn create_space(
                 &self,
                 _space_id: SpaceId,
+                _config_override: Option<&Config>,
             ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
                 Box::pin(async move {
                     let s: DynSpaceHandler = Arc::new(S(self.0.clone()));
@@ -143,7 +144,7 @@ impl App {
         let kitsune = builder.build().await?;
         kitsune.register_handler(h).await?;
         let transport = kitsune.transport().await?;
-        let space = kitsune.space(space_id).await?;
+        let space = kitsune.space(space_id, None).await?;
 
         let agent = Arc::new(kitsune2_core::Ed25519LocalAgent::default());
         agent.set_tgt_storage_arc_hint(DhtArc::FULL);
