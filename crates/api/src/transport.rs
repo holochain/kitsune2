@@ -865,6 +865,6 @@ pub struct TransportConnectionStats {
     /// UNIX epoch timestamp in seconds when this connection was opened.
     pub opened_at_s: u64,
 
-    /// True if this connection has successfully upgraded to webrtc.
+    /// True if this connection has successfully upgraded to a direct peer connection.
     pub is_webrtc: bool,
 }

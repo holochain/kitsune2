@@ -56,6 +56,10 @@ impl IrohTransportTestHarness {
     }
 }
 
+pub fn dummy_url() -> Url {
+    Url::from_str("http://url.not.set:0/0").unwrap()
+}
+
 /// A mock handler that implements the various TxHandler traits
 pub struct MockTxHandler {
     /// Mock function to implement [`TxBaseHandler::new_listening_address()`]
@@ -114,9 +118,7 @@ impl Default for MockTxHandler {
             recv_module_msg: Arc::new(|_, _, _, _| Ok(())),
             set_unresponsive: Arc::new(|_, _| Ok(())),
             are_all_agents_at_url_blocked: Arc::new(|_| Ok(false)),
-            current_url: Arc::new(Mutex::new(
-                Url::from_str("http://url.not.set:0/0").unwrap(),
-            )),
+            current_url: Arc::new(Mutex::new(dummy_url())),
         }
     }
 }

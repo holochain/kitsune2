@@ -2734,6 +2734,7 @@ dependencies = [
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_test_utils",
+ "n0-watcher",
  "schemars",
  "serde",
  "tokio",

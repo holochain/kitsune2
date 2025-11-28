@@ -1,13 +1,6 @@
-// These tests require transport stats to be implemented.
-// Pending for iroh transport.
-#![cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use bytes::Bytes;
 use kitsune2_api::{AgentId, Id, LocalAgent, MessageBlockCount, SpaceId};
@@ -218,7 +211,6 @@ async fn builder_with_iroh() -> (Arc<Builder>, Server) {
     let relay_server = spawn_iroh_relay_server().await;
     let relay_server_url =
         format!("http://{}", relay_server.http_addr().unwrap());
-
     let builder = Builder {
         transport: IrohTransportFactory::create(),
         gossip: CoreGossipStubFactory::create(),
@@ -232,8 +224,7 @@ async fn builder_with_iroh() -> (Arc<Builder>, Server) {
         .config
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
-                relay_allow_plain_text: true,
-                relay_url: Some(relay_server_url),
+                relay_url: Some(relay_server_url.to_string()),
                 ..Default::default()
             },
         })
@@ -292,7 +283,7 @@ pub async fn make_test_peer(builder: Arc<Builder>) -> TestPeer {
     transport.register_module_handler(TEST_SPACE_ID, "test".into(), tx_handler);
 
     // It may take a while until the peer url shows up in the transport stats
-    let peer_url = iter_check!(200, {
+    let peer_url = iter_check!(5000, 100, {
         let stats = transport.dump_network_stats().await.unwrap();
         let peer_url = stats.transport_stats.peer_urls.first();
         if let Some(url) = peer_url {
@@ -366,7 +357,7 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
         .unwrap();
 
     // It may take a while until the peer url shows up in the transport stats
-    let peer_url = iter_check!(200, {
+    let peer_url = iter_check!(5000, {
         let stats = transport.dump_network_stats().await.unwrap();
         let peer_url = stats.transport_stats.peer_urls.first();
         if let Some(url) = peer_url {
@@ -1121,7 +1112,7 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     });
 
     let payload_module_received = recv_module_msg_recv_bob
-        .recv_timeout(std::time::Duration::from_secs(2))
+        .recv_timeout(Duration::from_secs(2))
         .expect("timed out waiting for module message");
     assert_eq!(payload_module, payload_module_received);
 

@@ -55,7 +55,7 @@ pub fn default_builder() -> Builder {
             feature = "transport-tx5-datachannel-vendored"
         )
     ))]
-    compile_error!("Only one transport feature can be enabled. Choose either datachannel-vendored, backend-libdatachannel, backend-go-pion or iroh.");
+    compile_error!("Only one transport feature can be enabled. Choose either transport-tx5-datachannel-vendored, transport-tx5-backend-libdatachannel, transport-tx5-backend-go-pion or transport-iroh.");
 
     Builder {
         config: Config::default(),
@@ -67,14 +67,14 @@ pub fn default_builder() -> Builder {
         bootstrap: factories::CoreBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         report: factories::CoreReportFactory::create(),
-        #[cfg(feature = "transport-iroh")]
-        transport: IrohTransportFactory::create(),
         #[cfg(any(
             feature = "transport-tx5-backend-libdatachannel",
             feature = "transport-tx5-backend-go-pion",
             feature = "transport-tx5-datachannel-vendored"
         ))]
         transport: Tx5TransportFactory::create(),
+        #[cfg(feature = "transport-iroh")]
+        transport: IrohTransportFactory::create(),
         op_store: MemOpStoreFactory::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),
         gossip: K2GossipFactory::create(),

@@ -13,17 +13,18 @@
 
 use bytes::Bytes;
 use iroh::{
-    endpoint::RecvStream, Endpoint, EndpointAddr, RelayMap, RelayMode,
-    RelayUrl, Watcher,
+    endpoint::{ConnectionType, RecvStream},
+    Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl, Watcher,
 };
 use kitsune2_api::*;
 use std::{
     collections::HashMap,
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
+    time::{Duration, SystemTime},
 };
 use tokio::task::AbortHandle;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 mod frame;
 use frame::*;
@@ -243,6 +244,13 @@ impl IrohTransport {
                 match endpoint.accept().await {
                     Some(incoming) => match incoming.await {
                         Ok(conn) => {
+                            let conn_opened_at_s = SystemTime::UNIX_EPOCH
+                                .elapsed()
+                                .unwrap_or_else(|err| {
+                                    warn!(?err, "failed to get system time");
+                                    Duration::from_secs(0)
+                                })
+                                .as_secs();
                             let conn = Arc::new(conn);
                             // Create a new connection context in the connections map.
                             // Remote URL is not set yet and will be sent by the remote
@@ -250,6 +258,8 @@ impl IrohTransport {
                             let ctx = Arc::new(ConnectionContext::new(
                                 handler.clone(),
                                 conn.clone(),
+                                None,
+                                conn_opened_at_s,
                                 None,
                             ));
                             // Spawn connection reader to accept incoming uni-directional
@@ -290,12 +300,22 @@ impl IrohTransport {
             .connect(target.clone(), ALPN)
             .await
             .map_err(|err| K2Error::other_src("iroh connect failed", err))?;
+        let conn_opened_at_s = SystemTime::UNIX_EPOCH
+            .elapsed()
+            .unwrap_or_else(|err| {
+                warn!(?err, "failed to get system time");
+                Duration::from_secs(0)
+            })
+            .as_secs();
         let conn = Arc::new(conn);
+        let conn_type_watcher = endpoint.conn_type(target.id);
         // Create context and add it to the connections map.
         let ctx = Arc::new(ConnectionContext::new(
             handler.clone(),
             conn.clone(),
             Some(peer.clone()),
+            conn_opened_at_s,
+            conn_type_watcher,
         ));
 
         connections
@@ -307,10 +327,17 @@ impl IrohTransport {
         // streams from the remote.
         spawn_connection_reader(ctx.clone(), connections.clone());
 
-        // Perform preflight as first message on the new connection.
+        // Send peer URL to remote first.
+        if let Some(local_url) = local_url {
+            let payload = Bytes::copy_from_slice(local_url.as_str().as_bytes());
+            send_frame(&conn, FrameType::PeerUrl, payload).await?;
+            // TODO: will be fixed with issue #403
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        // Perform preflight as second message on the new connection.
         let preflight = handler.peer_connect(peer.clone()).await?;
-        let result =
-            send_frame(&ctx.connection(), FrameType::Payload, preflight).await;
+        let result = send_frame(&conn, FrameType::Payload, preflight).await;
         if let Err(err) = result {
             // Preflight failed, remove connection context from map.
             connections.write().unwrap().remove(&peer);
@@ -318,12 +345,8 @@ impl IrohTransport {
             conn.close(0u8.into(), b"preflight failed");
             return Err(err);
         }
-
-        // Send peer URL to remote once per connection.
-        if let Some(local_url) = local_url {
-            let payload = Bytes::copy_from_slice(local_url.as_str().as_bytes());
-            send_frame(&conn, FrameType::PeerUrl, payload).await?;
-        }
+        // TODO: will be fixed with issue #403
+        tokio::time::sleep(Duration::from_millis(1000)).await;
 
         Ok(ctx)
     }
@@ -336,9 +359,15 @@ impl TxImp for IrohTransport {
 
     fn disconnect(
         &self,
-        _peer: Url,
+        peer: Url,
         _payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
+        if let Some(connection) =
+            self.connections.write().unwrap().remove(&peer)
+        {
+            info!(?peer, "disconnecting from peer");
+            connection.connection().close(0u8.into(), b"disconnected");
+        }
         Box::pin(async {})
     }
 
@@ -382,6 +411,7 @@ impl TxImp for IrohTransport {
                     // Connection doesn't exist, create it.
                     // This establishes the connection, adds the context to the connections map,
                     // sends the preflight and the host URL to the remote.
+                    tracing::info!(?peer, "establishing connection to peer");
                     let ctx = Self::create_connection_and_context(
                         endpoint,
                         remote,
@@ -398,12 +428,17 @@ impl TxImp for IrohTransport {
             };
 
             // Send actual message.
+            let data_len = data.len() as u64;
             send_frame(
                 &connection_context.connection(),
                 FrameType::Payload,
                 data,
             )
             .await?;
+
+            // Update stats
+            connection_context.increment_send_message_count();
+            connection_context.increment_send_bytes(data_len);
 
             Ok(())
         })
@@ -417,10 +452,39 @@ impl TxImp for IrohTransport {
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
+            let connections = self.connections.read().unwrap().clone();
+            let mut peer_urls = Vec::new();
+            if let Some(own_url) = self.local_url.read().unwrap().clone() {
+                peer_urls.push(own_url);
+            }
+            let stat_connections = connections
+                .into_values()
+                .map(|context| {
+                    TransportConnectionStats {
+                        // When the context is added to the connections map, the handshake
+                        // with the URL exchange is already complete. URL must be `Some`.
+                        pub_key: context
+                            .remote()
+                            .unwrap()
+                            .peer_id()
+                            .unwrap()
+                            .to_string(),
+                        send_message_count: context.get_send_message_count(),
+                        send_bytes: context.get_send_bytes(),
+                        recv_message_count: context.get_recv_message_count(),
+                        recv_bytes: context.get_recv_bytes(),
+                        opened_at_s: context.get_opened_at_s(),
+                        is_direct: matches!(
+                            context.get_connection_type(),
+                            ConnectionType::Direct(_)
+                        ),
+                    }
+                })
+                .collect();
             Ok(TransportStats {
                 backend: "iroh".to_string(),
-                peer_urls: vec![],
-                connections: vec![],
+                peer_urls,
+                connections: stat_connections,
             })
         })
     }
@@ -457,8 +521,18 @@ fn spawn_connection_reader(
                 }
                 Err(err) => {
                     // Connection closed, notify disconnect and exit loop.
-                    error!(?err, "iroh connection closed");
-                    ctx.notify_disconnect().await;
+                    let peer = ctx.remote();
+                    error!(?err, ?peer, "connection closed by peer");
+                    if let Some(peer) = peer {
+                        if let Some(connection) =
+                            connections.write().unwrap().remove(&peer)
+                        {
+                            connection
+                                .connection()
+                                .close(0u8.into(), b"peer disconnected");
+                        }
+                    }
+                    ctx.notify_disconnect();
                     break;
                 }
             }
@@ -489,16 +563,21 @@ async fn handle_incoming_stream(
                     .write()
                     .unwrap()
                     .insert(url.clone(), ctx.clone());
-                ctx.set_remote_url(url).await
+                ctx.set_remote_url(url);
+                K2Result::Ok(())
             }
             // Handle Payload frame: forward data to handler if remote URL is set.
             FrameType::Payload => {
-                let peer = ctx.remote().await.ok_or_else(|| {
+                let peer = ctx.remote().ok_or_else(|| {
                     K2Error::other(
                         "received payload before peer url".to_string(),
                     )
                 })?;
-                ctx.handler().recv_data(peer, payload).await
+                let payload_len = payload.len() as u64;
+                ctx.handler().recv_data(peer, payload).await?;
+                ctx.increment_recv_message_count();
+                ctx.increment_recv_bytes(payload_len);
+                Ok(())
             }
         }
     }
@@ -506,7 +585,7 @@ async fn handle_incoming_stream(
 
     if let Err(err) = result {
         warn!(?err, "iroh stream error, closing connection");
-        if let Some(peer) = ctx.remote().await {
+        if let Some(peer) = ctx.remote() {
             let _ = ctx
                 .handler()
                 .set_unresponsive(peer.clone(), Timestamp::now())
