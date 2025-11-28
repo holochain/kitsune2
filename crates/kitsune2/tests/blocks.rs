@@ -1,11 +1,3 @@
-// These tests require transport stats to be implemented.
-// Pending for iroh transport.
-#![cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
