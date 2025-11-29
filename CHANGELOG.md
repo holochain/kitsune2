@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.4.0)\] - 2025-11-29
+
+### Features
+
+- Add iroh transport by @jost-s in [#382](https://github.com/holochain/kitsune2/pull/382)
+- Implement tracking peer access state as peers are added and removed in the peer store, so that the access check can be sync without needing to use `block_on` by @ThetaSinner
+- \[**BREAKING**\] Expose webrtc_connect_timeout to Tx5TransportConfig (#361) by @mattyg in [#361](https://github.com/holochain/kitsune2/pull/361)
+
+### Bug Fixes
+
+- Reduce log size of `ArcSet` with custom `Debug` implementation by @ThetaSinner in [#366](https://github.com/holochain/kitsune2/pull/366)
+- Drop locks as soon as possible when sending fetch queue drained notifications by @ThetaSinner
+- Unable to build libdatachannel in nix devShell due to missing clang lib (#363) by @mattyg in [#363](https://github.com/holochain/kitsune2/pull/363)
+- Reduce lock hold on `space_map` by @ThetaSinner in [#362](https://github.com/holochain/kitsune2/pull/362)
+
+### Miscellaneous Tasks
+
+- Describe error context when transcoding config by @jost-s
+- Upgrade rust to v1.91.1 by @jost-s in [#385](https://github.com/holochain/kitsune2/pull/385)
+- Stop printing on entry to `wait_ready` by @ThetaSinner in [#374](https://github.com/holochain/kitsune2/pull/374)
+- Bump tx5 to v0.8.1 & sbd to v0.4.0 by @jost-s in [#376](https://github.com/holochain/kitsune2/pull/376)
+
+### Build System
+
+- \[**BREAKING**\] Prefix tx5 and iroh features with transport by @jost-s in [#393](https://github.com/holochain/kitsune2/pull/393)
+- Add iroh feature by @jost-s
+- Upgrade sbd-server to 0.4.0, adds a cli arg 'otlp_endpoint' to kitsune2-bootstrap-server for configuring an opentelemetry endpoint for the sbd server (#375) by @mattyg in [#375](https://github.com/holochain/kitsune2/pull/375)
+
+### CI
+
+- Release from release branches by @ThetaSinner in [#367](https://github.com/holochain/kitsune2/pull/367)
+
+### Testing
+
+- Extract fn encode_frame_header and write unit tests in iroh transport by @jost-s in [#392](https://github.com/holochain/kitsune2/pull/392)
+- Add unit tests for decode_frame in iroh transport by @jost-s
+- Add iroh integration test harness and move tests by @jost-s
+- Improve error messaging in tests by @ThetaSinner
+- Add new `TestTxHandler` that can be used in tests that need a preflight implementation that shares agents by @ThetaSinner
+- Improve flaky gossip tests for sync by @ThetaSinner in [#365](https://github.com/holochain/kitsune2/pull/365)
+
+### Automated Changes
+
+- *(deps)* Bump actions/checkout from 5 to 6 by @dependabot[bot] in [#383](https://github.com/holochain/kitsune2/pull/383)
+  - Bumps [actions/checkout](https://github.com/actions/checkout) from 5 to 6. - [Release notes](https://github.com/actions/checkout/releases) - [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md) - [Commits](https://github.com/actions/checkout/compare/v5...v6)
+  - Updated-dependencies: - dependency-name: actions/checkout   dependency-version: '6'   dependency-type: direct:production   update-type: version-update:semver-major ...
+
+### First-time Contributors
+
+- @mattyg made their first contribution in [#375](https://github.com/holochain/kitsune2/pull/375)
 ## \[[0.3.0](https://github.com/holochain/kitsune2/compare/v0.2.11...v0.3.0)\] - 2025-11-04
 
 ### Features
