@@ -331,6 +331,7 @@ impl IrohTransport {
         if let Some(local_url) = local_url {
             let payload = Bytes::copy_from_slice(local_url.as_str().as_bytes());
             send_frame(&conn, FrameType::PeerUrl, payload).await?;
+            // TODO: will be fixed with issue #403
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
@@ -344,7 +345,7 @@ impl IrohTransport {
             conn.close(0u8.into(), b"preflight failed");
             return Err(err);
         }
-
+        // TODO: will be fixed with issue #403
         tokio::time::sleep(Duration::from_millis(1000)).await;
 
         Ok(ctx)
