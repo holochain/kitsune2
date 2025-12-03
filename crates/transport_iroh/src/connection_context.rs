@@ -13,6 +13,8 @@ pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: Arc<Connection>,
     remote_url: RwLock<Option<Url>>,
+    preflight_sent: RwLock<bool>,
+    preflight_received: RwLock<bool>,
     send_message_count: AtomicU64,
     send_bytes: AtomicU64,
     recv_message_count: AtomicU64,
@@ -32,6 +34,8 @@ impl ConnectionContext {
         handler: Arc<TxImpHnd>,
         connection: Arc<Connection>,
         remote_url: Option<Url>,
+        preflight_sent: bool,
+        preflight_received: bool,
         opened_at_s: u64,
         connection_type_watcher: Option<n0_watcher::Direct<ConnectionType>>,
     ) -> Self {
@@ -39,6 +43,8 @@ impl ConnectionContext {
             handler,
             connection,
             remote_url: RwLock::new(remote_url),
+            preflight_sent: RwLock::new(preflight_sent),
+            preflight_received: RwLock::new(preflight_received),
             send_message_count: AtomicU64::new(0),
             send_bytes: AtomicU64::new(0),
             recv_message_count: AtomicU64::new(0),
@@ -49,11 +55,27 @@ impl ConnectionContext {
     }
 
     pub fn set_remote_url(&self, peer: Url) {
-        *self.remote_url.write().unwrap() = Some(peer);
+        *self.remote_url.write().expect("poisoned") = Some(peer);
     }
 
     pub fn remote(&self) -> Option<Url> {
-        self.remote_url.read().unwrap().clone()
+        self.remote_url.read().expect("poisoned").clone()
+    }
+
+    pub fn preflight_sent(&self) -> bool {
+        *self.preflight_sent.read().expect("poisoned")
+    }
+
+    pub fn set_preflight_sent(&self) {
+        *self.preflight_sent.write().expect("poisoned") = true;
+    }
+
+    pub fn preflight_received(&self) -> bool {
+        *self.preflight_received.read().expect("poisoned")
+    }
+
+    pub fn set_preflight_received(&self) {
+        *self.preflight_received.write().expect("poisoned") = true;
     }
 
     pub fn handler(&self) -> Arc<TxImpHnd> {

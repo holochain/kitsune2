@@ -180,6 +180,7 @@ impl IrohTransport {
             endpoint.clone(),
             handler.clone(),
             connections.clone(),
+            local_url.clone(),
         );
 
         let out: DynTxImp = Arc::new(Self {
@@ -211,7 +212,8 @@ impl IrohTransport {
                     Ok(addr) => {
                         if let Some(url) = get_url_with_first_relay(&addr) {
                             {
-                                let mut guard = local_url.write().unwrap();
+                                let mut guard =
+                                    local_url.write().expect("poisoned");
                                 if guard.as_ref() != Some(&url) {
                                     *guard = Some(url.clone());
                                 }
@@ -241,8 +243,10 @@ impl IrohTransport {
         endpoint: Arc<Endpoint>,
         handler: Arc<TxImpHnd>,
         connections: Connections,
+        local_url: Arc<RwLock<Option<Url>>>,
     ) -> AbortHandle {
         tokio::spawn(async move {
+            let local_url = local_url;
             loop {
                 match endpoint.accept().await {
                     Some(incoming) => match incoming.await {
@@ -262,12 +266,18 @@ impl IrohTransport {
                                 handler.clone(),
                                 conn.clone(),
                                 None,
+                                false,
+                                false,
                                 conn_opened_at_s,
                                 None,
                             ));
                             // Spawn connection reader to accept incoming uni-directional
                             // streams from the remote.
-                            spawn_connection_reader(ctx, connections.clone());
+                            spawn_connection_reader(
+                                ctx,
+                                connections.clone(),
+                                local_url.clone(),
+                            );
                         }
                         Err(err) => {
                             error!(?err, "iroh incoming connection failed");
@@ -294,9 +304,9 @@ impl IrohTransport {
         endpoint: Arc<Endpoint>,
         target: EndpointAddr,
         handler: Arc<TxImpHnd>,
-        peer: Url,
+        remote_url: Url,
         connections: Connections,
-        local_url: Option<Url>,
+        local_url: Arc<RwLock<Option<Url>>>,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
         let conn = endpoint
@@ -311,53 +321,63 @@ impl IrohTransport {
             })
             .as_secs();
         let conn = Arc::new(conn);
-        let conn_type_watcher = endpoint.conn_type(target.id);
-        // Create context and add it to the connections map.
-        let ctx = Arc::new(ConnectionContext::new(
-            handler.clone(),
-            conn.clone(),
-            Some(peer.clone()),
-            conn_opened_at_s,
-            conn_type_watcher,
-        ));
 
-        connections
-            .write()
-            .unwrap()
-            .insert(peer.clone(), ctx.clone());
+        // Perform preflight as first message on the new connection.
+        let maybe_local_url = local_url.read().expect("poisoned").clone();
+        if let Some(current_local_url) = maybe_local_url {
+            let preflight = handler.peer_connect(remote_url.clone()).await?;
+            let result = send_frame(
+                &conn,
+                Frame::Preflight((current_local_url, preflight)),
+            )
+            .await;
+            if let Err(err) = result {
+                // Close connection gracefully.
+                conn.close(0u8.into(), b"preflight failed");
+                return Err(err);
+            }
 
-        // Spawn connection reader that will accept incoming uni-directional
-        // streams from the remote.
-        spawn_connection_reader(ctx.clone(), connections.clone());
+            let conn_type_watcher = endpoint.conn_type(target.id);
+            // Create context and add it to the connections map.
+            let ctx = Arc::new(ConnectionContext::new(
+                handler.clone(),
+                conn.clone(),
+                Some(remote_url.clone()),
+                true,
+                false,
+                conn_opened_at_s,
+                conn_type_watcher,
+            ));
 
-        // Send peer URL to remote first.
-        if let Some(local_url) = local_url {
-            let payload = Bytes::copy_from_slice(local_url.as_str().as_bytes());
-            send_frame(&conn, FrameType::PeerUrl, payload).await?;
-            // TODO: will be fixed with issue #403
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            // Spawn connection reader that will accept incoming uni-directional
+            // streams from the remote.
+            spawn_connection_reader(
+                ctx.clone(),
+                connections.clone(),
+                local_url.clone(),
+            );
+
+            connections
+                .write()
+                .expect("poisoned")
+                .insert(remote_url.clone(), ctx.clone());
+
+            // TODO: Remove this as part of implementing persistent uni-directional
+            // streams, which will guarantee order of sequence.
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+
+            Ok(ctx)
+        } else {
+            Err(K2Error::other(
+                "Connection attempted before home relay URL is known",
+            ))
         }
-
-        // Perform preflight as second message on the new connection.
-        let preflight = handler.peer_connect(peer.clone()).await?;
-        let result = send_frame(&conn, FrameType::Payload, preflight).await;
-        if let Err(err) = result {
-            // Preflight failed, remove connection context from map.
-            connections.write().unwrap().remove(&peer);
-            // Close connection gracefully.
-            conn.close(0u8.into(), b"preflight failed");
-            return Err(err);
-        }
-        // TODO: will be fixed with issue #403
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-
-        Ok(ctx)
     }
 }
 
 impl TxImp for IrohTransport {
     fn url(&self) -> Option<Url> {
-        self.local_url.read().unwrap().clone()
+        self.local_url.read().expect("poisoned").clone()
     }
 
     fn disconnect(
@@ -366,7 +386,7 @@ impl TxImp for IrohTransport {
         _payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
         if let Some(connection) =
-            self.connections.write().unwrap().remove(&peer)
+            self.connections.write().expect("poisoned").remove(&peer)
         {
             info!(?peer, "disconnecting from peer");
             connection.connection().close(0u8.into(), b"disconnected");
@@ -375,7 +395,7 @@ impl TxImp for IrohTransport {
     }
 
     fn send(&self, peer: Url, data: Bytes) -> BoxFut<'_, K2Result<()>> {
-        let local_url = self.local_url.read().unwrap().clone();
+        let local_url = self.local_url.clone();
         let endpoint = self.endpoint.clone();
         let handler = self.handler.clone();
         let connections = self.connections.clone();
@@ -386,7 +406,7 @@ impl TxImp for IrohTransport {
 
             // Get or create the connection lock for this peer to serialize connection creation.
             let peer_lock = {
-                let mut locks = connection_locks.lock().unwrap();
+                let mut locks = connection_locks.lock().expect("poisoned");
                 locks
                     .entry(peer.clone())
                     .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
@@ -397,7 +417,7 @@ impl TxImp for IrohTransport {
             //
             // Other send requests to the same peer will wait here to acquire the lock.
             // The lock is released immediately if there is a connection, Otherwise
-            // a connection is established and the preflight and host URL is sent
+            // a connection is established and the preflight and host URL are sent
             // to the remote, before the lock is released.
             let _lock_guard = peer_lock.lock().await;
 
@@ -405,7 +425,8 @@ impl TxImp for IrohTransport {
             let connection_context = {
                 // Check if connection already exists, as another call might have
                 // created it while this one was waiting for the lock.
-                let existing = connections.read().unwrap().get(&peer).cloned();
+                let existing =
+                    connections.read().expect("poisoned").get(&peer).cloned();
                 if let Some(ctx) = existing {
                     // Connection already exists, use it (preflight already done).
                     drop(_lock_guard);
@@ -432,12 +453,8 @@ impl TxImp for IrohTransport {
 
             // Send actual message.
             let data_len = data.len() as u64;
-            send_frame(
-                &connection_context.connection(),
-                FrameType::Payload,
-                data,
-            )
-            .await?;
+            send_frame(&connection_context.connection(), Frame::Data(data))
+                .await?;
 
             // Update stats
             connection_context.increment_send_message_count();
@@ -449,15 +466,24 @@ impl TxImp for IrohTransport {
 
     fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
         Box::pin(async {
-            Ok(self.connections.read().unwrap().keys().cloned().collect())
+            Ok(self
+                .connections
+                .read()
+                .expect("poisoned")
+                .keys()
+                .cloned()
+                .collect())
         })
     }
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
-            let connections = self.connections.read().unwrap().clone();
+            let connections =
+                self.connections.read().expect("poisoned").clone();
             let mut peer_urls = Vec::new();
-            if let Some(own_url) = self.local_url.read().unwrap().clone() {
+            if let Some(own_url) =
+                self.local_url.read().expect("poisoned").clone()
+            {
                 peer_urls.push(own_url);
             }
             let stat_connections = connections
@@ -504,9 +530,11 @@ impl TxImp for IrohTransport {
 /// # Parameters
 /// - `ctx`: The connection context containing handler and remote URL state.
 /// - `connections`: Shared map of peer URLs to their connection contexts, updated for PeerUrl frames.
+/// - `local_url`: The local URL for this endpoint, used to respond to preflight messages.
 fn spawn_connection_reader(
     ctx: Arc<ConnectionContext>,
     connections: Connections,
+    local_url: Arc<RwLock<Option<Url>>>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -515,11 +543,13 @@ fn spawn_connection_reader(
                 Ok(stream) => {
                     let ctx = ctx.clone();
                     let connections = connections.clone();
+                    let local_url = local_url.clone();
                     // Spawn a dedicated task for each incoming stream to handle concurrently.
                     tokio::spawn(handle_incoming_stream(
                         stream,
                         ctx,
                         connections,
+                        local_url,
                     ));
                 }
                 Err(err) => {
@@ -528,7 +558,7 @@ fn spawn_connection_reader(
                     error!(?err, ?peer, "connection closed by peer");
                     if let Some(peer) = peer {
                         if let Some(connection) =
-                            connections.write().unwrap().remove(&peer)
+                            connections.write().expect("poisoned").remove(&peer)
                         {
                             connection
                                 .connection()
@@ -547,40 +577,61 @@ async fn handle_incoming_stream(
     mut stream: RecvStream,
     ctx: Arc<ConnectionContext>,
     connections: Connections,
+    local_url: Arc<RwLock<Option<Url>>>,
 ) {
     let result = async {
         let data =
             stream.read_to_end(MAX_FRAME_BYTES).await.map_err(|err| {
                 K2Error::other_src("failed to read iroh frame", err)
             })?;
-        let (frame_type, payload) = decode_frame(data)?;
-        match frame_type {
-            // Handle PeerUrl frame: update connections map and context.
-            FrameType::PeerUrl => {
-                let url = Url::from_str(
-                    std::str::from_utf8(&payload).map_err(|err| {
-                        K2Error::other_src("invalid peer url payload", err)
-                    })?,
-                )?;
+        let frame = decode_frame(data)?;
+        match frame {
+            // Handle Preflight frame: update connections map and context and forward preflight bytes,
+            // then send preflight back to caller.
+            Frame::Preflight((remote_url, preflight)) => {
+                if ctx.preflight_received() {
+                    error!("Redundant preflight request in established connection state; discarding frame");
+                    return Ok(());
+                }
+
                 connections
                     .write()
-                    .unwrap()
-                    .insert(url.clone(), ctx.clone());
-                ctx.set_remote_url(url);
-                K2Result::Ok(())
-            }
-            // Handle Payload frame: forward data to handler if remote URL is set.
-            FrameType::Payload => {
-                let peer = ctx.remote().ok_or_else(|| {
-                    K2Error::other(
-                        "received payload before peer url".to_string(),
-                    )
-                })?;
-                let payload_len = payload.len() as u64;
-                ctx.handler().recv_data(peer, payload).await?;
-                ctx.increment_recv_message_count();
-                ctx.increment_recv_bytes(payload_len);
+                    .expect("poisoned")
+                    .insert(remote_url.clone(), ctx.clone());
+                ctx.set_remote_url(remote_url.clone());
+                ctx.set_preflight_received();
+                ctx.handler()
+                    .recv_data(remote_url.clone(), preflight)
+                    .await?;
+
+                if !ctx.preflight_sent() {
+                    let maybe_local_url =
+                        local_url.read().expect("poisoned").clone();
+                    if let Some(local_url) = maybe_local_url {
+                        let return_preflight = ctx
+                            .handler()
+                            .peer_connect(remote_url.clone())
+                            .await?;
+                        send_frame(
+                            &ctx.connection(),
+                            Frame::Preflight((local_url, return_preflight)),
+                        )
+                        .await?;
+                        ctx.set_preflight_sent();
+                    }
+                }
                 Ok(())
+            }
+            // Handle Data frame: forward data to handler if remote URL is set.
+            Frame::Data(message) => {
+                let peer = ctx.remote().ok_or_else(|| {
+                    K2Error::other("received data before preflight")
+                })?;
+                let message_len = message.len() as u64;
+                ctx.handler().recv_data(peer, message).await?;
+                ctx.increment_recv_message_count();
+                ctx.increment_recv_bytes(message_len);
+                K2Result::Ok(())
             }
         }
     }
