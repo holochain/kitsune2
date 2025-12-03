@@ -866,5 +866,5 @@ pub struct TransportConnectionStats {
     pub opened_at_s: u64,
 
     /// True if this connection has successfully upgraded to a direct peer connection.
-    pub is_webrtc: bool,
+    pub is_direct: bool,
 }

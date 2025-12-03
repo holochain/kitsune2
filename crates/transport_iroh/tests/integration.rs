@@ -322,7 +322,7 @@ async fn network_stats() {
         "opened at s is more than a second off expected moment"
     );
     assert!(
-        stats_ep_2.is_webrtc,
+        stats_ep_2.is_direct,
         "expected direct connection but got false"
     );
 }

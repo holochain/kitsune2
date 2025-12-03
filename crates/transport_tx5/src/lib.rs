@@ -416,7 +416,7 @@ impl TxImp for Tx5Transport {
                         recv_message_count: conn.recv_message_count,
                         recv_bytes: conn.recv_bytes,
                         opened_at_s: conn.opened_at_s,
-                        is_webrtc: conn.is_webrtc,
+                        is_direct: conn.is_webrtc,
                     })
                     .collect(),
             })
