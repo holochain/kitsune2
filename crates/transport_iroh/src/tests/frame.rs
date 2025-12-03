@@ -112,6 +112,44 @@ fn decode_frame_valid_data() {
 }
 
 #[test]
+fn decode_frame_invalid_preflight_url_too_short() {
+    let ty = FrameType::Preflight;
+    let mut encoded_frame = vec![ty as u8];
+    // Too few payload length bytes
+    encoded_frame.extend_from_slice(&(2u32).to_be_bytes());
+    encoded_frame.extend_from_slice(&[0u8; 2]);
+
+    let err = decode_frame(encoded_frame).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("preflight payload too short for URL length"),
+        "unexpected error, got {err}"
+    );
+}
+
+#[test]
+fn decode_frame_invalid_preflight_payload_too_short_for_url() {
+    let ty = FrameType::Preflight;
+    let url = Url::from_str("http://some.url:0/withendpointid").unwrap();
+    let url_bytes = Bytes::from(url);
+    let mut payload = vec![];
+    // Too many URL length bytes
+    payload.extend_from_slice(&(200u32).to_be_bytes());
+    payload.extend_from_slice(&url_bytes);
+
+    let mut encoded_frame = vec![ty as u8];
+    encoded_frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    encoded_frame.extend_from_slice(&payload);
+
+    let err = decode_frame(encoded_frame).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("preflight payload too short for actual URL"),
+        "unexpected error, got {err}"
+    );
+}
+
+#[test]
 fn decode_frame_too_short() {
     let encoded_frame = vec![0u8; FRAME_HEADER_LEN - 1];
     let err = decode_frame(encoded_frame).unwrap_err();

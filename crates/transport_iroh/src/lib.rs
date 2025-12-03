@@ -322,9 +322,13 @@ impl IrohTransport {
                 conn.close(0u8.into(), b"preflight failed");
                 return Err(err);
             }
-        }
 
-        Ok(ctx)
+            Ok(ctx)
+        } else {
+            Err(K2Error::other(
+                "Connection attempted before home relay URL is known",
+            ))
+        }
     }
 }
 
@@ -475,9 +479,13 @@ async fn handle_incoming_stream(
         match frame {
             // Handle Preflight frame: update connections map and context and forward preflight bytes.
             Frame::Preflight((url, preflight)) => {
+                if ctx.remote().is_some() {
+                    error!("Redundant preflight request in established connection state; discarding frame");
+                    return Ok(());
+                }
                 connections
                     .write()
-                    .unwrap()
+                    .expect("poisoned")
                     .insert(url.clone(), ctx.clone());
                 ctx.set_remote_url(url.clone());
                 ctx.handler().recv_data(url, preflight).await?;

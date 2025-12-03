@@ -130,11 +130,21 @@ pub(super) fn decode_frame(data: Vec<u8>) -> K2Result<Frame> {
     let payload = Bytes::copy_from_slice(&data[FRAME_HEADER_LEN..]);
     let frame = match frame_type {
         FrameType::Preflight => {
+            if payload.len() < 4 {
+                return Err(K2Error::other(
+                    "preflight payload too short for URL length",
+                ));
+            }
             // The first 4 bytes of the payload are the URL length...
             let url_len = u32::from_be_bytes([
                 payload[0], payload[1], payload[2], payload[3],
             ]) as usize;
             // ...followed by the URL
+            if payload.len() < 4 + url_len {
+                return Err(K2Error::other(
+                    "preflight payload too short for actual URL",
+                ));
+            }
             let url = Url::from_str(
                 std::str::from_utf8(&payload[4..4 + url_len]).map_err(
                     |err| K2Error::other_src("invalid peer url", err),
