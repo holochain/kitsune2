@@ -273,9 +273,7 @@ impl Config {
     ///
     /// It doesn't copy the [`Mutex`], but just the inner data.
     pub fn try_clone(&self) -> K2Result<Self> {
-        let Ok(lock) = self.0.lock() else {
-            return Err(K2Error::other("config mutex poisoned"));
-        };
+        let lock = self.0.lock().expect("config mutex poisoned");
         Ok(Self(Mutex::new(Inner {
             map: lock.map.clone(),
             are_defaults_set: lock.are_defaults_set,
