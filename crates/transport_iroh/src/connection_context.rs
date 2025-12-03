@@ -1,5 +1,5 @@
 use iroh::endpoint::Connection;
-use kitsune2_api::{K2Result, TxImpHnd, Url};
+use kitsune2_api::{TxImpHnd, Url};
 use std::{
     fmt,
     sync::{Arc, RwLock},
@@ -30,16 +30,11 @@ impl ConnectionContext {
         }
     }
 
-    pub async fn set_remote_url(&self, peer: Url) -> K2Result<()> {
-        let mut lock = self.remote_url.write().unwrap();
-        if lock.as_ref() == Some(&peer) {
-            return Ok(());
-        }
-        *lock = Some(peer.clone());
-        Ok(())
+    pub fn set_remote_url(&self, peer: Url) {
+        *self.remote_url.write().unwrap() = Some(peer);
     }
 
-    pub async fn remote(&self) -> Option<Url> {
+    pub fn remote(&self) -> Option<Url> {
         self.remote_url.read().unwrap().clone()
     }
 
@@ -51,8 +46,8 @@ impl ConnectionContext {
         self.connection.clone()
     }
 
-    pub async fn notify_disconnect(&self) {
-        if let Some(peer) = self.remote().await {
+    pub fn notify_disconnect(&self) {
+        if let Some(peer) = self.remote() {
             self.handler.peer_disconnect(peer, None);
         }
     }
