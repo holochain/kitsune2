@@ -86,6 +86,18 @@ impl Default for Config {
     }
 }
 
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        let lock = self.0.lock().expect("config mutex poisoned");
+        Self(Mutex::new(Inner {
+            map: lock.map.clone(),
+            are_defaults_set: lock.are_defaults_set,
+            did_validate: lock.did_validate,
+            is_runtime: lock.is_runtime,
+        }))
+    }
+}
+
 impl Config {
     /// Once defaults are set, generate warnings for any values
     /// set beyond this list. So that we can identify no-longer-used
@@ -269,19 +281,6 @@ impl Config {
         Ok(())
     }
 
-    /// Try to clone this config instance.
-    ///
-    /// It doesn't copy the [`Mutex`], but just the inner data.
-    pub fn try_clone(&self) -> K2Result<Self> {
-        let lock = self.0.lock().expect("config mutex poisoned");
-        Ok(Self(Mutex::new(Inner {
-            map: lock.map.clone(),
-            are_defaults_set: lock.are_defaults_set,
-            did_validate: lock.did_validate,
-            is_runtime: lock.is_runtime,
-        })))
-    }
-
     /// Merge config overrides from another config instance.
     ///
     /// New values are added, existing values are overwritten.
@@ -303,12 +302,9 @@ impl Config {
 
 impl ConfigMap {
     /// Merge config overrides from another config map.
-    fn merge_overrides(&mut self, overrides: &ConfigMap) {
+    fn merge_overrides(&mut self, overrides: &Self) {
         match (self, overrides) {
-            (
-                ConfigMap::ConfigMap(self_map),
-                ConfigMap::ConfigMap(overrides),
-            ) => {
+            (Self::ConfigMap(self_map), Self::ConfigMap(overrides)) => {
                 // iterate over overrides and check whether to replace.
                 for (key, value) in overrides.iter() {
                     match self_map.get_mut(key) {
@@ -440,7 +436,7 @@ mod test {
             "taste": "sweet",
         }}))
         .unwrap();
-        let c2 = c.try_clone().expect("failed to clone");
+        let c2 = c.clone();
         let v: serde_json::Value =
             c2.get_module_config().expect("failed to get");
         assert_eq!(
