@@ -308,24 +308,27 @@ impl IrohTransport {
         spawn_connection_reader(ctx.clone(), connections.clone());
 
         // Perform preflight as first message on the new connection.
-        let preflight = handler.peer_connect(peer.clone()).await?;
-        let result =
-            send_frame(&ctx.connection(), FrameType::Payload, preflight).await;
-        if let Err(err) = result {
-            // Preflight failed, remove connection context from map.
-            connections.write().unwrap().remove(&peer);
-            // Close connection gracefully.
-            conn.close(0u8.into(), b"preflight failed");
-            return Err(err);
-        }
+        if let Some(url) = local_url {
+            let preflight = handler.peer_connect(peer.clone()).await?;
+            let result = send_frame(
+                &ctx.connection(),
+                Frame::Preflight((url, preflight)),
+            )
+            .await;
+            if let Err(err) = result {
+                // Preflight failed, remove connection context from map.
+                connections.write().unwrap().remove(&peer);
+                // Close connection gracefully.
+                conn.close(0u8.into(), b"preflight failed");
+                return Err(err);
+            }
 
-        // Send peer URL to remote once per connection.
-        if let Some(local_url) = local_url {
-            let payload = Bytes::copy_from_slice(local_url.as_str().as_bytes());
-            send_frame(&conn, FrameType::PeerUrl, payload).await?;
+            Ok(ctx)
+        } else {
+            Err(K2Error::other(
+                "Connection attempted before home relay URL is known",
+            ))
         }
-
-        Ok(ctx)
     }
 }
 
@@ -398,12 +401,8 @@ impl TxImp for IrohTransport {
             };
 
             // Send actual message.
-            send_frame(
-                &connection_context.connection(),
-                FrameType::Payload,
-                data,
-            )
-            .await?;
+            send_frame(&connection_context.connection(), Frame::Data(data))
+                .await?;
 
             Ok(())
         })
@@ -458,7 +457,7 @@ fn spawn_connection_reader(
                 Err(err) => {
                     // Connection closed, notify disconnect and exit loop.
                     error!(?err, "iroh connection closed");
-                    ctx.notify_disconnect().await;
+                    ctx.notify_disconnect();
                     break;
                 }
             }
@@ -476,29 +475,28 @@ async fn handle_incoming_stream(
             stream.read_to_end(MAX_FRAME_BYTES).await.map_err(|err| {
                 K2Error::other_src("failed to read iroh frame", err)
             })?;
-        let (frame_type, payload) = decode_frame(data)?;
-        match frame_type {
-            // Handle PeerUrl frame: update connections map and context.
-            FrameType::PeerUrl => {
-                let url = Url::from_str(
-                    std::str::from_utf8(&payload).map_err(|err| {
-                        K2Error::other_src("invalid peer url payload", err)
-                    })?,
-                )?;
+        let frame = decode_frame(data)?;
+        match frame {
+            // Handle Preflight frame: update connections map and context and forward preflight bytes.
+            Frame::Preflight((url, preflight)) => {
+                if ctx.remote().is_some() {
+                    error!("Redundant preflight request in established connection state; discarding frame");
+                    return Ok(());
+                }
                 connections
                     .write()
-                    .unwrap()
+                    .expect("poisoned")
                     .insert(url.clone(), ctx.clone());
-                ctx.set_remote_url(url).await
+                ctx.set_remote_url(url.clone());
+                ctx.handler().recv_data(url, preflight).await?;
+                Ok(())
             }
-            // Handle Payload frame: forward data to handler if remote URL is set.
-            FrameType::Payload => {
-                let peer = ctx.remote().await.ok_or_else(|| {
-                    K2Error::other(
-                        "received payload before peer url".to_string(),
-                    )
+            // Handle Data frame: forward data to handler if remote URL is set.
+            Frame::Data(message) => {
+                let peer = ctx.remote().ok_or_else(|| {
+                    K2Error::other("received data before preflight")
                 })?;
-                ctx.handler().recv_data(peer, payload).await
+                ctx.handler().recv_data(peer, message).await
             }
         }
     }
@@ -506,7 +504,7 @@ async fn handle_incoming_stream(
 
     if let Err(err) = result {
         warn!(?err, "iroh stream error, closing connection");
-        if let Some(peer) = ctx.remote().await {
+        if let Some(peer) = ctx.remote() {
             let _ = ctx
                 .handler()
                 .set_unresponsive(peer.clone(), Timestamp::now())
