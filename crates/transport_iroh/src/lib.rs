@@ -475,7 +475,7 @@ impl TxImp for IrohTransport {
                     recv_message_count: context.get_recv_message_count(),
                     recv_bytes: context.get_recv_bytes(),
                     opened_at_s: context.get_opened_at_s(),
-                    is_webrtc: matches!(
+                    is_direct: matches!(
                         context.get_connection_type(),
                         ConnectionType::Direct(_)
                     ),

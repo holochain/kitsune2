@@ -353,7 +353,7 @@ async fn cmd_task(
                 .elapsed()
                 .unwrap()
                 .as_secs(),
-            is_webrtc: false,
+            is_direct: false,
         });
 
         cb(lock.connections.last_mut().unwrap())
