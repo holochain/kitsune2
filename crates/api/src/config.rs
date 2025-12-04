@@ -36,7 +36,7 @@ impl std::fmt::Debug for ConfigEntry {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(untagged, rename_all = "camelCase")]
 enum ConfigMap {
     ConfigMap(BTreeMap<String, Box<Self>>),
@@ -49,6 +49,7 @@ impl Default for ConfigMap {
     }
 }
 
+#[derive(Clone)]
 struct Inner {
     map: ConfigMap,
     are_defaults_set: bool,
@@ -81,6 +82,18 @@ impl Default for Config {
             are_defaults_set: false,
             did_validate: false,
             is_runtime: false,
+        }))
+    }
+}
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        let lock = self.0.lock().expect("config mutex poisoned");
+        Self(Mutex::new(Inner {
+            map: lock.map.clone(),
+            are_defaults_set: lock.are_defaults_set,
+            did_validate: lock.did_validate,
+            is_runtime: lock.is_runtime,
         }))
     }
 }
@@ -267,6 +280,48 @@ impl Config {
         update_cb(value);
         Ok(())
     }
+
+    /// Merge config overrides from another config instance.
+    ///
+    /// New values are added, existing values are overwritten.
+    pub fn merge_config_overrides(
+        self,
+        config_overrides: &Self,
+    ) -> K2Result<Self> {
+        {
+            let lock_overrides =
+                config_overrides.0.lock().expect("config mutex poisoned");
+            let mut lock = self.0.lock().expect("config mutex poisoned");
+            // merge map
+            lock.map.merge_overrides(&lock_overrides.map);
+        }
+
+        Ok(self)
+    }
+}
+
+impl ConfigMap {
+    /// Merge config overrides from another config map.
+    fn merge_overrides(&mut self, overrides: &Self) {
+        match (self, overrides) {
+            (Self::ConfigMap(self_map), Self::ConfigMap(overrides)) => {
+                // iterate over overrides and check whether to replace.
+                for (key, value) in overrides.iter() {
+                    match self_map.get_mut(key) {
+                        Some(current_value) => {
+                            current_value.merge_overrides(value);
+                        }
+                        None => {
+                            self_map.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+            }
+            (current, overrides) => {
+                *current = overrides.clone();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -371,5 +426,125 @@ mod test {
                     .from_env_lossy(),
             )
             .try_init();
+    }
+
+    #[test]
+    fn test_should_clone_config() {
+        let c = Config::default();
+        c.set_module_config(&serde_json::json!({"apples": {
+            "color": "red",
+            "taste": "sweet",
+        }}))
+        .unwrap();
+        let c2 = c.clone();
+        let v: serde_json::Value =
+            c2.get_module_config().expect("failed to get");
+        assert_eq!(
+            v,
+            serde_json::json!({"apples": {
+                "color": "red",
+                "taste": "sweet",
+            }})
+        );
+    }
+
+    #[test]
+    fn test_should_merge_config_override() {
+        let source = serde_json::json!({
+            "fruits": {
+                "apple": {
+                    "color": "red",
+                    "taste": "sweet",
+                    "variety": "fuji",
+                    "quantity": 10,
+                },
+                "banana": 42,
+            },
+            "vegetables": {
+                "carrot": {
+                    "color": "orange",
+                    "length_cm": 15,
+                    "quantity": 5,
+                },
+            },
+            "vegetarian": true,
+        });
+        let source: ConfigMap =
+            serde_json::from_value(source).expect("failed to decode config");
+
+        let r#override = serde_json::json!({
+            "fruits": {
+                "apple": {
+                    "color": "green",
+                    "quantity": 20,
+                },
+                "orange": {
+                    "variety": "navel",
+                    "quantity": 30,
+                },
+            },
+            "meat": {
+                "chicken": {
+                    "cut": "breast",
+                    "weight_kg": 1.5,
+                },
+            },
+            "vegetarian": false,
+        });
+        let r#override: ConfigMap = serde_json::from_value(r#override)
+            .expect("failed to decode config");
+
+        let source = Config(Mutex::new(Inner {
+            map: source,
+            are_defaults_set: false,
+            did_validate: true,
+            is_runtime: false,
+        }));
+        let r#override = Config(Mutex::new(Inner {
+            map: r#override,
+            are_defaults_set: false,
+            did_validate: true,
+            is_runtime: false,
+        }));
+
+        let merged = source
+            .merge_config_overrides(&r#override)
+            .expect("failed to merge config overrides");
+
+        let expected = serde_json::json!({
+            "fruits": {
+                "apple": {
+                    "color": "green",
+                    "taste": "sweet",
+                    "variety": "fuji",
+                    "quantity": 20,
+                },
+                "banana": 42,
+                "orange": {
+                    "variety": "navel",
+                    "quantity": 30,
+                },
+            },
+            "vegetables": {
+                "carrot": {
+                    "color": "orange",
+                    "length_cm": 15,
+                    "quantity": 5,
+                },
+            },
+            "vegetarian": false,
+            "meat": {
+                "chicken": {
+                    "cut": "breast",
+                    "weight_kg": 1.5,
+                },
+            },
+        });
+
+        // check
+        let merged_value: serde_json::Value = merged
+            .get_module_config()
+            .expect("failed to get merged config");
+        assert_eq!(merged_value, expected);
     }
 }
