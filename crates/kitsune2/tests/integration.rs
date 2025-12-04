@@ -618,4 +618,27 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
         .local_agent_join(agent_b.clone())
         .await
         .expect("failed to join space B");
+
+    let agent_a_id = agent_a.agent();
+    let agent_b_id = agent_b.agent();
+    assert!(space_a.peer_store().get(agent_a_id.clone()).await.is_ok());
+    assert!(space_b.peer_store().get(agent_b_id.clone()).await.is_ok());
+    assert!(
+        space_a
+            .peer_store()
+            .get(agent_b_id.clone())
+            .await
+            .unwrap()
+            .is_none(),
+        "Agent B should not be in space A's peer store"
+    );
+    assert!(
+        space_b
+            .peer_store()
+            .get(agent_a_id.clone())
+            .await
+            .unwrap()
+            .is_none(),
+        "Agent A should not be in space B's peer store"
+    );
 }
