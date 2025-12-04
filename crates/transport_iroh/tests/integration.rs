@@ -1,10 +1,10 @@
-use crate::harness::{IrohTransportTestHarness, MockTxHandler};
 use bytes::Bytes;
 use kitsune2_api::Url;
 use kitsune2_test_utils::{iter_check, space::TEST_SPACE_ID};
+use kitsune2_transport_iroh::test_utils::{
+    IrohTransportTestHarness, MockTxHandler,
+};
 use std::{sync::Arc, time::Duration};
-
-mod harness;
 
 #[tokio::test]
 async fn connect_two_endpoints() {
