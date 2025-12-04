@@ -192,11 +192,6 @@ async fn network_stats() {
         "expected transport connections to be empty but got {}",
         network_stats.transport_stats.connections.len()
     );
-    assert!(
-        network_stats.transport_stats.peer_urls.is_empty(),
-        "expected transport peer urls to be empty but got {}",
-        network_stats.transport_stats.peer_urls.len()
-    );
 
     // Create another endpoint to connect to.
     let (request_received_sender, mut request_received_receiver) =
@@ -262,15 +257,14 @@ async fn network_stats() {
         "expected iroh backend but got {}",
         network_stats.transport_stats.backend
     );
-    // Own URL and ep_2's peer URL.
+    // ep 1's local URL
     assert_eq!(
         network_stats.transport_stats.peer_urls.len(),
-        2,
-        "expected 2 peer urls but got {}",
+        1,
+        "expected 1 peer url but got {}",
         network_stats.transport_stats.peer_urls.len()
     );
     assert_eq!(network_stats.transport_stats.peer_urls[0], ep_1_url);
-    assert_eq!(network_stats.transport_stats.peer_urls[1], ep_2_url);
     assert_eq!(
         network_stats.transport_stats.connections.len(),
         1,

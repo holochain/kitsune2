@@ -457,31 +457,30 @@ impl TxImp for IrohTransport {
             if let Some(own_url) = self.local_url.read().unwrap().clone() {
                 peer_urls.push(own_url);
             }
-            let mut stat_connections = Vec::new();
-            for (url, context) in connections {
-                peer_urls.push(url);
-                let stats = TransportConnectionStats {
-                    // When the context is added to the connections map, the handshake
-                    // with the URL exchange is already complete. URL must be `Some`.
-                    pub_key: context
-                        .remote()
-                        .await
-                        .unwrap()
-                        .peer_id()
-                        .unwrap()
-                        .to_string(),
-                    send_message_count: context.get_send_message_count(),
-                    send_bytes: context.get_send_bytes(),
-                    recv_message_count: context.get_recv_message_count(),
-                    recv_bytes: context.get_recv_bytes(),
-                    opened_at_s: context.get_opened_at_s(),
-                    is_direct: matches!(
-                        context.get_connection_type(),
-                        ConnectionType::Direct(_)
-                    ),
-                };
-                stat_connections.push(stats);
-            }
+            let stat_connections = connections
+                .into_iter()
+                .map(|(_, context)| {
+                    TransportConnectionStats {
+                        // When the context is added to the connections map, the handshake
+                        // with the URL exchange is already complete. URL must be `Some`.
+                        pub_key: context
+                            .remote()
+                            .unwrap()
+                            .peer_id()
+                            .unwrap()
+                            .to_string(),
+                        send_message_count: context.get_send_message_count(),
+                        send_bytes: context.get_send_bytes(),
+                        recv_message_count: context.get_recv_message_count(),
+                        recv_bytes: context.get_recv_bytes(),
+                        opened_at_s: context.get_opened_at_s(),
+                        is_direct: matches!(
+                            context.get_connection_type(),
+                            ConnectionType::Direct(_)
+                        ),
+                    }
+                })
+                .collect();
             Ok(TransportStats {
                 backend: "iroh".to_string(),
                 peer_urls,
@@ -522,7 +521,7 @@ fn spawn_connection_reader(
                 }
                 Err(err) => {
                     // Connection closed, notify disconnect and exit loop.
-                    let peer = ctx.remote().await;
+                    let peer = ctx.remote();
                     error!(?err, ?peer, "connection closed by peer");
                     if let Some(peer) = peer {
                         if let Some(connection) =
@@ -533,7 +532,7 @@ fn spawn_connection_reader(
                                 .close(0u8.into(), b"peer disconnected");
                         }
                     }
-                    ctx.notify_disconnect().await;
+                    ctx.notify_disconnect();
                     break;
                 }
             }
@@ -564,11 +563,12 @@ async fn handle_incoming_stream(
                     .write()
                     .unwrap()
                     .insert(url.clone(), ctx.clone());
-                ctx.set_remote_url(url).await
+                ctx.set_remote_url(url);
+                K2Result::Ok(())
             }
             // Handle Payload frame: forward data to handler if remote URL is set.
             FrameType::Payload => {
-                let peer = ctx.remote().await.ok_or_else(|| {
+                let peer = ctx.remote().ok_or_else(|| {
                     K2Error::other(
                         "received payload before peer url".to_string(),
                     )
@@ -585,7 +585,7 @@ async fn handle_incoming_stream(
 
     if let Err(err) = result {
         warn!(?err, "iroh stream error, closing connection");
-        if let Some(peer) = ctx.remote().await {
+        if let Some(peer) = ctx.remote() {
             let _ = ctx
                 .handler()
                 .set_unresponsive(peer.clone(), Timestamp::now())
