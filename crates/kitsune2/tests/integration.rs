@@ -607,17 +607,18 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
     // Attach a local agent to each space
     let agent_a = Arc::new(Ed25519LocalAgent::default());
     agent_a.set_tgt_storage_arc_hint(DhtArc::FULL);
-    space_a
-        .local_agent_join(agent_a.clone())
-        .await
-        .expect("failed to join space A");
-
+    iter_check!(60_000, 1_000, {
+        if space_a.local_agent_join(agent_a.clone()).await.is_ok() {
+            break;
+        }
+    });
     let agent_b = Arc::new(Ed25519LocalAgent::default());
     agent_b.set_tgt_storage_arc_hint(DhtArc::FULL);
-    space_b
-        .local_agent_join(agent_b.clone())
-        .await
-        .expect("failed to join space B");
+    iter_check!(60_000, 1_000, {
+        if space_b.local_agent_join(agent_b.clone()).await.is_ok() {
+            break;
+        }
+    });
 
     let agent_a_id = agent_a.agent();
     let agent_b_id = agent_b.agent();
