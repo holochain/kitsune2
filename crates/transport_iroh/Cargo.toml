@@ -13,7 +13,11 @@ edition.workspace = true
 [dependencies]
 bytes = { workspace = true }
 iroh = { workspace = true }
+# used for test-utils
+iroh-relay = { workspace = true, features = ["server"], optional = true }
 kitsune2_api = { workspace = true }
+# used for test-utils
+kitsune2_core = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = [
   "macros",
@@ -29,11 +33,10 @@ schemars = { workspace = true, optional = true }
 n0-watcher = { workspace = true }
 
 [dev-dependencies]
-kitsune2_core = { workspace = true }
+kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
 kitsune2_test_utils = { workspace = true }
-
-futures = { workspace = true }
-iroh-relay = { workspace = true, features = ["server"] }
 
 [features]
 schema = ["dep:schemars"]
+
+test-utils = ["dep:iroh-relay", "dep:kitsune2_core"]

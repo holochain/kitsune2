@@ -2728,12 +2728,12 @@ name = "kitsune2_transport_iroh"
 version = "0.4.0-dev.0"
 dependencies = [
  "bytes",
- "futures",
  "iroh",
  "iroh-relay",
  "kitsune2_api",
  "kitsune2_core",
  "kitsune2_test_utils",
+ "kitsune2_transport_iroh",
  "n0-watcher",
  "schemars",
  "serde",

@@ -1,13 +1,10 @@
-//! iroh transport module test utilities
-
-use iroh_relay::server::Server;
+use crate::{
+    test_utils::relay_server::{spawn_iroh_relay_server, Server},
+    IrohTransportConfig, IrohTransportFactory, IrohTransportModConfig,
+};
 use kitsune2_api::{
     BoxFut, Builder, DynTransport, DynTxHandler, K2Result, SpaceId, Timestamp,
     TxBaseHandler, TxHandler, TxModuleHandler, TxSpaceHandler, Url,
-};
-use kitsune2_test_utils::iroh_relay::spawn_iroh_relay_server;
-use kitsune2_transport_iroh::{
-    IrohTransportConfig, IrohTransportFactory, IrohTransportModConfig,
 };
 use std::sync::{Arc, Mutex};
 
@@ -56,6 +53,7 @@ impl IrohTransportTestHarness {
     }
 }
 
+/// Get the default dummy URL
 pub fn dummy_url() -> Url {
     Url::from_str("http://url.not.set:0/0").unwrap()
 }

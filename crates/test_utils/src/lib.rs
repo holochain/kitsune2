@@ -7,7 +7,6 @@ use tokio::time::error::Elapsed;
 pub mod agent;
 pub mod bootstrap;
 pub mod id;
-pub mod iroh_relay;
 pub mod noop_bootstrap;
 pub mod space;
 pub mod tx_handler;

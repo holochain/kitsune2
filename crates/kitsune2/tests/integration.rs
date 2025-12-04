@@ -16,15 +16,13 @@ use kitsune2_test_utils::{
     bootstrap::TestBootstrapSrv, enable_tracing, iter_check, random_bytes,
     space::TEST_SPACE_ID,
 };
-use std::sync::Arc;
 #[cfg(feature = "transport-iroh")]
-use {
-    kitsune2_test_utils::iroh_relay::{spawn_iroh_relay_server, Server},
-    kitsune2_transport_iroh::{
-        config::{IrohTransportConfig, IrohTransportModConfig},
-        IrohTransportFactory,
-    },
+use kitsune2_transport_iroh::{
+    config::{IrohTransportConfig, IrohTransportModConfig},
+    test_utils::{spawn_iroh_relay_server, Server},
+    IrohTransportFactory,
 };
+use std::sync::Arc;
 #[cfg(any(
     feature = "transport-tx5-backend-libdatachannel",
     feature = "transport-tx5-backend-go-pion",

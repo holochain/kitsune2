@@ -15,12 +15,10 @@ use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 #[cfg(feature = "transport-iroh")]
-use {
-    kitsune2_test_utils::iroh_relay::{spawn_iroh_relay_server, Server},
-    kitsune2_transport_iroh::{
-        config::{IrohTransportConfig, IrohTransportModConfig},
-        IrohTransportFactory,
-    },
+use kitsune2_transport_iroh::{
+    config::{IrohTransportConfig, IrohTransportModConfig},
+    test_utils::{spawn_iroh_relay_server, Server},
+    IrohTransportFactory,
 };
 
 use std::sync::mpsc::{Receiver, Sender};
