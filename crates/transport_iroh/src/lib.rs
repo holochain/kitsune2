@@ -458,8 +458,8 @@ impl TxImp for IrohTransport {
                 peer_urls.push(own_url);
             }
             let stat_connections = connections
-                .into_iter()
-                .map(|(_, context)| {
+                .into_values()
+                .map(|context| {
                     TransportConnectionStats {
                         // When the context is added to the connections map, the handshake
                         // with the URL exchange is already complete. URL must be `Some`.
