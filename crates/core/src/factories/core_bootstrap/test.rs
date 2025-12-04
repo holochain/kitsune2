@@ -1,11 +1,8 @@
-use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
 use std::sync::Arc;
 
 use crate::factories::{CoreBootstrapConfig, CoreBootstrapModConfig};
-
-const TEST_SPACE_ID: SpaceId = SpaceId(Id(Bytes::from_static(b"test_space")));
 
 #[derive(Debug)]
 struct TestSpaceHandler;
@@ -311,6 +308,6 @@ async fn test_should_override_bootstrap_url_per_space() {
         .expect("Register handler");
 
     // Creating a space MUST fail because there is no bootstrap config.
-    kitsune.space(TEST_SPACE_ID, Some(space_config)).await
+    kitsune.space(kitsune2_test_utils::space::TEST_SPACE_ID, Some(space_config)).await
     .expect("Expected creating a space to succeed after setting bootstrap URL per space");
 }
