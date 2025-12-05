@@ -146,5 +146,5 @@ jsonschema = "0.30.0"
 #sbd-server = { path = "../sbd/rust/sbd-server" }
 #sbd-client = { path = "../sbd/rust/sbd-client" }
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
-#tx5-core = { path = "../tx5/crates/tx5-core" }
-#tx5 = { path = "../tx5/crates/tx5" }
+tx5-core = { path = "../tx5/crates/tx5-core" }
+tx5 = { path = "../tx5/crates/tx5" }
