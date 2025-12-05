@@ -105,7 +105,7 @@ pub mod config {
             Self {
                 signal_allow_plain_text: false,
                 server_url: "<wss://your.sbd.url>".into(),
-                timeout_s: 60,
+                timeout_s: 90,
                 webrtc_config: WebRtcConfig {
                     ice_servers: vec![],
                     ice_transport_policy: Default::default(),
@@ -336,19 +336,98 @@ impl TxImp for Tx5Transport {
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let peer_url = peer.to_peer_url()?;
-            // this would be more efficient if we retool tx5 to use bytes
-            if let Err(e) = self.ep.send(peer_url, data.to_vec()).await {
-                let _ = self
-                    .handler
-                    .set_unresponsive(peer.clone(), Timestamp::now())
-                    .await;
-                self.ep.close(&peer.to_peer_url()?);
-                return Err(K2Error::other_src(
-                    format!("tx5 send error to peer at url {peer}"),
-                    e,
-                ));
+            let data_vec = data.to_vec(); // Convert once for reuse in retries
+
+            // Retry logic: attempt up to 3 times with exponential backoff
+            // Reduced from 11 to 3 to stay under the 60s request timeout
+            // 3 attempts × 10s timeout + backoff ≈ 31s, allowing call_remote layer to retry
+            let max_retries = 2;
+            let mut last_error = None;
+            let send_start = std::time::Instant::now();
+
+            for attempt in 0..=max_retries {
+                if attempt > 0 {
+                    // Close the failed connection before retrying
+                    tracing::debug!("Closing connection to {} before retry", peer);
+                    self.ep.close(&peer_url);
+
+                    // Exponential backoff with cap and jitter: 200ms, 400ms, 800ms, 1600ms, 3200ms, then cap at 5000ms
+                    // Add ±25% jitter to prevent thundering herd
+                    let base_delay = std::cmp::min(200 * (1 << (attempt - 1)), 5000);
+                    let jitter_range = base_delay / 4; // 25% of base delay
+                    let jitter = (rand::random::<u64>() % (jitter_range * 2)) as i64 - jitter_range as i64;
+                    let delay_ms = ((base_delay as i64 + jitter).max(100)) as u64;
+                    tracing::debug!(
+                        "Retrying send to {} after {}ms (attempt {}/{}) [elapsed: {:?}]",
+                        peer,
+                        delay_ms,
+                        attempt + 1,
+                        max_retries + 1,
+                        send_start.elapsed()
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+
+                tracing::trace!("Starting send attempt {} to {} [elapsed: {:?}]", attempt + 1, peer, send_start.elapsed());
+                let attempt_start = std::time::Instant::now();
+                match self.ep.send(peer_url.clone(), data_vec.clone()).await {
+                    Ok(()) => {
+                        if attempt > 0 {
+                            tracing::trace!(
+                                "Successfully sent to {} after {} retries",
+                                peer,
+                                attempt
+                            );
+                        }
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        tracing::trace!("Send attempt {} to {} failed in {:?}: {} [total elapsed: {:?}]",
+                                 attempt + 1, peer, attempt_start.elapsed(), e, send_start.elapsed());
+                        let error_str = e.to_string();
+                        let is_retryable = error_str.contains("Peer connection failed")
+                            || error_str.contains("timed out")
+                            || error_str.contains("connection")
+                            || error_str.contains("Connection");
+
+                        if is_retryable && attempt < max_retries {
+                            tracing::warn!(
+                                "Send to {} failed (attempt {}): {}. Will retry.",
+                                peer,
+                                attempt + 1,
+                                e
+                            );
+                            last_error = Some(e);
+                            continue;
+                        } else {
+                            // Non-retryable error or exhausted retries
+                            if attempt == max_retries {
+                                tracing::error!(
+                                    "Send to {} failed after {} attempts. Giving up. [total time: {:?}]",
+                                    peer,
+                                    max_retries + 1,
+                                    send_start.elapsed()
+                                );
+                            }
+                            let _ = self
+                                .handler
+                                .set_unresponsive(peer.clone(), Timestamp::now())
+                                .await;
+                            self.ep.close(&peer_url);
+                            return Err(K2Error::other_src(
+                                format!("tx5 send error to peer at url {peer}"),
+                                e,
+                            ));
+                        }
+                    }
+                }
             }
-            Ok(())
+
+            // Should never reach here, but handle it anyway
+            Err(K2Error::other_src(
+                format!("tx5 send error to peer at url {peer}"),
+                last_error.unwrap_or_else(|| std::io::Error::other("Unknown error")),
+            ))
         })
     }
 

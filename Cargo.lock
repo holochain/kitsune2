@@ -1826,6 +1826,7 @@ dependencies = [
  "kitsune2_core",
  "kitsune2_test_utils",
  "kitsune2_transport_tx5",
+ "rand 0.8.5",
  "sbd-server",
  "schemars",
  "serde",
