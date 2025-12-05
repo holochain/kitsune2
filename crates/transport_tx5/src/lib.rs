@@ -228,7 +228,7 @@ impl Tx5Transport {
         handler: Arc<TxImpHnd>,
         auth_material: Option<Vec<u8>>,
     ) -> K2Result<DynTxImp> {
-        let (pre_send, pre_recv) = tokio::sync::mpsc::channel::<PreCheck>(1024);
+        let (pre_send, pre_recv) = tokio::sync::mpsc::channel::<PreCheck>(4096);
 
         let preflight_send_handler = handler.clone();
 
