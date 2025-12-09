@@ -4581,11 +4581,3 @@ dependencies = [
  "log",
  "simd-adler32",
 ]
-
-[[patch.unused]]
-name = "tx5"
-version = "0.8.1"
-
-[[patch.unused]]
-name = "tx5-core"
-version = "0.8.1"
