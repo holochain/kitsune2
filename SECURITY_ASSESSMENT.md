@@ -11,7 +11,7 @@
 
 This security assessment examines the Kitsune2 P2P networking library with a focus on remotely exploitable vulnerabilities. Kitsune2 is a networking framework for Holochain that uses QUIC (via Iroh) and WebRTC (via Tx5) transports with Protocol Buffers serialization.
 
-The assessment identified **2 critical**, **6 high**, **5 medium**, and **4 low** severity security issues. The most concerning findings relate to unbounded resource consumption, lack of size validation before deserialization, and potential for targeted resource exhaustion attacks.
+The assessment identified **2 critical**, **5 high**, **5 medium**, and **4 low** severity security issues. The most concerning findings relate to unbounded resource consumption, lack of size validation before deserialization, and potential for targeted resource exhaustion attacks.
 
 ### Critical Findings Summary
 1. **Unbounded peer store growth** - No limits on agent info storage
@@ -135,61 +135,7 @@ const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 ## HIGH SEVERITY
 
-### HIGH-1: Op Store JSON Deserialization Vulnerability
-**Severity:** High
-**Attack Vector:** Remote (via gossip/fetch)
-**Component:** `crates/core/src/factories/mem_op_store.rs:189`
-
-**Description:**
-The in-memory op store deserializes op data as JSON without size limits or validation. While this is marked as "for testing purposes", it's used in the core factories and can be triggered by remote peers sending ops via gossip or fetch protocols.
-
-**Location:** `mem_op_store.rs:186-194`
-
-**Attack Scenario:**
-```rust
-// Attacker crafts deeply nested JSON or very large JSON payload
-let malicious_op = {
-    "created_at": 1234567890,
-    "op_data": "[[[[[[[[[[[...very deep nesting...]]]]]]]]]]]"
-};
-// Send via gossip which calls process_incoming_ops
-```
-
-**Impact:**
-- JSON parsing can be CPU-intensive for deeply nested structures
-- Stack overflow from deeply nested JSON
-- Memory exhaustion from large JSON payloads
-- serde_json vulnerabilities could be exploited
-
-**Evidence:**
-```rust
-// mem_op_store.rs:188-194
-let op = MemoryOpRecord::from(op.clone());
-// Calls Into<MemoryOpRecord> for Bytes
-// Which calls serde_json::from_slice without validation
-
-// mem_op_store.rs:87-92
-impl From<Bytes> for MemoryOp {
-    fn from(value: Bytes) -> Self {
-        serde_json::from_slice(&value)
-            .expect("failed to deserialize MemoryOp from bytes")
-    }
-}
-```
-
-**Recommended Fix:**
-- Replace JSON with a binary format (MessagePack, CBOR, or custom binary)
-- Add size limits on op data before deserialization
-- Add depth limits for nested structures
-- Implement proper error handling instead of `.expect()`
-
-**Note:** The code comment says this is for testing, but it's in the core factories and exposed to network input.
-
-**Priority:** **HIGH**
-
----
-
-### HIGH-2: No Bounds on Op Store Size
+### HIGH-1: No Bounds on Op Store Size
 **Severity:** High
 **Attack Vector:** Remote
 **Component:** `crates/core/src/factories/mem_op_store.rs`
@@ -234,7 +180,7 @@ for (op_id, record) in ops_to_add {
 
 ---
 
-### HIGH-3: Unbounded Fetch Request Queue
+### HIGH-2: Unbounded Fetch Request Queue
 **Severity:** High
 **Attack Vector:** Remote
 **Component:** `crates/core/src/factories/core_fetch.rs`
@@ -285,7 +231,7 @@ if let Err(err) = self.incoming_request_tx.try_send(...) {
 
 ---
 
-### HIGH-4: Missing Validation on Gossip Message Counts
+### HIGH-3: Missing Validation on Gossip Message Counts
 **Severity:** High
 **Attack Vector:** Remote
 **Component:** `crates/gossip/src/protocol.rs`
@@ -324,7 +270,7 @@ let malicious_msg = K2GossipHashesMessage {
 
 ---
 
-### HIGH-5: Bootstrap Server Body Size Limit Too Small
+### HIGH-4: Bootstrap Server Body Size Limit Too Small
 **Severity:** High (for legitimate use) / Medium (for attack surface)
 **Attack Vector:** Remote
 **Component:** `crates/bootstrap_srv/src/http.rs:235`
@@ -353,7 +299,7 @@ The bootstrap server has a hardcoded 1KB body size limit which is very restricti
 
 ---
 
-### HIGH-6: Lack of Gossip Session ID Validation
+### HIGH-5: Lack of Gossip Session ID Validation
 **Severity:** High
 **Attack Vector:** Remote
 **Component:** `crates/gossip/src/respond/*.rs`
@@ -589,11 +535,12 @@ The codebase lacks comprehensive metrics for detecting attack patterns:
 - Missing space IDs cause connection closure rather than crashes
 
 **Concerns:**
-- JSON deserialization uses `.expect()` which will panic (mem_op_store.rs:90)
 - Deep protobuf nesting could cause stack overflow
 - Some HashMap operations use `.expect("poisoned")` on mutex locks
 
-**Verdict:** **Generally Good** - Main concern is JSON parsing
+**Note:** The in-memory op store (mem_op_store.rs) with JSON deserialization is only used for development/testing and is not exposed in production integrations. Production implementations provide their own persistent op store.
+
+**Verdict:** **Good** - Production code handles errors appropriately
 
 ---
 
@@ -622,8 +569,8 @@ The codebase lacks comprehensive metrics for detecting attack patterns:
 
 **Problems Identified:**
 1. **Peer Store** - No limit on agent infos (CRIT-1)
-2. **Op Store** - No limit on ops (HIGH-2)
-3. **Fetch Requests** - Bounded queue but no backpressure (HIGH-3)
+2. **Op Store** - No limit on ops (HIGH-1)
+3. **Fetch Requests** - Bounded queue but no backpressure (HIGH-2)
 4. **DHT Time Slices** - Unbounded HashMap for slice hashes
 
 **Good:**
@@ -711,13 +658,12 @@ The codebase demonstrates several good security practices:
 **Priority 1 (Fix Immediately):**
 1. Add maximum peer store size with LRU eviction (CRIT-1)
 2. Add size validation before protobuf deserialization (CRIT-2)
-3. Add op store size limits (HIGH-2)
+3. Add op store size limits (HIGH-1)
 
 **Priority 2 (Fix Soon):**
-1. Replace JSON op serialization with binary format (HIGH-1)
-2. Implement connection-level backpressure for fetch (HIGH-3)
-3. Add vector size limits to gossip messages (HIGH-4)
-4. Make MAX_FRAME_BYTES configurable (MED-1)
+1. Implement connection-level backpressure for fetch (HIGH-2)
+2. Add vector size limits to gossip messages (HIGH-3)
+3. Make MAX_FRAME_BYTES configurable (MED-1)
 
 **Priority 3 (Improvements):**
 1. Add comprehensive fuzz testing for gossip protocol
