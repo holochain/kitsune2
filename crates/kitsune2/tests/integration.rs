@@ -119,7 +119,6 @@ async fn make_kitsune_node(
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
                 relay_url: Some(relay_server_url.to_string()),
-                relay_allow_plain_text: true,
             },
         })
         .unwrap();
@@ -165,10 +164,8 @@ async fn sbd_signal_server() -> (String, SbdServer) {
 
 #[cfg(feature = "transport-iroh")]
 async fn iroh_relay_server() -> (String, Server) {
-    let relay_server = spawn_iroh_relay_server().await;
-    let relay_server_url =
-        format!("http://{}", relay_server.http_addr().unwrap());
-    (relay_server_url, relay_server)
+    let (_, relay_server_url, relay_server) = spawn_iroh_relay_server().await;
+    (relay_server_url.to_string(), relay_server)
 }
 
 macro_rules! relay_server_with_url {
