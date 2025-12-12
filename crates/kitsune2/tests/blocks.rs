@@ -206,9 +206,7 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
 
 #[cfg(feature = "transport-iroh")]
 async fn builder_with_iroh() -> (Arc<Builder>, Server) {
-    let relay_server = spawn_iroh_relay_server().await;
-    let relay_server_url =
-        format!("http://{}", relay_server.http_addr().unwrap());
+    let (_, relay_server_url, relay_server) = spawn_iroh_relay_server().await;
     let builder = Builder {
         transport: IrohTransportFactory::create(),
         gossip: CoreGossipStubFactory::create(),
@@ -223,8 +221,6 @@ async fn builder_with_iroh() -> (Arc<Builder>, Server) {
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
                 relay_url: Some(relay_server_url.to_string()),
-                relay_allow_plain_text: true,
-                ..Default::default()
             },
         })
         .unwrap();

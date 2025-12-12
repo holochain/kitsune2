@@ -25,14 +25,12 @@ impl IrohTransportTestHarness {
         }
         .with_default_config()
         .unwrap();
-        let relay_server = spawn_iroh_relay_server().await;
-        let relay_url = format!("http://{}", relay_server.http_addr().unwrap());
+        let (_, relay_url, relay_server) = spawn_iroh_relay_server().await;
         builder
             .config
             .set_module_config(&IrohTransportModConfig {
                 iroh_transport: IrohTransportConfig {
-                    relay_url: Some(relay_url),
-                    relay_allow_plain_text: true,
+                    relay_url: Some(relay_url.to_string()),
                 },
             })
             .unwrap();

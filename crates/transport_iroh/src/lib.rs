@@ -54,12 +54,6 @@ pub mod config {
         /// relays provided by n0 will be used.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub relay_url: Option<String>,
-        /// Allow connecting to plaintext (http) relay server
-        /// instead of the default requiring TLS (https).
-        ///
-        /// Default: false.
-        #[cfg_attr(feature = "schema", schemars(default))]
-        pub relay_allow_plain_text: bool,
     }
 
     /// Module-level config wrapper.
@@ -94,15 +88,13 @@ impl TransportFactory for IrohTransportFactory {
         let config: IrohTransportModConfig = config.get_module_config()?;
 
         if let Some(relay) = &config.iroh_transport.relay_url {
-            let relay_url = ::url::Url::parse(relay)
+            let relay_server_url = ::url::Url::parse(relay)
                 .map_err(|err| K2Error::other_src("invalid relay URL", err))?;
-            let uses_tls = relay_url.scheme() == "https";
-            if !&config.iroh_transport.relay_allow_plain_text && !uses_tls {
-                return Err(K2Error::other(format!(
-                    "disallowed plaintext relay url, either specify https or set relay_allow_plain_text to true: {relay_url}"
-                )));
+            if relay_server_url.scheme() != "https" {
+                return Err(K2Error::other("disallowed plaintext relay url"));
             }
         }
+
         Ok(())
     }
 
@@ -149,7 +141,7 @@ impl IrohTransport {
         handler: Arc<TxImpHnd>,
     ) -> K2Result<DynTxImp> {
         // If a relay server is configured, only use that.
-        // Otherwise use the default relay servers provided by n0.
+        // Otherwise, use the default relay servers provided by n0.
         let mut builder = if let Some(relay_url) = config.relay_url {
             let relay_url =
                 RelayUrl::from_str(&relay_url).map_err(K2Error::other)?;
@@ -160,6 +152,12 @@ impl IrohTransport {
         };
         // Set kitsune2 protocol for handling data.
         builder = builder.alpns(vec![ALPN.to_vec()]);
+
+        // Test relay server uses self-signed certificate, so skip certificate verification.
+        #[cfg(feature = "test-utils")]
+        {
+            builder = builder.insecure_skip_relay_cert_verify(true);
+        }
 
         let endpoint = builder.bind().await.map_err(|err| {
             K2Error::other_src("failed to bind iroh endpoint", err)
