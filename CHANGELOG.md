@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.1](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.0...v0.4.0-dev.1)\] - 2025-12-16
+
+### Features
+
+- \[**BREAKING**\] Allow Bootstrap URL to be overridden inside space configuration (#395) by @veeso in [#395](https://github.com/holochain/kitsune2/pull/395)
+  - This change allows to specify config overrides. New and existing keys will be overridden to the default configuration
+  - **Breaking Change**: This change adds the `config_overrides` argument to the space create
+- Implement network stats for iroh transport by @jost-s
+
+### CI
+
+- Temporary workaround to run prepare release (#413) by @veeso in [#413](https://github.com/holochain/kitsune2/pull/413)
+  - Currently this workflow fails because of features clash. Temporary fix to that is to add this nice flag
+  - Closes no
+
+### Refactor
+
+- Use iroh test utils for test relay server and remove relay_allow_plain_text option by @jost-s in [#409](https://github.com/holochain/kitsune2/pull/409)
+- Combine url and preflight frames in iroh transport by @jost-s in [#402](https://github.com/holochain/kitsune2/pull/402)
+- Move iroh test utils to test-utils folder behind feature by @jost-s in [#405](https://github.com/holochain/kitsune2/pull/405)
+- \[**BREAKING**\] Rename is_webrtc to is_direct by @jost-s in [#394](https://github.com/holochain/kitsune2/pull/394)
+
+### First-time Contributors
+
+- @veeso made their first contribution in [#413](https://github.com/holochain/kitsune2/pull/413)
 ## \[[0.4.0-dev.0](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.4.0-dev.0)\] - 2025-12-02
 
 ### Features
