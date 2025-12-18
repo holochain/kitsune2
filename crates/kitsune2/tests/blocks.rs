@@ -231,6 +231,7 @@ async fn builder_with_iroh() -> (Arc<Builder>, Server) {
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
                 relay_url: Some(relay_server_url.to_string()),
+                ..Default::default()
             },
         })
         .unwrap();

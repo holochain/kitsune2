@@ -32,6 +32,7 @@ pub(super) struct ConnectionContext {
     recv_bytes: AtomicU64,
     opened_at_s: u64,
     connection_type_watcher: Mutex<Option<n0_watcher::Direct<ConnectionType>>>,
+    max_frame_bytes: usize,
 }
 
 impl fmt::Debug for ConnectionContext {
@@ -40,38 +41,45 @@ impl fmt::Debug for ConnectionContext {
     }
 }
 
+pub(super) struct ConnectionContextParams {
+    pub handler: Arc<TxImpHnd>,
+    pub connection: Arc<Connection>,
+    pub remote_url: Option<Url>,
+    pub preflight_sent: bool,
+    pub opened_at_s: u64,
+    pub connection_type_watcher: Option<n0_watcher::Direct<ConnectionType>>,
+    pub connections: Connections,
+    pub local_url: Arc<RwLock<Option<Url>>>,
+    pub max_frame_bytes: usize,
+}
+
 impl ConnectionContext {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        handler: Arc<TxImpHnd>,
-        connection: Arc<Connection>,
-        remote_url: Option<Url>,
-        preflight_sent: bool,
-        opened_at_s: u64,
-        connection_type_watcher: Option<n0_watcher::Direct<ConnectionType>>,
-        connections: Connections,
-        local_url: Arc<RwLock<Option<Url>>>,
-    ) -> Arc<Self> {
+    pub fn new(params: ConnectionContextParams) -> Arc<Self> {
         let ctx = Arc::new(Self {
-            handler,
-            connection,
+            handler: params.handler,
+            connection: params.connection,
             connection_reader_abort_handle: Mutex::new(None),
             send_stream: tokio::sync::Mutex::new(None),
-            remote_url: RwLock::new(remote_url),
-            preflight_sent: AtomicBool::new(preflight_sent),
+            remote_url: RwLock::new(params.remote_url),
+            preflight_sent: AtomicBool::new(params.preflight_sent),
             preflight_received: AtomicBool::new(false),
             send_message_count: AtomicU64::new(0),
             send_bytes: AtomicU64::new(0),
             recv_message_count: AtomicU64::new(0),
             recv_bytes: AtomicU64::new(0),
-            opened_at_s,
-            connection_type_watcher: Mutex::new(connection_type_watcher),
+            opened_at_s: params.opened_at_s,
+            connection_type_watcher: Mutex::new(params.connection_type_watcher),
+            max_frame_bytes: params.max_frame_bytes,
         });
 
         // Spawn connection reader to listen for incoming connections on the
         // new connection.
-        let connection_reader_abort_handle =
-            Self::spawn_connection_reader(ctx.clone(), connections, local_url);
+        let connection_reader_abort_handle = Self::spawn_connection_reader(
+            ctx.clone(),
+            params.connections,
+            params.local_url,
+        );
         *ctx.connection_reader_abort_handle.lock().expect("poisoned") =
             Some(connection_reader_abort_handle);
 
@@ -83,8 +91,10 @@ impl ConnectionContext {
         url: Url,
         preflight_bytes: Bytes,
     ) -> K2Result<()> {
-        let frame =
-            encode_frame(Frame::Preflight((url.clone(), preflight_bytes)))?;
+        let frame = encode_frame(
+            Frame::Preflight((url.clone(), preflight_bytes)),
+            self.max_frame_bytes,
+        )?;
 
         let mut stream_lock = self.ensure_send_stream().await?;
         let stream = stream_lock.as_mut().expect("stream must exist");
@@ -105,7 +115,7 @@ impl ConnectionContext {
 
     pub async fn send_data_frame(&self, data: Bytes) -> K2Result<()> {
         let data_len = data.len() as u64;
-        let frame = encode_frame(Frame::Data(data))?;
+        let frame = encode_frame(Frame::Data(data), self.max_frame_bytes)?;
 
         let mut stream_lock = self.ensure_send_stream().await?;
         let stream = stream_lock.as_mut().expect("stream must exist");
@@ -286,7 +296,7 @@ impl ConnectionContext {
     ) -> K2Result<()> {
         if !ctx.preflight_received() {
             let result = tokio::time::timeout(Duration::from_secs(10), async {
-                let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&mut recv_stream).await?;
+                let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&mut recv_stream,ctx.max_frame_bytes).await?;
 
                 ctx.set_remote_url(remote_url.clone());
                 ctx.handler
@@ -337,6 +347,7 @@ impl ConnectionContext {
         loop {
             let (data, data_len) = match read_data_frame_from_stream(
                 &mut recv_stream,
+                ctx.max_frame_bytes,
             )
             .await
             {
@@ -422,6 +433,7 @@ impl ConnectionContext {
 
 async fn read_preflight_frame_from_stream(
     recv_stream: &mut RecvStream,
+    max_frame_bytes: usize,
 ) -> K2Result<(Url, Bytes)> {
     let mut header_bytes = [0u8; FRAME_HEADER_LEN];
     recv_stream
@@ -430,7 +442,8 @@ async fn read_preflight_frame_from_stream(
         .map_err(|err| {
             K2Error::other_src("preflight header read failed", err)
         })?;
-    let (frame_type, data_len) = decode_frame_header(&header_bytes)?;
+    let (frame_type, data_len) =
+        decode_frame_header(&header_bytes, max_frame_bytes)?;
     debug!(?frame_type, ?data_len, "decoded preflight frame header");
     if frame_type == FrameType::Data {
         return Err(K2Error::other(
@@ -450,14 +463,15 @@ async fn read_preflight_frame_from_stream(
 
 async fn read_data_frame_from_stream(
     recv_stream: &mut RecvStream,
+    max_frame_bytes: usize,
 ) -> K2Result<(Vec<u8>, usize)> {
     // Read data frame header
     let mut header = [0u8; FRAME_HEADER_LEN];
     recv_stream.read_exact(&mut header).await.map_err(|err| {
         K2Error::other_src("error reading data frame header", err)
     })?;
-    let (frame_type, data_len) =
-        decode_frame_header(&header).map_err(|err| {
+    let (frame_type, data_len) = decode_frame_header(&header, max_frame_bytes)
+        .map_err(|err| {
             K2Error::other_src("failed to decode iroh frame header", err)
         })?;
     if frame_type == FrameType::Preflight {

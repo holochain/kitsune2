@@ -42,20 +42,36 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
-// TODO: make configurable
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 /// IrohTransport configuration types
 pub mod config {
     /// Configuration for the [`IrohTransportFactory`](super::IrohTransportFactory).
-    #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
     #[serde(rename_all = "camelCase")]
     pub struct IrohTransportConfig {
         /// Explicit relay URL to use as home relay. If none is set,
         /// relays provided by n0 will be used.
+        ///
+        /// Defaults to `None`.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub relay_url: Option<String>,
+
+        /// Set the maximum size in bytes for a frame that the transport
+        /// can transmit.
+        ///
+        /// Defaults to 1 MiB.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub max_frame_bytes: usize,
+    }
+
+    impl Default for IrohTransportConfig {
+        fn default() -> Self {
+            Self {
+                relay_url: None,
+                max_frame_bytes: 1024 * 1024,
+            }
+        }
     }
 
     /// Module-level config wrapper.
@@ -129,6 +145,7 @@ struct IrohTransport {
     connection_locks: Arc<Mutex<HashMap<Url, Arc<tokio::sync::Mutex<()>>>>>,
     watch_addr_task: AbortHandle,
     accept_task: AbortHandle,
+    max_frame_bytes: usize,
 }
 
 impl Drop for IrohTransport {
@@ -195,6 +212,7 @@ impl IrohTransport {
             handler.clone(),
             connections.clone(),
             local_url.clone(),
+            config.max_frame_bytes,
         );
 
         let out: DynTxImp = Arc::new(Self {
@@ -205,6 +223,7 @@ impl IrohTransport {
             connection_locks,
             watch_addr_task,
             accept_task,
+            max_frame_bytes: config.max_frame_bytes,
         });
         Ok(out)
     }
@@ -258,6 +277,7 @@ impl IrohTransport {
         handler: Arc<TxImpHnd>,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
+        max_frame_bytes: usize,
     ) -> AbortHandle {
         tokio::spawn(async move {
             loop {
@@ -278,15 +298,17 @@ impl IrohTransport {
                             let conn_type_watcher =
                                 endpoint.conn_type(conn.remote_id());
                             ConnectionContext::new(
-                                handler.clone(),
-                                conn,
-                                None,
-                                false,
-                                conn_opened_at_s,
-                                conn_type_watcher,
-                                connections.clone(),
-                                local_url.clone(),
-                            );
+                                ConnectionContextParams{
+                                handler: handler.clone(),
+                                connection: conn,
+                                remote_url: None,
+                                preflight_sent: false,
+                                opened_at_s: conn_opened_at_s,
+                                connection_type_watcher: conn_type_watcher,
+                                connections: connections.clone(),
+                                local_url: local_url.clone(),
+                                max_frame_bytes,
+                        });
                         }
                         Err(err) => {
                             error!(?err, "iroh incoming connection failed");
@@ -316,6 +338,7 @@ impl IrohTransport {
         remote_url: Url,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
+        max_frame_bytes: usize,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
         let conn = endpoint
@@ -338,16 +361,17 @@ impl IrohTransport {
                 handler.peer_connect(remote_url.clone()).await?;
 
             let conn_type_watcher = endpoint.conn_type(target.id);
-            let ctx = ConnectionContext::new(
-                handler.clone(),
-                conn.clone(),
-                Some(remote_url.clone()),
-                true,
-                conn_opened_at_s,
-                conn_type_watcher,
-                connections.clone(),
-                local_url.clone(),
-            );
+            let ctx = ConnectionContext::new(ConnectionContextParams {
+                handler: handler.clone(),
+                connection: conn.clone(),
+                remote_url: Some(remote_url.clone()),
+                preflight_sent: true,
+                opened_at_s: conn_opened_at_s,
+                connection_type_watcher: conn_type_watcher,
+                connections: connections.clone(),
+                local_url: local_url.clone(),
+                max_frame_bytes,
+            });
 
             ctx.send_preflight_frame(
                 current_local_url.clone(),
@@ -439,6 +463,7 @@ impl TxImp for IrohTransport {
                         remote_url.clone(),
                         connections.clone(),
                         local_url.clone(),
+                        self.max_frame_bytes,
                     )
                     .await?;
 

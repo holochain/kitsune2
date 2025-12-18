@@ -17,6 +17,7 @@ fn validate_bad_relay_url() {
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
                 relay_url: Some("<bad-url>".into()),
+                ..Default::default()
             },
         })
         .unwrap();
@@ -36,6 +37,7 @@ fn validate_plain_relay_url() {
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
                 relay_url: Some("http://test.url".into()),
+                ..Default::default()
             },
         })
         .unwrap();

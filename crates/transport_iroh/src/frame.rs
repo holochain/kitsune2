@@ -1,4 +1,3 @@
-use crate::MAX_FRAME_BYTES;
 use bytes::Bytes;
 use kitsune2_api::{K2Error, K2Result, Url};
 
@@ -37,9 +36,13 @@ pub(super) enum Frame {
 /// - 1 byte for frame type (0 for Preflight, 1 for Data)
 /// - 4 bytes for payload length (big-endian u32)
 ///
-/// Returns an error if the total frame size exceeds [`MAX_FRAME_BYTES`].
-fn encode_frame_header(ty: FrameType, data_len: usize) -> K2Result<Vec<u8>> {
-    if data_len + FRAME_HEADER_LEN > MAX_FRAME_BYTES {
+/// Returns an error if the total frame size exceeds `max_frame_bytes`.
+fn encode_frame_header(
+    ty: FrameType,
+    data_len: usize,
+    max_frame_bytes: usize,
+) -> K2Result<Vec<u8>> {
+    if data_len + FRAME_HEADER_LEN > max_frame_bytes {
         return Err(K2Error::other("frame too large"));
     }
     let mut header = Vec::with_capacity(FRAME_HEADER_LEN);
@@ -65,8 +68,11 @@ fn encode_frame_header(ty: FrameType, data_len: usize) -> K2Result<Vec<u8>> {
 ///
 /// # Errors
 ///
-/// Returns an error when [`MAX_FRAME_BYTES`] are exceeded.
-pub(super) fn encode_frame(frame: Frame) -> K2Result<Bytes> {
+/// Returns an error when `max_frame_bytes` are exceeded.
+pub(super) fn encode_frame(
+    frame: Frame,
+    max_frame_bytes: usize,
+) -> K2Result<Bytes> {
     match frame {
         Frame::Preflight((url, preflight)) => {
             let url_bytes = Bytes::copy_from_slice(url.as_str().as_bytes());
@@ -74,13 +80,20 @@ pub(super) fn encode_frame(frame: Frame) -> K2Result<Bytes> {
             data.extend_from_slice(&(url_bytes.len() as u32).to_be_bytes());
             data.extend_from_slice(&url_bytes);
             data.extend_from_slice(&preflight);
-            let mut frame =
-                encode_frame_header(FrameType::Preflight, data.len())?;
+            let mut frame = encode_frame_header(
+                FrameType::Preflight,
+                data.len(),
+                max_frame_bytes,
+            )?;
             frame.extend(&data);
             Ok(Bytes::copy_from_slice(&frame))
         }
         Frame::Data(data) => {
-            let mut frame = encode_frame_header(FrameType::Data, data.len())?;
+            let mut frame = encode_frame_header(
+                FrameType::Data,
+                data.len(),
+                max_frame_bytes,
+            )?;
             frame.extend(&data);
             Ok(Bytes::copy_from_slice(&frame))
         }
@@ -98,8 +111,11 @@ pub(super) fn encode_frame(frame: Frame) -> K2Result<Bytes> {
 /// # Errors
 ///
 /// Returns an error if the data is shorter than the header, contains an invalid
-/// frame type, or the data length plus frame header length exceed the [`MAX_FRAME_BYTES`].
-pub(super) fn decode_frame_header(data: &[u8]) -> K2Result<(FrameType, usize)> {
+/// frame type, or the data length plus frame header length exceed the `max_frame_bytes`.
+pub(super) fn decode_frame_header(
+    data: &[u8],
+    max_frame_bytes: usize,
+) -> K2Result<(FrameType, usize)> {
     if data.len() < FRAME_HEADER_LEN {
         return Err(K2Error::other(
             "iroh frame shorter than header".to_string(),
@@ -110,7 +126,7 @@ pub(super) fn decode_frame_header(data: &[u8]) -> K2Result<(FrameType, usize)> {
     // Extract data length from next 4 bytes.
     let data_len =
         u32::from_be_bytes([data[1], data[2], data[3], data[4]]) as usize;
-    if data_len + FRAME_HEADER_LEN > MAX_FRAME_BYTES {
+    if data_len + FRAME_HEADER_LEN > max_frame_bytes {
         return Err(K2Error::other("iroh frame too large".to_string()));
     }
     Ok((frame_type, data_len))

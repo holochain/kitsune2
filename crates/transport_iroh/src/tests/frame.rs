@@ -1,26 +1,30 @@
-use super::{
-    decode_frame_preflight, FrameType, FRAME_HEADER_LEN, MAX_FRAME_BYTES,
-};
+use super::{decode_frame_preflight, FrameType, FRAME_HEADER_LEN};
 use crate::frame::decode_frame_header;
-use crate::{encode_frame, Frame};
+use crate::{encode_frame, Frame, IrohTransportConfig};
 use bytes::Bytes;
 use kitsune2_api::Url;
 
+fn default_max_frame_bytes() -> usize {
+    IrohTransportConfig::default().max_frame_bytes
+}
+
 #[test]
 fn encode_frame_too_large() {
-    let excessive_data_len = MAX_FRAME_BYTES - FRAME_HEADER_LEN + 1;
+    let max_frame_bytes = default_max_frame_bytes();
+    let excessive_data_len = max_frame_bytes - FRAME_HEADER_LEN + 1;
     let frame =
         Frame::Data(Bytes::copy_from_slice(&vec![0u8; excessive_data_len]));
-    let err = encode_frame(frame).unwrap_err();
+    let err = encode_frame(frame, max_frame_bytes).unwrap_err();
     assert!(err.to_string().contains("frame too large"));
 }
 
 #[test]
 fn encode_frame_valid_preflight() {
+    let max_frame_bytes = default_max_frame_bytes();
     let url = Url::from_str("http://some.url:0/withendpointid").unwrap();
     let preflight_bytes = Bytes::from_static(b"the preflight");
     let frame = Frame::Preflight((url.clone(), preflight_bytes.clone()));
-    let encoded_frame = encode_frame(frame).unwrap();
+    let encoded_frame = encode_frame(frame, max_frame_bytes).unwrap();
 
     let url_len = url.as_str().len();
     // 4 bytes for the URL length + URL bytes + preflight bytes
@@ -52,9 +56,10 @@ fn encode_frame_valid_preflight() {
 
 #[test]
 fn encode_frame_valid_data() {
+    let max_frame_bytes = default_max_frame_bytes();
     let data = Bytes::from_static(b"some message");
     let frame = Frame::Data(data.clone());
-    let encoded_frame = encode_frame(frame).unwrap();
+    let encoded_frame = encode_frame(frame, max_frame_bytes).unwrap();
 
     assert_eq!(encoded_frame[0], FrameType::Data as u8);
     let actual_payload_len = u32::from_be_bytes([
@@ -70,6 +75,7 @@ fn encode_frame_valid_data() {
 
 #[test]
 fn decode_valid_frame_header_preflight() {
+    let max_frame_bytes = default_max_frame_bytes();
     let mut header = vec![];
     let frame_type = FrameType::Preflight;
     let data_len = 10usize;
@@ -77,7 +83,7 @@ fn decode_valid_frame_header_preflight() {
     header.extend_from_slice(&(data_len as u32).to_be_bytes());
 
     let (actual_frame_type, actual_data_len) =
-        decode_frame_header(&header).unwrap();
+        decode_frame_header(&header, max_frame_bytes).unwrap();
 
     assert_eq!(
         actual_frame_type, frame_type,
@@ -93,6 +99,7 @@ fn decode_valid_frame_header_preflight() {
 
 #[test]
 fn decode_valid_frame_header_data() {
+    let max_frame_bytes = default_max_frame_bytes();
     let mut header = vec![];
     let frame_type = FrameType::Data;
     let data_len = 100usize;
@@ -100,7 +107,7 @@ fn decode_valid_frame_header_data() {
     header.extend_from_slice(&(data_len as u32).to_be_bytes());
 
     let (actual_frame_type, actual_data_len) =
-        decode_frame_header(&header).unwrap();
+        decode_frame_header(&header, max_frame_bytes).unwrap();
 
     assert_eq!(
         actual_frame_type, frame_type,
@@ -116,13 +123,14 @@ fn decode_valid_frame_header_data() {
 
 #[test]
 fn decode_invalid_frame_header_unknown_type() {
+    let max_frame_bytes = default_max_frame_bytes();
     let mut header = vec![];
     let unknown_frame_type = 100u8;
     let data_len = 10usize;
     header.push(unknown_frame_type);
     header.extend_from_slice(&(data_len as u32).to_be_bytes());
 
-    let err = decode_frame_header(&header).unwrap_err();
+    let err = decode_frame_header(&header, max_frame_bytes).unwrap_err();
 
     assert!(
         err.to_string().contains("unknown iroh frame type"),
@@ -132,13 +140,14 @@ fn decode_invalid_frame_header_unknown_type() {
 
 #[test]
 fn decode_invalid_frame_header_data_exceeds_max_frame_bytes() {
+    let max_frame_bytes = default_max_frame_bytes();
     let mut header = vec![];
     let frame_type = FrameType::Data;
-    let data_len = MAX_FRAME_BYTES + 1;
+    let data_len = max_frame_bytes + 1;
     header.push(frame_type as u8);
     header.extend_from_slice(&(data_len as u32).to_be_bytes());
 
-    let err = decode_frame_header(&header).unwrap_err();
+    let err = decode_frame_header(&header, max_frame_bytes).unwrap_err();
 
     assert!(
         err.to_string().contains("iroh frame too large"),
