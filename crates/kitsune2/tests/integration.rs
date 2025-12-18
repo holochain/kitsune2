@@ -17,7 +17,12 @@ use kitsune2_test_utils::{
     bootstrap::TestBootstrapSrv, enable_tracing, iter_check, random_bytes,
     space::TEST_SPACE_ID,
 };
-#[cfg(feature = "transport-iroh")]
+#[cfg(all(
+    not(feature = "transport-tx5-backend-libdatachannel"),
+    not(feature = "transport-tx5-backend-go-pion"),
+    not(feature = "transport-tx5-datachannel-vendored"),
+    feature = "transport-iroh"
+))]
 use kitsune2_transport_iroh::{
     config::{IrohTransportConfig, IrohTransportModConfig},
     test_utils::{spawn_iroh_relay_server, Server},
@@ -79,7 +84,12 @@ async fn make_kitsune_node(
             feature = "transport-tx5-datachannel-vendored"
         ))]
         transport: Tx5TransportFactory::create(),
-        #[cfg(feature = "transport-iroh")]
+        #[cfg(all(
+            not(feature = "transport-tx5-backend-libdatachannel"),
+            not(feature = "transport-tx5-backend-go-pion"),
+            not(feature = "transport-tx5-datachannel-vendored"),
+            feature = "transport-iroh"
+        ))]
         transport: IrohTransportFactory::create(),
         ..default_builder()
     }
@@ -113,7 +123,12 @@ async fn make_kitsune_node(
             },
         })
         .unwrap();
-    #[cfg(feature = "transport-iroh")]
+    #[cfg(all(
+        not(feature = "transport-tx5-backend-libdatachannel"),
+        not(feature = "transport-tx5-backend-go-pion"),
+        not(feature = "transport-tx5-datachannel-vendored"),
+        feature = "transport-iroh"
+    ))]
     kitsune_builder
         .config
         .set_module_config(&IrohTransportModConfig {
@@ -162,7 +177,12 @@ async fn sbd_signal_server() -> (String, SbdServer) {
     (relay_server_url, signal_server)
 }
 
-#[cfg(feature = "transport-iroh")]
+#[cfg(all(
+    not(feature = "transport-tx5-backend-libdatachannel"),
+    not(feature = "transport-tx5-backend-go-pion"),
+    not(feature = "transport-tx5-datachannel-vendored"),
+    feature = "transport-iroh"
+))]
 async fn iroh_relay_server() -> (String, Server) {
     let (_, relay_server_url, relay_server) = spawn_iroh_relay_server().await;
     (relay_server_url.to_string(), relay_server)
@@ -179,7 +199,12 @@ macro_rules! relay_server_with_url {
             sbd_signal_server().await
         }
 
-        #[cfg(feature = "transport-iroh")]
+        #[cfg(all(
+            not(feature = "transport-tx5-backend-libdatachannel"),
+            not(feature = "transport-tx5-backend-go-pion"),
+            not(feature = "transport-tx5-datachannel-vendored"),
+            feature = "transport-iroh"
+        ))]
         {
             iroh_relay_server().await
         }

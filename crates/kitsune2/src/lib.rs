@@ -18,7 +18,12 @@ use kitsune2_core::{
     Ed25519Verifier,
 };
 use kitsune2_gossip::K2GossipFactory;
-#[cfg(feature = "transport-iroh")]
+#[cfg(all(
+    not(feature = "transport-tx5-backend-libdatachannel"),
+    not(feature = "transport-tx5-backend-go-pion"),
+    not(feature = "transport-tx5-datachannel-vendored"),
+    feature = "transport-iroh"
+))]
 use kitsune2_transport_iroh::IrohTransportFactory;
 #[cfg(any(
     feature = "transport-tx5-backend-libdatachannel",
@@ -47,16 +52,6 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 /// - `blocks` - The default blocks module is [factories::MemBlocksFactory].
 ///   Note: you will likely want to implement your own [`Blocks`] module.
 pub fn default_builder() -> Builder {
-    #[cfg(all(
-        feature = "transport-iroh",
-        any(
-            feature = "transport-tx5-backend-libdatachannel",
-            feature = "transport-tx5-backend-go-pion",
-            feature = "transport-tx5-datachannel-vendored"
-        )
-    ))]
-    compile_error!("Only one transport feature can be enabled. Choose either transport-tx5-datachannel-vendored, transport-tx5-backend-libdatachannel, transport-tx5-backend-go-pion or transport-iroh.");
-
     Builder {
         config: Config::default(),
         verifier: std::sync::Arc::new(Ed25519Verifier),
@@ -73,7 +68,12 @@ pub fn default_builder() -> Builder {
             feature = "transport-tx5-datachannel-vendored"
         ))]
         transport: Tx5TransportFactory::create(),
-        #[cfg(feature = "transport-iroh")]
+        #[cfg(all(
+            not(feature = "transport-tx5-backend-libdatachannel"),
+            not(feature = "transport-tx5-backend-go-pion"),
+            not(feature = "transport-tx5-datachannel-vendored"),
+            feature = "transport-iroh"
+        ))]
         transport: IrohTransportFactory::create(),
         op_store: MemOpStoreFactory::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),

@@ -14,7 +14,12 @@ use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
-#[cfg(feature = "transport-iroh")]
+#[cfg(all(
+    not(feature = "transport-tx5-backend-libdatachannel"),
+    not(feature = "transport-tx5-backend-go-pion"),
+    not(feature = "transport-tx5-datachannel-vendored"),
+    feature = "transport-iroh"
+))]
 use kitsune2_transport_iroh::{
     config::{IrohTransportConfig, IrohTransportModConfig},
     test_utils::{spawn_iroh_relay_server, Server},
@@ -204,7 +209,12 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
     (Arc::new(builder), sbd_server)
 }
 
-#[cfg(feature = "transport-iroh")]
+#[cfg(all(
+    not(feature = "transport-tx5-backend-libdatachannel"),
+    not(feature = "transport-tx5-backend-go-pion"),
+    not(feature = "transport-tx5-datachannel-vendored"),
+    feature = "transport-iroh"
+))]
 async fn builder_with_iroh() -> (Arc<Builder>, Server) {
     let (_, relay_server_url, relay_server) = spawn_iroh_relay_server().await;
     let builder = Builder {
@@ -239,7 +249,12 @@ macro_rules! builder_with_relay {
             builder_with_tx5().await
         }
 
-        #[cfg(feature = "transport-iroh")]
+        #[cfg(all(
+            not(feature = "transport-tx5-backend-libdatachannel"),
+            not(feature = "transport-tx5-backend-go-pion"),
+            not(feature = "transport-tx5-datachannel-vendored"),
+            feature = "transport-iroh"
+        ))]
         {
             builder_with_iroh().await
         }
