@@ -1,6 +1,8 @@
+use super::{
+    decode_frame_preflight, FrameType, FRAME_HEADER_LEN, MAX_FRAME_BYTES,
+};
+use crate::frame::decode_frame_header;
 use crate::{encode_frame, Frame};
-
-use super::{decode_frame, FrameType, FRAME_HEADER_LEN, MAX_FRAME_BYTES};
 use bytes::Bytes;
 use kitsune2_api::Url;
 
@@ -67,126 +69,129 @@ fn encode_frame_valid_data() {
 }
 
 #[test]
-fn decode_frame_valid_preflight() {
-    let ty = FrameType::Preflight;
-    let url = Url::from_str("http://some.url:0/withendpointid").unwrap();
-    let url_bytes = Bytes::from(url.clone());
-    let preflight_bytes = Bytes::from_static(b"the preflight");
-    let mut payload = vec![];
-    payload.extend_from_slice(&(url_bytes.len() as u32).to_be_bytes());
-    payload.extend_from_slice(&url_bytes);
-    payload.extend_from_slice(&preflight_bytes);
+fn decode_valid_frame_header_preflight() {
+    let mut header = vec![];
+    let frame_type = FrameType::Preflight;
+    let data_len = 10usize;
+    header.push(frame_type as u8);
+    header.extend_from_slice(&(data_len as u32).to_be_bytes());
 
-    let mut encoded_frame = vec![ty as u8];
-    encoded_frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    encoded_frame.extend_from_slice(&payload);
+    let (actual_frame_type, actual_data_len) =
+        decode_frame_header(&header).unwrap();
 
-    let frame = decode_frame(encoded_frame).unwrap();
-    match frame {
-        Frame::Preflight((actual_url, actual_preflight)) => {
-            assert_eq!(actual_url, url);
-            assert_eq!(actual_preflight, preflight_bytes);
-        }
-        other => panic!("unexpected frame type {other:?}"),
-    }
+    assert_eq!(
+        actual_frame_type, frame_type,
+        "expected preflight but got {:?}",
+        actual_frame_type
+    );
+    assert_eq!(
+        actual_data_len, data_len,
+        "expected data length of {} but got {}",
+        data_len, actual_data_len
+    );
 }
 
 #[test]
-fn decode_frame_valid_data() {
-    let ty = FrameType::Data;
-    let message = Bytes::from_static(b"important notification");
-    let mut payload = vec![];
-    payload.extend_from_slice(&message);
+fn decode_valid_frame_header_data() {
+    let mut header = vec![];
+    let frame_type = FrameType::Data;
+    let data_len = 100usize;
+    header.push(frame_type as u8);
+    header.extend_from_slice(&(data_len as u32).to_be_bytes());
 
-    let mut encoded_frame = vec![ty as u8];
-    encoded_frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    encoded_frame.extend_from_slice(&payload);
+    let (actual_frame_type, actual_data_len) =
+        decode_frame_header(&header).unwrap();
 
-    let frame = decode_frame(encoded_frame).unwrap();
-    match frame {
-        Frame::Data(actual_message) => {
-            assert_eq!(actual_message, message);
-        }
-        other => panic!("unexpected frame type {other:?}"),
-    }
+    assert_eq!(
+        actual_frame_type, frame_type,
+        "expected data but got {:?}",
+        actual_frame_type
+    );
+    assert_eq!(
+        actual_data_len, data_len,
+        "expected data length of {} but got {}",
+        data_len, actual_data_len
+    );
+}
+
+#[test]
+fn decode_invalid_frame_header_unknown_type() {
+    let mut header = vec![];
+    let unknown_frame_type = 100u8;
+    let data_len = 10usize;
+    header.push(unknown_frame_type);
+    header.extend_from_slice(&(data_len as u32).to_be_bytes());
+
+    let err = decode_frame_header(&header).unwrap_err();
+
+    assert!(
+        err.to_string().contains("unknown iroh frame type"),
+        "unexpected error, got {err}"
+    );
+}
+
+#[test]
+fn decode_invalid_frame_header_data_exceeds_max_frame_bytes() {
+    let mut header = vec![];
+    let frame_type = FrameType::Data;
+    let data_len = MAX_FRAME_BYTES + 1;
+    header.push(frame_type as u8);
+    header.extend_from_slice(&(data_len as u32).to_be_bytes());
+
+    let err = decode_frame_header(&header).unwrap_err();
+
+    assert!(
+        err.to_string().contains("iroh frame too large"),
+        "unexpected error, got {err}"
+    );
+}
+
+#[test]
+fn decode_frame_valid_preflight() {
+    let url = Url::from_str("http://some.url:0/withendpointid").unwrap();
+    let url_bytes = Bytes::from(url.clone());
+    let preflight_bytes = Bytes::from_static(b"the preflight");
+    let mut endcoded_frame = vec![];
+    endcoded_frame.extend_from_slice(&(url_bytes.len() as u32).to_be_bytes());
+    endcoded_frame.extend_from_slice(&url_bytes);
+    endcoded_frame.extend_from_slice(&preflight_bytes);
+
+    let (actual_url, actual_preflight_bytes) =
+        decode_frame_preflight(&endcoded_frame).unwrap();
+
+    assert_eq!(actual_url, url);
+    assert_eq!(actual_preflight_bytes, preflight_bytes);
 }
 
 #[test]
 fn decode_frame_invalid_preflight_url_too_short() {
-    let ty = FrameType::Preflight;
-    let mut encoded_frame = vec![ty as u8];
-    // Too few payload length bytes
-    encoded_frame.extend_from_slice(&(2u32).to_be_bytes());
-    encoded_frame.extend_from_slice(&[0u8; 2]);
+    let mut encoded_frame = vec![];
+    // Too few URL length bytes
+    encoded_frame.extend_from_slice(&2u16.to_be_bytes());
 
-    let err = decode_frame(encoded_frame).unwrap_err();
+    let err = decode_frame_preflight(&encoded_frame).unwrap_err();
+
     assert!(
         err.to_string()
-            .contains("preflight payload too short for URL length"),
+            .contains("preflight data too short for URL length"),
         "unexpected error, got {err}"
     );
 }
 
 #[test]
 fn decode_frame_invalid_preflight_payload_too_short_for_url() {
-    let ty = FrameType::Preflight;
     let url = Url::from_str("http://some.url:0/withendpointid").unwrap();
     let url_bytes = Bytes::from(url);
-    let mut payload = vec![];
+    let mut encoded_frame = vec![];
     // Too many URL length bytes
-    payload.extend_from_slice(&(200u32).to_be_bytes());
-    payload.extend_from_slice(&url_bytes);
+    encoded_frame.extend_from_slice(&200u32.to_be_bytes());
+    encoded_frame.extend_from_slice(&url_bytes);
 
-    let mut encoded_frame = vec![ty as u8];
-    encoded_frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    encoded_frame.extend_from_slice(&payload);
+    let err = decode_frame_preflight(&encoded_frame).unwrap_err();
 
-    let err = decode_frame(encoded_frame).unwrap_err();
     assert!(
         err.to_string()
-            .contains("preflight payload too short for actual URL"),
+            .contains("preflight data too short for actual URL"),
         "unexpected error, got {err}"
     );
-}
-
-#[test]
-fn decode_frame_too_short() {
-    let encoded_frame = vec![0u8; FRAME_HEADER_LEN - 1];
-    let err = decode_frame(encoded_frame).unwrap_err();
-    assert!(err.to_string().contains("iroh frame shorter than header"));
-}
-
-#[test]
-fn decode_frame_invalid_frame_type() {
-    let mut encoded_frame = vec![2u8]; // Invalid type
-    encoded_frame.extend_from_slice(&(0u32).to_be_bytes()); // Empty payload
-    let err = decode_frame(encoded_frame).unwrap_err();
-    assert!(err.to_string().contains("unknown iroh frame type"));
-}
-
-#[test]
-fn decode_frame_payload_length_mismatch() {
-    let ty = FrameType::Data;
-    let payload_len = 10;
-    let actual_len = 5;
-    let mut encoded_frame = vec![ty as u8];
-    encoded_frame.extend_from_slice(&(payload_len as u32).to_be_bytes()); // Claim 10 bytes
-    encoded_frame.extend_from_slice(&vec![0u8; actual_len]); // Only 5 bytes
-
-    let err = decode_frame(encoded_frame).unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("iroh frame payload length mismatch"));
-}
-
-#[test]
-fn decode_frame_zero_data() {
-    let ty = FrameType::Data;
-    let payload = Bytes::new();
-    let mut encoded_frame = vec![ty as u8];
-    encoded_frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-    encoded_frame.extend_from_slice(&payload);
-
-    let frame = decode_frame(encoded_frame).unwrap();
-    assert!(matches!(frame, Frame::Data(data) if data == payload));
 }

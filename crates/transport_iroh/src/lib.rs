@@ -2,19 +2,21 @@
 //! Kitsune2 transport implementation backed by iroh.
 //!
 //! This transport establishes peer-to-peer connections using iroh's QUIC-based networking.
-//! It manages outgoing and incoming connections dynamically, sending data as framed messages
-//! over unidirectional streams.
+//! It manages outgoing and incoming connections dynamically, sending and receiving data
+//! as framed messages over persistent uni-directional streams.
 //!
-//! Each message is framed with a header that specifies the frame type (payload or peer URL) and
-//! the payload length, leading to ordered and bounded message delivery. The peer URL is sent
-//! to inform the remote about it and make it available to respond to on the transport level.
-//! Incoming streams are accepted and handled asynchronously per connection, supporting concurrent
-//! processing of multiple messages.
+//! Each message is framed with a header that specifies the frame type (preflight or data) and
+//! the data length, leading to ordered and bounded message delivery. The peer URL is sent
+//! as part of the preflight to inform the remote about it and make it available to respond to
+//! on the transport level. Since there is no discovery service present in the kitsune2
+//! architecture, the remote URL must be sent with the preflight.
+//! Incoming streams are accepted and handled asynchronously per connection. There is one
+//! stream open per direction, over which all frames are sent.
 
 use bytes::Bytes;
 use iroh::{
-    endpoint::{ConnectionType, RecvStream},
-    Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl, Watcher,
+    endpoint::ConnectionType, Endpoint, EndpointAddr, RelayMap, RelayMode,
+    RelayUrl, Watcher,
 };
 use kitsune2_api::*;
 use std::{
@@ -117,6 +119,7 @@ impl TransportFactory for IrohTransportFactory {
 
 type Connections = Arc<RwLock<HashMap<Url, Arc<ConnectionContext>>>>;
 
+/// Iroh-based transport implementation.
 #[derive(Debug)]
 struct IrohTransport {
     endpoint: Arc<Endpoint>,
@@ -196,7 +199,7 @@ impl IrohTransport {
     /// Spawns a background task to watch for changes in the endpoint's listening address.
     ///
     /// The task monitors the iroh endpoint's address watcher, updating the local URL
-    /// when it changes and notifying the handler of new listening addresses.
+    /// when it changes and notifying the handler of a new listening address.
     /// It runs asynchronously until the watcher encounters an error.
     fn spawn_watch_addr_task(
         endpoint: Arc<Endpoint>,
@@ -236,7 +239,7 @@ impl IrohTransport {
     ///
     /// The task runs in a loop, accepting incoming connections asynchronously.
     /// For each accepted connection, it creates a new [`ConnectionContext`] and spawns
-    /// a connection reader to handle incoming unidirectional streams.
+    /// a connection reader to handle incoming uni-directional streams.
     fn spawn_accept_task(
         endpoint: Arc<Endpoint>,
         handler: Arc<TxImpHnd>,
@@ -244,11 +247,11 @@ impl IrohTransport {
         local_url: Arc<RwLock<Option<Url>>>,
     ) -> AbortHandle {
         tokio::spawn(async move {
-            let local_url = local_url;
             loop {
                 match endpoint.accept().await {
                     Some(incoming) => match incoming.await {
                         Ok(conn) => {
+                            info!(remote_id = ?conn.remote_id(),"receiving incoming connection");
                             let conn_opened_at_s = SystemTime::UNIX_EPOCH
                                 .elapsed()
                                 .unwrap_or_else(|err| {
@@ -257,22 +260,17 @@ impl IrohTransport {
                                 })
                                 .as_secs();
                             let conn = Arc::new(conn);
-                            // Create a new connection context in the connections map.
-                            // Remote URL is not set yet and will be sent by the remote
-                            // after the preflight.
-                            let ctx = Arc::new(ConnectionContext::new(
+
+                            // Create a new connection context.
+                            let conn_type_watcher =
+                                endpoint.conn_type(conn.remote_id());
+                            ConnectionContext::new(
                                 handler.clone(),
-                                conn.clone(),
+                                conn,
                                 None,
-                                false,
                                 false,
                                 conn_opened_at_s,
-                                None,
-                            ));
-                            // Spawn connection reader to accept incoming uni-directional
-                            // streams from the remote.
-                            spawn_connection_reader(
-                                ctx,
+                                conn_type_watcher,
                                 connections.clone(),
                                 local_url.clone(),
                             );
@@ -295,9 +293,9 @@ impl IrohTransport {
 
     /// Creates a new connection and its associated context for a peer.
     ///
-    /// Establishes a QUIC connection to the target, creates a ConnectionContext,
-    /// adds it to the connections map, spawns a connection reader for incoming streams,
-    /// performs the preflight handshake, and sends the local URL to the remote.
+    /// The connection is established and the preflight frame is sent. If this
+    /// action succeeds, the context is returned. In case of error during the
+    /// preflight, the context is dropped and an error returned.
     async fn create_connection_and_context(
         endpoint: Arc<Endpoint>,
         target: EndpointAddr,
@@ -320,49 +318,29 @@ impl IrohTransport {
             .as_secs();
         let conn = Arc::new(conn);
 
-        // Perform preflight as first message on the new connection.
+        // Send preflight as first message on the new connection.
         let maybe_local_url = local_url.read().expect("poisoned").clone();
         if let Some(current_local_url) = maybe_local_url {
-            let preflight = handler.peer_connect(remote_url.clone()).await?;
-            let result = send_frame(
-                &conn,
-                Frame::Preflight((current_local_url, preflight)),
-            )
-            .await;
-            if let Err(err) = result {
-                // Close connection gracefully.
-                conn.close(0u8.into(), b"preflight failed");
-                return Err(err);
-            }
+            let preflight_bytes =
+                handler.peer_connect(remote_url.clone()).await?;
 
             let conn_type_watcher = endpoint.conn_type(target.id);
-            // Create context and add it to the connections map.
-            let ctx = Arc::new(ConnectionContext::new(
+            let ctx = ConnectionContext::new(
                 handler.clone(),
                 conn.clone(),
                 Some(remote_url.clone()),
                 true,
-                false,
                 conn_opened_at_s,
                 conn_type_watcher,
-            ));
-
-            // Spawn connection reader that will accept incoming uni-directional
-            // streams from the remote.
-            spawn_connection_reader(
-                ctx.clone(),
                 connections.clone(),
                 local_url.clone(),
             );
 
-            connections
-                .write()
-                .expect("poisoned")
-                .insert(remote_url.clone(), ctx.clone());
-
-            // TODO: Remove this as part of implementing persistent uni-directional
-            // streams, which will guarantee order of sequence.
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            ctx.send_preflight_frame(
+                current_local_url.clone(),
+                preflight_bytes,
+            )
+            .await?;
 
             Ok(ctx)
         } else {
@@ -383,16 +361,15 @@ impl TxImp for IrohTransport {
         peer: Url,
         _payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
-        if let Some(connection) =
+        if let Some(ctx) =
             self.connections.write().expect("poisoned").remove(&peer)
         {
-            info!(?peer, "disconnecting from peer");
-            connection.connection().close(0u8.into(), b"disconnected");
+            ctx.disconnect("disconnecting from remote".to_string());
         }
         Box::pin(async {})
     }
 
-    fn send(&self, peer: Url, data: Bytes) -> BoxFut<'_, K2Result<()>> {
+    fn send(&self, remote_url: Url, data: Bytes) -> BoxFut<'_, K2Result<()>> {
         let local_url = self.local_url.clone();
         let endpoint = self.endpoint.clone();
         let handler = self.handler.clone();
@@ -400,13 +377,13 @@ impl TxImp for IrohTransport {
         let connection_locks = self.connection_locks.clone();
 
         Box::pin(async move {
-            let remote = endpoint_from_url(&peer)?;
+            let remote = endpoint_from_url(&remote_url)?;
 
             // Get or create the connection lock for this peer to serialize connection creation.
             let peer_lock = {
                 let mut locks = connection_locks.lock().expect("poisoned");
                 locks
-                    .entry(peer.clone())
+                    .entry(remote_url.clone())
                     .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
                     .clone()
             };
@@ -417,32 +394,47 @@ impl TxImp for IrohTransport {
             // The lock is released immediately if there is a connection, Otherwise
             // a connection is established and the preflight and host URL are sent
             // to the remote, before the lock is released.
+            //
+            // The alternative to this mechanism would be fold the function of this
+            // lock into the connections map. That would slightly reduce the
+            // complexity in this method, but would increase complexity in all places
+            // where the connection map is used. The connecions_locks map is only
+            // used in this method. Overall it is simpler as is.
             let _lock_guard = peer_lock.lock().await;
 
             // Atomically check and create connection and context if needed.
             let connection_context = {
                 // Check if connection already exists, as another call might have
                 // created it while this one was waiting for the lock.
-                let existing =
-                    connections.read().expect("poisoned").get(&peer).cloned();
+                let existing = connections
+                    .read()
+                    .expect("poisoned")
+                    .get(&remote_url)
+                    .cloned();
                 if let Some(ctx) = existing {
                     // Connection already exists, use it (preflight already done).
                     drop(_lock_guard);
                     ctx
                 } else {
                     // Connection doesn't exist, create it.
-                    // This establishes the connection, adds the context to the connections map,
-                    // sends the preflight and the host URL to the remote.
-                    tracing::info!(?peer, "establishing connection to peer");
+                    // This establishes the connection and sends the preflight to the remote.
+                    info!(remote = ?remote_url.peer_id(), "establishing connection to remote");
                     let ctx = Self::create_connection_and_context(
                         endpoint,
                         remote,
                         handler,
-                        peer,
-                        connections,
-                        local_url,
+                        remote_url.clone(),
+                        connections.clone(),
+                        local_url.clone(),
                     )
                     .await?;
+
+                    // Now that preflight has been sent successfully, add context to
+                    // connections map.
+                    connections
+                        .write()
+                        .expect("poisoned")
+                        .insert(remote_url, ctx.clone());
 
                     // Lock is released after connection is established and preflight is done.
                     ctx
@@ -450,13 +442,7 @@ impl TxImp for IrohTransport {
             };
 
             // Send actual message.
-            let data_len = data.len() as u64;
-            send_frame(&connection_context.connection(), Frame::Data(data))
-                .await?;
-
-            // Update stats
-            connection_context.increment_send_message_count();
-            connection_context.increment_send_bytes(data_len);
+            connection_context.send_data_frame(data).await?;
 
             Ok(())
         })
@@ -491,7 +477,7 @@ impl TxImp for IrohTransport {
                         // When the context is added to the connections map, the handshake
                         // with the URL exchange is already complete. URL must be `Some`.
                         pub_key: context
-                            .remote()
+                            .remote_url()
                             .unwrap()
                             .peer_id()
                             .unwrap()
@@ -514,135 +500,5 @@ impl TxImp for IrohTransport {
                 connections: stat_connections,
             })
         })
-    }
-}
-
-/// Spawns an asynchronous task to continuously read and handle incoming unidirectional streams
-/// from an iroh connection. Each stream contains framed messages (PeerUrl or Payload), which are
-/// parsed and processed accordingly. This enables concurrent handling of multiple streams per connection.
-/// In essence a unidirectional stream is created per message.
-///
-/// The task loops indefinitely, accepting streams and spawning individual handlers for each.
-/// Errors in stream processing trigger warnings and potential peer disconnections.
-///
-/// # Parameters
-/// - `ctx`: The connection context containing handler and remote URL state.
-/// - `connections`: Shared map of peer URLs to their connection contexts, updated for PeerUrl frames.
-/// - `local_url`: The local URL for this endpoint, used to respond to preflight messages.
-fn spawn_connection_reader(
-    ctx: Arc<ConnectionContext>,
-    connections: Connections,
-    local_url: Arc<RwLock<Option<Url>>>,
-) {
-    tokio::spawn(async move {
-        loop {
-            // Main loop to accept incoming unidirectional streams from the remote peer.
-            match ctx.connection().accept_uni().await {
-                Ok(stream) => {
-                    let ctx = ctx.clone();
-                    let connections = connections.clone();
-                    let local_url = local_url.clone();
-                    // Spawn a dedicated task for each incoming stream to handle concurrently.
-                    tokio::spawn(handle_incoming_stream(
-                        stream,
-                        ctx,
-                        connections,
-                        local_url,
-                    ));
-                }
-                Err(err) => {
-                    // Connection closed, notify disconnect and exit loop.
-                    let peer = ctx.remote();
-                    error!(?err, ?peer, "connection closed by peer");
-                    if let Some(peer) = peer {
-                        if let Some(connection) =
-                            connections.write().expect("poisoned").remove(&peer)
-                        {
-                            connection
-                                .connection()
-                                .close(0u8.into(), b"peer disconnected");
-                        }
-                    }
-                    ctx.notify_disconnect();
-                    break;
-                }
-            }
-        }
-    });
-}
-
-async fn handle_incoming_stream(
-    mut stream: RecvStream,
-    ctx: Arc<ConnectionContext>,
-    connections: Connections,
-    local_url: Arc<RwLock<Option<Url>>>,
-) {
-    let result = async {
-        let data =
-            stream.read_to_end(MAX_FRAME_BYTES).await.map_err(|err| {
-                K2Error::other_src("failed to read iroh frame", err)
-            })?;
-        let frame = decode_frame(data)?;
-        match frame {
-            // Handle Preflight frame: update connections map and context and forward preflight bytes,
-            // then send preflight back to caller.
-            Frame::Preflight((remote_url, preflight)) => {
-                if ctx.preflight_received() {
-                    error!("Redundant preflight request in established connection state; discarding frame");
-                    return Ok(());
-                }
-
-                connections
-                    .write()
-                    .expect("poisoned")
-                    .insert(remote_url.clone(), ctx.clone());
-                ctx.set_remote_url(remote_url.clone());
-                ctx.set_preflight_received();
-                ctx.handler()
-                    .recv_data(remote_url.clone(), preflight)
-                    .await?;
-
-                if !ctx.preflight_sent() {
-                    let maybe_local_url =
-                        local_url.read().expect("poisoned").clone();
-                    if let Some(local_url) = maybe_local_url {
-                        let return_preflight = ctx
-                            .handler()
-                            .peer_connect(remote_url.clone())
-                            .await?;
-                        send_frame(
-                            &ctx.connection(),
-                            Frame::Preflight((local_url, return_preflight)),
-                        )
-                        .await?;
-                        ctx.set_preflight_sent();
-                    }
-                }
-                Ok(())
-            }
-            // Handle Data frame: forward data to handler if remote URL is set.
-            Frame::Data(message) => {
-                let peer = ctx.remote().ok_or_else(|| {
-                    K2Error::other("received data before preflight")
-                })?;
-                let message_len = message.len() as u64;
-                ctx.handler().recv_data(peer, message).await?;
-                ctx.increment_recv_message_count();
-                ctx.increment_recv_bytes(message_len);
-                K2Result::Ok(())
-            }
-        }
-    }
-    .await;
-
-    if let Err(err) = result {
-        warn!(?err, "iroh stream error, closing connection");
-        if let Some(peer) = ctx.remote() {
-            let _ = ctx
-                .handler()
-                .set_unresponsive(peer.clone(), Timestamp::now())
-                .await;
-            ctx.handler().peer_disconnect(peer, None);
-        }
     }
 }
