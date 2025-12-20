@@ -72,7 +72,6 @@ impl ConnectionContext {
         // new connection.
         let connection_reader_abort_handle =
             Self::spawn_connection_reader(ctx.clone(), connections, local_url);
-
         *ctx.connection_reader_abort_handle.lock().expect("poisoned") =
             Some(connection_reader_abort_handle);
 
@@ -252,7 +251,7 @@ impl ConnectionContext {
                     warn!(?err, ?remote_url, "failed to set peer unresponsive");
                 }
             }
-            ctx.connection.close(0u8.into(), err.as_bytes());
+            ctx.disconnect(err);
         }).abort_handle()
     }
 
