@@ -5,7 +5,7 @@ use crate::{
 };
 use bytes::Bytes;
 use iroh::endpoint::{Connection, ConnectionType, RecvStream, SendStream};
-use kitsune2_api::{K2Error, K2Result, TxImpHnd, Url};
+use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use n0_watcher::Watcher;
 use std::{
     fmt,
@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::MutexGuard, task::AbortHandle};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
@@ -37,20 +37,6 @@ pub(super) struct ConnectionContext {
 impl fmt::Debug for ConnectionContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ConnectionContext").finish()
-    }
-}
-
-impl Drop for ConnectionContext {
-    fn drop(&mut self) {
-        // Abort connection reader task
-        if let Some(connection_reader_abort_handle) = self
-            .connection_reader_abort_handle
-            .lock()
-            .expect("poisoned")
-            .take()
-        {
-            connection_reader_abort_handle.abort();
-        }
     }
 }
 
@@ -86,6 +72,7 @@ impl ConnectionContext {
         // new connection.
         let connection_reader_abort_handle =
             Self::spawn_connection_reader(ctx.clone(), connections, local_url);
+
         *ctx.connection_reader_abort_handle.lock().expect("poisoned") =
             Some(connection_reader_abort_handle);
 
@@ -164,10 +151,6 @@ impl ConnectionContext {
         self.opened_at_s
     }
 
-    pub fn connection(&self) -> Arc<Connection> {
-        self.connection.clone()
-    }
-
     pub fn get_connection_type(&self) -> ConnectionType {
         let mut lock = self.connection_type_watcher.lock().expect("poisoned");
         match lock.take() {
@@ -177,6 +160,17 @@ impl ConnectionContext {
                 connection_type
             }
             None => ConnectionType::None,
+        }
+    }
+
+    pub fn abort_tasks(&self) {
+        if let Some(abort_handle) = self
+            .connection_reader_abort_handle
+            .lock()
+            .expect("poisoned")
+            .take()
+        {
+            abort_handle.abort();
         }
     }
 
@@ -210,9 +204,9 @@ impl ConnectionContext {
         tokio::spawn(async move {
             let err = loop {
                 // Main loop to accept incoming unidirectional streams from the remote peer.
-                match ctx.connection().accept_uni().await {
+                match ctx.connection.accept_uni().await {
                     Ok(stream) => {
-                        info!(remote_id = ?ctx.connection().remote_id(), "accepted incoming stream");
+                        info!(remote_id = ?ctx.connection.remote_id(), "accepted incoming stream");
                         let connections = connections.clone();
                         let local_url = local_url.clone();
                         // Read frames from the stream. If an error is returned, it means the
@@ -232,26 +226,33 @@ impl ConnectionContext {
                         )
                         .await
                         {
+                            error!(?err, "stream closed by remote");
                             break err.to_string();
                         }
                     }
                     Err(err) => {
-                        error!(?err, remote = ?ctx.remote_url(), "connection closed by remote");
+                        error!(?err, "connection closed by remote");
                         break err.to_string();
                     }
                 }
             };
 
             // An error has occurred, either while accepting incoming streams
-            // or while reading the preflight from a stream. The protocol can
-            // not recover from this error and the connection must be closed.
+            // (most likely connection closed) or while reading the preflight
+            // from a stream. The protocol can not recover from this error
+            // and the connection must be closed. The remote is marked as
+            // unresponsive.
             if let Some(remote_url) = ctx.remote_url() {
                 connections
                     .write()
                     .expect("poisoned")
                     .remove(&remote_url);
+                info!(?remote_url, "setting peer unresponsive");
+                if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await{
+                    warn!(?err, ?remote_url, "failed to set peer unresponsive");
+                }
             }
-            ctx.disconnect(err);
+            ctx.connection.close(0u8.into(), err.as_bytes());
         }).abort_handle()
     }
 
@@ -289,7 +290,7 @@ impl ConnectionContext {
                 let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&mut recv_stream).await?;
 
                 ctx.set_remote_url(remote_url.clone());
-                ctx.handler()
+                ctx.handler
                     .recv_data(remote_url.clone(), preflight_bytes)
                     .await?;
                 ctx.set_preflight_received();
@@ -302,13 +303,13 @@ impl ConnectionContext {
                         local_url.read().expect("poisoned").clone();
                     if let Some(local_url) = maybe_local_url {
                         let return_preflight =
-                            ctx.handler().peer_connect(remote_url.clone()).await?;
+                            ctx.handler.peer_connect(remote_url.clone()).await?;
                         ctx.send_preflight_frame(
                             local_url.clone(),
                             return_preflight,
                         )
                         .await?;
-                        info!(peer = ?ctx.connection().remote_id(),?local_url, "sent preflight to peer from url");
+                        info!(peer = ?ctx.connection.remote_id(),?local_url, "sent preflight to peer from url");
                         ctx.set_preflight_sent();
                     }
                 }
@@ -355,7 +356,7 @@ impl ConnectionContext {
                 K2Error::other("received data before preflight")
             })?;
             if let Err(err) = ctx
-                .handler()
+                .handler
                 .recv_data(peer.clone(), Bytes::copy_from_slice(&data))
                 .await
             {
@@ -401,10 +402,6 @@ impl ConnectionContext {
 
     fn set_preflight_received(&self) {
         self.preflight_received.store(true, Ordering::SeqCst);
-    }
-
-    fn handler(&self) -> Arc<TxImpHnd> {
-        self.handler.clone()
     }
 
     fn increment_send_message_count(&self) {

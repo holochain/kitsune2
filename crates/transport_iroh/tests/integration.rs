@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use kitsune2_api::{K2Proto, K2WireType, Url};
+use kitsune2_api::{K2Proto, K2WireType, Timestamp, Url};
 use kitsune2_test_utils::{
     enable_tracing, retry_fn_until_timeout, space::TEST_SPACE_ID,
 };
@@ -195,6 +195,85 @@ async fn send_and_receive_module_message() {
 }
 
 #[tokio::test]
+async fn peer_is_set_unresponsive_after_connection_error() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    let (space_notify_sender, mut space_notify_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        set_unresponsive: Arc::new(move |peer, timestamp| {
+            set_unresponsive_sender.send((peer, timestamp)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let handler_2 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            space_notify_sender.send(data).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    // Wait for URLs to be updated
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6000),
+        Some(500),
+    )
+    .await
+    .unwrap();
+
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+
+    // Send first message to ep_2 which should work.
+    let message = Bytes::from_static(b"message");
+    ep_1.send_space_notify(ep_2_url.clone(), TEST_SPACE_ID, message.clone())
+        .await
+        .unwrap();
+
+    tokio::time::timeout(
+        Duration::from_millis(100),
+        space_notify_receiver.recv(),
+    )
+    .await
+    .expect("message should have been sent");
+
+    // ep 2 goes offline
+    drop(ep_2);
+
+    let expected_timestamp = Timestamp::now();
+
+    // ep 1 should notice that ep 2 went offline and mark it unresponsive
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let (unresponsive_url, timestamp) =
+            set_unresponsive_receiver.recv().await.unwrap();
+        assert_eq!(unresponsive_url, ep_2_url);
+        // Timestamp should be accurate to ~1 second.
+        assert!(
+            timestamp
+                .as_micros()
+                .abs_diff(expected_timestamp.as_micros())
+                <= 1_000_000
+        );
+    })
+    .await
+    .expect("peer not set unresponsive");
+}
+
+#[tokio::test]
 async fn reconnect_succeeds_after_connection_lost() {
     enable_tracing();
     let harness = IrohTransportTestHarness::new().await;
@@ -228,12 +307,12 @@ async fn reconnect_succeeds_after_connection_lost() {
     .await
     .unwrap();
 
-    let ep1_url = handler_1.current_url.lock().unwrap().clone();
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
 
     // Establish connection by sending first message
     let first_message = Bytes::from_static(b"first");
     ep_2.send_space_notify(
-        ep1_url.clone(),
+        ep_1_url.clone(),
         TEST_SPACE_ID,
         first_message.clone(),
     )
@@ -256,7 +335,7 @@ async fn reconnect_succeeds_after_connection_lost() {
     );
 
     // Force disconnect the connection
-    ep_2.disconnect(ep1_url.clone(), None).await;
+    ep_2.disconnect(ep_1_url.clone(), None).await;
 
     // Verify connection is removed
     retry_fn_until_timeout(
@@ -270,7 +349,7 @@ async fn reconnect_succeeds_after_connection_lost() {
     // Send second message - this should trigger automatic reconnection
     let second_message = Bytes::from_static(b"second");
     ep_2.send_space_notify(
-        ep1_url.clone(),
+        ep_1_url.clone(),
         TEST_SPACE_ID,
         second_message.clone(),
     )
@@ -502,7 +581,7 @@ async fn reconnect_succeeds_after_preflight_validation_error() {
 }
 
 #[tokio::test]
-async fn reconnect_succeeds_after_preflight_gather_error() {
+async fn connect_succeeds_after_preflight_gather_error() {
     let harness = IrohTransportTestHarness::new().await;
     let dummy_url = dummy_url();
 

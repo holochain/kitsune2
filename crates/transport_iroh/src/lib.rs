@@ -26,7 +26,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::task::AbortHandle;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 mod frame;
 use frame::*;
@@ -133,8 +133,21 @@ struct IrohTransport {
 
 impl Drop for IrohTransport {
     fn drop(&mut self) {
+        info!(local_url = ?self.local_url, "dropping transport");
         self.watch_addr_task.abort();
         self.accept_task.abort();
+        // The connection reader task inside the connection context
+        // holds a reference to the context. Thus the context can
+        // only be dropped once that reference is dropped, which
+        // happens when the task is aborted.
+        self.connections
+            .write()
+            .expect("poisoned")
+            .drain()
+            .for_each(|(remote_url, ctx)| {
+                debug!(?remote_url, "aborting connection context tasks");
+                ctx.abort_tasks();
+            });
     }
 }
 
