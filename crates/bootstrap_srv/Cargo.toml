@@ -42,7 +42,7 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
-sbd-server = { workspace = true, features = ["tungstenite"] }
+sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 
 [dev-dependencies]
@@ -52,7 +52,13 @@ rcgen = { workspace = true }
 sbd-client = { workspace = true }
 
 [features]
-default = []
+default = ["sbd"]
 
 # enable axum http2 support
 http2 = ["axum/http2"]
+
+# use sbd as signaling and relay server
+sbd = ["dep:sbd-server"]
+
+# use iroh relay server
+iroh-relay = []

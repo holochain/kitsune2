@@ -127,8 +127,11 @@ struct Ready {
 #[derive(Clone)]
 pub struct AppState {
     pub h_send: HSend,
+    #[cfg(feature = "sbd")]
     pub token_tracker: sbd_server::AuthTokenTracker,
+    #[cfg(feature = "sbd")]
     pub sbd_config: Arc<sbd_server::Config>,
+    #[cfg(feature = "sbd")]
     pub sbd_state: Option<crate::sbd::SbdState>,
     pub auth_failures: opentelemetry::metrics::Counter<u64>,
 }
@@ -185,17 +188,13 @@ fn tokio_thread(
             let (h_send, h_recv) =
                 async_channel::bounded(server_config.worker_thread_count);
 
+            #[cfg(feature = "sbd")]
             let sbd_config = Arc::new(config.sbd.clone());
 
+            #[cfg(feature = "sbd")]
             let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
 
             let sbd_server_meter = opentelemetry::global::meter("sbd-server");
-
-            let c_slot = if config.no_sbd {
-                None
-            } else {
-                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone(), sbd_server_meter.clone()))
-            };
 
             let (rustls_config, tls_reload_handle) = if let Some(tls_config) = server_config.tls_config {
                 let rustls_config = tls_config
@@ -210,7 +209,12 @@ fn tokio_thread(
                 (None, None)
             };
 
-            let app = Router::<AppState>::new()
+            let mut allow_credentials = false;
+            #[cfg(feature = "sbd")]
+            {
+                allow_credentials = config.sbd.authentication_hook_server.is_some();
+            }
+            let mut app = Router::<AppState>::new()
                 .route("/authenticate", routing::put(handle_auth))
                 .route("/health", routing::get(handle_health_get))
                 .route("/bootstrap/{space}", routing::get(handle_boot_get))
@@ -222,29 +226,41 @@ fn tokio_thread(
                     .allow_methods(tower_http::cors::AllowMethods::list([Method::GET, Method::PUT, Method::OPTIONS]))
                     .allow_headers(allowed_headers)
                     .allow_origin(origin)
-                    .allow_credentials(config.sbd.authentication_hook_server.is_some())
+                    .allow_credentials(allow_credentials)
                 );
 
-            let app = if config.no_sbd {
-                app
-            } else {
-                app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd))
-            };
+            if !config.no_sbd {
+                #[cfg(feature = "sbd")]
+                {
+                    app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
+                }
+                #[cfg(all(not(feature = "sbd"), feature = "iroh-relay"))]
+                {
+                    app = app.route("/{pub_key}", routing::get(crate::iroh_relay::handle_iroh_relay))
+                }
+            }
 
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
                     h_send: h_send.clone(),
+                    #[cfg(feature = "sbd")]
                     token_tracker: sbd_server::AuthTokenTracker::default(),
+                    #[cfg(feature = "sbd")]
                     sbd_config: sbd_config.clone(),
-                    sbd_state: if !config.no_sbd {
-                        Some(crate::sbd::SbdState {
-                            config: sbd_config.clone(),
-                            ip_rate: ip_rate.clone(),
-                            c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),   
-                        })
-                    } else {
+                    #[cfg(feature = "sbd")]
+                    sbd_state: if config.no_sbd {
                         None
+                    } else {
+                        #[cfg(feature = "sbd")]
+                        {
+                            let c_slot = sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone(), sbd_server_meter.clone());
+                            Some(crate::sbd::SbdState {
+                                config: sbd_config.clone(),
+                                ip_rate: ip_rate.clone(),
+                                c_slot: c_slot.weak(),   
+                            })
+                        }
                     },
                     auth_failures: sbd_server_meter
                         .u64_counter("sbd.server.auth_failures")
@@ -293,6 +309,7 @@ fn tokio_thread(
                 if let Some(tls_config) = &rustls_config {
                     let acceptor = RustlsAcceptor::new(tls_config.clone());
 
+                    #[cfg(feature = "sbd")]
                     let acceptor = {
                         acceptor.acceptor(crate::sbd::SbdAcceptor::new(
                                 sbd_config.clone(),
@@ -309,6 +326,7 @@ fn tokio_thread(
                 } else {
                     let server = axum_server::Server::from_tcp(listener);
 
+                    #[cfg(feature = "sbd")]
                     let server = {
                         server.acceptor(crate::sbd::SbdAcceptor::new(
                             sbd_config.clone(),
@@ -348,43 +366,52 @@ async fn handle_auth(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> axum::response::Response {
-    use sbd_server::AuthenticateTokenError::*;
-
-    match sbd_server::process_authenticate_token(
-        &state.sbd_config,
-        &state.token_tracker,
-        state.auth_failures,
-        body,
-    )
-    .await
+    #[cfg(feature = "sbd")]
     {
-        Ok(token) => axum::response::IntoResponse::into_response(axum::Json(
-            serde_json::json!({
-                "authToken": *token,
-            }),
-        )),
-        Err(Unauthorized) => {
-            tracing::debug!("/authenticate: UNAUTHORIZED");
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ))
-        }
-        Err(HookServerError(err)) => {
-            tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::BAD_GATEWAY,
-                format!("BAD_GATEWAY: {err:?}"),
-            ))
-        }
-        Err(OtherError(err)) => {
-            tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("INTERNAL_SERVER_ERROR: {err:?}"),
-            ))
-        }
+        use sbd_server::AuthenticateTokenError::*;
+
+        return match sbd_server::process_authenticate_token(
+            &state.sbd_config,
+            &state.token_tracker,
+            state.auth_failures,
+            body,
+        )
+        .await
+        {
+            Ok(token) => axum::response::IntoResponse::into_response(
+                axum::Json(serde_json::json!({
+                    "authToken": *token,
+                })),
+            ),
+            Err(Unauthorized) => {
+                tracing::debug!("/authenticate: UNAUTHORIZED");
+                axum::response::IntoResponse::into_response((
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Unauthorized",
+                ))
+            }
+            Err(HookServerError(err)) => {
+                tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
+                axum::response::IntoResponse::into_response((
+                    axum::http::StatusCode::BAD_GATEWAY,
+                    format!("BAD_GATEWAY: {err:?}"),
+                ))
+            }
+            Err(OtherError(err)) => {
+                tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
+                axum::response::IntoResponse::into_response((
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("INTERNAL_SERVER_ERROR: {err:?}"),
+                ))
+            }
+        };
     }
+
+    #[cfg(feature = "iroh-relay")]
+    axum::response::IntoResponse::into_response((
+        axum::http::StatusCode::ACCEPTED,
+        format!("Authorized"),
+    ))
 }
 
 async fn handle_dispatch(
@@ -435,6 +462,7 @@ async fn handle_boot_get(
         .get("Authorization")
         .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
 
+    #[cfg(feature = "sbd")]
     if !state
         .token_tracker
         .check_is_token_valid(&state.sbd_config, token)
@@ -462,6 +490,7 @@ async fn handle_boot_put(
         .get("Authorization")
         .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
 
+    #[cfg(feature = "sbd")]
     if !state
         .token_tracker
         .check_is_token_valid(&state.sbd_config, token)

@@ -83,6 +83,7 @@ pub struct Config {
     pub allowed_origins: Option<Vec<String>>,
 
     /// The SBD server configuration.
+    #[cfg(feature = "sbd")]
     pub sbd: sbd_server::Config,
 }
 
@@ -99,6 +100,7 @@ impl Config {
             tls_key: None,
             no_sbd: false,
             allowed_origins: None,
+            #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
         }
     }
@@ -118,6 +120,7 @@ impl Config {
             tls_key: None,
             no_sbd: false,
             allowed_origins: None,
+            #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
         }
     }
