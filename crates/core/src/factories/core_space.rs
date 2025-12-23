@@ -275,14 +275,15 @@ impl TxSpaceHandler for TxHandlerTranslator {
         {
             Some(access) => access.decision == AccessDecision::Blocked,
             None => {
-                // This is normal for blocked peers, but could be a bug for others. Best to log at
-                // debug level which can be accessed if needed but won't create noisy logs if a
-                // blocked peer keeps sending messages.
+                // When no access decision is available, default to allowing the peer.
+                // Access decisions can become stale when agent info isn't updated regularly
+                // (e.g., due to network issues). Defaulting to blocked would prevent
+                // legitimate communication during temporary network disruptions.
                 tracing::debug!(
-                    "No access decision found for peer url: {:?}",
+                    "No access decision found for peer url: {:?}, defaulting to allowed",
                     peer_url
                 );
-                true
+                false
             }
         };
         Ok(blocked)
