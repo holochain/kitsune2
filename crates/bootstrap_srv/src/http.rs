@@ -127,13 +127,15 @@ struct Ready {
 #[derive(Clone)]
 pub struct AppState {
     pub h_send: HSend,
+    pub auth_failures: opentelemetry::metrics::Counter<u64>,
     #[cfg(feature = "sbd")]
     pub token_tracker: sbd_server::AuthTokenTracker,
     #[cfg(feature = "sbd")]
     pub sbd_config: Arc<sbd_server::Config>,
     #[cfg(feature = "sbd")]
     pub sbd_state: Option<crate::sbd::SbdState>,
-    pub auth_failures: opentelemetry::metrics::Counter<u64>,
+    #[cfg(feature = "iroh-relay")]
+    pub iroh_relay_server:Arc<iroh_relay::server::Server>,
 }
 
 type BoxFut<'a, T> =
@@ -228,22 +230,34 @@ fn tokio_thread(
                     .allow_origin(origin)
                     .allow_credentials(allow_credentials)
                 );
-
+                
+            #[cfg(feature = "iroh-relay")]
+            let iroh_relay_server = crate::iroh_relay::start_secure_relay_server().await;
+            
             if !config.no_sbd {
                 #[cfg(feature = "sbd")]
                 {
                     app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
                 }
-                #[cfg(all(not(feature = "sbd"), feature = "iroh-relay"))]
-                {
-                    app = app.route("/{pub_key}", routing::get(crate::iroh_relay::handle_iroh_relay))
+                #[cfg(feature = "iroh-relay")]
+                {   
+                    use crate::iroh_relay::proxy_to_internal_relay;
+                    let iroh_relay_port = iroh_relay_server.http_addr().expect("mustbethere").port();
+                    println!("iroh relay port is {iroh_relay_port:?}");
+                    app = app.route("/{pub_key}", routing::any(move |req| proxy_to_internal_relay(req, iroh_relay_port)))
                 }
             }
+
 
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
                     h_send: h_send.clone(),
+                    auth_failures: sbd_server_meter
+                        .u64_counter("sbd.server.auth_failures")
+                        .with_description("Number of failed authentication attempts")
+                        .with_unit("count")
+                        .build(),
                     #[cfg(feature = "sbd")]
                     token_tracker: sbd_server::AuthTokenTracker::default(),
                     #[cfg(feature = "sbd")]
@@ -262,11 +276,8 @@ fn tokio_thread(
                             })
                         }
                     },
-                    auth_failures: sbd_server_meter
-                        .u64_counter("sbd.server.auth_failures")
-                        .with_description("Number of failed authentication attempts")
-                        .with_unit("count")
-                        .build(),
+                    #[cfg(feature = "iroh-relay")]
+                    iroh_relay_server: Arc::new(iroh_relay_server),
                 });
 
             let receiver = HttpReceiver(h_recv);

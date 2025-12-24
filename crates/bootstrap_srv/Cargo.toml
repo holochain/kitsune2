@@ -43,9 +43,17 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
 sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
+# iroh relay server-related dependencies
+iroh = { workspace = true }
+iroh-relay = { workspace = true, features = ["server"] }
+reqwest = { workspace = true }
+# iroh = { workspace = true, optional = true }
+# reqwest = {workspace = true, optional = true}
+# iroh-relay = { workspace = true, features = ["server"], optional = true }
 opentelemetry = { workspace = true }
 
 [dev-dependencies]
+iroh = { workspace = true }
 ureq = { workspace = true }
 rand = { workspace = true }
 rcgen = { workspace = true }
@@ -62,3 +70,4 @@ sbd = ["dep:sbd-server"]
 
 # use iroh relay server
 iroh-relay = []
+# iroh-relay = ["dep:iroh-relay", "dep:reqwest", "dep:iroh"]

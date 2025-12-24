@@ -2,6 +2,9 @@ use crate::*;
 use std::fs::File;
 use std::io::Write;
 
+// #[cfg(feature = "iroh-relay")]
+mod iroh_relay;
+
 const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
 
 const K1: &str = "m-U7gdxW1A647O-4wkuCWOvtGGVfHEsxNScFKiL8-k8";
