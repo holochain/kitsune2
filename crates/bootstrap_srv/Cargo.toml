@@ -42,17 +42,29 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
-sbd-server = { workspace = true, features = ["tungstenite"] }
+sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
+# iroh relay server-related dependencies
+axum-reverse-proxy = { workspace = true, optional = true }
+iroh = { workspace = true, optional = true }
+iroh-relay = { workspace = true, features = ["server"], optional = true }
 
 [dev-dependencies]
 ureq = { workspace = true }
 rand = { workspace = true }
 rcgen = { workspace = true }
 sbd-client = { workspace = true }
+iroh = { workspace = true, features = ["test-utils"] }
+kitsune2_test_utils = { workspace = true }
 
 [features]
-default = []
+default = ["sbd"]
 
 # enable axum http2 support
 http2 = ["axum/http2"]
+
+# use sbd as signaling and relay server
+sbd = ["dep:sbd-server"]
+
+# use iroh relay server
+iroh-relay = ["dep:axum-reverse-proxy", "dep:iroh", "dep:iroh-relay"]

@@ -9,9 +9,9 @@ use base64::Engine;
 use futures::future::BoxFuture;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
-use sbd_server::ws::{Payload, SbdWebsocket};
 use sbd_server::{
     handle_upgraded, preflight_ip_check, spawn_prune_task, to_canonical_ip,
+    ws::{Payload, SbdWebsocket},
     Config, IpRate, PubKey, WeakCSlot,
 };
 use std::io;

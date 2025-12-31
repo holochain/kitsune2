@@ -74,8 +74,8 @@ pub struct Config {
     /// - `None`
     pub tls_key: Option<std::path::PathBuf>,
 
-    /// Disable the SBD server.
-    pub no_sbd: bool,
+    /// Disable the relay server.
+    pub no_relay_server: bool,
 
     /// The allowed origins for CORS requests.
     ///
@@ -83,7 +83,12 @@ pub struct Config {
     pub allowed_origins: Option<Vec<String>>,
 
     /// The SBD server configuration.
+    #[cfg(feature = "sbd")]
     pub sbd: sbd_server::Config,
+
+    /// The iroh relay server configuration.
+    #[cfg(feature = "iroh-relay")]
+    pub iroh_relay: crate::iroh_relay::Config,
 }
 
 impl Config {
@@ -97,9 +102,12 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(10),
             tls_cert: None,
             tls_key: None,
-            no_sbd: false,
+            no_relay_server: false,
             allowed_origins: None,
+            #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
+            #[cfg(feature = "iroh-relay")]
+            iroh_relay: crate::iroh_relay::Config::default(),
         }
     }
 
@@ -116,9 +124,12 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(60),
             tls_cert: None,
             tls_key: None,
-            no_sbd: false,
+            no_relay_server: false,
             allowed_origins: None,
+            #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
+            #[cfg(feature = "iroh-relay")]
+            iroh_relay: crate::iroh_relay::Config::default(),
         }
     }
 }

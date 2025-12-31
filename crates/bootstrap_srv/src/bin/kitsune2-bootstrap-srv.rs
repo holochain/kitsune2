@@ -165,30 +165,33 @@ fn main() {
         config.allowed_origins = Some(allowed_origins);
     }
 
-    // Apply SBD command line arguments
-    if let Some(header) = args.sbd_trusted_ip_header {
-        config.sbd.trusted_ip_header = Some(header);
+    #[cfg(feature = "sbd")]
+    {
+        // Apply SBD command line arguments
+        if let Some(header) = args.sbd_trusted_ip_header {
+            config.sbd.trusted_ip_header = Some(header);
+        }
+        if let Some(limit) = args.sbd_limit_clients {
+            config.sbd.limit_clients = limit;
+        }
+        if args.sbd_disable_rate_limiting {
+            config.sbd.disable_rate_limiting = true;
+        }
+        if let Some(kbps) = args.sbd_limit_ip_kbps {
+            config.sbd.limit_ip_kbps = kbps;
+        }
+        if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
+            config.sbd.limit_ip_byte_burst = byte_burst;
+        }
+        config.sbd.otlp_endpoint = args.otlp_endpoint;
+        config.sbd.authentication_hook_server = args.authentication_hook_server;
+
+        // Setup opentelemetry metrics
+        sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
+            .expect("Failed to initialize OTLP metrics");
     }
-    if let Some(limit) = args.sbd_limit_clients {
-        config.sbd.limit_clients = limit;
-    }
-    if args.sbd_disable_rate_limiting {
-        config.sbd.disable_rate_limiting = true;
-    }
-    if let Some(kbps) = args.sbd_limit_ip_kbps {
-        config.sbd.limit_ip_kbps = kbps;
-    }
-    if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
-        config.sbd.limit_ip_byte_burst = byte_burst;
-    }
-    config.sbd.otlp_endpoint = args.otlp_endpoint;
-    config.sbd.authentication_hook_server = args.authentication_hook_server;
 
     tracing::info!(?config);
-
-    // Setup opentelemetry metrics
-    sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
-        .expect("Failed to initialize OTLP metrics");
 
     let (send, recv) = std::sync::mpsc::channel();
 

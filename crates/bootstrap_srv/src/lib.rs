@@ -214,7 +214,11 @@ pub use server::*;
 mod tls;
 pub use tls::*;
 
+#[cfg(feature = "sbd")]
 mod sbd;
+
+#[cfg(feature = "iroh-relay")]
+mod iroh_relay;
 
 #[cfg(test)]
 mod test;

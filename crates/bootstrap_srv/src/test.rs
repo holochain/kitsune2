@@ -2,6 +2,11 @@ use crate::*;
 use std::fs::File;
 use std::io::Write;
 
+#[cfg(feature = "iroh-relay")]
+mod iroh_relay;
+#[cfg(feature = "sbd")]
+mod sbd;
+
 const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
 
 const K1: &str = "m-U7gdxW1A647O-4wkuCWOvtGGVfHEsxNScFKiL8-k8";
@@ -143,7 +148,7 @@ impl PutInfo<'_> {
         .unwrap();
 
         let addr = format!(
-            "http{}://{:?}/bootstrap/{}/{}",
+            "http{}://{}/bootstrap/{}/{}",
             if self.use_tls { "s" } else { "" },
             self.addr,
             self.space_url,
@@ -194,6 +199,12 @@ impl PutInfo<'_> {
 
 #[test]
 fn happy_bootstrap_put_get() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default.
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    #[cfg(feature = "iroh-relay")]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let PutInfoRes { info, .. } = PutInfo {
@@ -203,7 +214,7 @@ fn happy_bootstrap_put_get() {
     .call()
     .unwrap();
 
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
+    let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     println!("{addr}");
     let res = ureq::get(&addr)
         .call()
@@ -224,7 +235,7 @@ fn happy_bootstrap_put_get() {
 #[test]
 fn happy_empty_server_health() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
-    let addr = format!("http://{:?}/health", s.listen_addrs()[0]);
+    let addr = format!("http://{}/health", s.listen_addrs()[0]);
     let res = ureq::get(&addr)
         .call()
         .unwrap()
@@ -236,57 +247,20 @@ fn happy_empty_server_health() {
 
 #[test]
 fn happy_empty_server_bootstrap_get() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default.
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    #[cfg(feature = "iroh-relay")]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let s = BootstrapSrv::new(Config::testing()).unwrap();
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
+    let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
         .call()
         .unwrap()
         .into_body()
         .read_to_string()
         .unwrap();
-    assert_eq!("[]", res);
-}
-
-#[test]
-fn invalid_auth() {
-    let s = BootstrapSrv::new(Config::testing()).unwrap();
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
-        .get(&addr)
-        .header("Authorization", "Bearer bob")
-        .call()
-        .unwrap()
-        .into_body()
-        .read_to_string()
-        .unwrap();
-    assert!(format!("{res:?}").contains("Unauthorized"), "Got: {res:?}");
-}
-
-#[test]
-fn valid_auth() {
-    let s = BootstrapSrv::new(Config::testing()).unwrap();
-    let addr = format!("http://{:?}/authenticate", s.listen_addrs()[0]);
-    let token = ureq::put(&addr)
-        .send(&b"hello"[..])
-        .unwrap()
-        .into_body()
-        .read_to_string()
-        .unwrap();
-
-    let token = String::from_utf8_lossy(&token.as_bytes()[14..57]);
-
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
-    let res = ureq::get(&addr)
-        .header("Authorization", &format!("Bearer {token}"))
-        .call()
-        .unwrap()
-        .into_body()
-        .read_to_string()
-        .unwrap();
-
     assert_eq!("[]", res);
 }
 
@@ -302,7 +276,7 @@ fn tombstone_will_not_put() {
     .call()
     .unwrap();
 
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
+    let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
         .call()
         .unwrap()
@@ -333,7 +307,7 @@ fn tombstone_old_is_ignored() {
     .call()
     .unwrap();
 
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
+    let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
         .call()
         .unwrap()
@@ -395,7 +369,7 @@ fn tombstone_deletes_correct_agent() {
 
     // -- get the result -- //
 
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
+    let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
         .call()
         .unwrap()
@@ -413,7 +387,7 @@ fn tombstone_deletes_correct_agent() {
 fn reject_get_no_space() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
-    let addr = format!("http://{:?}/bootstrap", s.listen_addrs()[0]);
+    let addr = format!("http://{}/bootstrap", s.listen_addrs()[0]);
     match ureq::get(&addr).call() {
         Err(ureq::Error::StatusCode(status)) => {
             println!("status: {status}");
@@ -428,7 +402,7 @@ fn reject_get_no_space() {
 fn reject_put_no_space() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
-    let addr = format!("http://{:?}/bootstrap", s.listen_addrs()[0]);
+    let addr = format!("http://{}/bootstrap", s.listen_addrs()[0]);
     match ureq::put(&addr).send_empty() {
         Err(ureq::Error::StatusCode(status)) => {
             println!("status: {status}");
@@ -443,7 +417,7 @@ fn reject_put_no_space() {
 fn reject_put_no_agent() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
-    let addr = format!("http://{:?}/bootstrap/{}", s.listen_addrs()[0], S1);
+    let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     match ureq::put(&addr).send_empty() {
         Err(ureq::Error::StatusCode(status)) => {
             println!("status: {status}");
@@ -645,6 +619,12 @@ fn reject_bad_agent_pub_key() {
 
 #[test]
 fn default_storage_rollover() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default.
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    #[cfg(feature = "iroh-relay")]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let s = BootstrapSrv::new(Config::testing()).unwrap();
 
     let addr = s.listen_addrs()[0];
@@ -667,7 +647,7 @@ fn default_storage_rollover() {
 
     let addr = s.listen_addrs()[0];
     let get = move || {
-        let addr = format!("http://{addr:?}/bootstrap/{S1}");
+        let addr = format!("http://{addr}/bootstrap/{S1}");
         let res = ureq::get(&addr)
             .call()
             .unwrap()
@@ -715,6 +695,12 @@ fn default_storage_rollover() {
 
 #[test]
 fn multi_thread_stress() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default.
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    #[cfg(feature = "iroh-relay")]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let config = Config::testing();
     let worker_count = config.worker_thread_count as u32;
 
@@ -740,7 +726,7 @@ fn multi_thread_stress() {
 
         all_r.push(std::thread::spawn(move || {
             while !w_done.load(std::sync::atomic::Ordering::SeqCst) {
-                let addr = format!("http://{addr:?}/bootstrap/{S1}");
+                let addr = format!("http://{addr}/bootstrap/{S1}");
                 let res = ureq::get(&addr)
                     .call()
                     .unwrap()
@@ -794,7 +780,7 @@ fn multi_thread_stress() {
         j.join().unwrap();
     }
 
-    let addr = format!("http://{addr:?}/bootstrap/{S1}");
+    let addr = format!("http://{addr}/bootstrap/{S1}");
     let res = ureq::get(&addr)
         .call()
         .unwrap()
@@ -817,13 +803,19 @@ fn multi_thread_stress() {
 
 #[test]
 fn expiration_prune() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default.
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    #[cfg(feature = "iroh-relay")]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let s = BootstrapSrv::new(Config {
         prune_interval: std::time::Duration::from_millis(5),
         ..Config::testing()
     })
     .unwrap();
     let addr = s.listen_addrs()[0];
-    let addr = format!("http://{addr:?}/bootstrap/{S1}");
+    let addr = format!("http://{addr}/bootstrap/{S1}");
 
     // -- the entry that WILL get pruned -- //
 
@@ -888,14 +880,12 @@ fn expiration_prune() {
 fn start_with_tls() {
     // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
     // return a default.
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .unwrap();
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     let cert =
         rcgen::generate_simple_self_signed(vec!["bootstrap.test".to_string()])
             .unwrap();
-    cert.cert.pem();
 
     let cert_dir = tempfile::tempdir().unwrap();
 
@@ -929,66 +919,4 @@ fn start_with_tls() {
     }
     .call()
     .unwrap();
-}
-
-#[test]
-fn use_bootstrap_and_sbd() {
-    let s = BootstrapSrv::new(Config {
-        prune_interval: std::time::Duration::from_millis(5),
-        ..Config::testing()
-    })
-    .unwrap();
-    let addr = s.listen_addrs()[0];
-
-    PutInfo {
-        addr: s.listen_addrs()[0],
-        ..Default::default()
-    }
-    .call()
-    .unwrap();
-
-    let bootstrap_url = format!("http://{addr:?}/bootstrap/{S1}");
-    let res = ureq::get(&bootstrap_url)
-        .call()
-        .unwrap()
-        .into_body()
-        .read_to_string()
-        .unwrap();
-    let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
-    assert_eq!(1, res.len());
-
-    async fn connect(
-        addr: std::net::SocketAddr,
-    ) -> (sbd_client::SbdClient, sbd_client::MsgRecv) {
-        sbd_client::SbdClient::connect_config(
-            &format!("ws://{addr}"),
-            &sbd_client::DefaultCrypto::default(),
-            sbd_client::SbdClientConfig {
-                allow_plain_text: true,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap()
-    }
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()
-        .unwrap();
-    rt.block_on(async move {
-        let (c1, _r1) = connect(addr).await;
-        let p1 = c1.pub_key().clone();
-        let (c2, mut r2) = connect(addr).await;
-        let p2 = c2.pub_key().clone();
-
-        c1.send(&p2, b"hello").await.unwrap();
-        let received = r2.recv().await.unwrap().0;
-        assert_eq!(p1.as_slice(), &received[0..32]);
-        assert_eq!(b"hello".as_slice(), &received[32..]);
-
-        c1.close().await;
-        c2.close().await;
-    });
 }

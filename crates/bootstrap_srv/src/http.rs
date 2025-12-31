@@ -6,6 +6,8 @@ use http::{HeaderName, HeaderValue, Method};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+#[cfg(feature = "iroh-relay")]
+use {axum_reverse_proxy::ReverseProxy, tracing::info};
 
 pub struct HttpResponse {
     pub status: u16,
@@ -127,10 +129,16 @@ struct Ready {
 #[derive(Clone)]
 pub struct AppState {
     pub h_send: HSend,
-    pub token_tracker: sbd_server::AuthTokenTracker,
-    pub sbd_config: Arc<sbd_server::Config>,
-    pub sbd_state: Option<crate::sbd::SbdState>,
+    #[cfg(feature = "sbd")]
     pub auth_failures: opentelemetry::metrics::Counter<u64>,
+    #[cfg(feature = "sbd")]
+    pub token_tracker: sbd_server::AuthTokenTracker,
+    #[cfg(feature = "sbd")]
+    pub sbd_config: Arc<sbd_server::Config>,
+    #[cfg(feature = "sbd")]
+    pub sbd_state: Option<crate::sbd::SbdState>,
+    #[cfg(feature = "iroh-relay")]
+    pub _iroh_relay_server: Arc<iroh_relay::server::Server>,
 }
 
 type BoxFut<'a, T> =
@@ -185,13 +193,17 @@ fn tokio_thread(
             let (h_send, h_recv) =
                 async_channel::bounded(server_config.worker_thread_count);
 
+            #[cfg(feature = "sbd")]
             let sbd_config = Arc::new(config.sbd.clone());
 
+            #[cfg(feature = "sbd")]
             let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
 
+            #[cfg(feature = "sbd")]
             let sbd_server_meter = opentelemetry::global::meter("sbd-server");
 
-            let c_slot = if config.no_sbd {
+            #[cfg(feature = "sbd")]
+            let c_slot = if config.no_relay_server {
                 None
             } else {
                 Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone(), sbd_server_meter.clone()))
@@ -210,7 +222,12 @@ fn tokio_thread(
                 (None, None)
             };
 
-            let app = Router::<AppState>::new()
+            #[cfg(feature = "iroh-relay")]
+            let allow_credentials = false;
+            #[cfg(feature = "sbd")]
+            let allow_credentials = config.sbd.authentication_hook_server.is_some();
+
+            let mut app = Router::<AppState>::new()
                 .route("/authenticate", routing::put(handle_auth))
                 .route("/health", routing::get(handle_health_get))
                 .route("/bootstrap/{space}", routing::get(handle_boot_get))
@@ -222,35 +239,63 @@ fn tokio_thread(
                     .allow_methods(tower_http::cors::AllowMethods::list([Method::GET, Method::PUT, Method::OPTIONS]))
                     .allow_headers(allowed_headers)
                     .allow_origin(origin)
-                    .allow_credentials(config.sbd.authentication_hook_server.is_some())
+                    .allow_credentials(allow_credentials)
                 );
 
-            let app = if config.no_sbd {
-                app
-            } else {
-                app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd))
-            };
+            #[cfg(feature = "iroh-relay")]
+            let iroh_relay_server = crate::iroh_relay::start_iroh_relay_server(&config.iroh_relay.limits).await;
+
+            if !config.no_relay_server {
+                #[cfg(feature = "sbd")]
+                {
+                    app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
+                }
+                #[cfg(feature = "iroh-relay")]
+                {
+                    // Set up the reverse proxy to forward requests to iroh_relay server
+                    // The proxy acts as a fallback for all unspecified routes.
+
+                    // Get the actual bound port
+                    let iroh_relay_addr = iroh_relay_server
+                        .http_addr()
+                        .expect("iroh relay server should have HTTP address");
+                    info!("Internal iroh relay server started at {}", iroh_relay_addr);
+
+                    // The iroh relay server always runs with a plain text HTTP protocol.
+                    // as it's a localhost address that is not exposed to the WAN, this
+                    // doesn't mean a security risk.
+                    app = app.merge(ReverseProxy::new("/", &format!("http://{}", iroh_relay_addr)));
+                }
+            }
 
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
                     h_send: h_send.clone(),
-                    token_tracker: sbd_server::AuthTokenTracker::default(),
-                    sbd_config: sbd_config.clone(),
-                    sbd_state: if !config.no_sbd {
-                        Some(crate::sbd::SbdState {
-                            config: sbd_config.clone(),
-                            ip_rate: ip_rate.clone(),
-                            c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),   
-                        })
-                    } else {
-                        None
-                    },
+                    #[cfg(feature = "sbd")]
                     auth_failures: sbd_server_meter
                         .u64_counter("sbd.server.auth_failures")
                         .with_description("Number of failed authentication attempts")
                         .with_unit("count")
                         .build(),
+                    #[cfg(feature = "sbd")]
+                    token_tracker: sbd_server::AuthTokenTracker::default(),
+                    #[cfg(feature = "sbd")]
+                    sbd_config: sbd_config.clone(),
+                    #[cfg(feature = "sbd")]
+                    sbd_state: if config.no_relay_server {
+                        None
+                    } else {
+                        {
+                            Some(crate::sbd::SbdState {
+                                config: sbd_config.clone(),
+                                ip_rate: ip_rate.clone(),
+                                c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),   
+                            })
+                        }
+                    },
+                    #[cfg(feature = "iroh-relay")]
+                    _iroh_relay_server: Arc::new(iroh_relay_server),
                 });
 
             let receiver = HttpReceiver(h_recv);
@@ -293,6 +338,7 @@ fn tokio_thread(
                 if let Some(tls_config) = &rustls_config {
                     let acceptor = RustlsAcceptor::new(tls_config.clone());
 
+                    #[cfg(feature = "sbd")]
                     let acceptor = {
                         acceptor.acceptor(crate::sbd::SbdAcceptor::new(
                                 sbd_config.clone(),
@@ -309,6 +355,7 @@ fn tokio_thread(
                 } else {
                     let server = axum_server::Server::from_tcp(listener);
 
+                    #[cfg(feature = "sbd")]
                     let server = {
                         server.acceptor(crate::sbd::SbdAcceptor::new(
                             sbd_config.clone(),
@@ -348,42 +395,55 @@ async fn handle_auth(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> axum::response::Response {
-    use sbd_server::AuthenticateTokenError::*;
-
-    match sbd_server::process_authenticate_token(
-        &state.sbd_config,
-        &state.token_tracker,
-        state.auth_failures,
-        body,
-    )
-    .await
+    #[cfg(feature = "sbd")]
     {
-        Ok(token) => axum::response::IntoResponse::into_response(axum::Json(
-            serde_json::json!({
-                "authToken": *token,
-            }),
-        )),
-        Err(Unauthorized) => {
-            tracing::debug!("/authenticate: UNAUTHORIZED");
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ))
-        }
-        Err(HookServerError(err)) => {
-            tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::BAD_GATEWAY,
-                format!("BAD_GATEWAY: {err:?}"),
-            ))
-        }
-        Err(OtherError(err)) => {
-            tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("INTERNAL_SERVER_ERROR: {err:?}"),
-            ))
-        }
+        use sbd_server::AuthenticateTokenError::*;
+
+        return match sbd_server::process_authenticate_token(
+            &state.sbd_config,
+            &state.token_tracker,
+            state.auth_failures,
+            body,
+        )
+        .await
+        {
+            Ok(token) => axum::response::IntoResponse::into_response(
+                axum::Json(serde_json::json!({
+                    "authToken": *token,
+                })),
+            ),
+            Err(Unauthorized) => {
+                tracing::debug!("/authenticate: UNAUTHORIZED");
+                axum::response::IntoResponse::into_response((
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Unauthorized",
+                ))
+            }
+            Err(HookServerError(err)) => {
+                tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
+                axum::response::IntoResponse::into_response((
+                    axum::http::StatusCode::BAD_GATEWAY,
+                    format!("BAD_GATEWAY: {err:?}"),
+                ))
+            }
+            Err(OtherError(err)) => {
+                tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
+                axum::response::IntoResponse::into_response((
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("INTERNAL_SERVER_ERROR: {err:?}"),
+                ))
+            }
+        };
+    }
+
+    #[cfg(feature = "iroh-relay")]
+    {
+        drop(state);
+        drop(body);
+        axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::ACCEPTED,
+            "Authorized".to_string(),
+        ))
     }
 }
 
@@ -431,19 +491,24 @@ async fn handle_boot_get(
     headers: axum::http::HeaderMap,
     extract::State(state): extract::State<AppState>,
 ) -> response::Response {
-    let token: Option<Arc<str>> = headers
-        .get("Authorization")
-        .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
-
-    if !state
-        .token_tracker
-        .check_is_token_valid(&state.sbd_config, token)
+    #[cfg(feature = "sbd")]
     {
-        return axum::response::IntoResponse::into_response((
-            axum::http::StatusCode::UNAUTHORIZED,
-            "Unauthorized",
-        ));
+        let token: Option<Arc<str>> = headers
+            .get("Authorization")
+            .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
+        if !state
+            .token_tracker
+            .check_is_token_valid(&state.sbd_config, token)
+        {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ));
+        }
     }
+
+    #[cfg(feature = "iroh-relay")]
+    drop(headers);
 
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
@@ -458,19 +523,24 @@ async fn handle_boot_put(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
-    let token: Option<Arc<str>> = headers
-        .get("Authorization")
-        .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
-
-    if !state
-        .token_tracker
-        .check_is_token_valid(&state.sbd_config, token)
+    #[cfg(feature = "sbd")]
     {
-        return axum::response::IntoResponse::into_response((
-            axum::http::StatusCode::UNAUTHORIZED,
-            "Unauthorized",
-        ));
+        let token: Option<Arc<str>> = headers
+            .get("Authorization")
+            .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
+        if !state
+            .token_tracker
+            .check_is_token_valid(&state.sbd_config, token)
+        {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ));
+        }
     }
+
+    #[cfg(feature = "iroh-relay")]
+    drop(headers);
 
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
