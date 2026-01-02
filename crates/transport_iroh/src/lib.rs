@@ -57,6 +57,13 @@ pub mod config {
         #[cfg_attr(feature = "schema", schemars(default))]
         pub relay_url: Option<String>,
 
+        /// Allow connecting to plaintext (http) relay server
+        /// instead of the default requiring TLS (https).
+        ///
+        /// Default: false.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub relay_allow_plain_text: bool,
+
         /// Set the maximum size in bytes for a frame that the transport
         /// can transmit.
         ///
@@ -69,6 +76,7 @@ pub mod config {
         fn default() -> Self {
             Self {
                 relay_url: None,
+                relay_allow_plain_text: false,
                 max_frame_bytes: 1024 * 1024,
             }
         }
@@ -108,7 +116,9 @@ impl TransportFactory for IrohTransportFactory {
         if let Some(relay) = &config.iroh_transport.relay_url {
             let relay_server_url = ::url::Url::parse(relay)
                 .map_err(|err| K2Error::other_src("invalid relay URL", err))?;
-            if relay_server_url.scheme() != "https" {
+            if relay_server_url.scheme() == "http"
+                && !config.iroh_transport.relay_allow_plain_text
+            {
                 return Err(K2Error::other("disallowed plaintext relay url"));
             }
         }
