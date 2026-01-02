@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.1...v0.4.0-dev.2)\] - 2026-01-02
+
+### Features
+
+- Introduce iroh-relay feature in bootstrap srv by @jost-s in [#419](https://github.com/holochain/kitsune2/pull/419)
+  - For iroh to make direct connections, a relay server is needed. The bootstrap server is extended by a new feature "iroh-relay", which can be set instead of "sbd", needed for the tx5 transport.
+- Make iroh max frame size configurable by @jost-s in [#416](https://github.com/holochain/kitsune2/pull/416)
+- Set peer unresponsive on iroh connection error by @jost-s
+
+### Bug Fixes
+
+- Allow all features to be enabled by @jost-s in [#415](https://github.com/holochain/kitsune2/pull/415)
+  - Temporarily transport-tx5-* and transport-iroh could not be enabled simultaneously. This restriction has been lifted. When both tx5 and iroh transport features are enabled, the default builder will default to the tx5 transport. It can still be overridden by assigning a builder instance's transport an iroh transport factory.
+
+### Miscellaneous Tasks
+
+- Temporarily re-allow feature collision for release preparation
+
+### CI
+
+- Revert temporary workaround to allow clashing feature in release workflow by @jost-s
+
+### Refactor
+
+- Allow plain text urls for iroh relay by @jost-s in [#421](https://github.com/holochain/kitsune2/pull/421)
+- Use persistent streams in iroh connections by @jost-s in [#411](https://github.com/holochain/kitsune2/pull/411)
+  - Previously a uni-directional stream was created and destroyed for each message. That required a fixed delay to be awaited to make a preflight frame possible. Now the preflight is sent as a first frame on a newly opened connection and stream and the stream is kept alive until an error occurs or the connection is closed.
+
 ## \[[0.4.0-dev.1](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.0...v0.4.0-dev.1)\] - 2025-12-16
 
 ### Features
