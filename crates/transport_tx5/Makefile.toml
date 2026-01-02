@@ -1,15 +1,36 @@
 extend = "../../Makefile.toml"
 
+# runs clippy with default features, which covers `datachannel-vendored`
 [tasks.clippy]
+workspace = false
+dependencies = ["clippy-transport-tx5-go-pion"]
+
+[tasks.clippy-transport-tx5-go-pion]
+workspace = false
+command = "cargo"
 args = [
   "clippy",
   "--all-targets",
   "--no-default-features",
   "--features",
-  "datachannel-vendored",
+  "backend-go-pion",
   "--",
   "--deny=warnings",
 ]
 
+# runs test with default features, which covers `datachannel-vendored`
 [tasks.test]
-args = ["test", "--no-default-features", "--features", "datachannel-vendored"]
+workspace = false
+dependencies = ["test-transport-tx5-go-pion"]
+
+[tasks.test-transport-tx5-go-pion]
+workspace = false
+command = "cargo"
+args = [
+  "test",
+  "--no-default-features",
+  "--features",
+  "backend-go-pion",
+  "--",
+  "--nocapture",
+]

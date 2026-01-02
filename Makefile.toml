@@ -33,36 +33,6 @@ install_crate = false
 command = "cargo"
 args = ["test"]
 
-[tasks.test-transport-tx5-go-pion]
-workspace = false
-command = "cargo"
-args = [
-  "test",
-  "--package",
-  "kitsune2_transport_tx5",
-  "--package",
-  "kitsune2",
-  "--no-default-features",
-  "--features",
-  "transport-tx5-backend-go-pion",
-  "--",
-  "--nocapture",
-]
-
-[tasks.test-transport-iroh]
-workspace = false
-command = "cargo"
-args = [
-  "test",
-  "--package",
-  "kitsune2",
-  "--no-default-features",
-  "--features",
-  "transport-iroh",
-  "--",
-  "--nocapture",
-]
-
 #
 # Tasks that modify content and are not run on CI
 #
@@ -90,7 +60,6 @@ args = ["format"]
 
 [tasks.static]
 description = "Run all static checks"
-workspace = false
 dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
 
 [tasks.verify]

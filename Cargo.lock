@@ -2726,7 +2726,6 @@ dependencies = [
  "axum",
  "bytes",
  "futures",
- "iroh-relay",
  "kitsune2_api",
  "rand 0.8.5",
  "serde_json",

@@ -72,5 +72,6 @@ schema = [
   "dep:serde_json",
   "kitsune2_core/schema",
   "kitsune2_gossip/schema",
-  "kitsune2_transport_tx5/schema",
+  "kitsune2_transport_tx5?/schema",
+  "kitsune2_transport_iroh?/schema",
 ]

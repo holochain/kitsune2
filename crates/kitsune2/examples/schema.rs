@@ -3,6 +3,13 @@ use kitsune2_core::factories::{
     CoreSpaceModConfig, MemBootstrapModConfig, MemPeerStoreModConfig,
 };
 use kitsune2_gossip::K2GossipModConfig;
+#[cfg(feature = "transport-iroh")]
+use kitsune2_transport_iroh::IrohTransportModConfig;
+#[cfg(any(
+    feature = "transport-tx5-datachannel-vendored",
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion"
+))]
 use kitsune2_transport_tx5::Tx5TransportModConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -23,10 +30,23 @@ struct K2Config {
     mem_peer_store: Option<MemPeerStoreModConfig>,
     #[serde(flatten)]
     k2_gossip: Option<K2GossipModConfig>,
+    #[cfg(any(
+        feature = "transport-tx5-datachannel-vendored",
+        feature = "transport-tx5-backend-libdatachannel",
+        feature = "transport-tx5-backend-go-pion"
+    ))]
     #[serde(flatten)]
     tx5_transport: Option<Tx5TransportModConfig>,
+    #[cfg(feature = "transport-iroh")]
+    #[serde(flatten)]
+    iroh_transport: Option<IrohTransportModConfig>,
 }
 
+#[cfg(any(
+    feature = "transport-tx5-datachannel-vendored",
+    feature = "transport-tx5-backend-libdatachannel",
+    feature = "transport-tx5-backend-go-pion"
+))]
 const CURRENT_VALUE: &str = r#"
 {
     "coreBootstrap": {
@@ -77,6 +97,53 @@ const CURRENT_VALUE: &str = r#"
                 }
             ]
         }
+    },
+    "extensionModule": {
+        "someField": "someValue"
+    }
+}
+"#;
+
+#[cfg(feature = "transport-iroh")]
+const CURRENT_VALUE: &str = r#"
+{
+    "coreBootstrap": {
+        "backoffMaxMs": 1000,
+        "backoffMinMs": 100,
+        "serverUrl": "https://test.com"
+    },
+    "coreFetch": {
+        "firstBackOffIntervalMs": 100,
+        "lastBackOffIntervalMs": 1000,
+        "numBackOffIntervals": 3,
+        "parallelRequestCount": 2,
+        "reInsertOutgoingRequestDelayMs": 10
+    },
+    "corePublish": {},
+    "coreSpace": {
+        "reSignExpireTimeMs": 15000,
+        "reSignFreqMs": 120000
+    },
+    "memBootstrap": {
+        "pollFreqMs": 100,
+        "testId": "hello-test"
+    },
+    "memPeerStore": {
+        "pruneIntervalS": 10
+    },
+    "k2Gossip": {
+        "initiateJitterMs": 10,
+        "initialInitiateIntervalMs": 100,
+        "initiateIntervalMs": 100,
+        "maxConcurrentAcceptedRounds": 20,
+        "maxGossipOpBytes": 1000,
+        "maxRequestGossipOpBytes": 1000,
+        "minInitiateIntervalMs": 100,
+        "roundTimeoutMs": 50
+    },
+    "irohTransport": {
+        "relayUrl": "https://test.com",
+        "maxFrameBytes": 1024
     },
     "extensionModule": {
         "someField": "someValue"
