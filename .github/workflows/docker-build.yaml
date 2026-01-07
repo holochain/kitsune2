@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   SRV_IMAGE_NAME: holochain/kitsune2_bootstrap_srv
+  SRV_IROH_IMAGE_NAME: holochain/kitsune2_bootstrap_srv_iroh_relay
   AUTH_TEST_IMAGE_NAME: holochain/kitsune2_test_auth_hook_server
 
 jobs:
@@ -41,6 +42,37 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  docker-build-kitsune2-bootstrap-srv-iroh-relay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.SRV_IROH_IMAGE_NAME }}
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/kitsune2_bootstrap_srv_iroh_relay/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
   docker-build-kitsune2-bootstrap-srv-auth-test:
     runs-on: ubuntu-latest
     permissions:
