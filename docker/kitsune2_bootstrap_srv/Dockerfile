@@ -1,16 +1,16 @@
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.92-trixie AS builder
 
 # Pick a directory to work in
 WORKDIR /usr/src/kitsune2
 
 # Copy the workspace's source code into the container
-ADD ["Cargo.toml", "Cargo.lock", "./"]
-ADD crates ./crates
+COPY ["Cargo.toml", "Cargo.lock", "./"]
+COPY crates ./crates
 
 # Build the bootstrap server
 RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 EXPOSE 443
 
