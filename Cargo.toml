@@ -47,8 +47,6 @@ kitsune2_bootstrap_client = { version = "0.4.0-dev.0", path = "crates/bootstrap_
 async-channel = "2.3.1"
 # this is used by bootstrap_srv as the http server implementation.
 axum = { version = "0.8", default-features = false }
-# used to proxy requests to http server to iroh relay server
-axum-reverse-proxy = "1.0"
 # CORS support for axum
 tower-http = "0.6"
 # Used with tower-http for constants
@@ -160,3 +158,5 @@ jsonschema = "0.30.0"
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
 #tx5-core = { path = "../tx5/crates/tx5-core" }
 #tx5 = { path = "../tx5/crates/tx5" }
+iroh = { path = "../iroh/iroh" }
+iroh-relay = { path = "../iroh/iroh-relay" }

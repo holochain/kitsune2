@@ -1,7 +1,20 @@
-use iroh_relay::server::{AccessConfig, RelayConfig, Server, ServerConfig};
+use iroh_relay::server::{AccessConfig, Handlers, Metrics, RelayService};
+use iroh_relay::KeyCache;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
-pub use iroh_relay::server::{ClientRateLimit, Limits};
+pub use iroh_relay::server::ClientRateLimit;
+
+/// Rate limits configuration for the relay server
+#[derive(Debug, Default)]
+pub struct Limits {
+    /// Rate limit for accepting new connection. Unlimited if not set.
+    pub accept_conn_limit: Option<f64>,
+    /// Burst limit for accepting new connection. Unlimited if not set.
+    pub accept_conn_burst: Option<usize>,
+    /// Rate limits for incoming traffic from a client connection.
+    pub client_rx: Option<ClientRateLimit>,
+}
 
 /// Configuration for iroh relay server
 #[derive(Debug)]
@@ -25,23 +38,14 @@ impl Default for Config {
     }
 }
 
-pub(super) async fn start_iroh_relay_server(limits: &Limits) -> Server {
-    Server::spawn(ServerConfig::<(), ()> {
-        relay: Some(RelayConfig {
-            // Secure because only bound to loopback on localhost
-            http_bind_addr: ([127, 0, 0, 1], 0).into(),
-            tls: None, // HTTP is fine for localhost
-            limits: Limits {
-                accept_conn_limit: limits.accept_conn_limit,
-                accept_conn_burst: limits.accept_conn_burst,
-                client_rx: limits.client_rx,
-            },
-            key_cache_capacity: None, // uses default
-            access: AccessConfig::Everyone,
-        }),
-        quic: None,         // Disable QUIC for internal proxy
-        metrics_addr: None, // Don't expose metrics port either
-    })
-    .await
-    .expect("Failed to start internal iroh relay server")
+/// Creates a new embedded iroh relay service that can be integrated into an existing HTTP server
+pub(super) fn create_relay_service(limits: &Limits) -> RelayService {
+    let handlers = Handlers::default();
+    let headers = http::HeaderMap::new();
+    let rate_limit = limits.client_rx;
+    let key_cache = KeyCache::new(1024); // Default cache capacity
+    let access = AccessConfig::Everyone;
+    let metrics = Arc::new(Metrics::default());
+
+    RelayService::new(handlers, headers, rate_limit, key_cache, access, metrics)
 }

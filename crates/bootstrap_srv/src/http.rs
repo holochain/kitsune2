@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 #[cfg(feature = "iroh-relay")]
-use {axum_reverse_proxy::ReverseProxy, tracing::info};
+use {tracing::info};
 
 pub struct HttpResponse {
     pub status: u16,
@@ -148,7 +148,7 @@ pub struct AppState {
     pub sbd_state: Option<crate::sbd::SbdState>,
 
     #[cfg(feature = "iroh-relay")]
-    pub _iroh_relay_server: Arc<iroh_relay::server::Server>,
+    pub iroh_relay_service: iroh_relay::server::RelayService,
 }
 
 type BoxFut<'a, T> =
@@ -261,7 +261,7 @@ fn tokio_thread(
                 );
 
             #[cfg(feature = "iroh-relay")]
-            let iroh_relay_server = crate::iroh_relay::start_iroh_relay_server(&config.iroh_relay.limits).await;
+            let iroh_relay_service = crate::iroh_relay::create_relay_service(&config.iroh_relay.limits);
 
             if !config.no_relay_server {
                 #[cfg(feature = "sbd")]
@@ -270,19 +270,9 @@ fn tokio_thread(
                 }
                 #[cfg(feature = "iroh-relay")]
                 {
-                    // Set up the reverse proxy to forward requests to iroh_relay server
-                    // The proxy acts as a fallback for all unspecified routes.
-
-                    // Get the actual bound port
-                    let iroh_relay_addr = iroh_relay_server
-                        .http_addr()
-                        .expect("iroh relay server should have HTTP address");
-                    info!("Internal iroh relay server started at {}", iroh_relay_addr);
-
-                    // The iroh relay server always runs with a plain text HTTP protocol.
-                    // as it's a localhost address that is not exposed to the WAN, this
-                    // doesn't mean a security risk.
-                    app = app.merge(ReverseProxy::new("/", &format!("http://{}", iroh_relay_addr)));
+                    info!("Embedded iroh relay service created");
+                    // The relay service handles the /relay endpoint and will be used as a fallback
+                    app = app.fallback(handle_iroh_relay);
                 }
             }
 
@@ -309,7 +299,7 @@ fn tokio_thread(
                         }
                     },
                     #[cfg(feature = "iroh-relay")]
-                    _iroh_relay_server: Arc::new(iroh_relay_server),
+                    iroh_relay_service,
                 });
 
             let receiver = HttpReceiver(h_recv);
@@ -565,4 +555,40 @@ fn b64_to_bytes(
             }
         },
     ))
+}
+
+#[cfg(feature = "iroh-relay")]
+async fn handle_iroh_relay(
+    extract::State(state): extract::State<AppState>,
+    req: http::Request<body::Body>,
+) -> response::Response {
+    use hyper::service::Service;
+    use hyper::body::Incoming;
+
+    // Convert axum body to hyper Incoming body
+    let (parts, body) = req.into_parts();
+    let body = Incoming::from(body);
+    let req = http::Request::from_parts(parts, body);
+
+    // Call the relay service
+    match state.iroh_relay_service.call(req).await {
+        Ok(response) => {
+            // Convert the response body from Full<Bytes> to axum body
+            let (parts, body) = response.into_parts();
+            let bytes = hyper::body::Bytes::copy_from_slice(
+                &http_body_util::BodyExt::collect(body)
+                    .await
+                    .unwrap_or_default()
+                    .to_bytes()
+            );
+            http::Response::from_parts(parts, body::Body::from(bytes))
+        }
+        Err(err) => {
+            tracing::error!("Error handling relay request: {:?}", err);
+            response::Response::builder()
+                .status(500)
+                .body(body::Body::from("Internal Server Error"))
+                .unwrap()
+        }
+    }
 }
