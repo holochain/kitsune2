@@ -561,56 +561,24 @@ fn b64_to_bytes(
 async fn handle_iroh_relay(
     extract::State(state): extract::State<AppState>,
     req: http::Request<body::Body>,
-) -> response::Response {
-    use http_body_util::BodyExt;
-    // Import the Service trait from hyper
-    use hyper::service::Service;
+) -> impl axum::response::IntoResponse {
+    // The fundamental issue: RelayService expects Request<Incoming>, but we have Request<Body>
+    // and there's no safe way to convert between them because Incoming is a specific type
+    // used by hyper's connection handling.
+    //
+    // The relay service needs to upgrade WebSocket connections, which requires access to
+    // the underlying TCP stream. This can't be done through a simple HTTP handler.
+    //
+    // Temporary solution: Return an error explaining that the relay must be accessed directly
+    // TODO: Integrate at the server level using hyper-util's service combinators
 
-    // Convert the axum request to a hyper request
-    // We need to read the axum body and create a hyper-compatible body
-    let (parts, axum_body) = req.into_parts();
+    tracing::warn!(
+        "Relay request received at {}, but relay integration is not yet fully implemented",
+        req.uri()
+    );
 
-    // Read the entire body into bytes
-    let body_bytes = match axum::body::to_bytes(axum_body, usize::MAX).await {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            tracing::error!("Error reading request body: {:?}", err);
-            return response::Response::builder()
-                .status(500)
-                .body(body::Body::from("Failed to read request body"))
-                .unwrap();
-        }
-    };
-
-    // Create a hyper Incoming body from the bytes
-    // Note: We use Full<Bytes> which can be used where Incoming is expected
-    let hyper_body = http_body_util::Full::new(body_bytes);
-    let hyper_req = http::Request::from_parts(parts, hyper_body);
-
-    // Call the relay service using the Service trait
-    let mut service = state.iroh_relay_service.clone();
-    match service.call(hyper_req).await {
-        Ok(response) => {
-            // Convert the response body back to axum body
-            let (parts, hyper_body) = response.into_parts();
-            let bytes = match hyper_body.collect().await {
-                Ok(collected) => collected.to_bytes(),
-                Err(err) => {
-                    tracing::error!("Error collecting response body: {:?}", err);
-                    return response::Response::builder()
-                        .status(500)
-                        .body(body::Body::from("Failed to collect response body"))
-                        .unwrap();
-                }
-            };
-            http::Response::from_parts(parts, body::Body::from(bytes))
-        }
-        Err(err) => {
-            tracing::error!("Error handling relay request: {:?}", err);
-            response::Response::builder()
-                .status(500)
-                .body(body::Body::from("Internal Server Error"))
-                .unwrap()
-        }
-    }
+    (
+        http::StatusCode::SERVICE_UNAVAILABLE,
+        "Relay service integration in progress. Please use the standalone relay server for now."
+    )
 }
