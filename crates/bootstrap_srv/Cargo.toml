@@ -50,6 +50,7 @@ opentelemetry = { workspace = true }
 iroh = { workspace = true, optional = true }
 iroh-relay = { workspace = true, features = ["server"], optional = true }
 http-body-util = { version = "0.1", optional = true }
+hyper = { version = "1", optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -68,4 +69,4 @@ http2 = ["axum/http2"]
 sbd = ["dep:sbd-server"]
 
 # use iroh relay server
-iroh-relay = ["dep:iroh", "dep:iroh-relay", "dep:http-body-util"]
+iroh-relay = ["dep:iroh", "dep:iroh-relay", "dep:http-body-util", "dep:hyper"]

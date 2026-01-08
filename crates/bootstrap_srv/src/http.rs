@@ -562,25 +562,47 @@ async fn handle_iroh_relay(
     extract::State(state): extract::State<AppState>,
     req: http::Request<body::Body>,
 ) -> response::Response {
+    use http_body_util::BodyExt;
+    // Import the Service trait from hyper
     use hyper::service::Service;
-    use hyper::body::Incoming;
 
-    // Convert axum body to hyper Incoming body
-    let (parts, body) = req.into_parts();
-    let body = Incoming::from(body);
-    let req = http::Request::from_parts(parts, body);
+    // Convert the axum request to a hyper request
+    // We need to read the axum body and create a hyper-compatible body
+    let (parts, axum_body) = req.into_parts();
 
-    // Call the relay service
-    match state.iroh_relay_service.call(req).await {
+    // Read the entire body into bytes
+    let body_bytes = match axum::body::to_bytes(axum_body, usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            tracing::error!("Error reading request body: {:?}", err);
+            return response::Response::builder()
+                .status(500)
+                .body(body::Body::from("Failed to read request body"))
+                .unwrap();
+        }
+    };
+
+    // Create a hyper Incoming body from the bytes
+    // Note: We use Full<Bytes> which can be used where Incoming is expected
+    let hyper_body = http_body_util::Full::new(body_bytes);
+    let hyper_req = http::Request::from_parts(parts, hyper_body);
+
+    // Call the relay service using the Service trait
+    let mut service = state.iroh_relay_service.clone();
+    match service.call(hyper_req).await {
         Ok(response) => {
-            // Convert the response body from Full<Bytes> to axum body
-            let (parts, body) = response.into_parts();
-            let bytes = hyper::body::Bytes::copy_from_slice(
-                &http_body_util::BodyExt::collect(body)
-                    .await
-                    .unwrap_or_default()
-                    .to_bytes()
-            );
+            // Convert the response body back to axum body
+            let (parts, hyper_body) = response.into_parts();
+            let bytes = match hyper_body.collect().await {
+                Ok(collected) => collected.to_bytes(),
+                Err(err) => {
+                    tracing::error!("Error collecting response body: {:?}", err);
+                    return response::Response::builder()
+                        .status(500)
+                        .body(body::Body::from("Failed to collect response body"))
+                        .unwrap();
+                }
+            };
             http::Response::from_parts(parts, body::Body::from(bytes))
         }
         Err(err) => {
