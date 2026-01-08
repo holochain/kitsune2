@@ -158,5 +158,5 @@ jsonschema = "0.30.0"
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
 #tx5-core = { path = "../tx5/crates/tx5-core" }
 #tx5 = { path = "../tx5/crates/tx5" }
-iroh = { path = "../iroh/iroh" }
-iroh-relay = { path = "../iroh/iroh-relay" }
+iroh = { git = "https://github.com/lucksus/iroh.git", branch = "embeddable-relay-server-v0.95.1" }
+iroh-relay = { git = "https://github.com/lucksus/iroh.git", branch = "embeddable-relay-server-v0.95.1" }
