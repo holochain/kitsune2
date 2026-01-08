@@ -18,25 +18,26 @@
 //! integration since WebSocket connections are already established when they
 //! reach the handler.
 
+use axum::response::{IntoResponse, Response};
+use governor::clock::DefaultClock;
+use governor::state::{InMemoryState, NotKeyed};
+use governor::{Quota, RateLimiter};
+use http::{Request, StatusCode};
 use iroh_relay::server::axum_integration::RelayState;
 use iroh_relay::server::{AccessConfig, Metrics};
 use iroh_relay::KeyCache;
+use std::future::Future;
 use std::num::NonZeroU32;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::pin::Pin;
-use std::future::Future;
-use governor::{Quota, RateLimiter};
-use governor::state::{InMemoryState, NotKeyed};
-use governor::clock::DefaultClock;
 use tower::{Layer, Service};
-use axum::response::{IntoResponse, Response};
-use http::{Request, StatusCode};
 
 pub use iroh_relay::server::axum_integration::relay_handler;
 pub use iroh_relay::server::ClientRateLimit;
 
-pub type ConnectionRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
+pub type ConnectionRateLimiter =
+    Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
 
 /// Layer for rate limiting relay connections
 #[derive(Clone)]
@@ -76,9 +77,14 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = Pin<
+        Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>,
+    >;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
@@ -151,7 +157,9 @@ impl Default for Config {
 /// Creates a connection rate limiter from the limits configuration
 ///
 /// Returns None if no connection rate limiting is configured.
-fn create_connection_rate_limiter(limits: &Limits) -> Option<ConnectionRateLimiter> {
+fn create_connection_rate_limiter(
+    limits: &Limits,
+) -> Option<ConnectionRateLimiter> {
     let rate = limits.accept_conn_limit?;
     let burst = limits.accept_conn_burst?;
 
@@ -185,7 +193,9 @@ fn create_connection_rate_limiter(limits: &Limits) -> Option<ConnectionRateLimit
 /// - **Client-side byte-level rate limiting**: NOT supported (`client_rx` is ignored).
 ///   The axum integration receives already-established WebSocket connections without access
 ///   to the underlying TCP/TLS stream, making byte-level rate limiting impractical at this layer.
-pub(super) fn create_relay_state(limits: &Limits) -> (RelayState, Option<ConnectionRateLimiter>) {
+pub(super) fn create_relay_state(
+    limits: &Limits,
+) -> (RelayState, Option<ConnectionRateLimiter>) {
     let key_cache = KeyCache::new(1024);
     let access = Arc::new(AccessConfig::Everyone);
     let metrics = Arc::new(Metrics::default());
