@@ -47,15 +47,18 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
-axum-reverse-proxy = { workspace = true, optional = true }
 iroh = { workspace = true, optional = true }
-iroh-relay = { workspace = true, features = ["server"], optional = true }
+iroh-relay-holochain = { workspace = true, features = [
+  "server",
+], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
 rcgen = { workspace = true }
 sbd-client = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
+iroh-base = { workspace = true }
+rand_chacha = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 
 [features]
@@ -68,4 +71,4 @@ http2 = ["axum/http2"]
 sbd = ["dep:sbd-server"]
 
 # use iroh relay server
-iroh-relay = ["dep:axum-reverse-proxy", "dep:iroh", "dep:iroh-relay"]
+iroh-relay = ["dep:iroh", "dep:iroh-relay-holochain"]

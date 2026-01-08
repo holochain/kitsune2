@@ -1117,8 +1117,18 @@ async fn network_stats() {
         "opened at s is expected to be within one second difference, but is {}",
         opened_at_s.abs_diff(stats_ep_2.opened_at_s)
     );
-    // It's not guaranteed that by now the connection has been upgraded
-    // to a direct connection, so this isn't asserted.
+    // Both peers are on the same machine, so iroh should eventually
+    // discover a direct path. Wait for the connection to be upgraded.
+    retry_fn_until_timeout(
+        || async {
+            let stats = ep_1.dump_network_stats().await.unwrap();
+            stats.transport_stats.connections[0].is_direct
+        },
+        Some(5000),
+        Some(100),
+    )
+    .await
+    .expect("connection should be upgraded to direct on localhost");
 }
 
 /// Test that when a peer fails to return a preflight

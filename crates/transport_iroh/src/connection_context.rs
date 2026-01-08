@@ -6,9 +6,7 @@ use crate::{
     frame::{Frame, encode_frame},
 };
 use bytes::Bytes;
-use iroh::endpoint::ConnectionType;
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
-use n0_watcher::Watcher;
 use std::{
     fmt,
     sync::{
@@ -33,7 +31,6 @@ pub(super) struct ConnectionContext {
     recv_message_count: AtomicU64,
     recv_bytes: AtomicU64,
     opened_at_s: u64,
-    connection_type_watcher: Mutex<Option<n0_watcher::Direct<ConnectionType>>>,
     max_frame_bytes: usize,
 }
 
@@ -49,7 +46,6 @@ pub(super) struct ConnectionContextParams {
     pub remote_url: Option<Url>,
     pub preflight_sent: bool,
     pub opened_at_s: u64,
-    pub connection_type_watcher: Option<n0_watcher::Direct<ConnectionType>>,
     pub connections: Connections,
     pub local_url: Arc<RwLock<Option<Url>>>,
     pub max_frame_bytes: usize,
@@ -70,7 +66,6 @@ impl ConnectionContext {
             recv_message_count: AtomicU64::new(0),
             recv_bytes: AtomicU64::new(0),
             opened_at_s: params.opened_at_s,
-            connection_type_watcher: Mutex::new(params.connection_type_watcher),
             max_frame_bytes: params.max_frame_bytes,
         });
 
@@ -158,16 +153,9 @@ impl ConnectionContext {
         self.opened_at_s
     }
 
-    pub fn get_connection_type(&self) -> ConnectionType {
-        let mut lock = self.connection_type_watcher.lock().expect("poisoned");
-        match lock.take() {
-            Some(mut watcher) => {
-                let connection_type = watcher.get();
-                *lock = Some(watcher);
-                connection_type
-            }
-            None => ConnectionType::None,
-        }
+    /// Check if the connection's selected path is direct (IP-based, non-relay).
+    pub fn is_direct(&self) -> bool {
+        self.connection.is_direct()
     }
 
     pub fn abort_tasks(&self) {

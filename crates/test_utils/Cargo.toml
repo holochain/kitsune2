@@ -24,3 +24,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde_json = { workspace = true }
+kitsune2_bootstrap_srv = { workspace = true, optional = true }
+
+[features]
+# Enable relay server support in TestBootstrapSrv (for iroh transport tests)
+relay = ["dep:kitsune2_bootstrap_srv", "kitsune2_bootstrap_srv?/iroh-relay"]

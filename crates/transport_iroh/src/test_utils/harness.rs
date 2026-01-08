@@ -1,17 +1,17 @@
 use crate::{
     IrohTransportConfig, IrohTransportFactory, IrohTransportModConfig,
-    test_utils::relay_server::{Server, spawn_iroh_relay_server},
 };
 use kitsune2_api::{
     BoxFut, Builder, DynTransport, DynTxHandler, K2Result, SpaceId, Timestamp,
     TxBaseHandler, TxHandler, TxModuleHandler, TxSpaceHandler, Url,
 };
+use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
 use std::sync::{Arc, Mutex};
 
-/// Test harness for the transport_tx5 module
+/// Test harness for the transport_iroh module
 pub struct IrohTransportTestHarness {
-    /// iroh relay server
-    pub _relay_server: Server,
+    /// Bootstrap server with integrated relay support
+    pub _bootstrap_server: TestBootstrapSrv,
     /// kitsune2 builder
     pub builder: Arc<Builder>,
 }
@@ -25,12 +25,16 @@ impl IrohTransportTestHarness {
         }
         .with_default_config()
         .unwrap();
-        let (_, relay_url, relay_server) = spawn_iroh_relay_server().await;
+
+        // Spawn a test bootstrap server with integrated relay support
+        let bootstrap_server = TestBootstrapSrv::new(false).await;
+        let relay_url = format!("{}/relay", bootstrap_server.addr());
+
         builder
             .config
             .set_module_config(&IrohTransportModConfig {
                 iroh_transport: IrohTransportConfig {
-                    relay_url: Some(relay_url.to_string()),
+                    relay_url: Some(relay_url),
                     ..Default::default()
                 },
             })
@@ -38,7 +42,7 @@ impl IrohTransportTestHarness {
         let builder = Arc::new(builder);
         Self {
             builder,
-            _relay_server: relay_server,
+            _bootstrap_server: bootstrap_server,
         }
     }
 

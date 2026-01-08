@@ -180,10 +180,7 @@
 
 use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
-use iroh::{
-    Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl,
-    endpoint::ConnectionType,
-};
+use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
 use kitsune2_api::*;
 use std::{
     collections::HashMap,
@@ -311,9 +308,21 @@ impl TransportFactory for IrohTransportFactory {
             let handler = TxImpHnd::new(handler);
             let config: IrohTransportModConfig =
                 builder.config.get_module_config()?;
-            let imp =
-                IrohTransport::create(config.iroh_transport, handler.clone())
-                    .await?;
+
+            // Ensure the relay URL ends with '/' so that iroh appends
+            // paths correctly rather than replacing the last segment.
+            let mut transport_config = config.iroh_transport;
+            transport_config.relay_url =
+                transport_config.relay_url.map(|url| {
+                    if url.ends_with('/') {
+                        url
+                    } else {
+                        format!("{url}/")
+                    }
+                });
+
+            let imp = IrohTransport::create(transport_config, handler.clone())
+                .await?;
             Ok(DefaultTransport::create(&handler, imp))
         })
     }
@@ -480,8 +489,6 @@ impl IrohTransport {
                             .as_secs();
 
                         // Create a new connection context.
-                        let conn_type_watcher =
-                            endpoint.conn_type(connection.remote_id());
                         ConnectionContext::new(
                             ConnectionContextParams{
                             handler: handler.clone(),
@@ -489,7 +496,6 @@ impl IrohTransport {
                             remote_url: None,
                             preflight_sent: false,
                             opened_at_s: conn_opened_at_s,
-                            connection_type_watcher: conn_type_watcher,
                             connections: connections.clone(),
                             local_url: local_url.clone(),
                             max_frame_bytes,
@@ -556,14 +562,12 @@ impl IrohTransport {
             let preflight_bytes =
                 handler.peer_connect(remote_url.clone()).await?;
 
-            let conn_type_watcher = endpoint.conn_type(target.id);
             let ctx = ConnectionContext::new(ConnectionContextParams {
                 handler: handler.clone(),
                 connection: conn,
                 remote_url: Some(remote_url.clone()),
                 preflight_sent: true,
                 opened_at_s: conn_opened_at_s,
-                connection_type_watcher: conn_type_watcher,
                 connections: connections.clone(),
                 local_url: local_url.clone(),
                 max_frame_bytes: config.max_frame_bytes,
@@ -619,7 +623,10 @@ impl TxImp for IrohTransport {
         let connection_locks = self.connection_locks.clone();
 
         Box::pin(async move {
-            let remote = match endpoint_from_url(&remote_url) {
+            let remote = match endpoint_from_url(
+                &remote_url,
+                self.config.relay_url.as_deref(),
+            ) {
                 Err(e) => {
                     // If we cannot convert the url to an endpoint address, mark the peer unresponsive
                     let _ = self
@@ -746,10 +753,7 @@ impl TxImp for IrohTransport {
                         recv_message_count: context.get_recv_message_count(),
                         recv_bytes: context.get_recv_bytes(),
                         opened_at_s: context.get_opened_at_s(),
-                        is_direct: matches!(
-                            context.get_connection_type(),
-                            ConnectionType::Direct(_)
-                        ),
+                        is_direct: context.is_direct(),
                     }
                 })
                 .collect();
