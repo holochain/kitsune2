@@ -1,7 +1,11 @@
 use iroh_relay::server::{AccessConfig, Handlers, Metrics, RelayService};
 use iroh_relay::KeyCache;
+use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio_util::task::AbortOnDropHandle;
+use tracing::{debug, error, info};
 
 pub use iroh_relay::server::ClientRateLimit;
 
@@ -38,14 +42,66 @@ impl Default for Config {
     }
 }
 
-/// Creates a new embedded iroh relay service that can be integrated into an existing HTTP server
-pub(super) fn create_relay_service(limits: &Limits) -> RelayService {
+/// A handle to the running relay server
+pub struct RelayServerHandle {
+    pub addr: SocketAddr,
+    _task: AbortOnDropHandle<()>,
+}
+
+/// Spawns the embedded relay service on the given address using hyper-util
+///
+/// This runs the relay service at the connection level, which is required for
+/// WebSocket upgrades. The service is integrated using hyper-util rather than
+/// through an axum handler.
+pub(super) async fn spawn_relay_service(
+    addr: SocketAddr,
+    limits: &Limits,
+) -> std::io::Result<RelayServerHandle> {
     let handlers = Handlers::default();
     let headers = http::HeaderMap::new();
     let rate_limit = limits.client_rx;
-    let key_cache = KeyCache::new(1024); // Default cache capacity
+    let key_cache = KeyCache::new(1024);
     let access = AccessConfig::Everyone;
     let metrics = Arc::new(Metrics::default());
 
-    RelayService::new(handlers, headers, rate_limit, key_cache, access, metrics)
+    let relay_service = RelayService::new(handlers, headers, rate_limit, key_cache, access, metrics);
+
+    let listener = TcpListener::bind(addr).await?;
+    let bound_addr = listener.local_addr()?;
+
+    info!("Embedded relay service listening on {}", bound_addr);
+
+    let task = tokio::spawn(async move {
+        use hyper::service::Service;
+        use hyper_util::rt::{TokioExecutor, TokioIo};
+        use hyper_util::server::conn::auto;
+
+        loop {
+            match listener.accept().await {
+                Ok((stream, peer_addr)) => {
+                    debug!("Relay connection from {}", peer_addr);
+
+                    let service = relay_service.clone();
+                    let io = TokioIo::new(stream);
+
+                    tokio::spawn(async move {
+                        if let Err(err) = auto::Builder::new(TokioExecutor::new())
+                            .serve_connection(io, service)
+                            .await
+                        {
+                            error!("Error serving relay connection: {:?}", err);
+                        }
+                    });
+                }
+                Err(err) => {
+                    error!("Error accepting relay connection: {:?}", err);
+                }
+            }
+        }
+    });
+
+    Ok(RelayServerHandle {
+        addr: bound_addr,
+        _task: AbortOnDropHandle::new(task),
+    })
 }

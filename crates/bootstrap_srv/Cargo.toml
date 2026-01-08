@@ -54,6 +54,7 @@ http-body = { version = "1", optional = true }
 hyper = { version = "1", optional = true }
 hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 futures-util = { version = "0.3", optional = true }
+tokio-util = { version = "0.7", features = ["rt"], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -72,4 +73,4 @@ http2 = ["axum/http2"]
 sbd = ["dep:sbd-server"]
 
 # use iroh relay server
-iroh-relay = ["dep:iroh", "dep:iroh-relay", "dep:http-body-util", "dep:http-body", "dep:hyper", "dep:hyper-util", "dep:futures-util"]
+iroh-relay = ["dep:iroh", "dep:iroh-relay", "dep:http-body-util", "dep:http-body", "dep:hyper", "dep:hyper-util", "dep:futures-util", "dep:tokio-util"]
