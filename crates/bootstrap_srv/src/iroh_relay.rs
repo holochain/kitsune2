@@ -1,13 +1,20 @@
-use iroh_relay::server::{AccessConfig, Handlers, Metrics, RelayService};
+use iroh_relay::server::axum_integration::RelayState;
+use iroh_relay::server::{AccessConfig, Metrics};
 use iroh_relay::KeyCache;
-use std::net::SocketAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio_util::task::AbortOnDropHandle;
-use tracing::{debug, error, info};
 
+pub use iroh_relay::server::axum_integration::relay_handler;
 pub use iroh_relay::server::ClientRateLimit;
+
+/// Handler for the relay probe endpoint (`/ping`).
+/// This is used for latency testing and availability checks.
+pub async fn relay_probe_handler() -> (axum::http::StatusCode, axum::response::AppendHeaders<[(axum::http::HeaderName, &'static str); 1]>) {
+    (
+        axum::http::StatusCode::OK,
+        axum::response::AppendHeaders([(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")]),
+    )
+}
 
 /// Rate limits configuration for the relay server
 #[derive(Debug, Default)]
@@ -42,66 +49,18 @@ impl Default for Config {
     }
 }
 
-/// A handle to the running relay server
-pub struct RelayServerHandle {
-    pub addr: SocketAddr,
-    _task: AbortOnDropHandle<()>,
-}
-
-/// Spawns the embedded relay service on the given address using hyper-util
+/// Creates a RelayState instance for the axum relay handler
 ///
-/// This runs the relay service at the connection level, which is required for
-/// WebSocket upgrades. The service is integrated using hyper-util rather than
-/// through an axum handler.
-pub(super) async fn spawn_relay_service(
-    addr: SocketAddr,
-    limits: &Limits,
-) -> std::io::Result<RelayServerHandle> {
-    let handlers = Handlers::default();
-    let headers = http::HeaderMap::new();
-    let rate_limit = limits.client_rx;
+/// This creates the state needed for the relay handler which can be mounted
+/// as a standard axum route.
+///
+/// Note: The `limits` parameter is currently unused because the axum integration
+/// does not support client-side rate limiting. Rate limiting would need to be
+/// implemented at the axum middleware level if required.
+pub(super) fn create_relay_state(_limits: &Limits) -> RelayState {
     let key_cache = KeyCache::new(1024);
-    let access = AccessConfig::Everyone;
+    let access = Arc::new(AccessConfig::Everyone);
     let metrics = Arc::new(Metrics::default());
 
-    let relay_service = RelayService::new(handlers, headers, rate_limit, key_cache, access, metrics);
-
-    let listener = TcpListener::bind(addr).await?;
-    let bound_addr = listener.local_addr()?;
-
-    info!("Embedded relay service listening on {}", bound_addr);
-
-    let task = tokio::spawn(async move {
-        use hyper::service::Service;
-        use hyper_util::rt::{TokioExecutor, TokioIo};
-        use hyper_util::server::conn::auto;
-
-        loop {
-            match listener.accept().await {
-                Ok((stream, peer_addr)) => {
-                    debug!("Relay connection from {}", peer_addr);
-
-                    let service = relay_service.clone();
-                    let io = TokioIo::new(stream);
-
-                    tokio::spawn(async move {
-                        if let Err(err) = auto::Builder::new(TokioExecutor::new())
-                            .serve_connection(io, service)
-                            .await
-                        {
-                            error!("Error serving relay connection: {:?}", err);
-                        }
-                    });
-                }
-                Err(err) => {
-                    error!("Error accepting relay connection: {:?}", err);
-                }
-            }
-        }
-    });
-
-    Ok(RelayServerHandle {
-        addr: bound_addr,
-        _task: AbortOnDropHandle::new(task),
-    })
+    RelayState::new(key_cache, access, metrics)
 }

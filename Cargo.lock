@@ -317,9 +317,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b098575ebe77cb6d14fc7f32749631a6e44edbef6b796f89b020e99ba20d425"
+checksum = "8b52af3cb4058c895d37317bb27508dccc8e5f2d39454016b297bf4a400597b8"
 dependencies = [
  "axum-core",
  "base64",
@@ -2184,7 +2184,7 @@ dependencies = [
 [[package]]
 name = "iroh"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?branch=embeddable-relay-server-v0.95.1#b7c6bd182fbf228224caa74505db4b15f0bc3c31"
+source = "git+https://github.com/lucksus/iroh.git?rev=d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b#d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b"
 dependencies = [
  "aead",
  "axum",
@@ -2239,7 +2239,7 @@ dependencies = [
 [[package]]
 name = "iroh-base"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?branch=embeddable-relay-server-v0.95.1#b7c6bd182fbf228224caa74505db4b15f0bc3c31"
+source = "git+https://github.com/lucksus/iroh.git?rev=d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b#d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b"
 dependencies = [
  "curve25519-dalek 5.0.0-pre.1",
  "data-encoding",
@@ -2343,9 +2343,10 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?branch=embeddable-relay-server-v0.95.1#b7c6bd182fbf228224caa74505db4b15f0bc3c31"
+source = "git+https://github.com/lucksus/iroh.git?rev=d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b#d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b"
 dependencies = [
  "ahash",
+ "axum",
  "blake3",
  "bytes",
  "cfg_aliases",
