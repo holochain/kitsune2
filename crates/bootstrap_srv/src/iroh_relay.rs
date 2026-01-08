@@ -9,10 +9,16 @@ pub use iroh_relay::server::ClientRateLimit;
 
 /// Handler for the relay probe endpoint (`/ping`).
 /// This is used for latency testing and availability checks.
-pub async fn relay_probe_handler() -> (axum::http::StatusCode, axum::response::AppendHeaders<[(axum::http::HeaderName, &'static str); 1]>) {
+pub async fn relay_probe_handler() -> (
+    axum::http::StatusCode,
+    axum::response::AppendHeaders<[(axum::http::HeaderName, &'static str); 1]>,
+) {
     (
         axum::http::StatusCode::OK,
-        axum::response::AppendHeaders([(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")]),
+        axum::response::AppendHeaders([(
+            axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            "*",
+        )]),
     )
 }
 
