@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 #[cfg(feature = "iroh-relay")]
-use {tracing::info};
+use tracing::{error, info};
 
 pub struct HttpResponse {
     pub status: u16,
@@ -260,19 +260,41 @@ fn tokio_thread(
                     .allow_credentials(allow_credentials)
                 );
 
+            // Spawn the relay service on companion ports (base_port + 10000)
+            // The relay service runs at the connection level using hyper-util
+            // and handles WebSocket upgrades that axum cannot support
             #[cfg(feature = "iroh-relay")]
-            let iroh_relay_service = crate::iroh_relay::create_relay_service(&config.iroh_relay.limits);
+            let _relay_handles = if !config.no_relay_server {
+                let mut handles = Vec::new();
+                for addr in &server_config.addrs {
+                    // Use a different port for the relay service to avoid conflicts
+                    // Clients will discover the relay address through the bootstrap API
+                    let relay_addr = std::net::SocketAddr::new(
+                        addr.ip(),
+                        addr.port().saturating_add(10000), // Relay on port + 10000
+                    );
+
+                    match crate::iroh_relay::spawn_relay_service(relay_addr, &config.iroh_relay.limits).await {
+                        Ok(handle) => {
+                            info!("Relay service listening on {} (bootstrap on {})", handle.addr, addr);
+                            handles.push(handle);
+                        }
+                        Err(err) => {
+                            error!("Failed to spawn relay service on {}: {}", relay_addr, err);
+                            let _ = ready.send(Err(err));
+                            return;
+                        }
+                    }
+                }
+                Some(handles)
+            } else {
+                None
+            };
 
             if !config.no_relay_server {
                 #[cfg(feature = "sbd")]
                 {
                     app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
-                }
-                #[cfg(feature = "iroh-relay")]
-                {
-                    info!("Embedded iroh relay service created");
-                    // The relay service handles the /relay endpoint and will be used as a fallback
-                    app = app.fallback(handle_iroh_relay);
                 }
             }
 
@@ -298,8 +320,6 @@ fn tokio_thread(
                             })
                         }
                     },
-                    #[cfg(feature = "iroh-relay")]
-                    iroh_relay_service,
                 });
 
             let receiver = HttpReceiver(h_recv);
@@ -557,28 +577,3 @@ fn b64_to_bytes(
     ))
 }
 
-#[cfg(feature = "iroh-relay")]
-async fn handle_iroh_relay(
-    extract::State(state): extract::State<AppState>,
-    req: http::Request<body::Body>,
-) -> impl axum::response::IntoResponse {
-    // The fundamental issue: RelayService expects Request<Incoming>, but we have Request<Body>
-    // and there's no safe way to convert between them because Incoming is a specific type
-    // used by hyper's connection handling.
-    //
-    // The relay service needs to upgrade WebSocket connections, which requires access to
-    // the underlying TCP stream. This can't be done through a simple HTTP handler.
-    //
-    // Temporary solution: Return an error explaining that the relay must be accessed directly
-    // TODO: Integrate at the server level using hyper-util's service combinators
-
-    tracing::warn!(
-        "Relay request received at {}, but relay integration is not yet fully implemented",
-        req.uri()
-    );
-
-    (
-        http::StatusCode::SERVICE_UNAVAILABLE,
-        "Relay service integration in progress. Please use the standalone relay server for now."
-    )
-}
