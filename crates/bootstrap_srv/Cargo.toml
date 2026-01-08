@@ -52,12 +52,6 @@ iroh-relay = { workspace = true, features = [
   "server",
   "axum",
 ], optional = true }
-http-body-util = { version = "0.1", optional = true }
-http-body = { version = "1", optional = true }
-hyper = { version = "1", optional = true }
-hyper-util = { version = "0.1", features = ["tokio"], optional = true }
-futures-util = { version = "0.3", optional = true }
-tokio-util = { version = "0.7", features = ["rt"], optional = true }
 
 [dev-dependencies]
 ureq = { workspace = true }
@@ -80,8 +74,4 @@ sbd = ["dep:sbd-server"]
 iroh-relay = [
   "dep:iroh",
   "dep:iroh-relay",
-  "dep:http-body-util",
-  "dep:hyper",
-  "dep:hyper-util",
-  "dep:tokio-util",
 ]
