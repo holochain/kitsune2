@@ -5,8 +5,8 @@
 
 use axum::{
     extract::{
-        State,
         ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
+        State,
     },
     http::HeaderMap,
     response::Response,
@@ -22,14 +22,14 @@ use tokio_websockets::Error as WsError;
 use tracing::{debug, trace, warn};
 
 use iroh_relay::{
-    ExportKeyingMaterial, KeyCache,
-    protos::{handshake, relay::PER_CLIENT_SEND_QUEUE_DEPTH, streams::StreamError},
-    server::{
-        AccessConfig, Metrics,
-        client::Config,
-        clients::Clients,
-        streams::RelayedStream,
+    protos::{
+        handshake, relay::PER_CLIENT_SEND_QUEUE_DEPTH, streams::StreamError,
     },
+    server::{
+        client::Config, clients::Clients, streams::RelayedStream, AccessConfig,
+        Metrics,
+    },
+    ExportKeyingMaterial, KeyCache,
 };
 
 /// State required for the relay handler
@@ -57,7 +57,11 @@ pub struct RelayState {
 
 impl RelayState {
     /// Create a new RelayState with default write timeout
-    pub fn new(key_cache: KeyCache, access: Arc<AccessConfig>, metrics: Arc<Metrics>) -> Self {
+    pub fn new(
+        key_cache: KeyCache,
+        access: Arc<AccessConfig>,
+        metrics: Arc<Metrics>,
+    ) -> Self {
         Self {
             key_cache,
             access,
@@ -77,12 +81,15 @@ pub async fn relay_handler(
     headers: HeaderMap,
 ) -> Response {
     // Extract the client auth header if present
-    let client_auth_header = headers.get(iroh_relay::http::CLIENT_AUTH_HEADER).cloned();
+    let client_auth_header =
+        headers.get(iroh_relay::http::CLIENT_AUTH_HEADER).cloned();
 
     debug!("Relay WebSocket upgrade request");
 
     ws.on_upgrade(move |socket| async move {
-        if let Err(e) = handle_relay_websocket(socket, state, client_auth_header).await {
+        if let Err(e) =
+            handle_relay_websocket(socket, state, client_auth_header).await
+        {
             warn!("Error handling relay WebSocket: {:?}", e);
         }
     })
@@ -102,7 +109,10 @@ impl AxumWebSocketAdapter {
 impl Stream for AxumWebSocketAdapter {
     type Item = Result<Bytes, StreamError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
         // Poll the underlying axum WebSocket
         loop {
             match Pin::new(&mut self.inner).poll_next(cx) {
@@ -120,10 +130,12 @@ impl Stream for AxumWebSocketAdapter {
                 }
                 Poll::Ready(Some(Err(e))) => {
                     // Convert axum error to WsError
-                    return Poll::Ready(Some(Err(WsError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("{:?}", e),
-                    )))));
+                    return Poll::Ready(Some(Err(WsError::Io(
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("{:?}", e),
+                        ),
+                    ))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
                 Poll::Pending => return Poll::Pending,
@@ -135,18 +147,26 @@ impl Stream for AxumWebSocketAdapter {
 impl Sink<Bytes> for AxumWebSocketAdapter {
     type Error = StreamError;
 
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
         match Pin::new(&mut self.inner).poll_ready(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(WsError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("{:?}", e),
-            )))),
+            Poll::Ready(Err(e)) => {
+                Poll::Ready(Err(WsError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("{:?}", e),
+                ))))
+            }
             Poll::Pending => Poll::Pending,
         }
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: Bytes) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        item: Bytes,
+    ) -> Result<(), Self::Error> {
         Pin::new(&mut self.inner)
             .start_send(AxumMessage::Binary(item))
             .map_err(|e| {
@@ -157,24 +177,34 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
             })
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
         match Pin::new(&mut self.inner).poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(WsError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("{:?}", e),
-            )))),
+            Poll::Ready(Err(e)) => {
+                Poll::Ready(Err(WsError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("{:?}", e),
+                ))))
+            }
             Poll::Pending => Poll::Pending,
         }
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
         match Pin::new(&mut self.inner).poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(WsError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("{:?}", e),
-            )))),
+            Poll::Ready(Err(e)) => {
+                Poll::Ready(Err(WsError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("{:?}", e),
+                ))))
+            }
             Poll::Pending => Poll::Pending,
         }
     }
@@ -206,11 +236,13 @@ async fn handle_relay_websocket(
     let mut adapter = AxumWebSocketAdapter::new(socket);
 
     // Perform the relay protocol handshake
-    let authentication = handshake::serverside(&mut adapter, client_auth_header).await?;
+    let authentication =
+        handshake::serverside(&mut adapter, client_auth_header).await?;
 
     trace!(?authentication.mechanism, "accept: verified authentication");
 
-    let is_authorized = state.access.is_allowed(authentication.client_key).await;
+    let is_authorized =
+        state.access.is_allowed(authentication.client_key).await;
     let client_key = authentication
         .authorize_if(is_authorized, &mut adapter)
         .await?;
@@ -240,10 +272,10 @@ async fn handle_relay_websocket(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::Router;
     use axum::routing::get;
-    use iroh_base::{RelayUrl, SecretKey};
+    use axum::Router;
     use futures::{SinkExt, StreamExt};
+    use iroh_base::{RelayUrl, SecretKey};
     use rand_chacha::rand_core::SeedableRng;
     use std::net::Ipv4Addr;
     use tokio::net::TcpListener;
@@ -298,7 +330,8 @@ mod tests {
     /// Integration test: Start an axum server with the relay handler and connect clients
     #[tokio::test]
     #[instrument]
-    async fn test_axum_relay_integration() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_axum_relay_integration(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42u64);
 
         // Create relay state
@@ -334,17 +367,25 @@ mod tests {
         let a_key = a_secret_key.public();
         let resolver = DnsResolver::new();
         info!("Connecting client A");
-        let mut client_a = ClientBuilder::new(relay_url.clone(), a_secret_key, resolver.clone())
-            .connect()
-            .await?;
+        let mut client_a = ClientBuilder::new(
+            relay_url.clone(),
+            a_secret_key,
+            resolver.clone(),
+        )
+        .connect()
+        .await?;
 
         // Create client B
         let b_secret_key = SecretKey::generate(&mut rng);
         let b_key = b_secret_key.public();
         info!("Connecting client B");
-        let mut client_b = ClientBuilder::new(relay_url.clone(), b_secret_key, resolver.clone())
-            .connect()
-            .await?;
+        let mut client_b = ClientBuilder::new(
+            relay_url.clone(),
+            b_secret_key,
+            resolver.clone(),
+        )
+        .connect()
+        .await?;
 
         info!("Sending message from A to B");
         // Send message from A to B
@@ -357,10 +398,13 @@ mod tests {
             .await?;
 
         // Receive on B
-        let received = tokio::time::timeout(std::time::Duration::from_secs(2), client_b.next())
-            .await
-            .expect("timeout waiting for message")
-            .expect("stream ended")?;
+        let received = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            client_b.next(),
+        )
+        .await
+        .expect("timeout waiting for message")
+        .expect("stream ended")?;
 
         match received {
             RelayToClientMsg::Datagrams {
@@ -385,10 +429,13 @@ mod tests {
             .await?;
 
         // Receive on A
-        let received = tokio::time::timeout(std::time::Duration::from_secs(2), client_a.next())
-            .await
-            .expect("timeout waiting for message")
-            .expect("stream ended")?;
+        let received = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            client_a.next(),
+        )
+        .await
+        .expect("timeout waiting for message")
+        .expect("stream ended")?;
 
         match received {
             RelayToClientMsg::Datagrams {
