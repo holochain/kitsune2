@@ -1016,7 +1016,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15faaf8ab2b10994dcc623bf0d1c243f210ad31112943211dd9b43df4977f6c2"
 dependencies = [
  "datachannel-sys",
- "derive_more 2.1.0",
+ "derive_more",
  "parking_lot",
  "serde",
  "tracing",
@@ -1093,32 +1093,11 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
-dependencies = [
- "derive_more-impl 1.0.0",
-]
-
-[[package]]
-name = "derive_more"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10b768e943bed7bf2cab53df09f4bc34bfd217cdb57d971e769874c9a6710618"
 dependencies = [
- "derive_more-impl 2.1.0",
-]
-
-[[package]]
-name = "derive_more-impl"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
- "unicode-xid",
+ "derive_more-impl",
 ]
 
 [[package]]
@@ -2211,7 +2190,7 @@ dependencies = [
 [[package]]
 name = "iroh"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?rev=d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b#d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b"
+source = "git+https://github.com/lucksus/iroh.git?rev=1b62149468d2967470f6786a934833293673b051#1b62149468d2967470f6786a934833293673b051"
 dependencies = [
  "aead",
  "axum",
@@ -2220,7 +2199,7 @@ dependencies = [
  "cfg_aliases",
  "crypto_box",
  "data-encoding",
- "derive_more 2.1.0",
+ "derive_more",
  "ed25519-dalek 3.0.0-pre.1",
  "futures-util",
  "getrandom 0.3.4",
@@ -2266,11 +2245,11 @@ dependencies = [
 [[package]]
 name = "iroh-base"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?rev=d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b#d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b"
+source = "git+https://github.com/lucksus/iroh.git?rev=1b62149468d2967470f6786a934833293673b051#1b62149468d2967470f6786a934833293673b051"
 dependencies = [
  "curve25519-dalek 5.0.0-pre.1",
  "data-encoding",
- "derive_more 2.1.0",
+ "derive_more",
  "ed25519-dalek 3.0.0-pre.1",
  "n0-error",
  "rand_core 0.9.3",
@@ -2370,17 +2349,16 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?rev=d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b#d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b"
+source = "git+https://github.com/lucksus/iroh.git?rev=1b62149468d2967470f6786a934833293673b051#1b62149468d2967470f6786a934833293673b051"
 dependencies = [
  "ahash",
- "axum",
  "blake3",
  "bytes",
  "cfg_aliases",
  "clap",
  "dashmap",
  "data-encoding",
- "derive_more 2.1.0",
+ "derive_more",
  "getrandom 0.3.4",
  "hickory-resolver",
  "http",
@@ -2601,11 +2579,13 @@ dependencies = [
  "governor",
  "http",
  "iroh",
+ "iroh-base",
  "iroh-relay",
  "kitsune2_test_utils",
  "num_cpus",
  "opentelemetry",
  "rand 0.8.5",
+ "rand_chacha 0.9.0",
  "rcgen 0.13.2",
  "rustls",
  "sbd-client 0.3.3",
@@ -2614,6 +2594,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-websockets",
  "tower",
  "tower-http",
  "tracing",
@@ -3038,12 +3019,12 @@ dependencies = [
 
 [[package]]
 name = "n0-future"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c0709ac8235ce13b82bc4d180ee3c42364b90c1a8a628c3422d991d75a728b5"
+checksum = "e2ab99dfb861450e68853d34ae665243a88b8c493d01ba957321a1e9b2312bbe"
 dependencies = [
  "cfg_aliases",
- "derive_more 1.0.0",
+ "derive_more",
  "futures-buffered",
  "futures-lite",
  "futures-util",
@@ -3063,7 +3044,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38acf13c1ddafc60eb7316d52213467f8ccb70b6f02b65e7d97f7799b1f50be4"
 dependencies = [
- "derive_more 2.1.0",
+ "derive_more",
  "n0-error",
  "n0-future",
 ]
@@ -3148,7 +3129,7 @@ dependencies = [
  "atomic-waker",
  "bytes",
  "cfg_aliases",
- "derive_more 2.1.0",
+ "derive_more",
  "iroh-quinn-udp",
  "js-sys",
  "libc",
@@ -3727,7 +3708,7 @@ checksum = "7b575f975dcf03e258b0c7ab3f81497d7124f508884c37da66a7314aa2a8d467"
 dependencies = [
  "base64",
  "bytes",
- "derive_more 2.1.0",
+ "derive_more",
  "futures-lite",
  "futures-util",
  "hyper-util",

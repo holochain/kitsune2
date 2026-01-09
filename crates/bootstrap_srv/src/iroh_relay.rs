@@ -23,7 +23,6 @@ use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
 use http::{Request, StatusCode};
-use iroh_relay::server::axum_integration::RelayState;
 use iroh_relay::server::{AccessConfig, Metrics};
 use iroh_relay::KeyCache;
 use std::future::Future;
@@ -34,7 +33,7 @@ use std::task::{Context, Poll};
 use tower::{Layer, Service};
 use tracing::warn;
 
-pub use iroh_relay::server::axum_integration::relay_handler;
+pub use crate::iroh_relay_axum::{relay_handler, RelayState};
 pub use iroh_relay::server::ClientRateLimit;
 
 pub type ConnectionRateLimiter =

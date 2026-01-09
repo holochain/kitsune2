@@ -50,8 +50,8 @@ opentelemetry = { workspace = true }
 iroh = { workspace = true, optional = true }
 iroh-relay = { workspace = true, features = [
   "server",
-  "axum",
 ], optional = true }
+tokio-websockets = { version = "0.12", features = ["rustls-bring-your-own-connector", "ring", "getrandom", "rand", "server"], optional = true }
 
 [dev-dependencies]
 ureq = { workspace = true }
@@ -59,6 +59,8 @@ rand = { workspace = true }
 rcgen = { workspace = true }
 sbd-client = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
+iroh-base = { workspace = true }
+rand_chacha = "0.9"
 kitsune2_test_utils = { workspace = true }
 
 [features]
@@ -74,4 +76,5 @@ sbd = ["dep:sbd-server"]
 iroh-relay = [
   "dep:iroh",
   "dep:iroh-relay",
+  "dep:tokio-websockets",
 ]

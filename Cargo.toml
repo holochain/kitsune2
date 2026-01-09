@@ -148,6 +148,7 @@ kitsune2_test_utils = { version = "0.4.0-dev.0", path = "crates/test_utils" }
 sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
 iroh-relay = "0.95.1"
+iroh-base = "0.95.1"
 
 # used to hash op data
 sha2 = "0.10.8"
@@ -162,5 +163,6 @@ jsonschema = "0.30.0"
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
 #tx5-core = { path = "../tx5/crates/tx5-core" }
 #tx5 = { path = "../tx5/crates/tx5" }
-iroh = { git = "https://github.com/lucksus/iroh.git", rev = "d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b" }
-iroh-relay = { git = "https://github.com/lucksus/iroh.git", rev = "d15e0104fd7e17f2dba15e9ff41ed8e7cf30043b" }
+iroh = { git = "https://github.com/lucksus/iroh.git", rev = "1b62149468d2967470f6786a934833293673b051" }
+iroh-base = { git = "https://github.com/lucksus/iroh.git", rev = "1b62149468d2967470f6786a934833293673b051" }
+iroh-relay = { git = "https://github.com/lucksus/iroh.git", rev = "1b62149468d2967470f6786a934833293673b051" }
