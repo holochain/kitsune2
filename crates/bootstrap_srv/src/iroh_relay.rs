@@ -20,8 +20,8 @@
 
 // Re-export the public API from iroh_relay_axum
 pub use crate::iroh_relay_axum::{
+    create_relay_state, relay_handler, relay_probe_handler,
     ConnectionRateLimiter, Limits, RateLimitLayer, RateLimitService,
-    RelayConfig, RelayState, create_relay_state, relay_handler,
-    relay_probe_handler,
+    RelayConfig, RelayState,
 };
 pub use iroh_relay::server::ClientRateLimit;
