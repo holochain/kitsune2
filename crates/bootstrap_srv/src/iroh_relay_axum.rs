@@ -378,6 +378,13 @@ pub async fn relay_probe_handler() -> (
 }
 
 /// Rate limits configuration for the relay server
+///
+/// # Note on client_rx
+///
+/// The `client_rx` field is **not supported** in the axum integration because
+/// WebSocket connections are already established when they reach the handler,
+/// making byte-level rate limiting impractical at this layer. This field is
+/// included only for API compatibility and will be ignored.
 #[derive(Debug, Default)]
 pub struct Limits {
     /// Rate limit for accepting new connection. Unlimited if not set.
@@ -385,10 +392,21 @@ pub struct Limits {
     /// Burst limit for accepting new connection. Unlimited if not set.
     pub accept_conn_burst: Option<usize>,
     /// Rate limits for incoming traffic from a client connection.
+    ///
+    /// **Note**: This is ignored in the axum integration. See struct-level documentation.
     pub client_rx: Option<ClientRateLimit>,
 }
 
 /// Configuration for iroh relay server
+///
+/// # Default Configuration
+///
+/// The default configuration enables connection-level rate limiting:
+/// - 250 connections per second
+/// - 100 connection burst capacity
+///
+/// **Note**: `client_rx` (byte-level rate limiting) is intentionally set to `None`
+/// in the default configuration because it is not supported in the axum integration.
 #[derive(Debug)]
 pub struct RelayConfig {
     /// Rate limiting configuration for iroh relay server
@@ -401,10 +419,8 @@ impl Default for RelayConfig {
             limits: Limits {
                 accept_conn_limit: Some(250.0),
                 accept_conn_burst: Some(100),
-                client_rx: Some(ClientRateLimit {
-                    bytes_per_second: NonZeroU32::new(2 * 1024 * 1024).unwrap(), // 2 MiB/s
-                    max_burst_bytes: Some(NonZeroU32::new(256 * 1024).unwrap()), // 256 KiB burst
-                }),
+                // client_rx is not supported in axum integration - leave as None
+                client_rx: None,
             },
         }
     }
@@ -478,9 +494,11 @@ fn create_connection_rate_limiter(
 ///   Applied as tower middleware using a token bucket algorithm. When the limit is exceeded,
 ///   requests receive a 429 Too Many Requests response.
 ///
-/// - **Client-side byte-level rate limiting**: NOT supported (`client_rx` is ignored).
-///   The axum integration receives already-established WebSocket connections without access
-///   to the underlying TCP/TLS stream, making byte-level rate limiting impractical at this layer.
+/// - **Client-side byte-level rate limiting**: **NOT supported**. The `client_rx` field in
+///   [`Limits`] is intentionally ignored. The axum integration receives already-established
+///   WebSocket connections without access to the underlying TCP/TLS stream, making byte-level
+///   rate limiting impractical at this layer. If you need byte-level rate limiting, consider
+///   using iroh-relay's native server instead.
 pub fn create_relay_state(
     limits: &Limits,
 ) -> (RelayState, Option<ConnectionRateLimiter>) {
