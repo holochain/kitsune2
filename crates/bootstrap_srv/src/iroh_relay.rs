@@ -32,6 +32,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tower::{Layer, Service};
+use tracing::warn;
 
 pub use iroh_relay::server::axum_integration::relay_handler;
 pub use iroh_relay::server::ClientRateLimit;
@@ -156,21 +157,53 @@ impl Default for Config {
 
 /// Creates a connection rate limiter from the limits configuration
 ///
-/// Returns None if no connection rate limiting is configured.
+/// Returns None if no connection rate limiting is configured or if the
+/// configuration values are invalid.
 fn create_connection_rate_limiter(
     limits: &Limits,
 ) -> Option<ConnectionRateLimiter> {
     let rate = limits.accept_conn_limit?;
     let burst = limits.accept_conn_burst?;
 
-    // Convert rate (connections per second) to a quota
-    // Rate is the sustained rate, burst is the maximum burst size
-    let rate_u32 = rate.max(1.0) as u32;
-    let burst_u32 = burst.max(1) as u32;
+    // Define valid ranges for rate limiting parameters
+    const MIN_RATE: f64 = 1.0;
+    const MAX_RATE: f64 = u32::MAX as f64;
+    const MIN_BURST: f64 = 1.0;
+    const MAX_BURST: f64 = u32::MAX as f64;
 
-    let rate_nonzero = std::num::NonZeroU32::new(rate_u32)?;
-    let burst_nonzero = std::num::NonZeroU32::new(burst_u32)?;
+    // Clamp rate to valid range and warn if adjusted
+    let clamped_rate = rate.clamp(MIN_RATE, MAX_RATE);
+    if (rate - clamped_rate).abs() > f64::EPSILON {
+        warn!(
+            original_rate = rate,
+            clamped_rate = clamped_rate,
+            "Relay connection rate limit out of bounds, clamping to valid range [{}, {}]",
+            MIN_RATE, MAX_RATE
+        );
+    }
 
+    // Clamp burst to valid range and warn if adjusted
+    let clamped_burst = (burst as f64).clamp(MIN_BURST, MAX_BURST);
+    if ((burst as f64) - clamped_burst).abs() > f64::EPSILON {
+        warn!(
+            original_burst = burst,
+            clamped_burst = clamped_burst,
+            "Relay connection burst limit out of bounds, clamping to valid range [{}, {}]",
+            MIN_BURST, MAX_BURST
+        );
+    }
+
+    // Convert to u32 using ceil() for deterministic rounding
+    // Ceiling ensures we don't accidentally reduce limits below configured values
+    let rate_u32 = clamped_rate.ceil() as u32;
+    let burst_u32 = clamped_burst.ceil() as u32;
+
+    // Create NonZeroU32 values, returning None if somehow we got zero
+    // (should be impossible given MIN values of 1.0, but defensive programming)
+    let rate_nonzero = NonZeroU32::new(rate_u32)?;
+    let burst_nonzero = NonZeroU32::new(burst_u32)?;
+
+    // Create quota with clamped and validated values
     let quota = Quota::per_second(rate_nonzero).allow_burst(burst_nonzero);
 
     Some(Arc::new(RateLimiter::direct(quota)))
@@ -204,4 +237,106 @@ pub(super) fn create_relay_state(
     let rate_limiter = create_connection_rate_limiter(limits);
 
     (state, rate_limiter)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rate_limiter_creation_valid_values() {
+        let limits = Limits {
+            accept_conn_limit: Some(100.0),
+            accept_conn_burst: Some(50),
+            client_rx: None,
+        };
+
+        let limiter = create_connection_rate_limiter(&limits);
+        assert!(
+            limiter.is_some(),
+            "Valid values should create a rate limiter"
+        );
+    }
+
+    #[test]
+    fn test_rate_limiter_creation_none_when_not_configured() {
+        let limits = Limits {
+            accept_conn_limit: None,
+            accept_conn_burst: Some(50),
+            client_rx: None,
+        };
+
+        let limiter = create_connection_rate_limiter(&limits);
+        assert!(
+            limiter.is_none(),
+            "Should return None when rate limit is not configured"
+        );
+
+        let limits = Limits {
+            accept_conn_limit: Some(100.0),
+            accept_conn_burst: None,
+            client_rx: None,
+        };
+
+        let limiter = create_connection_rate_limiter(&limits);
+        assert!(
+            limiter.is_none(),
+            "Should return None when burst is not configured"
+        );
+    }
+
+    #[test]
+    fn test_rate_limiter_clamping_minimum() {
+        // Test values below minimum get clamped to 1
+        let limits = Limits {
+            accept_conn_limit: Some(0.5),
+            accept_conn_burst: Some(0),
+            client_rx: None,
+        };
+
+        let limiter = create_connection_rate_limiter(&limits);
+        assert!(
+            limiter.is_some(),
+            "Should clamp low values and create limiter"
+        );
+    }
+
+    #[test]
+    fn test_rate_limiter_clamping_maximum() {
+        // Test values at maximum range
+        let limits = Limits {
+            accept_conn_limit: Some(u32::MAX as f64 + 1000.0),
+            accept_conn_burst: Some((u32::MAX as usize) + 1000),
+            client_rx: None,
+        };
+
+        let limiter = create_connection_rate_limiter(&limits);
+        assert!(
+            limiter.is_some(),
+            "Should clamp high values and create limiter"
+        );
+    }
+
+    #[test]
+    fn test_rate_limiter_ceil_rounding() {
+        // Test that fractional values are rounded up with ceil()
+        let limits = Limits {
+            accept_conn_limit: Some(10.3),
+            accept_conn_burst: Some(5),
+            client_rx: None,
+        };
+
+        let limiter = create_connection_rate_limiter(&limits);
+        assert!(limiter.is_some(), "Should handle fractional rate values");
+    }
+
+    #[test]
+    fn test_default_config_creates_limiter() {
+        let config = Config::default();
+        let limiter = create_connection_rate_limiter(&config.limits);
+        assert!(
+            limiter.is_some(),
+            "Default config should create a valid rate limiter"
+        );
+    }
 }
