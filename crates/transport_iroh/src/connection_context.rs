@@ -1,11 +1,12 @@
-use crate::stream_io::{DynIrohRecvStream, DynIrohSendStream, IrohRecvStream, IrohSendStream};
+use crate::connection::DynConnection;
+use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
 use crate::{
     decode_frame_header, decode_frame_preflight,
     frame::{encode_frame, Frame},
     Connections, FrameType, FRAME_HEADER_LEN,
 };
 use bytes::Bytes;
-use iroh::endpoint::{Connection, ConnectionType};
+use iroh::endpoint::ConnectionType;
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use n0_watcher::Watcher;
 use std::{
@@ -21,7 +22,7 @@ use tracing::{debug, error, info, trace, warn};
 
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
-    connection: Arc<Connection>,
+    connection: DynConnection,
     connection_reader_abort_handle: Mutex<Option<AbortHandle>>,
     send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
@@ -44,7 +45,7 @@ impl fmt::Debug for ConnectionContext {
 
 pub(super) struct ConnectionContextParams {
     pub handler: Arc<TxImpHnd>,
-    pub connection: Arc<Connection>,
+    pub connection: DynConnection,
     pub remote_url: Option<Url>,
     pub preflight_sent: bool,
     pub opened_at_s: u64,
@@ -55,7 +56,6 @@ pub(super) struct ConnectionContextParams {
 }
 
 impl ConnectionContext {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(params: ConnectionContextParams) -> Arc<Self> {
         let ctx = Arc::new(Self {
             handler: params.handler,
@@ -216,7 +216,6 @@ impl ConnectionContext {
                         info!(remote_id = ?ctx.connection.remote_id(), "accepted incoming stream");
                         let connections = connections.clone();
                         let local_url = local_url.clone();
-                        let wrapped_stream = Arc::new(IrohRecvStream::new(stream));
                         // Read frames from the stream. If an error is returned, it means the
                         // preflight couldn't be received. The connection must be closed in that
                         // case, because a successful preflight is the prerequisite for establishing
@@ -228,7 +227,7 @@ impl ConnectionContext {
                         // awaited.
                         if let Err(err) = Self::handle_incoming_stream(
                             ctx.clone(),
-                            wrapped_stream,
+                            stream,
                             connections.clone(),
                             local_url,
                         )
@@ -388,10 +387,8 @@ impl ConnectionContext {
         // Atomically open a new stream if none is present.
         let mut stream_lock = self.send_stream.lock().await;
         if stream_lock.is_none() {
-            let stream = self.connection.open_uni().await.map_err(|err| {
-                K2Error::other_src("failed to open uni-directional stream", err)
-            })?;
-            *stream_lock = Some(Arc::new(IrohSendStream::new(stream)));
+            let stream = self.connection.open_uni().await?;
+            *stream_lock = Some(stream);
         }
         Ok(stream_lock)
     }

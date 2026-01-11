@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 ///
 /// This trait allows injecting mock implementations for testing
 /// without requiring async trait syntax.
-pub(crate) trait SendStreamTrait: Send + Sync {
+pub(crate) trait SendStream: 'static + Send + Sync {
     /// Write all data to the stream.
     fn write_all<'a>(&'a self, data: &'a [u8]) -> BoxFut<'a, K2Result<()>>;
 }
@@ -17,7 +17,7 @@ pub(crate) trait SendStreamTrait: Send + Sync {
 ///
 /// This trait allows injecting mock implementations for testing
 /// without requiring async trait syntax.
-pub(crate) trait RecvStreamTrait: Send + Sync {
+pub(crate) trait RecvStream: 'static + Send + Sync {
     /// Read exact number of bytes into the buffer.
     fn read_exact<'a>(&'a self, buf: &'a mut [u8]) -> BoxFut<'a, K2Result<()>>;
 }
@@ -36,7 +36,7 @@ impl IrohSendStream {
     }
 }
 
-impl SendStreamTrait for IrohSendStream {
+impl SendStream for IrohSendStream {
     fn write_all<'a>(&'a self, data: &'a [u8]) -> BoxFut<'a, K2Result<()>> {
         Box::pin(async move {
             self.inner
@@ -63,7 +63,7 @@ impl IrohRecvStream {
     }
 }
 
-impl RecvStreamTrait for IrohRecvStream {
+impl RecvStream for IrohRecvStream {
     fn read_exact<'a>(&'a self, buf: &'a mut [u8]) -> BoxFut<'a, K2Result<()>> {
         Box::pin(async move {
             self.inner
@@ -76,8 +76,9 @@ impl RecvStreamTrait for IrohRecvStream {
     }
 }
 
-pub(crate) type DynIrohSendStream = Arc<dyn SendStreamTrait>;
-pub(crate) type DynIrohRecvStream = Arc<dyn RecvStreamTrait>;
+pub(crate) type DynIrohSendStream = Arc<dyn SendStream>;
+
+pub(crate) type DynIrohRecvStream = Arc<dyn RecvStream>;
 
 #[cfg(test)]
 pub(crate) mod mock {
@@ -113,7 +114,7 @@ pub(crate) mod mock {
         }
     }
 
-    impl SendStreamTrait for MockSendStream {
+    impl SendStream for MockSendStream {
         fn write_all<'a>(&'a self, data: &'a [u8]) -> BoxFut<'a, K2Result<()>> {
             let should_fail = self.should_fail;
             let written_data = self.written_data.clone();
@@ -161,8 +162,11 @@ pub(crate) mod mock {
         }
     }
 
-    impl RecvStreamTrait for MockRecvStream {
-        fn read_exact<'a>(&'a self, buf: &'a mut [u8]) -> BoxFut<'a, K2Result<()>> {
+    impl RecvStream for MockRecvStream {
+        fn read_exact<'a>(
+            &'a self,
+            buf: &'a mut [u8],
+        ) -> BoxFut<'a, K2Result<()>> {
             let should_fail = self.should_fail;
             let data_to_read = self.data_to_read.clone();
             let read_position = self.read_position.clone();

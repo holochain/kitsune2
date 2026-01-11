@@ -36,9 +36,15 @@ n0-watcher = { workspace = true }
 kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
 kitsune2_test_utils = { workspace = true }
 
+mockall = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
 
 [features]
 schema = ["dep:schemars"]
 
 test-utils = ["dep:iroh-relay", "dep:kitsune2_core", "iroh/test-utils"]
+
+[[bench]]
+name = "stream_abstraction_overhead"
+harness = false
+required-features = ["test-utils"]

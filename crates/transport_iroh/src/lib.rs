@@ -32,8 +32,9 @@ mod frame;
 use frame::*;
 mod url;
 use url::*;
-mod stream_io;
+mod connection;
 mod connection_context;
+mod stream;
 use connection_context::*;
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -316,10 +317,11 @@ impl IrohTransport {
                             // Create a new connection context.
                             let conn_type_watcher =
                                 endpoint.conn_type(conn.remote_id());
+                            let wrapped_conn = Arc::new(connection::IrohConnection::new(conn));
                             ConnectionContext::new(
                                 ConnectionContextParams{
                                 handler: handler.clone(),
-                                connection: conn,
+                                connection: wrapped_conn,
                                 remote_url: None,
                                 preflight_sent: false,
                                 opened_at_s: conn_opened_at_s,
@@ -383,9 +385,10 @@ impl IrohTransport {
                 handler.peer_connect(remote_url.clone()).await?;
 
             let conn_type_watcher = endpoint.conn_type(target.id);
+            let wrapped_conn = Arc::new(connection::IrohConnection::new(conn));
             let ctx = ConnectionContext::new(ConnectionContextParams {
                 handler: handler.clone(),
-                connection: conn.clone(),
+                connection: wrapped_conn,
                 remote_url: Some(remote_url.clone()),
                 preflight_sent: true,
                 opened_at_s: conn_opened_at_s,

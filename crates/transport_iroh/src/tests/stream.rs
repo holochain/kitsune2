@@ -1,7 +1,7 @@
 //! Unit tests for stream I/O abstractions
 
-use crate::stream_io::mock::{MockRecvStream, MockSendStream};
-use crate::stream_io::{RecvStreamTrait, SendStreamTrait};
+use crate::stream::mock::{MockRecvStream, MockSendStream};
+use crate::stream::{RecvStream, SendStream};
 use bytes::Bytes;
 
 // SendStream tests
@@ -164,8 +164,8 @@ async fn mock_recv_stream_frame_decoding_integration() {
         .await
         .expect("header read should succeed");
 
-    let (_frame_type, data_len) =
-        decode_frame_header(&header, 1024 * 1024).expect("header decode should succeed");
+    let (_frame_type, data_len) = decode_frame_header(&header, 1024 * 1024)
+        .expect("header decode should succeed");
 
     // Read frame data
     let mut data = vec![0u8; data_len];
