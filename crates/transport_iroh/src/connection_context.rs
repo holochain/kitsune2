@@ -1,10 +1,12 @@
+use crate::stream_io::DynIrohSendStream;
 use crate::{
     decode_frame_header, decode_frame_preflight,
     frame::{encode_frame, Frame},
+    stream_io::IrohSendStream,
     Connections, FrameType, FRAME_HEADER_LEN,
 };
 use bytes::Bytes;
-use iroh::endpoint::{Connection, ConnectionType, RecvStream, SendStream};
+use iroh::endpoint::{Connection, ConnectionType, RecvStream};
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use n0_watcher::Watcher;
 use std::{
@@ -22,7 +24,7 @@ pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: Arc<Connection>,
     connection_reader_abort_handle: Mutex<Option<AbortHandle>>,
-    send_stream: tokio::sync::Mutex<Option<SendStream>>,
+    send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
     preflight_received: AtomicBool,
@@ -104,10 +106,7 @@ impl ConnectionContext {
         if let Err(err) = stream.write_all(&frame).await {
             error!(?err, "failed to send preflight frame");
             *stream_lock = None;
-            return Err(K2Error::other_src(
-                "failed to send preflight frame",
-                err,
-            ));
+            return Err(err);
         }
 
         Ok(())
@@ -124,7 +123,7 @@ impl ConnectionContext {
         if let Err(err) = stream.write_all(&frame).await {
             error!(?err, "failed to send data frame");
             *stream_lock = None;
-            return Err(K2Error::other_src("failed to send data frame", err));
+            return Err(err);
         }
 
         drop(stream_lock);
@@ -385,14 +384,14 @@ impl ConnectionContext {
 
     async fn ensure_send_stream(
         &'_ self,
-    ) -> K2Result<MutexGuard<'_, Option<SendStream>>> {
+    ) -> K2Result<MutexGuard<'_, Option<DynIrohSendStream>>> {
         // Atomically open a new stream if none is present.
         let mut stream_lock = self.send_stream.lock().await;
         if stream_lock.is_none() {
             let stream = self.connection.open_uni().await.map_err(|err| {
                 K2Error::other_src("failed to open uni-directional stream", err)
             })?;
-            *stream_lock = Some(stream);
+            *stream_lock = Some(Arc::new(IrohSendStream::new(stream)));
         }
         Ok(stream_lock)
     }

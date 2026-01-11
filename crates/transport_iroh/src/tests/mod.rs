@@ -3,6 +3,7 @@
 use super::*;
 
 mod frame;
+mod stream_io;
 mod url;
 
 #[test]

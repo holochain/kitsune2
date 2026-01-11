@@ -32,6 +32,7 @@ mod frame;
 use frame::*;
 mod url;
 use url::*;
+mod stream_io;
 mod connection_context;
 use connection_context::*;
 
