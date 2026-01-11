@@ -70,6 +70,12 @@ pub mod config {
         /// Defaults to 1 MiB.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub max_frame_bytes: usize,
+
+        /// The timeout for establishing a connection to a peer.
+        ///
+        /// Defaults to 60 seconds.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub connect_timeout_s: u32,
     }
 
     impl Default for IrohTransportConfig {
@@ -78,6 +84,7 @@ pub mod config {
                 relay_url: None,
                 relay_allow_plain_text: false,
                 max_frame_bytes: 1024 * 1024,
+                connect_timeout_s: 60,
             }
         }
     }
@@ -155,7 +162,7 @@ struct IrohTransport {
     connection_locks: Arc<Mutex<HashMap<Url, Arc<tokio::sync::Mutex<()>>>>>,
     watch_addr_task: AbortHandle,
     accept_task: AbortHandle,
-    max_frame_bytes: usize,
+    config: IrohTransportConfig,
 }
 
 impl Drop for IrohTransport {
@@ -185,9 +192,9 @@ impl IrohTransport {
     ) -> K2Result<DynTxImp> {
         // If a relay server is configured, only use that.
         // Otherwise, use the default relay servers provided by n0.
-        let mut builder = if let Some(relay_url) = config.relay_url {
+        let mut builder = if let Some(relay_url) = &config.relay_url {
             let relay_url =
-                RelayUrl::from_str(&relay_url).map_err(K2Error::other)?;
+                RelayUrl::from_str(relay_url).map_err(K2Error::other)?;
             let relay_map = RelayMap::from_iter([relay_url]);
             Endpoint::empty_builder(RelayMode::Custom(relay_map))
         } else {
@@ -233,7 +240,7 @@ impl IrohTransport {
             connection_locks,
             watch_addr_task,
             accept_task,
-            max_frame_bytes: config.max_frame_bytes,
+            config,
         });
         Ok(out)
     }
@@ -255,6 +262,7 @@ impl IrohTransport {
                     Ok(addr) => {
                         if let Some(url) = get_url_with_first_relay(&addr) {
                             {
+                                info!(?url, "received a new listening address from relay server");
                                 let mut guard =
                                     local_url.write().expect("poisoned");
                                 if guard.as_ref() != Some(&url) {
@@ -348,13 +356,16 @@ impl IrohTransport {
         remote_url: Url,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
-        max_frame_bytes: usize,
+        config: &IrohTransportConfig,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
-        let conn = endpoint
-            .connect(target.clone(), ALPN)
-            .await
-            .map_err(|err| K2Error::other_src("iroh connect failed", err))?;
+        let conn = tokio::time::timeout(
+            Duration::from_secs(config.connect_timeout_s as u64),
+            endpoint.connect(target.clone(), ALPN),
+        )
+        .await
+        .map_err(|err| K2Error::other_src("iroh connect timed out", err))?
+        .map_err(|err| K2Error::other_src("iroh connect failed", err))?;
         let conn_opened_at_s = SystemTime::UNIX_EPOCH
             .elapsed()
             .unwrap_or_else(|err| {
@@ -380,7 +391,7 @@ impl IrohTransport {
                 connection_type_watcher: conn_type_watcher,
                 connections: connections.clone(),
                 local_url: local_url.clone(),
-                max_frame_bytes,
+                max_frame_bytes: config.max_frame_bytes,
             });
 
             ctx.send_preflight_frame(
@@ -473,7 +484,7 @@ impl TxImp for IrohTransport {
                         remote_url.clone(),
                         connections.clone(),
                         local_url.clone(),
-                        self.max_frame_bytes,
+                        &self.config,
                     )
                     .await?;
 
