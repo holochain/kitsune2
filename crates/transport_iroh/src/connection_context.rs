@@ -320,6 +320,9 @@ impl ConnectionContext {
                         .await?;
                         info!(peer = ?ctx.connection.remote_id(),?local_url, "sent preflight to peer from url");
                         ctx.set_preflight_sent();
+                    } else {
+                        warn!(peer = ?ctx.connection.remote_id(), "received preflight, but cannot return preflight because own url is unknown");
+                        return Err(K2Error::other("Connection received before home relay URL is known"));
                     }
                 }
 
