@@ -1,12 +1,11 @@
-use crate::stream_io::DynIrohSendStream;
+use crate::stream_io::{DynIrohRecvStream, DynIrohSendStream, IrohRecvStream, IrohSendStream};
 use crate::{
     decode_frame_header, decode_frame_preflight,
     frame::{encode_frame, Frame},
-    stream_io::IrohSendStream,
     Connections, FrameType, FRAME_HEADER_LEN,
 };
 use bytes::Bytes;
-use iroh::endpoint::{Connection, ConnectionType, RecvStream};
+use iroh::endpoint::{Connection, ConnectionType};
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use n0_watcher::Watcher;
 use std::{
@@ -217,6 +216,7 @@ impl ConnectionContext {
                         info!(remote_id = ?ctx.connection.remote_id(), "accepted incoming stream");
                         let connections = connections.clone();
                         let local_url = local_url.clone();
+                        let wrapped_stream = Arc::new(IrohRecvStream::new(stream));
                         // Read frames from the stream. If an error is returned, it means the
                         // preflight couldn't be received. The connection must be closed in that
                         // case, because a successful preflight is the prerequisite for establishing
@@ -228,7 +228,7 @@ impl ConnectionContext {
                         // awaited.
                         if let Err(err) = Self::handle_incoming_stream(
                             ctx.clone(),
-                            stream,
+                            wrapped_stream,
                             connections.clone(),
                             local_url,
                         )
@@ -289,13 +289,13 @@ impl ConnectionContext {
     // The connection reader will await the next incoming stream.
     async fn handle_incoming_stream(
         ctx: Arc<Self>,
-        mut recv_stream: RecvStream,
+        recv_stream: DynIrohRecvStream,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
     ) -> K2Result<()> {
         if !ctx.preflight_received() {
             let result = tokio::time::timeout(Duration::from_secs(10), async {
-                let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&mut recv_stream,ctx.max_frame_bytes).await?;
+                let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&recv_stream,ctx.max_frame_bytes).await?;
 
                 ctx.set_remote_url(remote_url.clone());
                 ctx.handler
@@ -348,7 +348,7 @@ impl ConnectionContext {
         // Keep reading data frames from the stream until it is closed.
         loop {
             let (data, data_len) = match read_data_frame_from_stream(
-                &mut recv_stream,
+                &recv_stream,
                 ctx.max_frame_bytes,
             )
             .await
@@ -434,7 +434,7 @@ impl ConnectionContext {
 }
 
 async fn read_preflight_frame_from_stream(
-    recv_stream: &mut RecvStream,
+    recv_stream: &DynIrohRecvStream,
     max_frame_bytes: usize,
 ) -> K2Result<(Url, Bytes)> {
     let mut header_bytes = [0u8; FRAME_HEADER_LEN];
@@ -464,7 +464,7 @@ async fn read_preflight_frame_from_stream(
 }
 
 async fn read_data_frame_from_stream(
-    recv_stream: &mut RecvStream,
+    recv_stream: &DynIrohRecvStream,
     max_frame_bytes: usize,
 ) -> K2Result<(Vec<u8>, usize)> {
     // Read data frame header
