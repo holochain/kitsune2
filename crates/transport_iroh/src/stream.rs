@@ -1,4 +1,4 @@
-//! I/O abstractions for stream operations, enabling unit testing.
+//! Abstractions for stream operations, enabling unit testing.
 
 use kitsune2_api::{BoxFut, K2Error, K2Result};
 use std::sync::Arc;
@@ -44,7 +44,7 @@ impl SendStream for IrohSendStream {
                 .await
                 .write_all(data)
                 .await
-                .map_err(|err| K2Error::other_src("stream write failed", err))
+                .map_err(|err| K2Error::other_src("Stream write failed", err))
         })
     }
 }
@@ -71,7 +71,7 @@ impl RecvStream for IrohRecvStream {
                 .await
                 .read_exact(buf)
                 .await
-                .map_err(|err| K2Error::other_src("stream read failed", err))
+                .map_err(|err| K2Error::other_src("Stream read failed", err))
         })
     }
 }
@@ -121,7 +121,7 @@ pub(crate) mod mock {
 
             Box::pin(async move {
                 if should_fail {
-                    Err(K2Error::other("mock stream write failure"))
+                    Err(K2Error::other("Mock stream write failure"))
                 } else {
                     written_data.lock().unwrap().push(data.to_vec());
                     Ok(())
@@ -173,13 +173,13 @@ pub(crate) mod mock {
 
             Box::pin(async move {
                 if should_fail {
-                    Err(K2Error::other("mock stream read failure"))
+                    Err(K2Error::other("Mock stream read failure"))
                 } else {
                     let data = data_to_read.lock().unwrap();
                     let mut pos = read_position.lock().unwrap();
 
                     if *pos + buf.len() > data.len() {
-                        return Err(K2Error::other("not enough data to read"));
+                        return Err(K2Error::other("Not enough data to read"));
                     }
 
                     buf.copy_from_slice(&data[*pos..*pos + buf.len()]);

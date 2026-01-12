@@ -100,10 +100,10 @@ impl ConnectionContext {
         let mut stream_lock = self.ensure_send_stream().await?;
         let stream = stream_lock.as_mut().expect("stream must exist");
 
-        info!(local_url = ?url, "sending preflight frame");
-        trace!(?frame, "sending preflight frame");
+        info!(local_url = ?url, "Sending preflight frame");
+        trace!(?frame, "Sending preflight frame");
         if let Err(err) = stream.write_all(&frame).await {
-            error!(?err, "failed to send preflight frame");
+            error!(?err, "Failed to send preflight frame");
             *stream_lock = None;
             return Err(err);
         }
@@ -118,9 +118,9 @@ impl ConnectionContext {
         let mut stream_lock = self.ensure_send_stream().await?;
         let stream = stream_lock.as_mut().expect("stream must exist");
 
-        trace!(?frame, "sending data frame");
+        trace!(?frame, "Sending data frame");
         if let Err(err) = stream.write_all(&frame).await {
-            error!(?err, "failed to send data frame");
+            error!(?err, "Failed to send data frame");
             *stream_lock = None;
             return Err(err);
         }
@@ -182,8 +182,8 @@ impl ConnectionContext {
     }
 
     pub fn disconnect(&self, reason: String) {
-        info!(reason, remote_url = ?self.remote_url(), "disconnecting from remote");
-        self.connection.close(0u8.into(), reason.as_bytes());
+        info!(reason, remote_url = ?self.remote_url(), "Disconnecting from remote");
+        self.connection.close(0u8, reason.as_bytes());
         if let Some(peer) = self.remote_url() {
             self.handler.peer_disconnect(peer, Some(reason));
         }
@@ -213,7 +213,7 @@ impl ConnectionContext {
                 // Main loop to accept incoming unidirectional streams from the remote peer.
                 match ctx.connection.accept_uni().await {
                     Ok(stream) => {
-                        info!(remote_id = ?ctx.connection.remote_id(), "accepted incoming stream");
+                        info!(remote_id = ?ctx.connection.remote_id(), "Accepted incoming stream");
                         let connections = connections.clone();
                         let local_url = local_url.clone();
                         // Read frames from the stream. If an error is returned, it means the
@@ -233,12 +233,12 @@ impl ConnectionContext {
                         )
                         .await
                         {
-                            error!(?err, "stream closed by remote");
+                            error!(?err, "Stream closed by remote");
                             break err.to_string();
                         }
                     }
                     Err(err) => {
-                        error!(?err, "connection closed by remote");
+                        error!(?err, "Connection closed by remote");
                         break err.to_string();
                     }
                 }
@@ -254,9 +254,9 @@ impl ConnectionContext {
                     .write()
                     .expect("poisoned")
                     .remove(&remote_url);
-                info!(?remote_url, "setting peer unresponsive");
+                info!(?remote_url, "Setting peer unresponsive");
                 if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await{
-                    warn!(?err, ?remote_url, "failed to set peer unresponsive");
+                    warn!(?err, ?remote_url, "Failed to set peer unresponsive");
                 }
             }
             ctx.disconnect(err);
@@ -301,7 +301,7 @@ impl ConnectionContext {
                     .recv_data(remote_url.clone(), preflight_bytes)
                     .await?;
                 ctx.set_preflight_received();
-                info!(remote = ?remote_url.peer_id(),"preflight received successfully");
+                info!(remote = ?remote_url.peer_id(),"Preflight received successfully");
 
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
@@ -316,10 +316,10 @@ impl ConnectionContext {
                             return_preflight,
                         )
                         .await?;
-                        info!(peer = ?ctx.connection.remote_id(),?local_url, "sent preflight to peer from url");
+                        info!(peer = ?ctx.connection.remote_id(),?local_url, "Sent preflight to peer from URL");
                         ctx.set_preflight_sent();
                     } else {
-                        warn!(peer = ?ctx.connection.remote_id(), "received preflight, but cannot return preflight because own url is unknown");
+                        warn!(peer = ?ctx.connection.remote_id(), "Received preflight, but cannot return preflight because own URL is unknown");
                         return Err(K2Error::other("Connection received before home relay URL is known"));
                     }
                 }

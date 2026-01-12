@@ -1,13 +1,11 @@
-//! I/O abstractions for connection operations, enabling unit testing.
+//! Abstractions for connection operations, enabling unit testing.
 
 use crate::stream::{
     DynIrohRecvStream, DynIrohSendStream, IrohRecvStream, IrohSendStream,
 };
+use iroh::EndpointId;
 use kitsune2_api::{BoxFut, K2Error, K2Result};
 use std::sync::Arc;
-
-/// Node identifier type from iroh.
-pub(crate) type NodeId = iroh::PublicKey;
 
 /// Abstraction for connection operations.
 ///
@@ -22,7 +20,7 @@ pub(crate) trait Connection: 'static + Send + Sync {
     fn accept_uni(&self) -> BoxFut<'_, K2Result<DynIrohRecvStream>>;
 
     /// Get the remote node ID.
-    fn remote_id(&self) -> NodeId;
+    fn remote_id(&self) -> EndpointId;
 
     /// Close the connection with a code and reason.
     fn close(&self, code: u8, reason: &[u8]);
@@ -44,7 +42,7 @@ impl Connection for IrohConnection {
     fn open_uni(&self) -> BoxFut<'_, K2Result<DynIrohSendStream>> {
         Box::pin(async move {
             let stream = self.inner.open_uni().await.map_err(|err| {
-                K2Error::other_src("failed to open uni-directional stream", err)
+                K2Error::other_src("Failed to open uni-directional stream", err)
             })?;
             Ok(Arc::new(IrohSendStream::new(stream)) as DynIrohSendStream)
         })
@@ -54,7 +52,7 @@ impl Connection for IrohConnection {
         Box::pin(async move {
             let stream = self.inner.accept_uni().await.map_err(|err| {
                 K2Error::other_src(
-                    "failed to accept uni-directional stream",
+                    "Failed to accept uni-directional stream",
                     err,
                 )
             })?;
@@ -62,7 +60,7 @@ impl Connection for IrohConnection {
         })
     }
 
-    fn remote_id(&self) -> NodeId {
+    fn remote_id(&self) -> EndpointId {
         self.inner.remote_id()
     }
 

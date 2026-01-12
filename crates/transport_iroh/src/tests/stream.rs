@@ -1,4 +1,4 @@
-//! Unit tests for stream I/O abstractions
+//! Unit tests for stream abstractions
 
 use crate::stream::mock::{MockRecvStream, MockSendStream};
 use crate::stream::{RecvStream, SendStream};
@@ -46,7 +46,7 @@ async fn mock_send_stream_can_fail() {
     assert!(result.is_err(), "write should fail");
     let error_msg = result.unwrap_err().to_string();
     assert!(
-        error_msg.contains("mock stream write failure"),
+        error_msg.contains("Mock stream write failure"),
         "error message should contain expected text, got: {}",
         error_msg
     );
@@ -122,7 +122,7 @@ async fn mock_recv_stream_read_beyond_available_data() {
     assert!(result.is_err(), "read should fail");
     let error_msg = result.unwrap_err().to_string();
     assert!(
-        error_msg.contains("not enough data to read"),
+        error_msg.contains("Not enough data to read"),
         "error should indicate insufficient data, got: {}",
         error_msg
     );
@@ -138,7 +138,7 @@ async fn mock_recv_stream_can_fail() {
     assert!(result.is_err(), "read should fail");
     let error_msg = result.unwrap_err().to_string();
     assert!(
-        error_msg.contains("mock stream read failure"),
+        error_msg.contains("Mock stream read failure"),
         "error message should contain expected text, got: {}",
         error_msg
     );

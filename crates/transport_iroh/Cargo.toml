@@ -43,8 +43,3 @@ iroh = { workspace = true, features = ["test-utils"] }
 schema = ["dep:schemars"]
 
 test-utils = ["dep:iroh-relay", "dep:kitsune2_core", "iroh/test-utils"]
-
-[[bench]]
-name = "stream_abstraction_overhead"
-harness = false
-required-features = ["test-utils"]
