@@ -136,7 +136,12 @@ fn main() {
         Config::testing()
     };
 
-    if args.tls_cert.is_some() || args.tls_key.is_some() {
+    // Install the crypto provider if TLS certs are provided, or if iroh-relay
+    // feature is enabled (iroh-relay uses rustls internally and needs the provider).
+    if args.tls_cert.is_some()
+        || args.tls_key.is_some()
+        || cfg!(feature = "iroh-relay")
+    {
         rustls::crypto::ring::default_provider()
             .install_default()
             .expect("Failed to configure default TLS provider");
