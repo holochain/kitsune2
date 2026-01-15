@@ -240,18 +240,31 @@ impl IrohTransport {
         // Wait for the first URL to be available before returning
         // Use a generous timeout to allow for slow relay connections
         info!("waiting for relay connection to establish local URL...");
-        tokio::time::timeout(
+        let url_ready_result = tokio::time::timeout(
             Duration::from_secs(30),
-            url_ready_rx
-        ).await
+            url_ready_rx,
+        )
+        .await
         .map_err(|_| {
-            error!("timed out waiting for relay connection to establish local URL");
+            error!(
+                "timed out waiting for relay connection to establish local URL"
+            );
             K2Error::other("timed out waiting for relay connection (30s)")
-        })?
-        .map_err(|_| {
-            error!("watch_addr_task ended before providing a URL");
-            K2Error::other("watch_addr_task ended before providing a URL")
-        })?;
+        })
+        .and_then(|r| {
+            r.map_err(|_| {
+                error!("watch_addr_task ended before providing a URL");
+                K2Error::other("watch_addr_task ended before providing a URL")
+            })
+        });
+
+        if let Err(err) = url_ready_result {
+            // Abort orphaned tasks before returning the error
+            watch_addr_task.abort();
+            accept_task.abort();
+            return Err(err);
+        }
+
         info!(local_url = ?local_url.read().expect("poisoned").as_ref(), "relay connection established, local URL ready");
 
         let out: DynTxImp = Arc::new(Self {
