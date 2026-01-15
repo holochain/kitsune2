@@ -218,10 +218,15 @@ impl IrohTransport {
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let connection_locks = Arc::new(Mutex::new(HashMap::new()));
 
+        // Create a oneshot channel to wait for the first URL to be ready
+        let (url_ready_tx, url_ready_rx) = tokio::sync::oneshot::channel();
+
+        debug!("spawning watch_addr_task to monitor address changes");
         let watch_addr_task = Self::spawn_watch_addr_task(
             endpoint.clone(),
             handler.clone(),
             local_url.clone(),
+            Some(url_ready_tx),
         );
 
         let accept_task = Self::spawn_accept_task(
@@ -231,6 +236,23 @@ impl IrohTransport {
             local_url.clone(),
             config.max_frame_bytes,
         );
+
+        // Wait for the first URL to be available before returning
+        // Use a generous timeout to allow for slow relay connections
+        info!("waiting for relay connection to establish local URL...");
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            url_ready_rx
+        ).await
+        .map_err(|_| {
+            error!("timed out waiting for relay connection to establish local URL");
+            K2Error::other("timed out waiting for relay connection (30s)")
+        })?
+        .map_err(|_| {
+            error!("watch_addr_task ended before providing a URL");
+            K2Error::other("watch_addr_task ended before providing a URL")
+        })?;
+        info!(local_url = ?local_url.read().expect("poisoned").as_ref(), "relay connection established, local URL ready");
 
         let out: DynTxImp = Arc::new(Self {
             endpoint,
@@ -250,25 +272,49 @@ impl IrohTransport {
     /// The task monitors the iroh endpoint's address watcher, updating the local URL
     /// when it changes and notifying the handler of a new listening address.
     /// It runs asynchronously until the watcher encounters an error.
+    ///
+    /// If `url_ready_tx` is provided, it will be signaled when the first URL is set.
     fn spawn_watch_addr_task(
         endpoint: Arc<Endpoint>,
         handler: Arc<TxImpHnd>,
         local_url: Arc<RwLock<Option<Url>>>,
+        url_ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
     ) -> AbortHandle {
         let mut watcher = endpoint.watch_addr();
+        let mut url_ready_tx = url_ready_tx;
         tokio::spawn(async move {
             loop {
                 match watcher.updated().await {
                     Ok(addr) => {
                         if let Some(url) = get_url_with_first_relay(&addr) {
-                            {
-                                info!(?url, "received a new listening address from relay server");
+                            let is_first_url = {
+                                info!(?url, "watch_addr_task: received new listening address from relay server");
                                 let mut guard =
                                     local_url.write().expect("poisoned");
-                                if guard.as_ref() != Some(&url) {
+                                let url_changed = guard.as_ref() != Some(&url);
+                                let is_first = guard.is_none();
+                                debug!(
+                                    previous_url = ?guard.as_ref(),
+                                    new_url = ?url,
+                                    url_changed,
+                                    "watch_addr_task: checking URL change"
+                                );
+                                if url_changed {
+                                    info!(old_url = ?guard.as_ref(), new_url = ?url, "watch_addr_task: updating local URL");
                                     *guard = Some(url.clone());
                                 }
+                                is_first
+                            };
+
+                            // Signal that the first URL is ready
+                            if is_first_url {
+                                if let Some(tx) = url_ready_tx.take() {
+                                    debug!("watch_addr_task: signaling that first URL is ready");
+                                    let _ = tx.send(());
+                                }
                             }
+
+                            debug!("watch_addr_task: notifying handler of new listening address");
                             handler.new_listening_address(url.clone()).await;
                         }
                     }
