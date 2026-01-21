@@ -1661,8 +1661,10 @@ impl TxHandler for SlowPreflightTxHandler {
                 delay_ms
             );
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-            
-            tracing::info!("SlowPreflightTxHandler: now inserting agents after delay");
+
+            tracing::info!(
+                "SlowPreflightTxHandler: now inserting agents after delay"
+            );
             space.peer_store().insert(agents).await?;
             tracing::info!("SlowPreflightTxHandler: preflight complete");
             Ok(())
@@ -1802,7 +1804,8 @@ async fn messages_should_not_be_blocked_during_slow_preflight() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Verify Alice won't block outgoing messages to Bob
-    let stats_alice_before = transport_alice.dump_network_stats().await.unwrap();
+    let stats_alice_before =
+        transport_alice.dump_network_stats().await.unwrap();
     assert!(
         stats_alice_before.blocked_message_counts.is_empty(),
         "Alice should not have any blocked messages before sending"
@@ -1901,4 +1904,276 @@ async fn messages_should_not_be_blocked_during_slow_preflight() {
     );
 
     tracing::info!("Test passed: message was received without being blocked");
+}
+
+/// Test peer that delays joining the local agent.
+/// This allows testing the scenario where a connection is established
+/// and preflight is exchanged BEFORE the local agent joins the space.
+pub struct TestPeerDelayedJoin {
+    pub space: DynSpace,
+    pub transport: DynTransport,
+    pub peer_url: Url,
+    pub recv_notify_recv: Receiver<bytes::Bytes>,
+    space_once_cell: Arc<OnceCell<DynSpace>>,
+}
+
+impl TestPeerDelayedJoin {
+    /// Join with a local agent after the peer has been created.
+    /// Returns the agent info after it's been published to the peer store.
+    pub async fn join_local_agent(&self) -> Arc<AgentInfoSigned> {
+        // Set the space in OnceCell so TxHandler can access it
+        let _ = self.space_once_cell.set(self.space.clone());
+
+        join_new_local_agent_and_wait_for_agent_info(self.space.clone()).await
+    }
+}
+
+/// Creates a test peer WITHOUT joining a local agent.
+/// The preflight handler will return an EMPTY agent list until join_local_agent() is called.
+pub async fn make_test_peer_delayed_join(
+    builder: Arc<Builder>,
+) -> TestPeerDelayedJoin {
+    let space_once_cell = Arc::new(OnceCell::new());
+
+    let (tx_handler, _recv_module_msg_recv, _peer_disconnect_recv) =
+        TestTxHandler::create(
+            Mutex::new(Url::from_str("ws://127.0.0.1:80").unwrap()),
+            space_once_cell.clone(),
+        );
+
+    let transport = builder
+        .transport
+        .create(builder.clone(), tx_handler.clone())
+        .await
+        .unwrap();
+
+    transport.register_module_handler(TEST_SPACE_ID, "test".into(), tx_handler);
+
+    // Wait for peer URL to be available
+    let peer_url = iter_check!(5000, 100, {
+        let stats = transport.dump_network_stats().await.unwrap();
+        let peer_url = stats.transport_stats.peer_urls.first();
+        if let Some(url) = peer_url {
+            return url.clone();
+        }
+    });
+
+    let (space_handler, recv_notify_recv) = TestSpaceHandler::create();
+
+    let report = builder
+        .report
+        .create(builder.clone(), transport.clone())
+        .await
+        .unwrap();
+
+    let space = builder
+        .space
+        .create(
+            builder.clone(),
+            None,
+            Arc::new(space_handler),
+            TEST_SPACE_ID,
+            report,
+            transport.clone(),
+        )
+        .await
+        .unwrap();
+
+    // NOTE: We do NOT join a local agent here!
+    // The space_once_cell is also NOT set yet, so preflight_gather_outgoing
+    // will return an empty list.
+
+    TestPeerDelayedJoin {
+        space,
+        transport,
+        peer_url,
+        recv_notify_recv,
+        space_once_cell,
+    }
+}
+
+/// This test reproduces the production issue where messages get blocked
+/// when a connection is established BEFORE the local agent joins the space.
+///
+/// Scenario (based on PR #417 discussion):
+/// 1. Alice creates a space but hasn't joined with a local agent yet
+/// 2. Alice connects to Bob (preflight is exchanged)
+/// 3. Alice's preflight contains NO agents (she hasn't joined yet!)
+/// 4. Bob receives empty preflight - no agents to insert, no access decision made
+/// 5. Alice joins with a local agent
+/// 6. Alice sends messages to Bob
+/// 7. Bob checks are_all_agents_at_url_blocked(alice_url) → NO ACCESS DECISION
+/// 8. Messages get blocked incorrectly!
+///
+/// This matches ThetaSinner's hypothesis from PR #417:
+/// > "Is it possible that network messages are being sent before the local agent
+/// > joins the space? ... If the preflight gets sent without a local agent info
+/// > then the connection has no way to recover until bootstrap happens."
+#[tokio::test(flavor = "multi_thread")]
+async fn messages_blocked_when_preflight_sent_before_local_agent_joins() {
+    enable_tracing();
+
+    let (builder, _relay_server) = builder_with_relay!();
+
+    // Bob: normal peer with a local agent already joined
+    let TestPeer {
+        space: space_bob,
+        transport: transport_bob,
+        peer_url: peer_url_bob,
+        agent_info: agent_info_bob,
+        recv_notify_recv: recv_notify_recv_bob,
+        ..
+    } = make_test_peer(builder.clone()).await;
+
+    // Alice: peer WITHOUT a local agent joined yet
+    let alice = make_test_peer_delayed_join(builder.clone()).await;
+
+    tracing::info!("Alice peer_url: {:?}", alice.peer_url);
+    tracing::info!("Bob peer_url: {:?}", peer_url_bob);
+
+    // Insert Bob's agent info into Alice's peer store so Alice can send to Bob
+    // (This prevents sender-side blocking)
+    alice
+        .space
+        .peer_store()
+        .insert(vec![agent_info_bob.clone()])
+        .await
+        .unwrap();
+
+    // Wait for access decision to be computed
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Now Alice needs to set up her space_once_cell so the TxHandler can work
+    // But we'll do it in a way that the preflight will still be empty
+    // because there's no local agent yet
+    let _ = alice.space_once_cell.set(alice.space.clone());
+
+    tracing::info!(
+        "Step 1: Alice triggers connection to Bob (preflight will be EMPTY - no local agent yet)"
+    );
+
+    // Alice sends a message to Bob to trigger connection establishment.
+    // At this point:
+    // - Alice's preflight_gather_outgoing will return an EMPTY agent list
+    //   (because no local agent has joined yet)
+    // - Bob will receive empty preflight and insert nothing
+    // - Bob will have NO access decision for Alice's URL
+    let first_message_result = alice
+        .transport
+        .send_space_notify(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            Bytes::from("First message - during empty preflight"),
+        )
+        .await;
+
+    // The first message might fail or succeed depending on transport behavior
+    tracing::info!("First message result: {:?}", first_message_result);
+
+    // Give time for connection establishment and preflight exchange
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Check Bob's peer store - it should NOT have Alice's agents
+    let bob_peers = space_bob.peer_store().get_all().await.unwrap();
+    let bob_has_alice_agents = bob_peers
+        .iter()
+        .any(|a| a.url.as_ref() == Some(&alice.peer_url));
+
+    tracing::info!(
+        "Bob's peer store has Alice's agents: {} (peers: {:?})",
+        bob_has_alice_agents,
+        bob_peers.iter().map(|a| &a.agent).collect::<Vec<_>>()
+    );
+
+    tracing::info!("Step 2: Now Alice joins with a local agent");
+
+    // Now Alice joins with a local agent
+    let alice_agent_info = alice.join_local_agent().await;
+    tracing::info!("Alice joined with agent: {:?}", alice_agent_info.agent);
+
+    // Wait a moment for the agent info to be available
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    tracing::info!("Step 3: Alice sends another message to Bob");
+
+    // Alice sends another message to Bob
+    // This message SHOULD go through, but if Bob has no access decision for Alice,
+    // it will be blocked!
+    let payload = Bytes::from("Second message - after local agent joined");
+
+    alice
+        .transport
+        .send_space_notify(peer_url_bob.clone(), TEST_SPACE_ID, payload.clone())
+        .await
+        .unwrap();
+
+    // Give time for message processing
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Check Bob's blocked message counts
+    let stats_bob = transport_bob.dump_network_stats().await.unwrap();
+    tracing::info!(
+        "Bob's blocked message counts: {:?}",
+        stats_bob.blocked_message_counts
+    );
+
+    // Check if Bob blocked any incoming messages from Alice
+    let blocked_from_alice = stats_bob
+        .blocked_message_counts
+        .get(&alice.peer_url)
+        .map(|space_counts| {
+            space_counts
+                .get(&TEST_SPACE_ID)
+                .map(|c| c.incoming)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+
+    // Try to receive the message
+    let message_received = recv_notify_recv_bob
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .ok();
+
+    tracing::info!(
+        "Messages blocked from Alice: {}, Message received: {:?}",
+        blocked_from_alice,
+        message_received.is_some()
+    );
+
+    // Expected behavior after the fix:
+    // - The FIRST message (sent before Alice joined) may be blocked - this is unavoidable
+    //   because Bob had no access decision for Alice at that point
+    // - The SECOND message (sent after Alice joins) should NOT be blocked because:
+    //   1. When Alice joins, preflight is re-sent to all connected peers
+    //   2. Bob receives the updated preflight with Alice's agent info
+    //   3. Bob computes an access decision for Alice
+    //   4. Subsequent messages are allowed through
+
+    // We expect at most 1 blocked message (the first one sent before join)
+    // Note: In some cases the first message might not be blocked depending on timing
+    assert!(
+        blocked_from_alice <= 1,
+        "At most 1 message should be blocked (the first one sent before Alice joined). \
+         Blocked count: {}",
+        blocked_from_alice
+    );
+
+    // The SECOND message MUST have been received - this proves the fix works
+    assert!(
+        message_received.is_some(),
+        "Second message should have been received by Bob after Alice joined with a local agent. \
+         This proves that resending preflight after local_agent_join works correctly."
+    );
+
+    assert_eq!(
+        message_received.unwrap(),
+        payload,
+        "Received message should match sent payload"
+    );
+
+    tracing::info!(
+        "Test passed: second message was received after local agent joined and preflight was re-sent. \
+         {} message(s) were blocked (expected: the first message sent before Alice joined)",
+        blocked_from_alice
+    );
 }
