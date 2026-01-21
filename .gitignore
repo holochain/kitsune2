@@ -2,3 +2,6 @@
 /output-*
 .cargo
 logs
+
+# Rust Rover
+.idea/

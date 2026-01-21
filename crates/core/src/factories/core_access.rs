@@ -83,7 +83,7 @@ impl CorePeerAccessState {
                             .expect("poisoned")
                             .remove(&peer_url);
                     } else {
-                        let all_blocked = match blocks.are_all_blocked(agents_by_url).await {
+                        let any_blocked = match blocks.is_any_blocked(agents_by_url).await {
                             Ok(all_blocked) => all_blocked,
                             Err(e) => {
                                 tracing::error!(
@@ -95,7 +95,7 @@ impl CorePeerAccessState {
                             }
                         };
 
-                        let access = if all_blocked {
+                        let access = if any_blocked {
                             PeerAccess {
                                 decision: AccessDecision::Blocked,
                                 decided_at: Timestamp::now(),

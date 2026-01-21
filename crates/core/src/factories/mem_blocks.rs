@@ -74,7 +74,7 @@ impl Blocks for MemBlocks {
         Box::pin(async move { Ok(is_blocked) })
     }
 
-    fn are_all_blocked(
+    fn is_any_blocked(
         &self,
         targets: Vec<BlockTarget>,
     ) -> BoxFut<'static, K2Result<bool>> {
@@ -82,10 +82,10 @@ impl Blocks for MemBlocks {
             return Box::pin(async { Ok(false) });
         }
         let inner = self.0.lock().expect("MemBlocks inner Mutex is poisoned");
-        let are_all_blocked =
-            targets.iter().all(|target| inner.contains(target));
+        let is_any_blocked =
+            targets.iter().any(|target| inner.contains(target));
 
-        Box::pin(async move { Ok(are_all_blocked) })
+        Box::pin(async move { Ok(is_any_blocked) })
     }
 }
 
