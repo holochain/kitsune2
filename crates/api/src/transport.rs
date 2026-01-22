@@ -77,6 +77,9 @@ impl TxImpHnd {
             self.handler.peer_connect(peer.clone())?;
             let preflight =
                 self.handler.preflight_gather_outgoing(peer).await?;
+            if preflight.len() == 0 {
+                return Err("Preflight cannot be empty".to_string());
+            }
             let enc = (K2Proto {
                 ty: K2WireType::Preflight as i32,
                 data: preflight,
@@ -97,6 +100,26 @@ impl TxImpHnd {
             h.peer_disconnect(peer.clone(), reason.clone());
         }
         self.handler.peer_disconnect(peer, reason);
+    }
+
+    /// Generate preflight data to send to a specific peer.
+    /// This is useful for re-sending preflight after local agent info changes.
+    pub fn generate_preflight_for_peer(
+        &self,
+        peer: Url,
+    ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
+        Box::pin(async move {
+            let preflight =
+                self.handler.preflight_gather_outgoing(peer).await?;
+            let enc = (K2Proto {
+                ty: K2WireType::Preflight as i32,
+                data: preflight,
+                space_id: None,
+                module_id: None,
+            })
+            .encode()?;
+            Ok(enc)
+        })
     }
 
     /// Call this whenever data is received on an open connection.
@@ -486,6 +509,15 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
+
+    /// Re-send preflight data to all currently connected peers.
+    ///
+    /// This is useful when local agent info changes (e.g., after `local_agent_join`)
+    /// to ensure remote peers have up-to-date agent information. Without this,
+    /// if a connection was established before a local agent joined, the remote
+    /// peer would have received an empty preflight and would block messages
+    /// from this peer due to missing access decisions.
+    fn resend_preflight_to_connected_peers(&self) -> BoxFut<'_, K2Result<()>>;
 }
 
 /// Trait-object [Transport].
@@ -504,6 +536,7 @@ pub type WeakDynTransport = Weak<dyn Transport>;
 #[derive(Clone, Debug)]
 pub struct DefaultTransport {
     imp: DynTxImp,
+    handler: DynTxHandler,
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
@@ -518,6 +551,7 @@ impl DefaultTransport {
     pub fn create(hnd: &TxImpHnd, imp: DynTxImp) -> DynTransport {
         let out: DynTransport = Arc::new(DefaultTransport {
             imp,
+            handler: hnd.handler.clone(),
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
             blocked_message_counts: hnd.blocked_message_counts.clone(),
@@ -675,6 +709,74 @@ impl Transport for DefaultTransport {
                 transport_stats: low_level_stats,
                 blocked_message_counts: blocked_message_counts.clone(),
             })
+        })
+    }
+
+    fn resend_preflight_to_connected_peers(&self) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async move {
+            let connected_peers = self.imp.get_connected_peers().await?;
+
+            if connected_peers.is_empty() {
+                tracing::debug!("No connected peers to resend preflight to");
+                return Ok(());
+            }
+
+            tracing::info!(
+                "Resending preflight to {} connected peer(s)",
+                connected_peers.len()
+            );
+
+            for peer_url in connected_peers {
+                // Generate new preflight data for this peer
+                let preflight = match self
+                    .handler
+                    .preflight_gather_outgoing(peer_url.clone())
+                    .await
+                {
+                    Ok(data) => data,
+                    Err(e) => {
+                        tracing::warn!(
+                            ?peer_url,
+                            ?e,
+                            "Failed to gather preflight data for peer"
+                        );
+                        continue;
+                    }
+                };
+
+                // Encode as K2Proto preflight message
+                let enc = match (K2Proto {
+                    ty: K2WireType::Preflight as i32,
+                    data: preflight,
+                    space_id: None,
+                    module_id: None,
+                })
+                .encode()
+                {
+                    Ok(enc) => enc,
+                    Err(e) => {
+                        tracing::warn!(
+                            ?peer_url,
+                            ?e,
+                            "Failed to encode preflight message"
+                        );
+                        continue;
+                    }
+                };
+
+                // Send to the peer
+                if let Err(e) = self.imp.send(peer_url.clone(), enc).await {
+                    tracing::warn!(
+                        ?peer_url,
+                        ?e,
+                        "Failed to send preflight to peer"
+                    );
+                } else {
+                    tracing::debug!(?peer_url, "Resent preflight to peer");
+                }
+            }
+
+            Ok(())
         })
     }
 }
