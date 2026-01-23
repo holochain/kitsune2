@@ -84,7 +84,7 @@ impl CorePeerAccessState {
                             .remove(&peer_url);
                     } else {
                         let any_blocked = match blocks.is_any_blocked(agents_by_url).await {
-                            Ok(all_blocked) => all_blocked,
+                            Ok(any_blocked) => any_blocked,
                             Err(e) => {
                                 tracing::error!(
                                     "Failed to check block status for url {:?}: {:?}",
