@@ -12,6 +12,171 @@
 //! architecture, the remote URL must be sent with the preflight.
 //! Incoming streams are accepted and handled asynchronously per connection. There is one
 //! stream open per direction, over which all frames are sent.
+//!
+//! # Architecture
+//!
+//! Complete trait abstraction of all I/O operations, enabling full testability without network dependencies.
+//!
+//! ```text
+//!        Traits                   Implementations
+//!
+//!     ┌──────────┐               ┌──────────────┐
+//!     │ Endpoint │               │ IrohEndpoint │
+//!     └────┬─────┘               └──────┬───────┘
+//!          │                            │
+//!          ▼                            ▼
+//!    ┌────────────┐             ┌────────────────┐
+//!    │ Connection │             │ IrohConnection │
+//!    └─────┬──────┘             └───────┬────────┘
+//!          │                            │
+//!     ┌────┴────┐                  ┌────┴────┐
+//!     ▼         ▼                  ▼         ▼
+//! ┌────────┐ ┌────────┐   ┌────────────┐ ┌────────────┐
+//! │  Send  │ │  Recv  │   │  IrohSend  │ │  IrohRecv  │
+//! │ Stream │ │ Stream │   │   Stream   │ │   Stream   │
+//! └────────┘ └────────┘   └────────────┘ └────────────┘
+//! ```
+//!
+//! # IrohTransport task management
+//!
+//! ```text
+//!                       ┌───────────────┐
+//!                       │ IrohTransport │
+//!                       └───────┬───────┘
+//!                               │
+//!               ┌───────────────┴───────────────┐
+//!               │                               │
+//!               ▼                               ▼
+//!     ┌─────────────────┐             ┌─────────────────┐
+//!     │ watch_addr_task │             │   accept_task   │
+//!     └────────┬────────┘             └───┬─────────┬───┘
+//!              │                          │         │
+//!              │ monitors                 │         └──────────┬──────────┐
+//!              ▼                          │ accepts            │          │
+//!     ┌─────────────────┐                 ▼                    ▼          ▼
+//!     │  Relay Address  │          ┌────────────┐       ┌──────────┐┌──────────┐┌──────────┐
+//!     │    Changes      │          │  Incoming  │       │ conn_    ││ conn_    ││ conn_    │
+//!     └─────────────────┘          │ Connections│       │ reader 1 ││ reader 2 ││ reader N │
+//!                                  └────────────┘       └────┬─────┘└────┬─────┘└────┬─────┘
+//!                                                            │           │           │
+//!                                                            │ reads     │ reads     │ reads
+//!                                                            ▼           ▼           ▼
+//!                                                      ┌─────────┐ ┌─────────┐ ┌─────────┐
+//!                                                      │ Peer 1  │ │ Peer 2  │ │ Peer N  │
+//!                                                      │ Frames  │ │ Frames  │ │ Frames  │
+//!                                                      └─────────┘ └─────────┘ └─────────┘
+//! ```
+//!
+//! # Connection establishment
+//!
+//! The transport handlers [`TxImp::send`] implementation contains the logic
+//! for connection establishment.
+//!
+//! ```text
+//!                  ┌────────────────┐
+//!                  │ send to peer X │
+//!                  └───────┬────────┘
+//!                          │
+//!                          ▼
+//!                ┌───────────────────┐
+//!                │ Connection exists?│
+//!                └─────────┬─────────┘
+//!                          │
+//!            ┌─────────────┴─────────────┐
+//!            │ Yes                    No │
+//!            ▼                           ▼
+//!   ┌────────────────────┐    ┌─────────────────────────┐
+//!   │ Use existing       │    │ Acquire peer-specific   │
+//!   │ connection         │    │ lock                    │
+//!   └─────────┬──────────┘    └────────────┬────────────┘
+//!             │                            │
+//!             │                            ▼
+//!             │               ┌────────────────────────┐
+//!             │               │ Recheck connection     │
+//!             │               │ after lock             │
+//!             │               └───────────┬────────────┘
+//!             │                           │
+//!             │              ┌────────────┴────────────┐
+//!             │              │ Created by           No │
+//!             │              │ another task            │
+//!             │              ▼                         ▼
+//!             │         ┌────┘          ┌──────────────────────┐
+//!             │         │               │ Create new connection│
+//!             │         │               └──────────┬───────────┘
+//!             │         │                          │
+//!             │         │                          ▼
+//!             │         │               ┌──────────────────┐
+//!             │         │               │ Send preflight   │
+//!             │         │               └────────┬─────────┘
+//!             │         │                        │
+//!             │         │                        ▼
+//!             │         │               ┌──────────────────┐
+//!             │         │               │ Store in map     │
+//!             │         │               └────────┬─────────┘
+//!             │         │                        │
+//!             ▼         ▼                        │
+//!   ┌────────────────────┐◄──────────────────────┘
+//!   │ Use existing       │
+//!   │ connection         │
+//!   └─────────┬──────────┘
+//!             │
+//!             ▼
+//!      ┌────────────┐
+//!      │ Send data  │
+//!      └────────────┘
+//! ```
+//!
+//! Every connection starts with a mandatory bidirectional handshake:
+//!
+//! ```text
+//!     Peer A                                       Peer B
+//!        │                                            │
+//!        │         ┌────────────────────────┐         │
+//!        │         │ Connection Established │         │
+//!        │         └────────────────────────┘         │
+//!        │                                            │
+//!        │  Preflight Frame (Type 0)                  │
+//!        │  [URL + Handshake Data]                    │
+//!        │ ──────────────────────────────────────────>│
+//!        │                                            │
+//!        │                          ┌───────────────┐ │
+//!        │                          │  10s timeout  │ │
+//!        │                          │   enforced    │ │
+//!        │                          └───────────────┘ │
+//!        │                                            │
+//!        │                 Return Preflight Frame     │
+//!        │                 [URL + Handshake Data]     │
+//!        │<───────────────────────────────────────────│
+//!        │                                            │
+//!        │          ┌────────────────────┐            │
+//!        │          │ Connection Ready   │            │
+//!        │          └────────────────────┘            │
+//!        │                                            │
+//!        │  Data Frame (Type 1)                       │
+//!        │ ──────────────────────────────────────────>│
+//!        │                                            │
+//!        │                      Data Frame (Type 1)   │
+//!        │<───────────────────────────────────────────│
+//!        │                                            │
+//!     Peer A                                       Peer B
+//!
+//! ```
+//!
+//! # iroh transport frames
+//!
+//! ```text
+//! Preflight Frame (Type 0):
+//! ┌─────┬────────┬─────────┬─────┬───────────┐
+//! │ 0x0 │ Length │ URL Len │ URL │ Preflight │
+//! │ 1 B │  4 B   │   4 B   │ Var │   Data    │
+//! └─────┴────────┴─────────┴─────┴───────────┘
+//!
+//! Data Frame (Type 1):
+//! ┌─────┬────────┬──────┐
+//! │ 0x1 │ Length │ Data │
+//! │ 1 B │  4 B   │ Var  │
+//! └─────┴────────┴──────┘
+//! ```
 
 use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
