@@ -587,6 +587,18 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            // Check if we have local agents joined to this space
+            let space_handler =
+                self.space_map.lock().unwrap().get(&space_id).cloned();
+
+            if let Some(handler) = space_handler {
+                if !handler.has_local_agents().await? {
+                    return Err(K2Error::other(
+                        "Cannot send message before local agent has joined space",
+                    ));
+                }
+            }
+
             if is_peer_blocked(
                 self.space_map.clone(),
                 self.blocked_message_counts.clone(),
@@ -621,6 +633,18 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            // Check if we have local agents joined to this space
+            let space_handler =
+                self.space_map.lock().unwrap().get(&space_id).cloned();
+
+            if let Some(handler) = space_handler {
+                if !handler.has_local_agents().await? {
+                    return Err(K2Error::other(
+                        "Cannot send message before local agent has joined space",
+                    ));
+                }
+            }
+
             if is_peer_blocked(
                 self.space_map.clone(),
                 self.blocked_message_counts.clone(),
@@ -731,6 +755,17 @@ pub trait TxHandler: TxBaseHandler {
         drop((peer_url, data));
         Box::pin(async { Ok(()) })
     }
+
+    /// Check if this handler has any local agents joined.
+    ///
+    /// This is used by the transport to prevent sending messages before
+    /// a local agent has joined, which would result in an empty preflight
+    /// being sent to peers, causing them to block all messages from us.
+    ///
+    /// The default implementation returns true (assumes agents exist).
+    fn has_local_agents(&self) -> BoxFut<'_, K2Result<bool>> {
+        Box::pin(async { Ok(true) })
+    }
 }
 
 /// Trait-object [TxHandler].
@@ -763,6 +798,17 @@ pub trait TxSpaceHandler: TxBaseHandler {
 
     /// Return `true` if every agent using the passed peer [`Url`] is blocked.
     fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool>;
+
+    /// Check if this space has any local agents joined.
+    ///
+    /// This is used to prevent sending messages before a local agent has joined,
+    /// which would result in an empty preflight being sent to peers, causing them
+    /// to block all messages from us.
+    ///
+    /// The default implementation returns true (assumes agents exist).
+    fn has_local_agents(&self) -> BoxFut<'_, K2Result<bool>> {
+        Box::pin(async { Ok(true) })
+    }
 }
 
 /// Trait-object [TxSpaceHandler].
