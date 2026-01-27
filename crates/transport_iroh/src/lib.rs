@@ -12,11 +12,177 @@
 //! architecture, the remote URL must be sent with the preflight.
 //! Incoming streams are accepted and handled asynchronously per connection. There is one
 //! stream open per direction, over which all frames are sent.
+//!
+//! # Architecture
+//!
+//! Complete trait abstraction of all I/O operations, enabling full testability without network dependencies.
+//!
+//! ```text
+//!        Traits                   Implementations
+//!
+//!     ┌──────────┐               ┌──────────────┐
+//!     │ Endpoint │               │ IrohEndpoint │
+//!     └────┬─────┘               └──────┬───────┘
+//!          │                            │
+//!          ▼                            ▼
+//!    ┌────────────┐             ┌────────────────┐
+//!    │ Connection │             │ IrohConnection │
+//!    └─────┬──────┘             └───────┬────────┘
+//!          │                            │
+//!     ┌────┴────┐                  ┌────┴────┐
+//!     ▼         ▼                  ▼         ▼
+//! ┌────────┐ ┌────────┐   ┌────────────┐ ┌────────────┐
+//! │  Send  │ │  Recv  │   │  IrohSend  │ │  IrohRecv  │
+//! │ Stream │ │ Stream │   │   Stream   │ │   Stream   │
+//! └────────┘ └────────┘   └────────────┘ └────────────┘
+//! ```
+//!
+//! # IrohTransport task management
+//!
+//! ```text
+//!                       ┌───────────────┐
+//!                       │ IrohTransport │
+//!                       └───────┬───────┘
+//!                               │
+//!               ┌───────────────┴───────────────┐
+//!               │                               │
+//!               ▼                               ▼
+//!     ┌─────────────────┐             ┌─────────────────┐
+//!     │ watch_addr_task │             │   accept_task   │
+//!     └────────┬────────┘             └───┬─────────┬───┘
+//!              │                          │         │
+//!              │ monitors                 │         └──────────┬──────────┐
+//!              ▼                          │ accepts            │          │
+//!     ┌─────────────────┐                 ▼                    ▼          ▼
+//!     │  Relay Address  │          ┌────────────┐       ┌──────────┐┌──────────┐┌──────────┐
+//!     │    Changes      │          │  Incoming  │       │ conn_    ││ conn_    ││ conn_    │
+//!     └─────────────────┘          │ Connections│       │ reader 1 ││ reader 2 ││ reader N │
+//!                                  └────────────┘       └────┬─────┘└────┬─────┘└────┬─────┘
+//!                                                            │           │           │
+//!                                                            │ reads     │ reads     │ reads
+//!                                                            ▼           ▼           ▼
+//!                                                      ┌─────────┐ ┌─────────┐ ┌─────────┐
+//!                                                      │ Peer 1  │ │ Peer 2  │ │ Peer N  │
+//!                                                      │ Frames  │ │ Frames  │ │ Frames  │
+//!                                                      └─────────┘ └─────────┘ └─────────┘
+//! ```
+//!
+//! # Connection establishment
+//!
+//! The transport handlers [`TxImp::send`] implementation contains the logic
+//! for connection establishment.
+//!
+//! ```text
+//!                  ┌────────────────┐
+//!                  │ send to peer X │
+//!                  └───────┬────────┘
+//!                          │
+//!                          ▼
+//!                ┌───────────────────┐
+//!                │ Connection exists?│
+//!                └─────────┬─────────┘
+//!                          │
+//!            ┌─────────────┴─────────────┐
+//!            │ Yes                    No │
+//!            ▼                           ▼
+//!   ┌────────────────────┐    ┌─────────────────────────┐
+//!   │ Use existing       │    │ Acquire peer-specific   │
+//!   │ connection         │    │ lock                    │
+//!   └─────────┬──────────┘    └────────────┬────────────┘
+//!             │                            │
+//!             │                            ▼
+//!             │               ┌────────────────────────┐
+//!             │               │ Recheck connection     │
+//!             │               │ after lock             │
+//!             │               └───────────┬────────────┘
+//!             │                           │
+//!             │              ┌────────────┴────────────┐
+//!             │              │ Created by           No │
+//!             │              │ another task            │
+//!             │              ▼                         ▼
+//!             │         ┌────┘          ┌──────────────────────┐
+//!             │         │               │ Create new connection│
+//!             │         │               └──────────┬───────────┘
+//!             │         │                          │
+//!             │         │                          ▼
+//!             │         │               ┌──────────────────┐
+//!             │         │               │ Send preflight   │
+//!             │         │               └────────┬─────────┘
+//!             │         │                        │
+//!             │         │                        ▼
+//!             │         │               ┌──────────────────┐
+//!             │         │               │ Store in map     │
+//!             │         │               └────────┬─────────┘
+//!             │         │                        │
+//!             ▼         ▼                        │
+//!   ┌────────────────────┐◄──────────────────────┘
+//!   │ Use existing       │
+//!   │ connection         │
+//!   └─────────┬──────────┘
+//!             │
+//!             ▼
+//!      ┌────────────┐
+//!      │ Send data  │
+//!      └────────────┘
+//! ```
+//!
+//! Every connection starts with a mandatory bidirectional handshake:
+//!
+//! ```text
+//!     Peer A                                       Peer B
+//!        │                                            │
+//!        │         ┌────────────────────────┐         │
+//!        │         │ Connection Established │         │
+//!        │         └────────────────────────┘         │
+//!        │                                            │
+//!        │  Preflight Frame (Type 0)                  │
+//!        │  [URL + Handshake Data]                    │
+//!        │ ──────────────────────────────────────────>│
+//!        │                                            │
+//!        │                          ┌───────────────┐ │
+//!        │                          │  10s timeout  │ │
+//!        │                          │   enforced    │ │
+//!        │                          └───────────────┘ │
+//!        │                                            │
+//!        │                 Return Preflight Frame     │
+//!        │                 [URL + Handshake Data]     │
+//!        │<───────────────────────────────────────────│
+//!        │                                            │
+//!        │          ┌────────────────────┐            │
+//!        │          │ Connection Ready   │            │
+//!        │          └────────────────────┘            │
+//!        │                                            │
+//!        │  Data Frame (Type 1)                       │
+//!        │ ──────────────────────────────────────────>│
+//!        │                                            │
+//!        │                      Data Frame (Type 1)   │
+//!        │<───────────────────────────────────────────│
+//!        │                                            │
+//!     Peer A                                       Peer B
+//!
+//! ```
+//!
+//! # iroh transport frames
+//!
+//! ```text
+//! Preflight Frame (Type 0):
+//! ┌─────┬────────┬─────────┬─────┬───────────┐
+//! │ 0x0 │ Length │ URL Len │ URL │ Preflight │
+//! │ 1 B │  4 B   │   4 B   │ Var │   Data    │
+//! └─────┴────────┴─────────┴─────┴───────────┘
+//!
+//! Data Frame (Type 1):
+//! ┌─────┬────────┬──────┐
+//! │ 0x1 │ Length │ Data │
+//! │ 1 B │  4 B   │ Var  │
+//! └─────┴────────┴──────┘
+//! ```
 
+use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
 use iroh::{
     endpoint::ConnectionType, Endpoint, EndpointAddr, RelayMap, RelayMode,
-    RelayUrl, Watcher,
+    RelayUrl,
 };
 use kitsune2_api::*;
 use std::{
@@ -32,7 +198,10 @@ mod frame;
 use frame::*;
 mod url;
 use url::*;
+mod connection;
 mod connection_context;
+mod endpoint;
+mod stream;
 use connection_context::*;
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -70,6 +239,12 @@ pub mod config {
         /// Defaults to 1 MiB.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub max_frame_bytes: usize,
+
+        /// The timeout for establishing a connection to a peer.
+        ///
+        /// Defaults to 60 seconds.
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub connect_timeout_s: u32,
     }
 
     impl Default for IrohTransportConfig {
@@ -78,6 +253,7 @@ pub mod config {
                 relay_url: None,
                 relay_allow_plain_text: false,
                 max_frame_bytes: 1024 * 1024,
+                connect_timeout_s: 60,
             }
         }
     }
@@ -115,11 +291,11 @@ impl TransportFactory for IrohTransportFactory {
 
         if let Some(relay) = &config.iroh_transport.relay_url {
             let relay_server_url = ::url::Url::parse(relay)
-                .map_err(|err| K2Error::other_src("invalid relay URL", err))?;
+                .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
             if relay_server_url.scheme() == "http"
                 && !config.iroh_transport.relay_allow_plain_text
             {
-                return Err(K2Error::other("disallowed plaintext relay url"));
+                return Err(K2Error::other("Disallowed plaintext relay URL"));
             }
         }
 
@@ -148,19 +324,19 @@ type Connections = Arc<RwLock<HashMap<Url, Arc<ConnectionContext>>>>;
 /// Iroh-based transport implementation.
 #[derive(Debug)]
 struct IrohTransport {
-    endpoint: Arc<Endpoint>,
+    endpoint: DynIrohEndpoint,
     handler: Arc<TxImpHnd>,
     local_url: Arc<RwLock<Option<Url>>>,
     connections: Connections,
     connection_locks: Arc<Mutex<HashMap<Url, Arc<tokio::sync::Mutex<()>>>>>,
     watch_addr_task: AbortHandle,
     accept_task: AbortHandle,
-    max_frame_bytes: usize,
+    config: IrohTransportConfig,
 }
 
 impl Drop for IrohTransport {
     fn drop(&mut self) {
-        info!(local_url = ?self.local_url, "dropping transport");
+        info!(local_url = ?self.local_url, "Dropping transport");
         self.watch_addr_task.abort();
         self.accept_task.abort();
         // The connection reader task inside the connection context
@@ -172,7 +348,7 @@ impl Drop for IrohTransport {
             .expect("poisoned")
             .drain()
             .for_each(|(remote_url, ctx)| {
-                debug!(?remote_url, "aborting connection context tasks");
+                debug!(?remote_url, "Aborting connection context tasks");
                 ctx.abort_tasks();
             });
     }
@@ -185,9 +361,9 @@ impl IrohTransport {
     ) -> K2Result<DynTxImp> {
         // If a relay server is configured, only use that.
         // Otherwise, use the default relay servers provided by n0.
-        let mut builder = if let Some(relay_url) = config.relay_url {
-            let relay_url =
-                RelayUrl::from_str(&relay_url).map_err(K2Error::other)?;
+        let mut builder = if let Some(relay_url) = &config.relay_url {
+            let relay_url = RelayUrl::from_str(relay_url)
+                .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
             let relay_map = RelayMap::from_iter([relay_url]);
             Endpoint::empty_builder(RelayMode::Custom(relay_map))
         } else {
@@ -203,10 +379,10 @@ impl IrohTransport {
         }
 
         let endpoint = builder.bind().await.map_err(|err| {
-            K2Error::other_src("failed to bind iroh endpoint", err)
+            K2Error::other_src("Failed to bind iroh endpoint", err)
         })?;
 
-        let endpoint = Arc::new(endpoint);
+        let endpoint = Arc::new(IrohEndpoint::new(endpoint));
         let local_url = Arc::new(RwLock::new(None));
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let connection_locks = Arc::new(Mutex::new(HashMap::new()));
@@ -233,7 +409,7 @@ impl IrohTransport {
             connection_locks,
             watch_addr_task,
             accept_task,
-            max_frame_bytes: config.max_frame_bytes,
+            config,
         });
         Ok(out)
     }
@@ -244,7 +420,7 @@ impl IrohTransport {
     /// when it changes and notifying the handler of a new listening address.
     /// It runs asynchronously until the watcher encounters an error.
     fn spawn_watch_addr_task(
-        endpoint: Arc<Endpoint>,
+        endpoint: DynIrohEndpoint,
         handler: Arc<TxImpHnd>,
         local_url: Arc<RwLock<Option<Url>>>,
     ) -> AbortHandle {
@@ -255,6 +431,7 @@ impl IrohTransport {
                     Ok(addr) => {
                         if let Some(url) = get_url_with_first_relay(&addr) {
                             {
+                                info!(?url, "Received a new listening address from relay server");
                                 let mut guard =
                                     local_url.write().expect("poisoned");
                                 if guard.as_ref() != Some(&url) {
@@ -267,7 +444,7 @@ impl IrohTransport {
                     Err(err) => {
                         error!(
                             ?err,
-                            "address watcher update failed, stopping watch loop"
+                            "Address watcher update failed, stopping watch loop"
                         );
                         break;
                     }
@@ -283,7 +460,7 @@ impl IrohTransport {
     /// For each accepted connection, it creates a new [`ConnectionContext`] and spawns
     /// a connection reader to handle incoming uni-directional streams.
     fn spawn_accept_task(
-        endpoint: Arc<Endpoint>,
+        endpoint: DynIrohEndpoint,
         handler: Arc<TxImpHnd>,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
@@ -292,38 +469,35 @@ impl IrohTransport {
         tokio::spawn(async move {
             loop {
                 match endpoint.accept().await {
-                    Some(incoming) => match incoming.await {
-                        Ok(conn) => {
-                            info!(remote_id = ?conn.remote_id(),"receiving incoming connection");
-                            let conn_opened_at_s = SystemTime::UNIX_EPOCH
-                                .elapsed()
-                                .unwrap_or_else(|err| {
-                                    warn!(?err, "failed to get system time");
-                                    Duration::from_secs(0)
-                                })
-                                .as_secs();
-                            let conn = Arc::new(conn);
+                    Some(Ok(connection)) => {
+                        info!(remote_id = ?connection.remote_id(),"Receiving incoming connection");
+                        let conn_opened_at_s = SystemTime::UNIX_EPOCH
+                            .elapsed()
+                            .unwrap_or_else(|err| {
+                                warn!(?err, "Failed to get system time");
+                                Duration::from_secs(0)
+                            })
+                            .as_secs();
 
-                            // Create a new connection context.
-                            let conn_type_watcher =
-                                endpoint.conn_type(conn.remote_id());
-                            ConnectionContext::new(
-                                ConnectionContextParams{
-                                handler: handler.clone(),
-                                connection: conn,
-                                remote_url: None,
-                                preflight_sent: false,
-                                opened_at_s: conn_opened_at_s,
-                                connection_type_watcher: conn_type_watcher,
-                                connections: connections.clone(),
-                                local_url: local_url.clone(),
-                                max_frame_bytes,
+                        // Create a new connection context.
+                        let conn_type_watcher =
+                            endpoint.conn_type(connection.remote_id());
+                        ConnectionContext::new(
+                            ConnectionContextParams{
+                            handler: handler.clone(),
+                            connection,
+                            remote_url: None,
+                            preflight_sent: false,
+                            opened_at_s: conn_opened_at_s,
+                            connection_type_watcher: conn_type_watcher,
+                            connections: connections.clone(),
+                            local_url: local_url.clone(),
+                            max_frame_bytes,
                         });
-                        }
-                        Err(err) => {
-                            error!(?err, "iroh incoming connection failed");
-                        }
-                    },
+                    }
+                    Some(Err(err)) => {
+                        error!(?err, "iroh incoming connection failed");
+                    }
                     None => {
                         error!(
                             "iroh incoming connection failed - endpoint closed"
@@ -342,27 +516,28 @@ impl IrohTransport {
     /// action succeeds, the context is returned. In case of error during the
     /// preflight, the context is dropped and an error returned.
     async fn create_connection_and_context(
-        endpoint: Arc<Endpoint>,
+        endpoint: DynIrohEndpoint,
         target: EndpointAddr,
         handler: Arc<TxImpHnd>,
         remote_url: Url,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
-        max_frame_bytes: usize,
+        config: &IrohTransportConfig,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
-        let conn = endpoint
-            .connect(target.clone(), ALPN)
-            .await
-            .map_err(|err| K2Error::other_src("iroh connect failed", err))?;
+        let conn = tokio::time::timeout(
+            Duration::from_secs(config.connect_timeout_s as u64),
+            endpoint.connect(target.clone(), ALPN),
+        )
+        .await
+        .map_err(|err| K2Error::other_src("iroh connect timed out", err))??;
         let conn_opened_at_s = SystemTime::UNIX_EPOCH
             .elapsed()
             .unwrap_or_else(|err| {
-                warn!(?err, "failed to get system time");
+                warn!(?err, "Failed to get system time");
                 Duration::from_secs(0)
             })
             .as_secs();
-        let conn = Arc::new(conn);
 
         // Send preflight as first message on the new connection.
         let maybe_local_url = local_url.read().expect("poisoned").clone();
@@ -373,14 +548,14 @@ impl IrohTransport {
             let conn_type_watcher = endpoint.conn_type(target.id);
             let ctx = ConnectionContext::new(ConnectionContextParams {
                 handler: handler.clone(),
-                connection: conn.clone(),
+                connection: conn,
                 remote_url: Some(remote_url.clone()),
                 preflight_sent: true,
                 opened_at_s: conn_opened_at_s,
                 connection_type_watcher: conn_type_watcher,
                 connections: connections.clone(),
                 local_url: local_url.clone(),
-                max_frame_bytes,
+                max_frame_bytes: config.max_frame_bytes,
             });
 
             ctx.send_preflight_frame(
@@ -411,7 +586,7 @@ impl TxImp for IrohTransport {
         if let Some(ctx) =
             self.connections.write().expect("poisoned").remove(&peer)
         {
-            ctx.disconnect("disconnecting from remote".to_string());
+            ctx.disconnect("Disconnecting from remote".to_string());
         }
         Box::pin(async {})
     }
@@ -465,7 +640,7 @@ impl TxImp for IrohTransport {
                 } else {
                     // Connection doesn't exist, create it.
                     // This establishes the connection and sends the preflight to the remote.
-                    info!(remote = ?remote_url.peer_id(), "establishing connection to remote");
+                    info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
                     let ctx = Self::create_connection_and_context(
                         endpoint,
                         remote,
@@ -473,7 +648,7 @@ impl TxImp for IrohTransport {
                         remote_url.clone(),
                         connections.clone(),
                         local_url.clone(),
-                        self.max_frame_bytes,
+                        &self.config,
                     )
                     .await?;
 

@@ -450,12 +450,12 @@ async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
     let block_targets = vec![BlockTarget::Agent(agent.clone())];
 
     // Check that the Blocks module doesn't consider Bob's agent blocked prior to blocking
-    let all_blocked = space
+    let any_blocked = space
         .blocks()
-        .are_all_blocked(block_targets.clone())
+        .is_any_blocked(block_targets.clone())
         .await
         .unwrap();
-    assert!(!all_blocked);
+    assert!(!any_blocked);
 
     // Then block the agent
     space
@@ -467,9 +467,9 @@ async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
     space.peer_store().remove(agent.clone()).await.unwrap();
 
     // Check that all agents are considered blocked now
-    let all_blocked =
-        space.blocks().are_all_blocked(block_targets).await.unwrap();
-    assert!(all_blocked);
+    let any_blocked =
+        space.blocks().is_any_blocked(block_targets).await.unwrap();
+    assert!(any_blocked);
 }
 
 /// A helper function that joins with a new local agent to the given space,

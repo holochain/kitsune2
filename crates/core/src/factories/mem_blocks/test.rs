@@ -44,13 +44,23 @@ async fn targets_are_not_repeated_in_store() {
 }
 
 #[tokio::test]
+async fn no_target_is_blocked_when_checking() {
+    let blocks = MemBlocks::default();
+
+    assert!(!blocks
+        .is_any_blocked(vec![BLOCK_TARGET_AGENT_1, BLOCK_TARGET_AGENT_2])
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
 async fn only_one_target_is_blocked_when_checking() {
     let blocks = MemBlocks::default();
 
     blocks.block(BLOCK_TARGET_AGENT_1).await.unwrap();
 
-    assert!(!blocks
-        .are_all_blocked(vec![BLOCK_TARGET_AGENT_1, BLOCK_TARGET_AGENT_2])
+    assert!(blocks
+        .is_any_blocked(vec![BLOCK_TARGET_AGENT_1, BLOCK_TARGET_AGENT_2])
         .await
         .unwrap());
 }
@@ -63,7 +73,7 @@ async fn all_targets_are_blocked_when_checking() {
     blocks.block(BLOCK_TARGET_AGENT_2).await.unwrap();
 
     assert!(blocks
-        .are_all_blocked(vec![BLOCK_TARGET_AGENT_1, BLOCK_TARGET_AGENT_2])
+        .is_any_blocked(vec![BLOCK_TARGET_AGENT_1, BLOCK_TARGET_AGENT_2])
         .await
         .unwrap());
 }
@@ -71,5 +81,5 @@ async fn all_targets_are_blocked_when_checking() {
 #[tokio::test]
 async fn checking_empty_target_list_returns_false() {
     let blocks = MemBlocks::default();
-    assert!(!blocks.are_all_blocked(vec![]).await.unwrap());
+    assert!(!blocks.is_any_blocked(vec![]).await.unwrap());
 }

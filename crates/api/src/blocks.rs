@@ -40,10 +40,10 @@ pub trait Blocks: 'static + Send + Sync + std::fmt::Debug {
         target: BlockTarget,
     ) -> BoxFut<'static, K2Result<bool>>;
 
-    /// Check a collection of targets and return `Ok(true)` if **all** targets are blocked.
+    /// Check a collection of targets and return `Ok(true)` if **any** target is blocked.
     ///
-    /// Note: If a single target is not blocked then return `Ok(false)`.
-    fn are_all_blocked(
+    /// Note: If no targets are blocked or targets is empty, then return `Ok(false)`.
+    fn is_any_blocked(
         &self,
         targets: Vec<BlockTarget>,
     ) -> BoxFut<'static, K2Result<bool>>;

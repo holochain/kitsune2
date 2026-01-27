@@ -2708,6 +2708,7 @@ dependencies = [
  "kitsune2_core",
  "kitsune2_test_utils",
  "kitsune2_transport_iroh",
+ "mockall",
  "n0-watcher",
  "schemars",
  "serde",

@@ -3,6 +3,7 @@
 use super::*;
 
 mod frame;
+mod stream;
 mod url;
 
 #[test]
@@ -67,5 +68,5 @@ fn validate_disallowed_plain_text_relay_url() {
 
     let result = builder.validate_config();
     assert!(result.is_err());
-    assert!(format!("{result:?}").contains("disallowed plaintext relay url"));
+    assert!(format!("{result:?}").contains("Disallowed plaintext relay URL"));
 }

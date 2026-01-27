@@ -36,6 +36,7 @@ n0-watcher = { workspace = true }
 kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
 kitsune2_test_utils = { workspace = true }
 
+mockall = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
 
 [features]
