@@ -358,8 +358,9 @@ where
             return Box::pin(async move { Ok(response) });
         }
 
-        // Allow request through
-        let future = self.inner.call(req);
+        // Clone the inner service so the future owns it instead of borrowing &mut self
+        let mut inner = self.inner.clone();
+        let future = inner.call(req);
         Box::pin(async move { future.await })
     }
 }
