@@ -39,7 +39,6 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio_websockets::Error as WsError;
 use tower::{Layer, Service};
 use tracing::{debug, trace, warn};
 
@@ -122,12 +121,14 @@ pub async fn relay_handler(
 
 /// Adapter that wraps axum's WebSocket to implement the Stream/Sink traits needed by the relay
 struct AxumWebSocketAdapter {
-    inner: WebSocket,
+    inner: Pin<Box<WebSocket>>,
 }
 
 impl AxumWebSocketAdapter {
     fn new(socket: WebSocket) -> Self {
-        Self { inner: socket }
+        Self {
+            inner: Box::pin(socket),
+        }
     }
 }
 
@@ -140,7 +141,7 @@ impl Stream for AxumWebSocketAdapter {
     ) -> Poll<Option<Self::Item>> {
         // Poll the underlying axum WebSocket
         loop {
-            match Pin::new(&mut self.inner).poll_next(cx) {
+            match self.inner.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(msg))) => {
                     match msg {
                         AxumMessage::Binary(data) => {
@@ -154,8 +155,8 @@ impl Stream for AxumWebSocketAdapter {
                     }
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    // Convert axum error to WsError
-                    return Poll::Ready(Some(Err(WsError::Io(
+                    // Convert axum error to StreamError
+                    return Poll::Ready(Some(Err(StreamError::Io(
                         std::io::Error::new(
                             std::io::ErrorKind::Other,
                             format!("{:?}", e),
@@ -176,10 +177,10 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
-        match Pin::new(&mut self.inner).poll_ready(cx) {
+        match self.inner.as_mut().poll_ready(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(WsError::Io(std::io::Error::new(
+                Poll::Ready(Err(StreamError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("{:?}", e),
                 ))))
@@ -192,10 +193,11 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         mut self: Pin<&mut Self>,
         item: Bytes,
     ) -> Result<(), Self::Error> {
-        Pin::new(&mut self.inner)
+        self.inner
+            .as_mut()
             .start_send(AxumMessage::Binary(item))
             .map_err(|e| {
-                WsError::Io(std::io::Error::new(
+                StreamError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("{:?}", e),
                 ))
@@ -206,10 +208,10 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
-        match Pin::new(&mut self.inner).poll_flush(cx) {
+        match self.inner.as_mut().poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(WsError::Io(std::io::Error::new(
+                Poll::Ready(Err(StreamError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("{:?}", e),
                 ))))
@@ -222,10 +224,10 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
-        match Pin::new(&mut self.inner).poll_close(cx) {
+        match self.inner.as_mut().poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(WsError::Io(std::io::Error::new(
+                Poll::Ready(Err(StreamError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("{:?}", e),
                 ))))
@@ -546,28 +548,31 @@ mod tests {
     /// Test that AxumWebSocketAdapter implements the required traits
     #[test]
     fn test_axum_websocket_adapter_traits() {
-        // This test just verifies the types compile correctly
-        // The actual functionality is tested in the kitsune2 integration tests
-        fn _assert_stream<T>(_: T)
+        // Compile-time assertions to verify trait implementations
+        // These functions will only compile if AxumWebSocketAdapter properly implements the traits
+
+        fn _assert_stream<T>()
         where
             T: Stream<Item = Result<Bytes, StreamError>> + Unpin,
         {
         }
 
-        fn _assert_sink<T>(_: T)
+        fn _assert_sink<T>()
         where
             T: Sink<Bytes, Error = StreamError> + Unpin,
         {
         }
 
-        fn _assert_export_keying_material<T>(_: T)
+        fn _assert_export_keying_material<T>()
         where
             T: ExportKeyingMaterial,
         {
         }
 
-        // These assertions verify the trait bounds at compile time
-        // No runtime test needed as this is checked by the type system
+        // Call the assertion functions with the adapter type to verify trait bounds
+        _assert_stream::<AxumWebSocketAdapter>();
+        _assert_sink::<AxumWebSocketAdapter>();
+        _assert_export_keying_material::<AxumWebSocketAdapter>();
     }
 
     /// Integration test: Start an axum server with the relay handler and connect clients
