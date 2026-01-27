@@ -6,8 +6,6 @@ use http::{HeaderName, HeaderValue, Method};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-#[cfg(feature = "iroh-relay")]
-use tracing::{error, info};
 
 pub struct HttpResponse {
     pub status: u16,
@@ -260,41 +258,27 @@ fn tokio_thread(
                     .allow_credentials(allow_credentials)
                 );
 
-            // Spawn the relay service on companion ports (base_port + 10000)
-            // The relay service runs at the connection level using hyper-util
-            // and handles WebSocket upgrades that axum cannot support
-            #[cfg(feature = "iroh-relay")]
-            let _relay_handles = if !config.no_relay_server {
-                let mut handles = Vec::new();
-                for addr in &server_config.addrs {
-                    // Use a different port for the relay service to avoid conflicts
-                    // Clients will discover the relay address through the bootstrap API
-                    let relay_addr = std::net::SocketAddr::new(
-                        addr.ip(),
-                        addr.port().saturating_add(10000), // Relay on port + 10000
-                    );
-
-                    match crate::iroh_relay::spawn_relay_service(relay_addr, &config.iroh_relay.limits).await {
-                        Ok(handle) => {
-                            info!("Relay service listening on {} (bootstrap on {})", handle.addr, addr);
-                            handles.push(handle);
-                        }
-                        Err(err) => {
-                            error!("Failed to spawn relay service on {}: {}", relay_addr, err);
-                            let _ = ready.send(Err(err));
-                            return;
-                        }
-                    }
-                }
-                Some(handles)
-            } else {
-                None
-            };
-
             if !config.no_relay_server {
                 #[cfg(feature = "sbd")]
                 {
                     app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
+                }
+                #[cfg(feature = "iroh-relay")]
+                {
+                    // Create a separate router for the relay with its own state
+                    let (relay_state, rate_limiter) = crate::iroh_relay::create_relay_state(&config.iroh_relay.limits);
+                    let mut relay_router = Router::new()
+                        .route("/relay", routing::get(crate::iroh_relay::relay_handler))
+                        .route("/ping", routing::get(crate::iroh_relay::relay_probe_handler))
+                        .with_state(relay_state);
+
+                    // Apply rate limiting if configured
+                    if let Some(limiter) = rate_limiter {
+                        relay_router = relay_router.layer(crate::iroh_relay::RateLimitLayer::new(limiter));
+                    }
+
+                    // Merge the relay router into the main app
+                    app = app.merge(relay_router);
                 }
             }
 
@@ -576,4 +560,3 @@ fn b64_to_bytes(
         },
     ))
 }
-
