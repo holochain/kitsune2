@@ -220,5 +220,8 @@ mod sbd;
 #[cfg(feature = "iroh-relay")]
 mod iroh_relay;
 
+#[cfg(feature = "iroh-relay")]
+mod iroh_relay_axum;
+
 #[cfg(test)]
 mod test;
