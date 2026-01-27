@@ -6,7 +6,8 @@ use bytes::Bytes;
 use kitsune2_api::{AgentId, Id, LocalAgent, MessageBlockCount, SpaceId};
 use kitsune2_api::{
     AgentInfoSigned, BlockTarget, BoxFut, Builder, DynSpace, DynTransport,
-    K2Result, SpaceHandler, TxBaseHandler, TxHandler, TxModuleHandler, Url,
+    K2Result, SpaceHandler, TxBaseHandler, TxHandler, TxModuleHandler,
+    TxSpaceHandler, Url,
 };
 use kitsune2_core::factories::CoreGossipStubFactory;
 use kitsune2_core::{Ed25519LocalAgent, Ed25519Verifier};
@@ -363,6 +364,14 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
     impl TxHandler for NoopHandler {}
     impl TxBaseHandler for NoopHandler {}
     impl SpaceHandler for NoopHandler {}
+    impl TxSpaceHandler for NoopHandler {
+        fn are_all_agents_at_url_blocked(
+            &self,
+            _peer_url: &Url,
+        ) -> K2Result<bool> {
+            Ok(false)
+        }
+    }
 
     let transport = builder
         .transport
@@ -532,6 +541,13 @@ async fn incoming_message_block_count_increases_correctly() {
         ..
     } = make_test_peer_light(builder.clone()).await;
 
+    // Add local agent to Bob's local_agent_store so he can send messages
+    space_bob_1
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
+
     let TestPeerLight {
         space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
         space2: _space_carol_2, // -- ditto --
@@ -540,6 +556,19 @@ async fn incoming_message_block_count_increases_correctly() {
         transport: transport_carol,
         peer_url: peer_url_carol,
     } = make_test_peer_light(builder.clone()).await;
+
+    // Add local agents directly to Alice's local_agent_store so she can send messages
+    // without triggering the broadcast side effects that would interfere with the test
+    space_alice_1
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
+    space_alice_2
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
 
     // Add Carol's dummy agent infos to Alice's peer stores in both spaces
     // to not have Alice consider Carol blocked when sending a message
@@ -738,8 +767,8 @@ async fn outgoing_message_block_count_increases_correctly() {
     let (builder, _relay_server) = builder_with_relay!();
 
     let TestPeerLight {
-        space1: _space_alice_1, // Need to keep the space in memory here since it's being used to check for blocks
-        space2: _space_alice_2, // -- ditto --
+        space1: space_alice_1, // Need to keep the space in memory here since it's being used to check for blocks
+        space2: space_alice_2, // -- ditto --
         transport: transport_alice,
         ..
     } = make_test_peer_light(builder.clone()).await;
@@ -757,6 +786,19 @@ async fn outgoing_message_block_count_increases_correctly() {
         peer_url: peer_url_carol,
         ..
     } = make_test_peer_light(builder.clone()).await;
+
+    // Add local agents directly to Alice's local_agent_store so she can send messages
+    // without triggering the broadcast side effects that would interfere with the test
+    space_alice_1
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
+    space_alice_2
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
 
     // Verify that Alice's message blocks count is empty initially
     let stats = transport_alice.dump_network_stats().await.unwrap();
@@ -1572,4 +1614,289 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
             break;
         }
     });
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn send_before_local_agent_join_returns_error() {
+    enable_tracing();
+
+    let (builder, _relay_server) = builder_with_relay!();
+
+    // Create Alice's space WITHOUT joining an agent
+    let space_once_cell_alice = Arc::new(OnceCell::new());
+    let (
+        tx_handler_alice,
+        _recv_module_msg_recv_alice,
+        _peer_disconnect_recv_alice,
+    ) = TestTxHandler::create(
+        Mutex::new(Url::from_str("ws://127.0.0.1:80").unwrap()),
+        space_once_cell_alice.clone(),
+    );
+
+    let transport_alice = builder
+        .transport
+        .create(builder.clone(), tx_handler_alice.clone())
+        .await
+        .unwrap();
+
+    transport_alice.register_module_handler(
+        TEST_SPACE_ID,
+        "test".into(),
+        tx_handler_alice,
+    );
+
+    let peer_url_alice = iter_check!(5000, 100, {
+        let stats = transport_alice.dump_network_stats().await.unwrap();
+        let peer_url = stats.transport_stats.peer_urls.first();
+        if let Some(url) = peer_url {
+            return url.clone();
+        }
+    });
+
+    let (space_handler_alice, _recv_notify_recv_alice) =
+        TestSpaceHandler::create();
+
+    let report_alice = builder
+        .report
+        .create(builder.clone(), transport_alice.clone())
+        .await
+        .unwrap();
+
+    let space_alice = builder
+        .space
+        .create(
+            builder.clone(),
+            None,
+            Arc::new(space_handler_alice),
+            TEST_SPACE_ID,
+            report_alice,
+            transport_alice.clone(),
+        )
+        .await
+        .unwrap();
+
+    space_once_cell_alice.set(space_alice.clone()).unwrap();
+
+    // Create Bob's space WITH an agent (normal setup)
+    let bob = make_test_peer(builder.clone()).await;
+
+    // Add Bob's agent to Alice's peer store so Alice won't consider Bob blocked
+    space_alice
+        .peer_store()
+        .insert(vec![bob.agent_info.clone()])
+        .await
+        .unwrap();
+
+    // Try to send from Alice to Bob - should FAIL because Alice hasn't joined with an agent yet
+    let result = transport_alice
+        .send_space_notify(
+            bob.peer_url.clone(),
+            TEST_SPACE_ID,
+            Bytes::from("Hello from Alice"),
+        )
+        .await;
+
+    // Verify that we get an error
+    assert!(
+        result.is_err(),
+        "Expected error when sending before local agent joins, but send succeeded"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("local agent") || err_msg.contains("no agents"),
+        "Error message should mention local agent or no agents, got: {}",
+        err_msg
+    );
+
+    // Now have Alice join with a local agent
+    let local_agent_alice = Arc::new(Ed25519LocalAgent::default());
+    space_alice
+        .local_agent_join(local_agent_alice.clone())
+        .await
+        .unwrap();
+
+    // Wait for the agent info to be published
+    tokio::time::timeout(std::time::Duration::from_secs(5), {
+        let agent_id = local_agent_alice.agent().clone();
+        let peer_store = space_alice.peer_store().clone();
+        async move {
+            while peer_store
+                .get_all()
+                .await
+                .unwrap()
+                .iter()
+                .all(|a| a.agent.clone() != agent_id)
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    // Try to send again - should succeed (or at least not fail with "no local agent" error)
+    // Note: We wrap in iter_check because connection establishment may take time
+    let mut send_succeeded = false;
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_space_notify(
+                bob.peer_url.clone(),
+                TEST_SPACE_ID,
+                Bytes::from("Hello after join"),
+            )
+            .await
+            .is_ok()
+        {
+            send_succeeded = true;
+            break;
+        }
+    });
+
+    assert!(
+        send_succeeded,
+        "Expected send to succeed after local agent joins"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn send_module_before_local_agent_join_returns_error() {
+    enable_tracing();
+
+    let (builder, _relay_server) = builder_with_relay!();
+
+    // Create Alice's space WITHOUT joining an agent
+    let space_once_cell_alice = Arc::new(OnceCell::new());
+    let (
+        tx_handler_alice,
+        _recv_module_msg_recv_alice,
+        _peer_disconnect_recv_alice,
+    ) = TestTxHandler::create(
+        Mutex::new(Url::from_str("ws://127.0.0.1:80").unwrap()),
+        space_once_cell_alice.clone(),
+    );
+
+    let transport_alice = builder
+        .transport
+        .create(builder.clone(), tx_handler_alice.clone())
+        .await
+        .unwrap();
+
+    transport_alice.register_module_handler(
+        TEST_SPACE_ID,
+        "test".into(),
+        tx_handler_alice,
+    );
+
+    let _peer_url_alice = iter_check!(5000, 100, {
+        let stats = transport_alice.dump_network_stats().await.unwrap();
+        let peer_url = stats.transport_stats.peer_urls.first();
+        if let Some(url) = peer_url {
+            return url.clone();
+        }
+    });
+
+    let (space_handler_alice, _recv_notify_recv_alice) =
+        TestSpaceHandler::create();
+
+    let report_alice = builder
+        .report
+        .create(builder.clone(), transport_alice.clone())
+        .await
+        .unwrap();
+
+    let space_alice = builder
+        .space
+        .create(
+            builder.clone(),
+            None,
+            Arc::new(space_handler_alice),
+            TEST_SPACE_ID,
+            report_alice,
+            transport_alice.clone(),
+        )
+        .await
+        .unwrap();
+
+    space_once_cell_alice.set(space_alice.clone()).unwrap();
+
+    // Create Bob's space WITH an agent (normal setup)
+    let bob = make_test_peer(builder.clone()).await;
+
+    // Add Bob's agent to Alice's peer store so Alice won't consider Bob blocked
+    space_alice
+        .peer_store()
+        .insert(vec![bob.agent_info.clone()])
+        .await
+        .unwrap();
+
+    // Try to send module message from Alice to Bob - should FAIL
+    let result = transport_alice
+        .send_module(
+            bob.peer_url.clone(),
+            TEST_SPACE_ID,
+            "test".into(),
+            Bytes::from("Hello module from Alice"),
+        )
+        .await;
+
+    // Verify that we get an error
+    assert!(
+        result.is_err(),
+        "Expected error when sending module message before local agent joins, but send succeeded"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("local agent") || err_msg.contains("no agents"),
+        "Error message should mention local agent or no agents, got: {}",
+        err_msg
+    );
+
+    // Now have Alice join with a local agent
+    let local_agent_alice = Arc::new(Ed25519LocalAgent::default());
+    space_alice
+        .local_agent_join(local_agent_alice.clone())
+        .await
+        .unwrap();
+
+    // Wait for the agent info to be published
+    tokio::time::timeout(std::time::Duration::from_secs(5), {
+        let agent_id = local_agent_alice.agent().clone();
+        let peer_store = space_alice.peer_store().clone();
+        async move {
+            while peer_store
+                .get_all()
+                .await
+                .unwrap()
+                .iter()
+                .all(|a| a.agent.clone() != agent_id)
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    // Try to send again - should succeed
+    let mut send_succeeded = false;
+    iter_check!(2_000, 500, {
+        if transport_alice
+            .send_module(
+                bob.peer_url.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                Bytes::from("Hello module after join"),
+            )
+            .await
+            .is_ok()
+        {
+            send_succeeded = true;
+            break;
+        }
+    });
+
+    assert!(
+        send_succeeded,
+        "Expected module send to succeed after local agent joins"
+    );
 }

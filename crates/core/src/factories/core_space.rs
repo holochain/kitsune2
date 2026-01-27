@@ -291,6 +291,18 @@ impl TxSpaceHandler for TxHandlerTranslator {
         };
         Ok(blocked)
     }
+
+    fn has_local_agents(&self) -> BoxFut<'_, K2Result<bool>> {
+        Box::pin(async move {
+            let core_space = self
+                .1
+                .upgrade()
+                .ok_or(K2Error::other("CoreSpace has been dropped."))?;
+
+            let local_agents = core_space.local_agent_store.get_all().await?;
+            Ok(!local_agents.is_empty())
+        })
+    }
 }
 
 struct InnerData {
