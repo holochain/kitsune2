@@ -88,7 +88,7 @@ pub struct Config {
 
     /// The iroh relay server configuration.
     #[cfg(feature = "iroh-relay")]
-    pub iroh_relay: crate::iroh_relay::Config,
+    pub iroh_relay: crate::iroh_relay::RelayConfig,
 }
 
 impl Config {
@@ -107,7 +107,7 @@ impl Config {
             #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
             #[cfg(feature = "iroh-relay")]
-            iroh_relay: crate::iroh_relay::Config::default(),
+            iroh_relay: crate::iroh_relay::RelayConfig::default(),
         }
     }
 
@@ -129,7 +129,7 @@ impl Config {
             #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
             #[cfg(feature = "iroh-relay")]
-            iroh_relay: crate::iroh_relay::Config::default(),
+            iroh_relay: crate::iroh_relay::RelayConfig::default(),
         }
     }
 }

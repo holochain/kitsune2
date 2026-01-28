@@ -1,47 +1,27 @@
-use iroh_relay::server::{AccessConfig, RelayConfig, Server, ServerConfig};
-use std::num::NonZeroU32;
+//! Iroh relay integration for kitsune2 bootstrap server.
+//!
+//! This module provides axum integration for the iroh relay server, allowing
+//! it to be embedded as a standard route in the bootstrap server.
+//!
+//! # Rate Limiting
+//!
+//! Connection-level rate limiting is implemented using the `governor` crate with
+//! a token bucket algorithm. The rate limiter is applied as tower middleware on
+//! the relay routes.
+//!
+//! - `accept_conn_limit`: Maximum connections per second (sustained rate)
+//! - `accept_conn_burst`: Maximum burst size (token bucket capacity)
+//!
+//! When rate limits are exceeded, clients receive a 429 Too Many Requests response.
+//!
+//! Note: Byte-level rate limiting (`client_rx`) is not supported in the axum
+//! integration since WebSocket connections are already established when they
+//! reach the handler.
 
-pub use iroh_relay::server::{ClientRateLimit, Limits};
-
-/// Configuration for iroh relay server
-#[derive(Debug)]
-pub struct Config {
-    /// Rate limiting configuration for iroh relay server
-    pub limits: Limits,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            limits: Limits {
-                accept_conn_limit: Some(250.0),
-                accept_conn_burst: Some(100),
-                client_rx: Some(ClientRateLimit {
-                    bytes_per_second: NonZeroU32::new(2 * 1024 * 1024).unwrap(), // 2 MiB/s
-                    max_burst_bytes: Some(NonZeroU32::new(256 * 1024).unwrap()), // 256 KiB burst
-                }),
-            },
-        }
-    }
-}
-
-pub(super) async fn start_iroh_relay_server(limits: &Limits) -> Server {
-    Server::spawn(ServerConfig::<(), ()> {
-        relay: Some(RelayConfig {
-            // Secure because only bound to loopback on localhost
-            http_bind_addr: ([127, 0, 0, 1], 0).into(),
-            tls: None, // HTTP is fine for localhost
-            limits: Limits {
-                accept_conn_limit: limits.accept_conn_limit,
-                accept_conn_burst: limits.accept_conn_burst,
-                client_rx: limits.client_rx,
-            },
-            key_cache_capacity: None, // uses default
-            access: AccessConfig::Everyone,
-        }),
-        quic: None,         // Disable QUIC for internal proxy
-        metrics_addr: None, // Don't expose metrics port either
-    })
-    .await
-    .expect("Failed to start internal iroh relay server")
-}
+// Re-export the public API from iroh_relay_axum
+pub use crate::iroh_relay_axum::{
+    create_relay_state, relay_handler, relay_probe_handler,
+    ConnectionRateLimiter, Limits, RateLimitLayer, RateLimitService,
+    RelayConfig, RelayState,
+};
+pub use iroh_relay::server::ClientRateLimit;
