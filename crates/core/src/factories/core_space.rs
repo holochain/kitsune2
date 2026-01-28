@@ -436,6 +436,7 @@ impl Space for CoreSpace {
             let local_agent_store = self.local_agent_store.clone();
             let publish = self.publish.clone();
             let bootstrap = self.bootstrap.clone();
+            let tx_weak = Arc::downgrade(&self.tx);
             local_agent.register_cb(Arc::new(move || {
                 let inner = inner.clone();
                 let space_id = space_id.clone();
@@ -444,6 +445,7 @@ impl Space for CoreSpace {
                 let local_agent_store = local_agent_store.clone();
                 let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
+                let tx_weak = tx_weak.clone();
                 tokio::task::spawn(async move {
                     let url = inner.read().unwrap().current_url.clone();
 
@@ -488,6 +490,27 @@ impl Space for CoreSpace {
 
                         // add it to bootstrapping.
                         bootstrap.put(info.clone());
+
+                        // Re-send preflight to all connected peers so they get
+                        // the updated agent info. This is important when a
+                        // connection was established before the local agent
+                        // joined - without this, the remote peer would have
+                        // received an empty preflight and would block our
+                        // messages.
+                        //
+                        // Note: We use a weak reference to the transport to
+                        // avoid keeping the transport alive if the space is
+                        // being dropped.
+                        if let Some(tx) = tx_weak.upgrade() {
+                            if let Err(err) =
+                                tx.resend_preflight_to_connected_peers().await
+                            {
+                                tracing::warn!(
+                                    ?err,
+                                    "Failed to resend preflight to connected peers"
+                                );
+                            }
+                        }
 
                         // and send it to our peers.
                         if let Err(err) = broadcast_agent_info(peer_store, local_agent_store, publish, info).await {
