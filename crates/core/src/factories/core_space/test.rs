@@ -187,6 +187,10 @@ async fn space_notify_send_recv() {
     s1.peer_store().insert(vec![bob_info]).await.unwrap();
     s2.peer_store().insert(vec![ned_info]).await.unwrap();
 
+    // Join local agents to spaces before sending messages
+    s1.local_agent_join(ned.clone()).await.unwrap();
+    s2.local_agent_join(bob.clone()).await.unwrap();
+
     s1.send_notify(u2.clone(), bytes::Bytes::from_static(b"hello"))
         .await
         .unwrap();
