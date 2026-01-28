@@ -1778,7 +1778,7 @@ async fn send_module_before_local_agent_join_returns_error() {
         "test".into(),
         tx_handler_alice,
     );
-    
+
     let (space_handler_alice, _recv_notify_recv_alice) =
         TestSpaceHandler::create();
 
