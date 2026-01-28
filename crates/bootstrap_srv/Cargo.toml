@@ -30,7 +30,9 @@ ctrlc = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures = { workspace = true }
 num_cpus = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
+ureq = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
@@ -50,7 +52,6 @@ iroh = { workspace = true, optional = true }
 iroh-relay = { workspace = true, features = ["server"], optional = true }
 
 [dev-dependencies]
-ureq = { workspace = true }
 rand = { workspace = true }
 rcgen = { workspace = true }
 sbd-client = { workspace = true }
