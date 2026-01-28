@@ -2626,6 +2626,7 @@ dependencies = [
  "opentelemetry",
  "rand 0.8.5",
  "rcgen 0.13.2",
+ "reqwest",
  "rustls",
  "sbd-client 0.3.3",
  "sbd-server",

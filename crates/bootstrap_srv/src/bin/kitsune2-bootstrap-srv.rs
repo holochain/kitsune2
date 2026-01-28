@@ -189,12 +189,15 @@ fn main() {
             config.sbd.limit_ip_byte_burst = byte_burst;
         }
         config.sbd.otlp_endpoint = args.otlp_endpoint;
-        config.sbd.authentication_hook_server = args.authentication_hook_server;
+        config.sbd.authentication_hook_server = args.authentication_hook_server.clone();
 
         // Setup opentelemetry metrics
         sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
             .expect("Failed to initialize OTLP metrics");
     }
+
+    // Set auth in the new feature-independent location
+    config.auth.authentication_hook_server = args.authentication_hook_server;
 
     tracing::info!(?config);
 
