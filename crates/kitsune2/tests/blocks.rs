@@ -1715,7 +1715,7 @@ async fn send_before_local_agent_join_returns_error() {
         .await
         .unwrap();
 
-    // Wait for the agent info to be published
+    // Wait for the agent info to be added to the peer store
     tokio::time::timeout(std::time::Duration::from_secs(5), {
         let agent_id = local_agent_alice.agent().clone();
         let peer_store = space_alice.peer_store().clone();
@@ -1735,22 +1735,14 @@ async fn send_before_local_agent_join_returns_error() {
     .unwrap();
 
     // Try to send again - should succeed (or at least not fail with "no local agent" error)
-    // Note: We wrap in iter_check because connection establishment may take time
-    let mut send_succeeded = false;
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_space_notify(
-                bob.peer_url.clone(),
-                TEST_SPACE_ID,
-                Bytes::from("Hello after join"),
-            )
-            .await
-            .is_ok()
-        {
-            send_succeeded = true;
-            break;
-        }
-    });
+    let send_succeeded = transport_alice
+        .send_space_notify(
+            bob.peer_url.clone(),
+            TEST_SPACE_ID,
+            Bytes::from("Hello after join"),
+        )
+        .await
+        .is_ok();
 
     assert!(
         send_succeeded,
@@ -1786,15 +1778,7 @@ async fn send_module_before_local_agent_join_returns_error() {
         "test".into(),
         tx_handler_alice,
     );
-
-    let _peer_url_alice = iter_check!(5000, 100, {
-        let stats = transport_alice.dump_network_stats().await.unwrap();
-        let peer_url = stats.transport_stats.peer_urls.first();
-        if let Some(url) = peer_url {
-            return url.clone();
-        }
-    });
-
+    
     let (space_handler_alice, _recv_notify_recv_alice) =
         TestSpaceHandler::create();
 
@@ -1858,7 +1842,7 @@ async fn send_module_before_local_agent_join_returns_error() {
         .await
         .unwrap();
 
-    // Wait for the agent info to be published
+    // Wait for the agent info to be added to the peer store
     tokio::time::timeout(std::time::Duration::from_secs(5), {
         let agent_id = local_agent_alice.agent().clone();
         let peer_store = space_alice.peer_store().clone();
@@ -1878,22 +1862,15 @@ async fn send_module_before_local_agent_join_returns_error() {
     .unwrap();
 
     // Try to send again - should succeed
-    let mut send_succeeded = false;
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_module(
-                bob.peer_url.clone(),
-                TEST_SPACE_ID,
-                "test".into(),
-                Bytes::from("Hello module after join"),
-            )
-            .await
-            .is_ok()
-        {
-            send_succeeded = true;
-            break;
-        }
-    });
+    let send_succeeded = transport_alice
+        .send_module(
+            bob.peer_url.clone(),
+            TEST_SPACE_ID,
+            "test".into(),
+            Bytes::from("Hello module after join"),
+        )
+        .await
+        .is_ok();
 
     assert!(
         send_succeeded,
