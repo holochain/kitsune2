@@ -129,14 +129,16 @@ struct Ready {
 #[derive(Clone)]
 pub struct AppState {
     pub h_send: HSend,
-    #[cfg(feature = "sbd")]
+
+    // Feature-independent authentication
+    pub auth_tracker: crate::auth::AuthTokenTracker,
+    pub auth_config: Arc<crate::auth::AuthConfig>,
     pub auth_failures: opentelemetry::metrics::Counter<u64>,
-    #[cfg(feature = "sbd")]
-    pub token_tracker: sbd_server::AuthTokenTracker,
-    #[cfg(feature = "sbd")]
-    pub sbd_config: Arc<sbd_server::Config>,
+
+    // SBD-specific (keep for SBD websockets)
     #[cfg(feature = "sbd")]
     pub sbd_state: Option<crate::sbd::SbdState>,
+
     #[cfg(feature = "iroh-relay")]
     pub _iroh_relay_server: Arc<iroh_relay::server::Server>,
 }
@@ -222,10 +224,18 @@ fn tokio_thread(
                 (None, None)
             };
 
-            #[cfg(feature = "iroh-relay")]
-            let allow_credentials = false;
-            #[cfg(feature = "sbd")]
-            let allow_credentials = config.sbd.authentication_hook_server.is_some();
+            // Initialize feature-independent authentication
+            let meter = opentelemetry::global::meter("bootstrap-auth");
+            let auth_failures = meter
+                .u64_counter("bootstrap.auth_failures")
+                .with_description("Number of failed authentication attempts")
+                .with_unit("count")
+                .build();
+            let auth_tracker = crate::auth::AuthTokenTracker::default();
+            let auth_config = Arc::new(config.auth.clone());
+
+            // CORS credentials based on auth config
+            let allow_credentials = config.auth.authentication_hook_server.is_some();
 
             let mut app = Router::<AppState>::new()
                 .route("/authenticate", routing::put(handle_auth))
@@ -272,16 +282,9 @@ fn tokio_thread(
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
                     h_send: h_send.clone(),
-                    #[cfg(feature = "sbd")]
-                    auth_failures: sbd_server_meter
-                        .u64_counter("sbd.server.auth_failures")
-                        .with_description("Number of failed authentication attempts")
-                        .with_unit("count")
-                        .build(),
-                    #[cfg(feature = "sbd")]
-                    token_tracker: sbd_server::AuthTokenTracker::default(),
-                    #[cfg(feature = "sbd")]
-                    sbd_config: sbd_config.clone(),
+                    auth_tracker,
+                    auth_config,
+                    auth_failures,
                     #[cfg(feature = "sbd")]
                     sbd_state: if config.no_relay_server {
                         None
@@ -290,7 +293,7 @@ fn tokio_thread(
                             Some(crate::sbd::SbdState {
                                 config: sbd_config.clone(),
                                 ip_rate: ip_rate.clone(),
-                                c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),   
+                                c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),
                             })
                         }
                     },
@@ -395,55 +398,40 @@ async fn handle_auth(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> axum::response::Response {
-    #[cfg(feature = "sbd")]
+    match crate::auth::process_authenticate(
+        &state.auth_config,
+        &state.auth_tracker,
+        state.auth_failures,
+        body,
+    )
+    .await
     {
-        use sbd_server::AuthenticateTokenError::*;
-
-        return match sbd_server::process_authenticate_token(
-            &state.sbd_config,
-            &state.token_tracker,
-            state.auth_failures,
-            body,
-        )
-        .await
-        {
-            Ok(token) => axum::response::IntoResponse::into_response(
-                axum::Json(serde_json::json!({
-                    "authToken": *token,
-                })),
-            ),
-            Err(Unauthorized) => {
-                tracing::debug!("/authenticate: UNAUTHORIZED");
-                axum::response::IntoResponse::into_response((
-                    axum::http::StatusCode::UNAUTHORIZED,
-                    "Unauthorized",
-                ))
-            }
-            Err(HookServerError(err)) => {
-                tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
-                axum::response::IntoResponse::into_response((
-                    axum::http::StatusCode::BAD_GATEWAY,
-                    format!("BAD_GATEWAY: {err:?}"),
-                ))
-            }
-            Err(OtherError(err)) => {
-                tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
-                axum::response::IntoResponse::into_response((
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("INTERNAL_SERVER_ERROR: {err:?}"),
-                ))
-            }
-        };
-    }
-
-    #[cfg(feature = "iroh-relay")]
-    {
-        drop(state);
-        drop(body);
-        axum::response::IntoResponse::into_response((
-            axum::http::StatusCode::ACCEPTED,
-            "Authorized".to_string(),
-        ))
+        Ok(token) => axum::response::IntoResponse::into_response(axum::Json(
+            serde_json::json!({
+                "authToken": *token,
+            }),
+        )),
+        Err(crate::auth::AuthenticateError::Unauthorized) => {
+            tracing::debug!("/authenticate: UNAUTHORIZED");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ))
+        }
+        Err(crate::auth::AuthenticateError::HookServerError(err)) => {
+            tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::BAD_GATEWAY,
+                format!("BAD_GATEWAY: {err:?}"),
+            ))
+        }
+        Err(crate::auth::AuthenticateError::OtherError(err)) => {
+            tracing::warn!(?err, "/authenticate: INTERNAL_SERVER_ERROR");
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("INTERNAL_SERVER_ERROR: {err:?}"),
+            ))
+        }
     }
 }
 
@@ -491,24 +479,19 @@ async fn handle_boot_get(
     headers: axum::http::HeaderMap,
     extract::State(state): extract::State<AppState>,
 ) -> response::Response {
-    #[cfg(feature = "sbd")]
-    {
-        let token: Option<Arc<str>> = headers
-            .get("Authorization")
-            .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
-        if !state
-            .token_tracker
-            .check_is_token_valid(&state.sbd_config, token)
-        {
-            return axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ));
-        }
-    }
+    // Check authentication (feature-independent)
+    let token: Option<Arc<str>> = headers
+        .get("Authorization")
+        .and_then(|t| t.to_str().ok())
+        .and_then(|t| t.strip_prefix("Bearer "))
+        .map(<Arc<str>>::from);
 
-    #[cfg(feature = "iroh-relay")]
-    drop(headers);
+    if !state.auth_tracker.is_valid(&token, &state.auth_config) {
+        return axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Unauthorized",
+        ));
+    }
 
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,
@@ -523,24 +506,19 @@ async fn handle_boot_put(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
-    #[cfg(feature = "sbd")]
-    {
-        let token: Option<Arc<str>> = headers
-            .get("Authorization")
-            .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
-        if !state
-            .token_tracker
-            .check_is_token_valid(&state.sbd_config, token)
-        {
-            return axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ));
-        }
-    }
+    // Check authentication (feature-independent)
+    let token: Option<Arc<str>> = headers
+        .get("Authorization")
+        .and_then(|t| t.to_str().ok())
+        .and_then(|t| t.strip_prefix("Bearer "))
+        .map(<Arc<str>>::from);
 
-    #[cfg(feature = "iroh-relay")]
-    drop(headers);
+    if !state.auth_tracker.is_valid(&token, &state.auth_config) {
+        return axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Unauthorized",
+        ));
+    }
 
     let space = match b64_to_bytes(&space) {
         Ok(space) => space,

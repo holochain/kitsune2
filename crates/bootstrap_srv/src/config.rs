@@ -82,6 +82,11 @@ pub struct Config {
     /// If `None`, defaults to allowing any origin.
     pub allowed_origins: Option<Vec<String>>,
 
+    /// Authentication configuration.
+    ///
+    /// This is independent of the relay implementation (SBD or Iroh).
+    pub auth: crate::auth::AuthConfig,
+
     /// The SBD server configuration.
     #[cfg(feature = "sbd")]
     pub sbd: sbd_server::Config,
@@ -104,6 +109,7 @@ impl Config {
             tls_key: None,
             no_relay_server: false,
             allowed_origins: None,
+            auth: crate::auth::AuthConfig::default(),
             #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
             #[cfg(feature = "iroh-relay")]
@@ -126,6 +132,7 @@ impl Config {
             tls_key: None,
             no_relay_server: false,
             allowed_origins: None,
+            auth: crate::auth::AuthConfig::default(),
             #[cfg(feature = "sbd")]
             sbd: sbd_server::Config::default(),
             #[cfg(feature = "iroh-relay")]

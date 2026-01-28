@@ -158,19 +158,20 @@ pub async fn handle_sbd(
 ) -> impl IntoResponse {
     let token: Option<Arc<str>> = headers
         .get("Authorization")
-        .and_then(|t| t.to_str().ok().map(<Arc<str>>::from));
+        .and_then(|t| t.to_str().ok())
+        .and_then(|t| t.strip_prefix("Bearer "))
+        .map(<Arc<str>>::from);
 
-    let maybe_auth = Some((token.clone(), state.token_tracker.clone()));
-
-    if !state
-        .token_tracker
-        .check_is_token_valid(&state.sbd_config, token)
-    {
+    // Use the new feature-independent authentication
+    if !state.auth_tracker.is_valid(&token, &state.auth_config) {
         return axum::response::IntoResponse::into_response((
             axum::http::StatusCode::UNAUTHORIZED,
             "Unauthorized",
         ));
     }
+
+    // Don't pass auth tracking to sbd_server since we're handling it ourselves
+    let maybe_auth = None;
 
     let pk = match base64::prelude::BASE64_URL_SAFE_NO_PAD.decode(pub_key) {
         Ok(pk) if pk.len() == 32 => {

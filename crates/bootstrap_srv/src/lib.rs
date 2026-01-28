@@ -214,6 +214,9 @@ pub use server::*;
 mod tls;
 pub use tls::*;
 
+mod auth;
+pub use auth::*;
+
 #[cfg(feature = "sbd")]
 mod sbd;
 
