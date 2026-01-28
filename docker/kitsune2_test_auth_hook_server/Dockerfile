@@ -1,4 +1,4 @@
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.92-bookworm AS builder
 
 # Pick a directory to work in
 WORKDIR /usr/src/kitsune2
