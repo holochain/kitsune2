@@ -91,7 +91,7 @@ impl TxImpHnd {
                     }
                 }
                 if !has_any_local_agents {
-                    return Err(K2Error::NoLocalAgents);
+                    return Err(K2Error::NoLocalAgentsDuringPreflight);
                 }
             }
 
@@ -619,16 +619,6 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            // Check if we have local agents joined to this space
-            let space_handler =
-                self.space_map.lock().unwrap().get(&space_id).cloned();
-
-            if let Some(handler) = space_handler {
-                if !handler.has_local_agents().await? {
-                    return Err(K2Error::NoLocalAgents);
-                }
-            }
-
             if is_peer_blocked(
                 self.space_map.clone(),
                 self.blocked_message_counts.clone(),
@@ -663,16 +653,6 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            // Check if we have local agents joined to this space
-            let space_handler =
-                self.space_map.lock().unwrap().get(&space_id).cloned();
-
-            if let Some(handler) = space_handler {
-                if !handler.has_local_agents().await? {
-                    return Err(K2Error::NoLocalAgents);
-                }
-            }
-
             if is_peer_blocked(
                 self.space_map.clone(),
                 self.blocked_message_counts.clone(),

@@ -210,7 +210,7 @@ impl ConnectionContext {
     ) -> AbortHandle {
         tokio::spawn(async move {
             // Track whether to skip marking peer as unresponsive.
-            // This is set to true for temporary errors like NoLocalAgents,
+            // This is set to true for temporary errors like NoLocalAgentsDuringPreflight,
             // which indicate a timing issue rather than a network problem.
             let mut skip_unresponsive = false;
 
@@ -239,9 +239,10 @@ impl ConnectionContext {
                         .await
                         {
                             error!(?err, "Stream closed by remote");
-                            // Don't mark peer as unresponsive for NoLocalAgents errors -
-                            // this is a temporary state that will resolve once an agent joins.
-                            if err.is_no_local_agents() {
+                            // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
+                            // errors - this is a temporary state that will resolve once an
+                            // agent joins.
+                            if matches!(err, K2Error::NoLocalAgentsDuringPreflight) {
                                 skip_unresponsive = true;
                             }
                             break err.to_string();
@@ -258,7 +259,8 @@ impl ConnectionContext {
             // (most likely connection closed) or while reading the preflight
             // from a stream. The protocol can not recover from this error
             // and the connection must be closed. The remote is marked as
-            // unresponsive unless this was a temporary error like NoLocalAgents.
+            // unresponsive unless this was a temporary error like
+            // NoLocalAgentsDuringPreflight.
             if let Some(remote_url) = ctx.remote_url() {
                 connections
                     .write()
