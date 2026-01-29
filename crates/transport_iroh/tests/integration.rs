@@ -950,7 +950,7 @@ async fn network_stats() {
 /// for "no local agents" and handles it specially in spawn_connection_reader.
 ///
 /// The fix requires:
-/// 1. A specific K2Error variant (e.g., NoLocalAgents) instead of K2Error::other
+/// 1. A specific K2Error variant (NoLocalAgentsDuringPreflight) instead of K2Error::other
 /// 2. Checking for this error type in spawn_connection_reader and skipping set_unresponsive
 #[tokio::test]
 async fn no_local_agents_should_not_mark_peer_unresponsive() {
@@ -1015,8 +1015,8 @@ async fn no_local_agents_should_not_mark_peer_unresponsive() {
     // This assertion will FAIL without the fix because currently ALL errors
     // from handle_incoming_stream cause set_unresponsive to be called.
     //
-    // After the fix (using K2Error::NoLocalAgents and handling it specially),
-    // this assertion will PASS.
+    // After the fix (using K2Error::NoLocalAgentsDuringPreflight and handling it
+    // specially), this assertion will PASS.
     assert!(
         !set_unresponsive_called.load(Ordering::SeqCst),
         "BUG: set_unresponsive was called when connection failed due to 'no local agents' error. \
