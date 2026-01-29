@@ -75,6 +75,28 @@ impl TxImpHnd {
                 space_handler.peer_connect(peer.clone())?;
             }
             self.handler.peer_connect(peer.clone())?;
+
+            // Check if any space has local agents before generating preflight.
+            // If no space has local agents, we cannot generate a meaningful preflight
+            // and should return an error. This is a temporary state that occurs
+            // when receiving an incoming connection before any agent has joined.
+            let space_handlers: Vec<_> =
+                self.space_map.lock().unwrap().values().cloned().collect();
+            if !space_handlers.is_empty() {
+                let mut has_any_local_agents = false;
+                for handler in &space_handlers {
+                    if handler.has_local_agents().await? {
+                        has_any_local_agents = true;
+                        break;
+                    }
+                }
+                if !has_any_local_agents {
+                    return Err(K2Error::other(
+                        "Cannot generate preflight before local agent has joined space",
+                    ));
+                }
+            }
+
             let preflight =
                 self.handler.preflight_gather_outgoing(peer).await?;
             let enc = (K2Proto {
