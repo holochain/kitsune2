@@ -549,13 +549,25 @@ async fn incoming_message_block_count_increases_correctly() {
         .unwrap();
 
     let TestPeerLight {
-        space1: _space_carol_1, // Need to keep the space in memory here since it's being used to check for blocks
-        space2: _space_carol_2, // -- ditto --
+        space1: space_carol_1,
+        space2: space_carol_2,
         dummy_agent_info_1: dummy_agent_info_carol_1,
         dummy_agent_info_2: dummy_agent_info_carol_2,
         transport: transport_carol,
         peer_url: peer_url_carol,
     } = make_test_peer_light(builder.clone()).await;
+
+    // Add local agents to Carol's local_agent_store so she can accept connections
+    space_carol_1
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
+    space_carol_2
+        .local_agent_store()
+        .add(Arc::new(Ed25519LocalAgent::default()))
+        .await
+        .unwrap();
 
     // Add local agents directly to Alice's local_agent_store so she can send messages
     // without triggering the broadcast side effects that would interfere with the test
