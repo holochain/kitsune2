@@ -93,6 +93,9 @@ pub struct MockTxHandler {
     #[allow(clippy::type_complexity)]
     pub is_any_agent_at_url_blocked:
         Arc<dyn Fn(&Url) -> K2Result<bool> + 'static + Send + Sync>,
+    /// Mock function to implement [`TxSpaceHandler::has_local_agents()`]
+    pub has_local_agents:
+        Arc<dyn Fn() -> K2Result<bool> + 'static + Send + Sync>,
     /// The current URL of this peer.
     pub current_url: Arc<Mutex<Url>>,
 }
@@ -115,6 +118,7 @@ impl Default for MockTxHandler {
             recv_module_msg: Arc::new(|_, _, _, _| Ok(())),
             set_unresponsive: Arc::new(|_, _| Ok(())),
             is_any_agent_at_url_blocked: Arc::new(|_| Ok(false)),
+            has_local_agents: Arc::new(|| Ok(true)),
             current_url: Arc::new(Mutex::new(dummy_url())),
         }
     }
@@ -173,6 +177,10 @@ impl TxSpaceHandler for MockTxHandler {
 
     fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
         (self.is_any_agent_at_url_blocked)(peer_url)
+    }
+
+    fn has_local_agents(&self) -> BoxFut<'_, K2Result<bool>> {
+        Box::pin(async { (self.has_local_agents)() })
     }
 }
 

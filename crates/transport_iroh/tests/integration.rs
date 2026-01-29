@@ -6,7 +6,7 @@ use kitsune2_test_utils::{
 use kitsune2_transport_iroh::test_utils::{
     IrohTransportTestHarness, MockTxHandler, dummy_url,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
     sync::Arc,
     time::{Duration, SystemTime},
@@ -934,4 +934,93 @@ async fn network_stats() {
     );
     // It's not guaranteed that by now the connection has been upgraded
     // to a direct connection, so this isn't asserted.
+}
+
+/// Test that demonstrates Jost's scenario: when a peer fails to return a preflight
+/// due to having no local agents, the connecting peer should NOT be marked as unresponsive.
+///
+/// Scenario:
+/// 1. ep_1 connects to ep_2 and sends its preflight
+/// 2. ep_2 receives the preflight but fails to return its own because
+///    ep_2 has no local agents (has_local_agents returns false)
+/// 3. The connection fails, but ep_1 should NOT be marked as unresponsive
+///    because this is a temporary state (no local agents yet), not a network failure
+///
+/// THIS TEST IS EXPECTED TO FAIL without the fix that adds a specific error type
+/// for "no local agents" and handles it specially in spawn_connection_reader.
+///
+/// The fix requires:
+/// 1. A specific K2Error variant (e.g., NoLocalAgents) instead of K2Error::other
+/// 2. Checking for this error type in spawn_connection_reader and skipping set_unresponsive
+#[tokio::test]
+async fn no_local_agents_should_not_mark_peer_unresponsive() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    // ep_1 is the initiating peer - it will connect to ep_2
+    let handler_1 = Arc::new(MockTxHandler::default());
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    // Track whether set_unresponsive was called on ep_2's handler
+    let set_unresponsive_called = Arc::new(AtomicBool::new(false));
+    let set_unresponsive_called_clone = set_unresponsive_called.clone();
+
+    // ep_2 has no local agents - this will cause peer_connect to fail
+    // when trying to generate the return preflight.
+    // The error is created by the real code in TxImpHnd::peer_connect.
+    let handler_2 = Arc::new(MockTxHandler {
+        has_local_agents: Arc::new(|| Ok(false)), // No local agents!
+        set_unresponsive: Arc::new(move |_peer, _timestamp| {
+            // Track that set_unresponsive was called
+            set_unresponsive_called_clone.store(true, Ordering::SeqCst);
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    // Wait for URLs to be updated
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6000),
+        Some(500),
+    )
+    .await
+    .unwrap();
+
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+
+    // ep_1 tries to send a message to ep_2
+    // This will:
+    // 1. ep_1 connects to ep_2 and sends its preflight
+    // 2. ep_2 receives ep_1's preflight
+    // 3. ep_2 tries to return its preflight but fails because has_local_agents=false
+    // 4. The connection fails with "Cannot generate preflight before local agent has joined space"
+    let message = Bytes::from_static(b"hello");
+    let _ = ep_1
+        .send_space_notify(ep_2_url.clone(), TEST_SPACE_ID, message)
+        .await;
+
+    // Wait for the error handling to complete
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // ASSERTION: set_unresponsive should NOT be called for "no local agents" errors
+    //
+    // This assertion will FAIL without the fix because currently ALL errors
+    // from handle_incoming_stream cause set_unresponsive to be called.
+    //
+    // After the fix (using K2Error::NoLocalAgents and handling it specially),
+    // this assertion will PASS.
+    assert!(
+        !set_unresponsive_called.load(Ordering::SeqCst),
+        "BUG: set_unresponsive was called when connection failed due to 'no local agents' error. \
+         This is incorrect - 'no local agents' is a temporary state, not a network failure, \
+         and should not cause the peer to be marked as unresponsive."
+    );
 }
