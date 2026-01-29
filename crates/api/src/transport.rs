@@ -91,9 +91,7 @@ impl TxImpHnd {
                     }
                 }
                 if !has_any_local_agents {
-                    return Err(K2Error::other(
-                        "Cannot generate preflight before local agent has joined space",
-                    ));
+                    return Err(K2Error::NoLocalAgents);
                 }
             }
 
@@ -627,9 +625,7 @@ impl Transport for DefaultTransport {
 
             if let Some(handler) = space_handler {
                 if !handler.has_local_agents().await? {
-                    return Err(K2Error::other(
-                        "Cannot send message before local agent has joined space",
-                    ));
+                    return Err(K2Error::NoLocalAgents);
                 }
             }
 
@@ -673,9 +669,7 @@ impl Transport for DefaultTransport {
 
             if let Some(handler) = space_handler {
                 if !handler.has_local_agents().await? {
-                    return Err(K2Error::other(
-                        "Cannot send message before local agent has joined space",
-                    ));
+                    return Err(K2Error::NoLocalAgents);
                 }
             }
 
