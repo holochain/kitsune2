@@ -51,7 +51,11 @@ impl AuthTokenTracker {
     ///
     /// Note: When no hook server is configured, tokens are still generated
     /// and tracked, they're just generated locally without external validation.
-    pub fn is_valid(&self, token: &Option<Arc<str>>, config: &AuthConfig) -> bool {
+    pub fn is_valid(
+        &self,
+        token: &Option<Arc<str>>,
+        config: &AuthConfig,
+    ) -> bool {
         let Some(token) = token else {
             // No token provided - only valid if no auth configured
             return config.authentication_hook_server.is_none();
@@ -121,8 +125,9 @@ pub async fn process_authenticate(
         // No hook server - generate random token (accept all)
         let mut token_bytes = [0u8; 32];
         rand::thread_rng().fill(&mut token_bytes);
-        let token =
-            Arc::<str>::from(base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&token_bytes));
+        let token = Arc::<str>::from(
+            base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&token_bytes),
+        );
         token_tracker.register_token(token.clone());
         Ok(token)
     }
@@ -151,15 +156,17 @@ async fn call_hook_server(
                 .await
                 .map_err(|e| AuthenticateError::OtherError(Box::new(e)))?;
 
-            let token = json["authToken"]
-                .as_str()
-                .ok_or_else(|| {
-                    AuthenticateError::OtherError("Missing authToken in response".into())
-                })?;
+            let token = json["authToken"].as_str().ok_or_else(|| {
+                AuthenticateError::OtherError(
+                    "Missing authToken in response".into(),
+                )
+            })?;
 
             Ok(Arc::<str>::from(token))
         }
-        reqwest::StatusCode::UNAUTHORIZED => Err(AuthenticateError::Unauthorized),
+        reqwest::StatusCode::UNAUTHORIZED => {
+            Err(AuthenticateError::Unauthorized)
+        }
         _ => {
             let status = response.status();
             Err(AuthenticateError::HookServerError(
@@ -176,7 +183,9 @@ mod tests {
     #[test]
     fn test_token_expiration() {
         let config = AuthConfig {
-            authentication_hook_server: Some("http://example.com/auth".to_string()),
+            authentication_hook_server: Some(
+                "http://example.com/auth".to_string(),
+            ),
             auth_token_idle_timeout: std::time::Duration::from_millis(100),
         };
 
@@ -199,7 +208,9 @@ mod tests {
     #[test]
     fn test_token_lifetime_extension() {
         let config = AuthConfig {
-            authentication_hook_server: Some("http://example.com/auth".to_string()),
+            authentication_hook_server: Some(
+                "http://example.com/auth".to_string(),
+            ),
             auth_token_idle_timeout: std::time::Duration::from_millis(200),
         };
 
@@ -247,7 +258,9 @@ mod tests {
     #[test]
     fn test_prune_expired() {
         let config = AuthConfig {
-            authentication_hook_server: Some("http://example.com/auth".to_string()),
+            authentication_hook_server: Some(
+                "http://example.com/auth".to_string(),
+            ),
             auth_token_idle_timeout: std::time::Duration::from_millis(100),
         };
 
