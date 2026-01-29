@@ -3,7 +3,7 @@
 //! This module provides authentication functionality that's independent
 //! of the relay implementation (SBD or Iroh). It implements the
 //! authentication hook server specification from:
-//! https://github.com/holochain/sbd/blob/main/spec-auth.md
+//! <https://github.com/holochain/sbd/blob/main/spec-auth.md>
 
 use base64::Engine;
 use rand::Rng;
@@ -14,7 +14,7 @@ use std::time::Instant;
 /// Configuration for authentication.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// URL of the authentication hook server (e.g., "http://auth.example.com/authenticate")
+    /// URL of the authentication hook server (e.g., <http://auth.example.com/authenticate>)
     pub authentication_hook_server: Option<String>,
 
     /// Idle timeout for authentication tokens
