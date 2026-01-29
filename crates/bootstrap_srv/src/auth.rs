@@ -126,7 +126,7 @@ pub async fn process_authenticate(
         let mut token_bytes = [0u8; 32];
         rand::thread_rng().fill(&mut token_bytes);
         let token = Arc::<str>::from(
-            base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&token_bytes),
+            base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(token_bytes),
         );
         token_tracker.register_token(token.clone());
         Ok(token)
