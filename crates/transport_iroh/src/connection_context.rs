@@ -209,6 +209,11 @@ impl ConnectionContext {
         local_url: Arc<RwLock<Option<Url>>>,
     ) -> AbortHandle {
         tokio::spawn(async move {
+            // Track whether to skip marking peer as unresponsive.
+            // This is set to true for temporary errors like NoLocalAgents,
+            // which indicate a timing issue rather than a network problem.
+            let mut skip_unresponsive = false;
+
             let err = loop {
                 // Main loop to accept incoming unidirectional streams from the remote peer.
                 match ctx.connection.accept_uni().await {
@@ -234,6 +239,11 @@ impl ConnectionContext {
                         .await
                         {
                             error!(?err, "Stream closed by remote");
+                            // Don't mark peer as unresponsive for NoLocalAgents errors -
+                            // this is a temporary state that will resolve once an agent joins.
+                            if err.is_no_local_agents() {
+                                skip_unresponsive = true;
+                            }
                             break err.to_string();
                         }
                     }
@@ -248,15 +258,19 @@ impl ConnectionContext {
             // (most likely connection closed) or while reading the preflight
             // from a stream. The protocol can not recover from this error
             // and the connection must be closed. The remote is marked as
-            // unresponsive.
+            // unresponsive unless this was a temporary error like NoLocalAgents.
             if let Some(remote_url) = ctx.remote_url() {
                 connections
                     .write()
                     .expect("poisoned")
                     .remove(&remote_url);
-                info!(?remote_url, "Setting peer unresponsive");
-                if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await{
-                    warn!(?err, ?remote_url, "Failed to set peer unresponsive");
+                if !skip_unresponsive {
+                    info!(?remote_url, "Setting peer unresponsive");
+                    if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await{
+                        warn!(?err, ?remote_url, "Failed to set peer unresponsive");
+                    }
+                } else {
+                    info!(?remote_url, "Skipping set_unresponsive due to temporary error (no local agents)");
                 }
             }
             ctx.disconnect(err);

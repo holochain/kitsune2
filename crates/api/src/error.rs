@@ -56,6 +56,15 @@ pub enum K2Error {
         #[source]
         src: DynInnerError,
     },
+
+    /// No local agent has joined the space yet.
+    ///
+    /// This error occurs when attempting to send messages or generate
+    /// preflights before any local agent has joined the space. This is
+    /// a temporary state that should resolve once an agent joins, and
+    /// should not cause peers to be marked as unresponsive.
+    #[error("No local agent has joined the space")]
+    NoLocalAgents,
 }
 
 impl K2Error {
@@ -79,6 +88,11 @@ impl K2Error {
             ctx: ctx.to_string().into_boxed_str().into(),
             src: DynInnerError::default(),
         }
+    }
+
+    /// Returns true if this error is a NoLocalAgents error.
+    pub fn is_no_local_agents(&self) -> bool {
+        matches!(self, Self::NoLocalAgents)
     }
 }
 
