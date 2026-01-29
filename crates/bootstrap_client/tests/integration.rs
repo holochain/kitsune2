@@ -140,8 +140,10 @@ async fn auth_with_real_token_provider() {
     println!("hook_addr: {hook_addr:?}");
 
     let mut config = Config::testing();
-    config.sbd.authentication_hook_server =
-        Some(format!("http://{hook_addr:?}/authenticate"));
+    let auth_hook_url = format!("http://{hook_addr:?}/authenticate");
+    // Set auth on both config.auth (feature-independent) and config.sbd (for SBD websockets)
+    config.auth.authentication_hook_server = Some(auth_hook_url.clone());
+    config.sbd.authentication_hook_server = Some(auth_hook_url);
     config.allowed_origins = Some(vec!["http://localhost".into()]);
 
     let s =
