@@ -263,7 +263,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
         })
     }
 
-    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+    fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
         let core_space = self
             .1
             .upgrade()

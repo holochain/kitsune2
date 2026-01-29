@@ -466,7 +466,7 @@ async fn block_agent_in_space(agent: AgentId, space: DynSpace) {
     // After blocking, the agent must be removed from the peer store
     space.peer_store().remove(agent.clone()).await.unwrap();
 
-    // Check that all agents are considered blocked now
+    // Check that is_any_blocked returns true now
     let any_blocked =
         space.blocks().is_any_blocked(block_targets).await.unwrap();
     assert!(any_blocked);
@@ -1040,9 +1040,11 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    // Now send yet another message that should get through again since the preflight
-    // should get through and Bob consequently add the new agent to its peer store
-    // and not consider all agents blocked anymore at Alice's peer url.
+    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
+    // messages should keep being rejected. But currently, they are being let
+    // through again if there is at least one non-blocked agent communicating
+    // from the same peer url as well.
+    // See https://github.com/holochain/kitsune2/issues/450
     let payload_unblocked = Bytes::from("Sending to unblocked");
 
     // Sending too shortly after a disconnect can lead to a tx5 send error
@@ -1194,9 +1196,11 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    // Now send yet another message that should get through again since the preflight
-    // should get through and Bob consequently add the new agent to its peer store
-    // and not consider all agents blocked anymore at Alice's peer url.
+    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
+    // messages should keep being rejected. But currently, they are being let
+    // through again if there is at least one non-blocked agent communicating
+    // from the same peer url as well.
+    // See https://github.com/holochain/kitsune2/issues/450
     let payload_unblocked = Bytes::from("Sending to unblocked");
 
     // Sending too shortly after a disconnect can lead to a tx5 send error
@@ -1349,8 +1353,11 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    // Now send yet another message that should get through again since not
-    // all of Bob's agents are blocked anymore by Alice.
+    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
+    // messages should keep being rejected. But currently, they are being let
+    // through again if there is at least one non-blocked agent communicating
+    // from the same peer url as well.
+    // See https://github.com/holochain/kitsune2/issues/450
     let payload_unblocked = Bytes::from("Sending to unblocked");
 
     // Sending too shortly after a disconnect can lead to a tx5 send error
@@ -1519,8 +1526,11 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    // Now send yet another message that should get through again since not
-    // all of Bob's agents are blocked anymore by Alice.
+    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
+    // messages should keep being rejected. But currently, they are being let
+    // through again if there is at least one non-blocked agent communicating
+    // from the same peer url as well.
+    // See https://github.com/holochain/kitsune2/issues/450
     let payload_unblocked = Bytes::from("Sending to unblocked");
 
     // Sending too shortly after a disconnect can lead to a tx5 send error

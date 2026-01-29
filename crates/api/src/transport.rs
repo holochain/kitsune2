@@ -116,7 +116,7 @@ impl TxImpHnd {
             } = data;
 
             // Except for preflight, unspecified and disconnect messages we
-            // should drop messages if all agents are blocked for the given
+            // should drop messages if any agent is blocked for the given
             // peer URL and space id. We do not close the connection because
             // agents in other spaces may not be blocked on the same kitsune
             // instance.
@@ -208,7 +208,7 @@ impl TxImpHnd {
 
     /// Check whether a message is permitted for a given peer and space
     ///
-    /// If all agents associated with the given peer and space id are blocked
+    /// If any agent associated with the given peer and space id is blocked
     /// and the message is not of one of the explicitly allowed message types,
     /// this function will return false and increase the count of blocked
     /// messages by one.
@@ -282,7 +282,7 @@ impl std::fmt::Debug for TxImpHnd {
     }
 }
 
-/// Check whether all agents associated with the given peer url are blocked
+/// Check whether any agent associated with the given peer url is blocked
 /// for a space and increase the message blocks count by one if they are.
 fn is_peer_blocked(
     space_map: SpaceMap,
@@ -296,13 +296,13 @@ fn is_peer_blocked(
         space_map.lock().expect("poisoned").get(space_id).cloned();
     match space_handler {
         Some(space_handler) => {
-            let all_blocked = space_handler.are_all_agents_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?module_id, "Failed to check whether all agents are blocked, peer connection will be closed: {e}"))?;
+            let all_blocked = space_handler.is_any_agent_at_url_blocked(peer_url).inspect_err(|e| tracing::warn!(?space_id, ?peer_url, ?module_id, "Failed to check whether any agent is blocked, peer connection will be closed: {e}"))?;
             if all_blocked {
                 tracing::debug!(
                     ?space_id,
                     ?peer_url,
                     ?module_id,
-                    "All agents at peer are blocked, message will be dropped."
+                    "At least one agent at peer is blocked, message will be dropped."
                 );
                 if outgoing {
                     incr_blocked_message_count_outgoing(
@@ -761,8 +761,8 @@ pub trait TxSpaceHandler: TxBaseHandler {
         Box::pin(async move { Ok(()) })
     }
 
-    /// Return `true` if every agent using the passed peer [`Url`] is blocked.
-    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool>;
+    /// Return `true` if any agent using the passed peer [`Url`] is blocked.
+    fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool>;
 }
 
 /// Trait-object [TxSpaceHandler].
