@@ -175,3 +175,116 @@ async fn auth_with_real_token_provider() {
 
     task.abort();
 }
+
+/// Test that authentication works using only the feature-independent auth module.
+/// This test disables the relay server entirely to ensure we're testing only
+/// the new auth code path, not relying on SBD authentication.
+#[tokio::test(flavor = "multi_thread")]
+async fn auth_feature_independent() {
+    enable_tracing();
+
+    async fn handle_auth(body: bytes::Bytes) -> axum::response::Response {
+        if &body[..] != b"secret" {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ));
+        }
+        axum::response::IntoResponse::into_response(axum::Json(
+            serde_json::json!({
+                "authToken": "valid-token-123",
+            }),
+        ))
+    }
+
+    let app: axum::Router<()> = axum::Router::new()
+        .route("/authenticate", axum::routing::put(handle_auth));
+
+    let h = axum_server::Handle::default();
+    let h2 = h.clone();
+
+    let task = tokio::task::spawn(async move {
+        axum_server::bind(([127, 0, 0, 1], 0).into())
+            .handle(h2)
+            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .await
+            .unwrap();
+    });
+
+    let hook_addr = h.listening().await.unwrap();
+    println!("hook_addr: {hook_addr:?}");
+
+    let mut config = Config::testing();
+    // ONLY set auth on config.auth - NOT on config.sbd
+    // This ensures we're testing the feature-independent auth module
+    config.auth.authentication_hook_server =
+        Some(format!("http://{hook_addr:?}/authenticate"));
+    // Disable the relay server entirely - we're only testing HTTP bootstrap endpoints
+    config.no_relay_server = true;
+    config.allowed_origins = Some(vec!["http://localhost".into()]);
+
+    let s =
+        tokio::task::block_in_place(move || BootstrapSrv::new(config).unwrap());
+
+    let server_url =
+        Url::parse(&format!("http://{:?}", s.listen_addrs()[0])).unwrap();
+
+    // Test 1: Valid auth material should succeed
+    let local_agent: kitsune2_api::DynLocalAgent =
+        Arc::new(Ed25519LocalAgent::default());
+    let info =
+        kitsune2_test_utils::agent::AgentBuilder::default().build(local_agent);
+    let valid_auth = AuthMaterial::new(b"secret".to_vec());
+
+    tokio::task::block_in_place(|| {
+        // Put should succeed with valid auth
+        blocking_put_auth(server_url.clone(), &info, Some(&valid_auth))
+            .unwrap();
+
+        // Get should also succeed with the same auth (token is cached)
+        let infos = blocking_get_auth(
+            server_url.clone(),
+            info.space.clone(),
+            Arc::new(Ed25519Verifier),
+            Some(&valid_auth),
+        )
+        .unwrap();
+
+        assert_eq!(1, infos.len());
+        assert_eq!(info, infos[0]);
+    });
+
+    // Test 2: Invalid auth material should fail
+    let local_agent2: kitsune2_api::DynLocalAgent =
+        Arc::new(Ed25519LocalAgent::default());
+    let info2 =
+        kitsune2_test_utils::agent::AgentBuilder::default().build(local_agent2);
+    let invalid_auth = AuthMaterial::new(b"wrong-secret".to_vec());
+
+    tokio::task::block_in_place(|| {
+        // Put should fail with invalid auth
+        blocking_put_auth(server_url.clone(), &info2, Some(&invalid_auth))
+            .unwrap_err();
+    });
+
+    // Test 3: No auth when auth is required should fail
+    let local_agent3: kitsune2_api::DynLocalAgent =
+        Arc::new(Ed25519LocalAgent::default());
+    let info3 =
+        kitsune2_test_utils::agent::AgentBuilder::default().build(local_agent3);
+
+    tokio::task::block_in_place(|| {
+        // Put without auth should fail when auth is configured
+        blocking_put(server_url.clone(), &info3).unwrap_err();
+
+        // Get without auth should also fail
+        blocking_get(
+            server_url.clone(),
+            info3.space.clone(),
+            Arc::new(Ed25519Verifier),
+        )
+        .unwrap_err();
+    });
+
+    task.abort();
+}
