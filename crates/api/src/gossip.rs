@@ -92,6 +92,8 @@ pub struct PeerMeta {
     ///
     /// Note that termination is not necessarily an error.
     pub peer_terminated: Option<u32>,
+    /// The timestamp when the peer was marked unresponsive.
+    pub peer_unresponsive: Option<Timestamp>,
     /// The number of completed rounds.
     pub completed_rounds: Option<u32>,
     /// The number of peer timeouts.
