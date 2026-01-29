@@ -1657,14 +1657,6 @@ async fn send_before_local_agent_join_returns_error() {
         tx_handler_alice,
     );
 
-    let _peer_url_alice = iter_check!(5000, 100, {
-        let stats = transport_alice.dump_network_stats().await.unwrap();
-        let peer_url = stats.transport_stats.peer_urls.first();
-        if let Some(url) = peer_url {
-            return url.clone();
-        }
-    });
-
     let (space_handler_alice, _recv_notify_recv_alice) =
         TestSpaceHandler::create();
 
