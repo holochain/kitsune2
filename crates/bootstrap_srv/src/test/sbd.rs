@@ -22,14 +22,20 @@ fn invalid_auth() {
 fn valid_auth() {
     let s = BootstrapSrv::new(Config::testing()).unwrap();
     let addr = format!("http://{}/authenticate", s.listen_addrs()[0]);
-    let token = ureq::put(&addr)
+    let response = ureq::put(&addr)
         .send(&b"hello"[..])
         .unwrap()
         .into_body()
         .read_to_string()
         .unwrap();
 
-    let token = String::from_utf8_lossy(&token.as_bytes()[14..57]);
+    eprintln!("Auth response: {}", response);
+
+    // Parse JSON response
+    let json: serde_json::Value = serde_json::from_str(&response).unwrap();
+    let token = json["authToken"].as_str().unwrap();
+
+    eprintln!("Token: {}", token);
 
     let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
