@@ -82,7 +82,7 @@ impl TxSpaceHandler for TrackHnd {
         Ok(())
     }
 
-    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+    fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
         self.track
             .lock()
             .unwrap()
@@ -236,7 +236,7 @@ impl TrackHnd {
         }
     }
 
-    /// Check that are_all_agents_at_url_blocked() has been called on the
+    /// Check that is_any_agent_at_url_blocked() has been called on the
     /// TxSpaceHandler
     pub fn check_checked_for_blocks(&self, peer_url: &Url) -> K2Result<()> {
         let track = self.track.lock().unwrap();

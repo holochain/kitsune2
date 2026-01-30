@@ -148,7 +148,7 @@ pub struct MockTxHandler {
             + Send
             + Sync,
     >,
-    /// Mock function to implement the [`TxSpaceHandler::are_all_agents_at_url_blocked()`] method.
+    /// Mock function to implement the [`TxSpaceHandler::is_any_agent_at_url_blocked()`] method.
     #[allow(clippy::type_complexity)]
     pub url_blocked:
         Arc<dyn Fn(&Url) -> K2Result<bool> + 'static + Send + Sync>,
@@ -226,7 +226,7 @@ impl TxSpaceHandler for MockTxHandler {
         Box::pin(async move { (self.set_unresp)(peer, when) })
     }
 
-    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+    fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
         (self.url_blocked)(peer_url)
     }
 }

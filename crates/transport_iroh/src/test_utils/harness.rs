@@ -89,9 +89,9 @@ pub struct MockTxHandler {
     /// Mock function to implement [`TxSpaceHandler::set_unresponsive()`]
     pub set_unresponsive:
         Arc<dyn Fn(Url, Timestamp) -> K2Result<()> + 'static + Send + Sync>,
-    /// Mock function to implement [`TxSpaceHandler::are_all_agents_at_url_blocked()`]
+    /// Mock function to implement [`TxSpaceHandler::is_any_agent_at_url_blocked()`]
     #[allow(clippy::type_complexity)]
-    pub are_all_agents_at_url_blocked:
+    pub is_any_agent_at_url_blocked:
         Arc<dyn Fn(&Url) -> K2Result<bool> + 'static + Send + Sync>,
     /// The current URL of this peer.
     pub current_url: Arc<Mutex<Url>>,
@@ -114,7 +114,7 @@ impl Default for MockTxHandler {
             recv_space_notify: Arc::new(|_, _, _| Ok(())),
             recv_module_msg: Arc::new(|_, _, _, _| Ok(())),
             set_unresponsive: Arc::new(|_, _| Ok(())),
-            are_all_agents_at_url_blocked: Arc::new(|_| Ok(false)),
+            is_any_agent_at_url_blocked: Arc::new(|_| Ok(false)),
             current_url: Arc::new(Mutex::new(dummy_url())),
         }
     }
@@ -171,8 +171,8 @@ impl TxSpaceHandler for MockTxHandler {
         Box::pin(async move { (self.set_unresponsive)(peer, when) })
     }
 
-    fn are_all_agents_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
-        (self.are_all_agents_at_url_blocked)(peer_url)
+    fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
+        (self.is_any_agent_at_url_blocked)(peer_url)
     }
 }
 

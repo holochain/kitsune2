@@ -133,7 +133,7 @@ mod tests {
         impl TxBaseHandler for MockTxHandler {}
         impl TxHandler for MockTxHandler {}
         impl TxSpaceHandler for MockTxHandler {
-            fn are_all_agents_at_url_blocked(
+            fn is_any_agent_at_url_blocked(
                 &self,
                 _peer_url: &Url,
             ) -> K2Result<bool> {
