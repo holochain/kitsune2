@@ -9,7 +9,7 @@ use base64::Engine;
 use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Configuration for authentication.
 #[derive(Debug, Clone)]
@@ -139,7 +139,11 @@ async fn call_hook_server(
     auth_bytes: bytes::Bytes,
 ) -> Result<Arc<str>, AuthenticateError> {
     // Make HTTP request to hook server
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| AuthenticateError::HookServerError(Box::new(e)))?;
     let response = client
         .put(url)
         .header("Content-Type", "application/octet-stream")
