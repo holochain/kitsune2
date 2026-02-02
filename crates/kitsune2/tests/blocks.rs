@@ -365,7 +365,7 @@ pub async fn make_test_peer_light(builder: Arc<Builder>) -> TestPeerLight {
     impl TxBaseHandler for NoopHandler {}
     impl SpaceHandler for NoopHandler {}
     impl TxSpaceHandler for NoopHandler {
-        fn are_all_agents_at_url_blocked(
+        fn is_any_agent_at_url_blocked(
             &self,
             _peer_url: &Url,
         ) -> K2Result<bool> {
