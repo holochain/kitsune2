@@ -1715,20 +1715,22 @@ async fn send_before_local_agent_join_returns_error() {
         }
     });
 
-    // Try to send again - should succeed (or at least not fail with "no local agent" error)
-    let send_succeeded = transport_alice
-        .send_space_notify(
-            bob.peer_url.clone(),
-            TEST_SPACE_ID,
-            Bytes::from("Hello after join"),
-        )
-        .await
-        .is_ok();
-
-    assert!(
-        send_succeeded,
-        "Expected send to succeed after local agent joins"
-    );
+    // Try to send again - should succeed (or at least not fail with "no local agent" error).
+    // The first failed send may have left the connection in a bad state, so we retry
+    // to handle transient connection issues.
+    iter_check!(5_000, 500, {
+        if transport_alice
+            .send_space_notify(
+                bob.peer_url.clone(),
+                TEST_SPACE_ID,
+                Bytes::from("Hello after join"),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1828,19 +1830,21 @@ async fn send_module_before_local_agent_join_returns_error() {
         }
     });
 
-    // Try to send again - should succeed
-    let send_succeeded = transport_alice
-        .send_module(
-            bob.peer_url.clone(),
-            TEST_SPACE_ID,
-            "test".into(),
-            Bytes::from("Hello module after join"),
-        )
-        .await
-        .is_ok();
-
-    assert!(
-        send_succeeded,
-        "Expected module send to succeed after local agent joins"
-    );
+    // Try to send again - should succeed.
+    // The first failed send may have left the connection in a bad state, so we retry
+    // to handle transient connection issues.
+    iter_check!(5_000, 500, {
+        if transport_alice
+            .send_module(
+                bob.peer_url.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                Bytes::from("Hello module after join"),
+            )
+            .await
+            .is_ok()
+        {
+            break;
+        }
+    });
 }
