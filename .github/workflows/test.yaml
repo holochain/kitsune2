@@ -116,7 +116,7 @@ jobs:
     needs: static
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -165,7 +165,7 @@ jobs:
 
   changelog-preview-comment:
       name: Add comment of changelog preview
-      uses: holochain/actions/.github/workflows/changelog-preview-comment.yml@v1.3.0
+      uses: holochain/actions/.github/workflows/changelog-preview-comment.yml@v1.4.0
 
   ci_pass:
     if: ${{ always() }}
