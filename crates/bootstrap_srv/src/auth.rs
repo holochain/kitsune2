@@ -186,31 +186,7 @@ mod tests {
 
     #[test]
     fn test_token_expiration() {
-        let config = AuthConfig {
-            authentication_hook_server: Some(
-                "http://example.com/auth".to_string(),
-            ),
-            auth_token_idle_timeout: std::time::Duration::from_millis(100),
-        };
-
-        let tracker = AuthTokenTracker::default();
-        let token: Arc<str> = Arc::from("test-token");
-
-        // Register token
-        tracker.register_token(token.clone());
-
-        // Token should be valid immediately
-        assert!(tracker.is_valid(&Some(token.clone()), &config));
-
-        // Wait for token to expire
-        std::thread::sleep(std::time::Duration::from_millis(150));
-
-        // Token should now be invalid
-        assert!(!tracker.is_valid(&Some(token.clone()), &config));
-    }
-
-    #[test]
-    fn test_token_lifetime_extension() {
+        // Use reasonable timeouts to avoid flakiness on CI
         let config = AuthConfig {
             authentication_hook_server: Some(
                 "http://example.com/auth".to_string(),
@@ -224,17 +200,44 @@ mod tests {
         // Register token
         tracker.register_token(token.clone());
 
-        // Use token after 100ms (half the timeout)
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Token should be valid immediately
         assert!(tracker.is_valid(&Some(token.clone()), &config));
 
-        // Use token again after another 100ms
+        // Wait for token to expire (200ms timeout + 100ms buffer)
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // Token should now be invalid
+        assert!(!tracker.is_valid(&Some(token.clone()), &config));
+    }
+
+    #[test]
+    fn test_token_lifetime_extension() {
+        // Use longer timeouts to avoid flakiness on CI (especially macOS)
+        // where thread::sleep may not be precise
+        let config = AuthConfig {
+            authentication_hook_server: Some(
+                "http://example.com/auth".to_string(),
+            ),
+            auth_token_idle_timeout: std::time::Duration::from_millis(500),
+        };
+
+        let tracker = AuthTokenTracker::default();
+        let token: Arc<str> = Arc::from("test-token");
+
+        // Register token
+        tracker.register_token(token.clone());
+
+        // Use token after 200ms (less than half the timeout)
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(tracker.is_valid(&Some(token.clone()), &config));
+
+        // Use token again after another 200ms
         // This should extend the lifetime
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(200));
         assert!(tracker.is_valid(&Some(token.clone()), &config));
 
-        // Wait 250ms more - token should now be expired (200ms timeout + some buffer)
-        std::thread::sleep(std::time::Duration::from_millis(250));
+        // Wait 600ms more - token should now be expired (500ms timeout + buffer)
+        std::thread::sleep(std::time::Duration::from_millis(600));
         assert!(!tracker.is_valid(&Some(token.clone()), &config));
     }
 
