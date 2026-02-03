@@ -63,6 +63,7 @@ pub struct Server {
     h_send: HSend,
     tls_reload_handle: Option<tokio::task::AbortHandle>,
     shutdown: Option<axum_server::Handle>,
+    auth_tracker: crate::auth::AuthTokenTracker,
 }
 
 impl Drop for Server {
@@ -96,6 +97,7 @@ impl Server {
                 receiver,
                 tls_reload_handle,
                 shutdown,
+                auth_tracker,
             })) => Ok(Self {
                 t_join: Some(t_join),
                 addrs,
@@ -103,6 +105,7 @@ impl Server {
                 h_send,
                 tls_reload_handle,
                 shutdown: Some(shutdown),
+                auth_tracker,
             }),
             Ok(Err(err)) => Err(err),
             Err(_) => Err(std::io::Error::other("failed to bind server")),
@@ -116,6 +119,10 @@ impl Server {
     pub fn receiver(&self) -> &HttpReceiver {
         &self.receiver
     }
+
+    pub fn auth_tracker(&self) -> &crate::auth::AuthTokenTracker {
+        &self.auth_tracker
+    }
 }
 
 struct Ready {
@@ -124,6 +131,7 @@ struct Ready {
     receiver: HttpReceiver,
     tls_reload_handle: Option<tokio::task::AbortHandle>,
     shutdown: axum_server::Handle,
+    auth_tracker: crate::auth::AuthTokenTracker,
 }
 
 #[derive(Clone)]
@@ -278,6 +286,9 @@ fn tokio_thread(
                 }
             }
 
+            // Clone auth_tracker before moving it into AppState so we can return it
+            let auth_tracker_for_ready = auth_tracker.clone();
+
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
@@ -384,6 +395,7 @@ fn tokio_thread(
                     receiver,
                     tls_reload_handle,
                     shutdown: shutdown_handle,
+                    auth_tracker: auth_tracker_for_ready,
                 }))
                 .is_err()
             {

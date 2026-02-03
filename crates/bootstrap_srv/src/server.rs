@@ -92,11 +92,17 @@ impl BootstrapSrv {
             }));
         }
 
-        // also set up a worker for pruning expired infos
+        // also set up a worker for pruning expired infos and auth tokens
         let prune_cont = cont.clone();
         let prune_space_map = space_map.clone();
+        let prune_auth_tracker = server.auth_tracker().clone();
         workers.push(std::thread::spawn(move || {
-            prune_worker(config, prune_cont, prune_space_map)
+            prune_worker(
+                config,
+                prune_cont,
+                prune_space_map,
+                prune_auth_tracker,
+            )
         }));
 
         Ok(Self {
@@ -149,6 +155,7 @@ fn prune_worker(
     config: Arc<Config>,
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
+    auth_tracker: crate::auth::AuthTokenTracker,
 ) -> std::io::Result<()> {
     let _g = ThreadGuard("prune_worker thread has ended");
 
@@ -160,7 +167,11 @@ fn prune_worker(
         if last_check.elapsed() >= config.prune_interval {
             last_check = std::time::Instant::now();
 
+            // Prune expired space infos
             space_map.update_all(config.max_entries_per_space);
+
+            // Prune expired auth tokens
+            auth_tracker.prune_expired(&config.auth);
         }
     }
 
