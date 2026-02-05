@@ -81,7 +81,7 @@ prost = "0.14"
 # used to generate private cryptography keys.
 rand = "0.8.5"
 # used for HTTP requests (e.g., authentication hook server calls).
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 # kitsune types need to be serializable for network transmission.
 serde = { version = "1.0", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
