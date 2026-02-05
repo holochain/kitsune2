@@ -20,8 +20,10 @@ args = ["format", "--check"]
 
 [tasks.doc-check]
 description = "Check documetation generation, similarly to how docs.rs will do it"
-command = "cargo"
-args = ["+nightly", "doc", "--all-features", "--no-deps"]
+script_runner = "@shell"
+script = '''
+${CARGO_NIGHTLY:-cargo +nightly} doc --all-features --no-deps
+'''
 env = { RUSTDOCFLAGS = "--cfg docsrs --deny=warnings" }
 install_crate = false
 

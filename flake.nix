@@ -61,9 +61,14 @@
 
           devShells.default =
             with pkgs;
+            let
+              # Use rust-overlay for a complete toolchain that works with nix
+              rustNightly = rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
+            in
             mkShell {
               packages = [
-                rustup
+                rust
+                rustNightly
                 cargo-make
                 taplo
                 perl
@@ -75,11 +80,7 @@
               ];
 
               LIBCLANG_PATH = "${lib.getLib llvmPackages.libclang}/lib";
-
-              shellHook = ''
-                ${rustup}/bin/rustup toolchain install ${rust.version}
-                ${rustup}/bin/rustup toolchain install nightly
-              '';
+              CARGO_NIGHTLY = "${rustNightly}/bin/cargo";
             };
         };
     };

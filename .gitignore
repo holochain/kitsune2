@@ -2,6 +2,7 @@
 /output-*
 .cargo
 logs
+.direnv
 
 # Rust Rover
 .idea/
