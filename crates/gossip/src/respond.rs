@@ -35,6 +35,49 @@ impl K2Gossip {
         from_peer: Url,
         msg: GossipMessage,
     ) -> K2GossipResult<()> {
+        let result = tokio::time::timeout(
+            self.config.round_timeout(),
+            self.respond_to_msg_inner(from_peer.clone(), msg),
+        )
+        .await;
+
+        match result {
+            Ok(inner_result) => inner_result,
+            Err(_elapsed) => {
+                tracing::warn!(
+                    ?from_peer,
+                    "Message handling timed out, clearing round state"
+                );
+                self.clear_peer_round_state(&from_peer).await;
+                Err(K2Error::other("Message handling timed out").into())
+            }
+        }
+    }
+
+    /// Clear any round state associated with a peer.
+    ///
+    /// This is called when message handling times out to ensure locks are
+    /// released and the peer doesn't block gossip with other peers.
+    async fn clear_peer_round_state(&self, peer: &Url) {
+        // Clear initiated round if it's with this peer
+        {
+            let mut initiated = self.initiated_round_state.lock().await;
+            if let Some(state) = initiated.as_ref() {
+                if &state.session_with_peer == peer {
+                    initiated.take();
+                }
+            }
+        }
+
+        // Clear accepted round for this peer
+        self.accepted_round_states.write().await.remove(peer);
+    }
+
+    async fn respond_to_msg_inner(
+        &self,
+        from_peer: Url,
+        msg: GossipMessage,
+    ) -> K2GossipResult<()> {
         let res = match msg {
             GossipMessage::Initiate(initiate) => {
                 self.respond_to_initiate(from_peer.clone(), initiate).await
