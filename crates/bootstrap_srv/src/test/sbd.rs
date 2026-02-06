@@ -29,13 +29,9 @@ fn valid_auth() {
         .read_to_string()
         .unwrap();
 
-    eprintln!("Auth response: {}", response);
-
     // Parse JSON response
     let json: serde_json::Value = serde_json::from_str(&response).unwrap();
     let token = json["authToken"].as_str().unwrap();
-
-    eprintln!("Token: {}", token);
 
     let addr = format!("http://{}/bootstrap/{}", s.listen_addrs()[0], S1);
     let res = ureq::get(&addr)
