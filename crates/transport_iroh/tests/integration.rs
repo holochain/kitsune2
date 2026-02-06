@@ -936,7 +936,7 @@ async fn network_stats() {
     // to a direct connection, so this isn't asserted.
 }
 
-/// Test that demonstrates Jost's scenario: when a peer fails to return a preflight
+/// Test that when a peer fails to return a preflight
 /// due to having no local agents, the connecting peer should NOT be marked as unresponsive.
 ///
 /// Scenario:
