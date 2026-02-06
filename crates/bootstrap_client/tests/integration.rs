@@ -288,3 +288,86 @@ async fn auth_feature_independent() {
 
     task.abort();
 }
+
+/// Test that the client re-authenticates when the server returns 401
+/// due to token expiration.
+#[tokio::test(flavor = "multi_thread")]
+async fn reauth_on_token_expiration() {
+    enable_tracing();
+
+    async fn handle_auth(body: bytes::Bytes) -> axum::response::Response {
+        if &body[..] != b"secret" {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Unauthorized",
+            ));
+        }
+        axum::response::IntoResponse::into_response(axum::Json(
+            serde_json::json!({
+                "authToken": "valid-token",
+            }),
+        ))
+    }
+
+    let app: axum::Router<()> = axum::Router::new()
+        .route("/authenticate", axum::routing::put(handle_auth));
+
+    let h = axum_server::Handle::default();
+    let h2 = h.clone();
+
+    let task = tokio::task::spawn(async move {
+        axum_server::bind(([127, 0, 0, 1], 0).into())
+            .handle(h2)
+            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .await
+            .unwrap();
+    });
+
+    let hook_addr = h.listening().await.unwrap();
+
+    let mut config = Config::testing();
+    config.auth.authentication_hook_server =
+        Some(format!("http://{hook_addr:?}/authenticate"));
+    // Set a very short token timeout so we can test expiration
+    config.auth.auth_token_idle_timeout = std::time::Duration::from_millis(200);
+    config.no_relay_server = true;
+    config.allowed_origins = Some(vec!["http://localhost".into()]);
+
+    let s =
+        tokio::task::block_in_place(move || BootstrapSrv::new(config).unwrap());
+
+    let server_url =
+        Url::parse(&format!("http://{:?}", s.listen_addrs()[0])).unwrap();
+
+    let local_agent: kitsune2_api::DynLocalAgent =
+        Arc::new(Ed25519LocalAgent::default());
+    let info =
+        kitsune2_test_utils::agent::AgentBuilder::default().build(local_agent);
+    let auth = AuthMaterial::new(b"secret".to_vec());
+
+    // First request should succeed and get a token
+    tokio::task::block_in_place(|| {
+        blocking_put_auth(server_url.clone(), &info, Some(&auth)).unwrap();
+    });
+
+    // Wait for the token to expire on the server
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    // Second request should get 401, re-authenticate, and succeed
+    tokio::task::block_in_place(|| {
+        // This should succeed because the client will re-authenticate
+        // when it receives 401 from the expired token
+        let infos = blocking_get_auth(
+            server_url.clone(),
+            info.space.clone(),
+            Arc::new(Ed25519Verifier),
+            Some(&auth),
+        )
+        .unwrap();
+
+        assert_eq!(1, infos.len());
+        assert_eq!(info, infos[0]);
+    });
+
+    task.abort();
+}
