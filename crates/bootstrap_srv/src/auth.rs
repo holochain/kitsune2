@@ -138,26 +138,31 @@ async fn call_hook_server(
     url: &str,
     auth_bytes: bytes::Bytes,
 ) -> Result<Arc<str>, AuthenticateError> {
-    // Make HTTP request to hook server
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| AuthenticateError::HookServerError(Box::new(e)))?;
-    let response = client
-        .put(url)
-        .header("Content-Type", "application/octet-stream")
-        .body(auth_bytes)
-        .send()
-        .await
-        .map_err(|e| AuthenticateError::HookServerError(Box::new(e)))?;
+    let url = url.to_string();
 
-    match response.status() {
-        reqwest::StatusCode::OK => {
+    // Use ureq (blocking) with spawn_blocking to avoid adding reqwest dependency
+    let response = tokio::task::spawn_blocking(move || {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(10)))
+            .build()
+            .into();
+        agent
+            .put(&url)
+            .header("Content-Type", "application/octet-stream")
+            .send(&auth_bytes[..])
+    })
+    .await
+    .map_err(|e| AuthenticateError::OtherError(Box::new(e)))?;
+
+    match response {
+        Ok(response) => {
             // Parse JSON response
-            let json: serde_json::Value = response
-                .json()
-                .await
+            let body = response
+                .into_body()
+                .read_to_string()
+                .map_err(|e| AuthenticateError::OtherError(Box::new(e)))?;
+
+            let json: serde_json::Value = serde_json::from_str(&body)
                 .map_err(|e| AuthenticateError::OtherError(Box::new(e)))?;
 
             let token = json["authToken"].as_str().ok_or_else(|| {
@@ -168,15 +173,10 @@ async fn call_hook_server(
 
             Ok(Arc::<str>::from(token))
         }
-        reqwest::StatusCode::UNAUTHORIZED => {
+        Err(ureq::Error::StatusCode(401)) => {
             Err(AuthenticateError::Unauthorized)
         }
-        _ => {
-            let status = response.status();
-            Err(AuthenticateError::HookServerError(
-                format!("Hook server returned {}", status).into(),
-            ))
-        }
+        Err(e) => Err(AuthenticateError::HookServerError(Box::new(e))),
     }
 }
 
