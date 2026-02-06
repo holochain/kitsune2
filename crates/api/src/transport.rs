@@ -556,6 +556,24 @@ impl DefaultTransport {
         });
         out
     }
+
+    // Check if this space has local agents before generating preflight.
+    // If it doesn't have local agents, we cannot generate a meaningful preflight
+    // and should return an error. This can happen when writing to our own peer store
+    // (which is async) takes longer than other code reaching a send.
+    async fn error_if_no_local_agents(
+        &self,
+        space_id: SpaceId,
+    ) -> K2Result<()> {
+        let space_handler =
+            self.space_map.lock().unwrap().get(&space_id).cloned();
+        if let Some(handler) = space_handler {
+            if !handler.has_local_agents().await? {
+                return Err(K2Error::NoLocalAgentsDuringPreflight);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Transport for DefaultTransport {
@@ -619,6 +637,7 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            self.error_if_no_local_agents(space_id.clone()).await?;
             if is_peer_blocked(
                 self.space_map.clone(),
                 self.blocked_message_counts.clone(),
@@ -653,6 +672,7 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            self.error_if_no_local_agents(space_id.clone()).await?;
             if is_peer_blocked(
                 self.space_map.clone(),
                 self.blocked_message_counts.clone(),
