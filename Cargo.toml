@@ -71,7 +71,7 @@ ed25519-dalek = "2.1.1"
 # alternative transport implementation using iroh
 iroh = "0.95.1"
 # automock traits for tests
-mockall = "0.13"
+mockall = "0.14"
 # watchable stream of values used in iroh transport
 n0-watcher = "0.5.0"
 # bootstrap_srv uses this to determine worker thread count.
@@ -121,7 +121,7 @@ tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
 schemars = { version = "0.9", features = ["preserve_order"] }
 # Used in the showcase CLI
-rustyline = { version = "16.0" }
+rustyline = { version = "17.0" }
 # Used in showcase app for the commands
 strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
 # Used for telemetry in sbd server
