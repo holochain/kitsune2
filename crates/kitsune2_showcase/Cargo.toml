@@ -15,15 +15,15 @@ edition.workspace = true
 bytes = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
-kitsune2 = { workspace = true, features = [
-  "transport-tx5-datachannel-vendored",
-] }
+kitsune2 = { workspace = true, default-features = false }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
-kitsune2_transport_tx5 = { workspace = true, features = [
+kitsune2_transport_tx5 = { workspace = true, optional = true, features = [
   "datachannel-vendored",
 ] }
-rustls = { workspace = true }
+kitsune2_transport_iroh = { workspace = true, optional = true }
+
+rustls = { workspace = true, default-features = true }
 rustyline = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -33,3 +33,12 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[features]
+default = ["transport-tx5"]
+
+transport-tx5 = [
+  "dep:kitsune2_transport_tx5",
+  "kitsune2/transport-tx5-datachannel-vendored",
+]
+transport-iroh = ["dep:kitsune2_transport_iroh", "kitsune2/transport-iroh"]

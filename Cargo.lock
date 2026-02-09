@@ -2706,6 +2706,7 @@ dependencies = [
  "kitsune2",
  "kitsune2_api",
  "kitsune2_core",
+ "kitsune2_transport_iroh",
  "kitsune2_transport_tx5",
  "rustls",
  "rustyline",

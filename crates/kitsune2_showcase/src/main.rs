@@ -10,6 +10,13 @@ struct Args {
     #[arg(long, default_value = "wss://dev-test-bootstrap2.holochain.org")]
     signal_url: String,
 
+    /// The relay server to use.
+    #[arg(
+        long,
+        default_value = "https://use1-1.relay.n0.iroh-canary.iroh.link./"
+    )]
+    relay_url: String,
+
     /// The bootstrap server to use.
     #[arg(long, default_value = "https://dev-test-bootstrap2.holochain.org")]
     bootstrap_url: String,

@@ -20,8 +20,10 @@ args = ["format", "--check"]
 
 [tasks.doc-check]
 description = "Check documetation generation, similarly to how docs.rs will do it"
-command = "cargo"
-args = ["+nightly", "doc", "--all-features", "--no-deps"]
+script_runner = "@shell"
+script = '''
+${CARGO_NIGHTLY:-cargo +nightly} doc --all-features --no-deps
+'''
 env = { RUSTDOCFLAGS = "--cfg docsrs --deny=warnings" }
 install_crate = false
 
@@ -65,7 +67,7 @@ dependencies = ["format-toml-check", "format-check", "clippy", "doc-check"]
 [tasks.verify]
 description = "Run all static checks and tests"
 workspace = false
-dependencies = ["static", "test", "test-go-pion"]
+dependencies = ["static", "test"]
 
 [tasks.fix]
 description = "Run all tasks to format, generate and tidy"
