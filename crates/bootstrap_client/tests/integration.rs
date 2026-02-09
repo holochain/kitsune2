@@ -128,7 +128,7 @@ async fn auth_with_real_token_provider() {
     let h = axum_server::Handle::default();
     let h2 = h.clone();
 
-    let task = tokio::task::spawn(async move {
+    let auth_hook_server_task = tokio::task::spawn(async move {
         axum_server::bind(([127, 0, 0, 1], 0).into())
             .handle(h2)
             .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
@@ -140,10 +140,12 @@ async fn auth_with_real_token_provider() {
     println!("hook_addr: {hook_addr:?}");
 
     let mut config = Config::testing();
-    let auth_hook_url = format!("http://{hook_addr:?}/authenticate");
+    let auth_hook_url = format!("http://{hook_addr:?}");
     // Set auth on both config.auth (feature-independent) and config.sbd (for SBD websockets)
     config.auth.authentication_hook_server = Some(auth_hook_url.clone());
-    config.sbd.authentication_hook_server = Some(auth_hook_url);
+    // Note: sbd config still expects full URL with /authenticate path
+    config.sbd.authentication_hook_server =
+        Some(format!("{auth_hook_url}/authenticate"));
     config.allowed_origins = Some(vec!["http://localhost".into()]);
 
     let s =
@@ -173,7 +175,7 @@ async fn auth_with_real_token_provider() {
         blocking_put_auth(server_url.clone(), &info, Some(&auth2)).unwrap_err();
     });
 
-    task.abort();
+    auth_hook_server_task.abort();
 }
 
 /// Test that authentication works using only the feature-independent auth module.
@@ -203,7 +205,7 @@ async fn auth_feature_independent() {
     let h = axum_server::Handle::default();
     let h2 = h.clone();
 
-    let task = tokio::task::spawn(async move {
+    let auth_hook_server_task = tokio::task::spawn(async move {
         axum_server::bind(([127, 0, 0, 1], 0).into())
             .handle(h2)
             .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
@@ -218,7 +220,7 @@ async fn auth_feature_independent() {
     // ONLY set auth on config.auth - NOT on config.sbd
     // This ensures we're testing the feature-independent auth module
     config.auth.authentication_hook_server =
-        Some(format!("http://{hook_addr:?}/authenticate"));
+        Some(format!("http://{hook_addr:?}"));
     // Disable the relay server entirely - we're only testing HTTP bootstrap endpoints
     config.no_relay_server = true;
     config.allowed_origins = Some(vec!["http://localhost".into()]);
@@ -237,11 +239,11 @@ async fn auth_feature_independent() {
     let valid_auth = AuthMaterial::new(b"secret".to_vec());
 
     tokio::task::block_in_place(|| {
-        // Put should succeed with valid auth
+        // Authenticate with valid_auth material and put agent info into bootstrap
         blocking_put_auth(server_url.clone(), &info, Some(&valid_auth))
             .unwrap();
 
-        // Get should also succeed with the same auth (token is cached)
+        // Get should also succeed with the same auth (token is reused)
         let infos = blocking_get_auth(
             server_url.clone(),
             info.space.clone(),
@@ -286,7 +288,7 @@ async fn auth_feature_independent() {
         .unwrap_err();
     });
 
-    task.abort();
+    auth_hook_server_task.abort();
 }
 
 /// Test that the client re-authenticates when the server returns 401
@@ -315,7 +317,7 @@ async fn reauth_on_token_expiration() {
     let h = axum_server::Handle::default();
     let h2 = h.clone();
 
-    let task = tokio::task::spawn(async move {
+    let auth_hook_server_task = tokio::task::spawn(async move {
         axum_server::bind(([127, 0, 0, 1], 0).into())
             .handle(h2)
             .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
@@ -327,7 +329,7 @@ async fn reauth_on_token_expiration() {
 
     let mut config = Config::testing();
     config.auth.authentication_hook_server =
-        Some(format!("http://{hook_addr:?}/authenticate"));
+        Some(format!("http://{hook_addr:?}"));
     // Set a very short token timeout so we can test expiration
     config.auth.auth_token_idle_timeout = std::time::Duration::from_millis(200);
     config.no_relay_server = true;
@@ -345,7 +347,7 @@ async fn reauth_on_token_expiration() {
         kitsune2_test_utils::agent::AgentBuilder::default().build(local_agent);
     let auth = AuthMaterial::new(b"secret".to_vec());
 
-    // First request should succeed and get a token
+    // First request should succeed and register the token
     tokio::task::block_in_place(|| {
         blocking_put_auth(server_url.clone(), &info, Some(&auth)).unwrap();
     });
@@ -369,5 +371,5 @@ async fn reauth_on_token_expiration() {
         assert_eq!(info, infos[0]);
     });
 
-    task.abort();
+    auth_hook_server_task.abort();
 }

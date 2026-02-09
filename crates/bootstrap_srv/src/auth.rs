@@ -4,6 +4,34 @@
 //! of the relay implementation (SBD or Iroh). It implements the
 //! authentication hook server specification from:
 //! <https://github.com/holochain/sbd/blob/main/spec-auth.md>
+//!
+//! ## Authentication Specification
+//!
+//! ### REST API Endpoint
+//!
+//! The server provides a `PUT /authenticate` endpoint that accepts opaque
+//! authentication bytes and returns a base64url-encoded authToken upon
+//! successful authentication (HTTP 200 response).
+//!
+//! ### Authorization Header
+//!
+//! Clients must include the token in subsequent requests using the format:
+//! `Authorization: Bearer <authToken base64url string>`
+//!
+//! ### Hook Server Configuration
+//!
+//! When configured with a hook server URL, authentication requests are
+//! relayed to that external service. The returned tokens are cached and
+//! validated locally, with lifecycle managed based on idle timeouts.
+//!
+//! If no hook server is specified, the system generates random tokens
+//! and treats all authentication requests as successful.
+//!
+//! ### Token Lifecycle
+//!
+//! Tokens expire after a configurable idle timeout period. Each successful
+//! use of a token resets its expiration timer. Expired tokens can be
+//! revalidated through subsequent hook server calls.
 
 use base64::Engine;
 use rand::Rng;
@@ -14,7 +42,8 @@ use std::time::{Duration, Instant};
 /// Configuration for authentication.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// URL of the authentication hook server (e.g., <http://auth.example.com/authenticate>)
+    /// Base URL of the authentication hook server (e.g., `http://auth.example.com`).
+    /// The `/authenticate` endpoint will be appended automatically.
     pub authentication_hook_server: Option<String>,
 
     /// Idle timeout for authentication tokens
@@ -135,10 +164,11 @@ pub async fn process_authenticate(
 
 /// Call the authentication hook server.
 async fn call_hook_server(
-    url: &str,
+    base_url: &str,
     auth_bytes: bytes::Bytes,
 ) -> Result<Arc<str>, AuthenticateError> {
-    let url = url.to_string();
+    // Append /authenticate to the base URL
+    let url = format!("{}/authenticate", base_url.trim_end_matches('/'));
 
     // Use ureq (blocking) with spawn_blocking to avoid adding reqwest dependency
     let response = tokio::task::spawn_blocking(move || {
@@ -250,7 +280,7 @@ mod tests {
 
         let tracker = AuthTokenTracker::default();
 
-        // When no hook server is configured, no token is valid (backward compat)
+        // When no hook server is configured, it's valid to not provide a token
         assert!(tracker.is_valid(&None, &config));
 
         // But if a token is provided, it still needs to be registered
