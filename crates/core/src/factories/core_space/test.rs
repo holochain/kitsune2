@@ -48,10 +48,11 @@ async fn space_local_agent_join_leave() {
     let s1 = k1.space(TEST_SPACE_ID, None).await.unwrap();
 
     assert!(k1.space_if_exists(TEST_SPACE_ID).await.is_some());
-    assert!(k1
-        .space_if_exists(bytes::Bytes::from_static(b"nope").into())
-        .await
-        .is_none());
+    assert!(
+        k1.space_if_exists(bytes::Bytes::from_static(b"nope").into())
+            .await
+            .is_none()
+    );
     assert_eq!(1, k1.list_spaces().len());
 
     s1.local_agent_join(bob.clone()).await.unwrap();

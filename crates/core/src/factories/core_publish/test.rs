@@ -1,7 +1,7 @@
 use super::CorePublishConfig;
 use crate::{
     default_test_builder,
-    factories::{core_publish::CorePublish, MemoryOp},
+    factories::{MemoryOp, core_publish::CorePublish},
 };
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
@@ -185,8 +185,8 @@ async fn published_agent_can_be_retrieved() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_succeed(
-) {
+async fn invalid_agent_is_not_inserted_into_peer_store_and_subsequent_publishes_succeed()
+ {
     enable_tracing();
 
     let Test {

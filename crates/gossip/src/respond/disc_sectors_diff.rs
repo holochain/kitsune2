@@ -1,9 +1,9 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_agent_infos, GossipMessage, K2GossipAgentsMessage,
-    K2GossipDiscSectorDetailsDiffMessage, K2GossipDiscSectorsDiffMessage,
-    K2GossipTerminateMessage,
+    GossipMessage, K2GossipAgentsMessage, K2GossipDiscSectorDetailsDiffMessage,
+    K2GossipDiscSectorsDiffMessage, K2GossipTerminateMessage,
+    encode_agent_infos,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,

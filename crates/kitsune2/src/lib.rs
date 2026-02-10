@@ -14,8 +14,8 @@
 
 use kitsune2_api::*;
 use kitsune2_core::{
-    factories::{self, MemOpStoreFactory},
     Ed25519Verifier,
+    factories::{self, MemOpStoreFactory},
 };
 use kitsune2_gossip::K2GossipFactory;
 #[cfg(all(

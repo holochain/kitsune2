@@ -4,8 +4,8 @@ use crate::fetch::DynFetch;
 use crate::peer_store::DynPeerStore;
 use crate::transport::DynTransport;
 use crate::{
-    builder, config, BoxFut, DhtArc, DynLocalAgentStore, DynOpStore,
-    DynPeerMetaStore, K2Result, SpaceId, StoredOp, Timestamp, Url,
+    BoxFut, DhtArc, DynLocalAgentStore, DynOpStore, DynPeerMetaStore, K2Result,
+    SpaceId, StoredOp, Timestamp, Url, builder, config,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -25,7 +25,7 @@ pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
     /// This is not expected to be called directly. It is intended to be used by the
     /// space that owns this gossip module. See [crate::space::Space::inform_ops_stored].
     fn inform_ops_stored(&self, ops: Vec<StoredOp>)
-        -> BoxFut<'_, K2Result<()>>;
+    -> BoxFut<'_, K2Result<()>>;
 
     /// Get a state summary from the gossip module.
     fn get_state_summary(

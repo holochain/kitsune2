@@ -465,14 +465,14 @@ async fn cmd_task(
                 }
             }
             Cmd::Disconnect(url, payload, result_sender) => {
-                if let Some(mut drop_send) = con_pool.remove(&url) {
-                    if let Some((reason, payload)) = payload {
-                        drop_send.reason = Some(reason);
-                        let _ = drop_send
-                            .ready_data_send
-                            .data_send
-                            .send((payload, result_sender));
-                    }
+                if let Some(mut drop_send) = con_pool.remove(&url)
+                    && let Some((reason, payload)) = payload
+                {
+                    drop_send.reason = Some(reason);
+                    let _ = drop_send
+                        .ready_data_send
+                        .data_send
+                        .send((payload, result_sender));
                 }
             }
             Cmd::Send(url, data, result_sender) => {

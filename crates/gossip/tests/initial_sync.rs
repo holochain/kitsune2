@@ -4,8 +4,8 @@
 
 use kitsune2_api::{DhtArc, Timestamp};
 use kitsune2_core::factories::MemoryOp;
-use kitsune2_gossip::harness::{K2GossipFunctionalTestFactory, MemoryOpRecord};
 use kitsune2_gossip::K2GossipConfig;
+use kitsune2_gossip::harness::{K2GossipFunctionalTestFactory, MemoryOpRecord};
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use kitsune2_test_utils::{enable_tracing_with_default_level, random_bytes};
 use std::time::Duration;

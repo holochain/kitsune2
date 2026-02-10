@@ -125,7 +125,7 @@ impl App {
                     webrtc_config: WebRtcConfig {
                         ice_servers: vec![IceServers {
                             urls: vec![
-                                "stun://stun.l.google.com:19302".to_string()
+                                "stun://stun.l.google.com:19302".to_string(),
                             ],
                             username: None,
                             credential: None,
@@ -252,7 +252,10 @@ impl App {
             .unwrap_or_default();
 
         if size > MAX_FILE_SIZE {
-            return Err(K2Error::other(format!("'{}' is larger than the allowed {MAX_FILE_SIZE} bytes. Actual size {size}", file_path.display())));
+            return Err(K2Error::other(format!(
+                "'{}' is larger than the allowed {MAX_FILE_SIZE} bytes. Actual size {size}",
+                file_path.display()
+            )));
         }
 
         let mut contents = String::with_capacity(size);

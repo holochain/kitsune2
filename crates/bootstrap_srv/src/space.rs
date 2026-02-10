@@ -207,17 +207,17 @@ impl Space {
 
         // if we still have a new info to add, it must not have matched
         // any existing ones
-        if let Some((parsed, store)) = new_info {
-            if !parsed.is_tombstone {
-                // if we are full, follow the "default" strategy rule of
-                // deleting the half-way info
-                if list.len() >= max_entries {
-                    list.remove(max_entries / 2);
-                }
-
-                // push the new info onto the stack
-                list.push((parsed, store.expect("RequireStoreRef")));
+        if let Some((parsed, store)) = new_info
+            && !parsed.is_tombstone
+        {
+            // if we are full, follow the "default" strategy rule of
+            // deleting the half-way info
+            if list.len() >= max_entries {
+                list.remove(max_entries / 2);
             }
+
+            // push the new info onto the stack
+            list.push((parsed, store.expect("RequireStoreRef")));
         }
 
         // drop the parsed versions

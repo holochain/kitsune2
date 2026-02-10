@@ -5,7 +5,7 @@ use crate::protocol::k2_gossip_disc_sectors_diff_message::SnapshotDiscSectorsMes
 use bytes::{Bytes, BytesMut};
 use kitsune2_api::*;
 use kitsune2_dht::DhtSnapshot;
-use prost::{bytes, Message};
+use prost::{Message, bytes};
 use std::collections::HashMap;
 use std::sync::Arc;
 

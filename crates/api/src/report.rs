@@ -1,7 +1,7 @@
 //! Kitsune2 report types.
 
 use crate::{
-    builder, config, BoxFut, DynLocalAgentStore, K2Result, OpId, SpaceId, Url,
+    BoxFut, DynLocalAgentStore, K2Result, OpId, SpaceId, Url, builder, config,
 };
 use std::sync::Arc;
 

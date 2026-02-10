@@ -1,6 +1,6 @@
-use super::{decode_frame_preflight, FrameType, FRAME_HEADER_LEN};
+use super::{FRAME_HEADER_LEN, FrameType, decode_frame_preflight};
 use crate::frame::decode_frame_header;
-use crate::{encode_frame, Frame, IrohTransportConfig};
+use crate::{Frame, IrohTransportConfig, encode_frame};
 use bytes::Bytes;
 use kitsune2_api::Url;
 

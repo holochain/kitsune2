@@ -1,7 +1,7 @@
+use crate::K2GossipConfig;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::state::{GossipRoundState, RoundStage};
-use crate::K2GossipConfig;
 use kitsune2_api::Url;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
@@ -71,10 +71,10 @@ async fn remove_timed_out_rounds(
 
                 // If we failed to initiate, then we want to try again. Otherwise, an unavailable
                 // peer can prevent us from initiating gossip.
-                if matches!(state.stage, RoundStage::Initiated(_)) {
-                    if let Err(err) = force_initiate.try_send(()) {
-                        tracing::info!(?err, "Failed to send force initiate");
-                    }
+                if matches!(state.stage, RoundStage::Initiated(_))
+                    && let Err(err) = force_initiate.try_send(())
+                {
+                    tracing::info!(?err, "Failed to send force initiate");
                 }
 
                 *initiated_state = None;

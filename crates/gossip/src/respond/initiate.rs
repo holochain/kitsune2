@@ -2,8 +2,8 @@ use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 use crate::protocol::{
-    encode_agent_ids, encode_op_ids, ArcSetMessage, GossipMessage,
-    K2GossipAcceptMessage, K2GossipBusyMessage, K2GossipInitiateMessage,
+    ArcSetMessage, GossipMessage, K2GossipAcceptMessage, K2GossipBusyMessage,
+    K2GossipInitiateMessage, encode_agent_ids, encode_op_ids,
 };
 use crate::state::RoundStage;
 use kitsune2_api::{K2Error, Timestamp, Url};
@@ -173,16 +173,16 @@ impl K2Gossip {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::K2GossipConfig;
     use crate::burst::AcceptBurstTracker;
     use crate::protocol::K2GossipTerminateMessage;
-    use crate::respond::harness::{test_session_id, RespondTestHarness};
+    use crate::respond::harness::{RespondTestHarness, test_session_id};
     use crate::state::GossipRoundState;
-    use crate::K2GossipConfig;
     use kitsune2_api::{
-        decode_ids, DhtArc, Gossip, LocalAgent, OpId, UNIX_TIMESTAMP,
+        DhtArc, Gossip, LocalAgent, OpId, UNIX_TIMESTAMP, decode_ids,
     };
-    use kitsune2_core::factories::MemoryOp;
     use kitsune2_core::Ed25519LocalAgent;
+    use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::SECTOR_SIZE;
     use kitsune2_test_utils::enable_tracing;
     use rand::RngCore;
@@ -744,9 +744,9 @@ mod tests {
                         .agent
                         .clone()]),
                     arc_set: Some(ArcSetMessage {
-                        value: ArcSet::new(vec![remote_agent
-                            .local
-                            .get_tgt_storage_arc()])
+                        value: ArcSet::new(vec![
+                            remote_agent.local.get_tgt_storage_arc(),
+                        ])
                         .unwrap()
                         .encode(),
                     }),

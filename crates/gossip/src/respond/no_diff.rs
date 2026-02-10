@@ -1,8 +1,8 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_agent_infos, GossipMessage, K2GossipAgentsMessage,
-    K2GossipNoDiffMessage, K2GossipTerminateMessage,
+    GossipMessage, K2GossipAgentsMessage, K2GossipNoDiffMessage,
+    K2GossipTerminateMessage, encode_agent_infos,
 };
 use crate::state::{GossipRoundState, RoundStage, RoundStageAccepted};
 use kitsune2_api::{AgentId, K2Error, Url};

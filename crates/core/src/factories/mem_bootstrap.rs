@@ -158,10 +158,10 @@ fn stat_process(
     let store = map.entry(space_id.clone()).or_default();
     let now = Timestamp::now();
     store.retain(|a| {
-        if let Some(info) = info.as_ref() {
-            if a.agent == info.agent {
-                return false;
-            }
+        if let Some(info) = info.as_ref()
+            && a.agent == info.agent
+        {
+            return false;
         }
         if a.expires_at <= now {
             return false;
