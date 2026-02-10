@@ -120,3 +120,46 @@ async fn offline_peer_marked_unresponsive() {
 
     assert!(url2 == url);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn peer_marked_unresponsive_on_invalid_peer_id() {
+    let test = Tx5TransportTestHarness::new(None, None).await;
+
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler = Arc::new(MockTxHandler {
+        set_unresp: Arc::new(move |peer, timestamp| {
+            set_unresponsive_sender.send((peer, timestamp)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let transport = test.build_transport(handler.clone()).await;
+    transport.register_space_handler(TEST_SPACE_ID, handler.clone());
+
+    // Create an invalid peer url
+    let invalid_url = Url::from_str("ws://example.com:38").unwrap();
+
+    // Try to send to the invalid url
+    let result = transport
+        .send_space_notify(
+            invalid_url.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"test"),
+        )
+        .await;
+
+    // Send should fail
+    assert!(result.is_err());
+
+    // Verify set_unresponsive was called
+    let r = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        set_unresponsive_receiver.recv().await
+    })
+    .await
+    .expect("timeout waiting for set_unresponsive")
+    .expect("should receive set_unresponsive call");
+
+    let (unresponsive_url, _timestamp) = r;
+    assert_eq!(unresponsive_url, invalid_url);
+}

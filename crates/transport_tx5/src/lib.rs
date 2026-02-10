@@ -366,7 +366,24 @@ impl TxImp for Tx5Transport {
 
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
-            let peer_url = peer.to_peer_url()?;
+            let peer_url = match peer.to_peer_url() {
+                Err(e) => {
+                    // If we cannot convert the url to a peer url, mark the peer unresponsive
+                    let _ = self
+                        .handler
+                        .set_unresponsive(peer.clone(), Timestamp::now())
+                        .await;
+
+                    Err(K2Error::other_src(
+                        format!(
+                            "tx5 send error converting Url to PeerUrl {peer}"
+                        ),
+                        e,
+                    ))
+                }
+                ok => ok,
+            }?;
+
             // this would be more efficient if we retool tx5 to use bytes
             if let Err(e) = self.ep.send(peer_url, data.to_vec()).await {
                 let _ = self
