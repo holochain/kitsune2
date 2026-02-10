@@ -599,7 +599,23 @@ impl TxImp for IrohTransport {
         let connection_locks = self.connection_locks.clone();
 
         Box::pin(async move {
-            let remote = endpoint_from_url(&remote_url)?;
+            let remote = match endpoint_from_url(&remote_url) {
+                Err(e) => {
+                    // If we cannot convert the url to an endpoint address, mark the peer unresponsive
+                    let _ = self
+                        .handler
+                        .set_unresponsive(remote_url.clone(), Timestamp::now())
+                        .await;
+
+                    Err(K2Error::other_src(
+                        format!(
+                            "iroh send error converting Url to EndpointAddr {remote_url}"
+                        ),
+                        e,
+                    ))
+                }
+                ok => ok,
+            }?;
 
             // Get or create the connection lock for this peer to serialize connection creation.
             let peer_lock = {
