@@ -1,10 +1,10 @@
 //! Kitsune2 publish types.
 
 use crate::{
-    builder, config, AgentInfoSigned, DynPeerMetaStore, DynPeerStore, K2Error,
+    AgentInfoSigned, DynPeerMetaStore, DynPeerStore, K2Error, builder, config,
 };
 use crate::{
-    transport::DynTransport, BoxFut, DynFetch, K2Result, OpId, SpaceId, Url,
+    BoxFut, DynFetch, K2Result, OpId, SpaceId, Url, transport::DynTransport,
 };
 use bytes::{Bytes, BytesMut};
 use prost::Message;
@@ -15,7 +15,7 @@ pub(crate) mod proto {
 }
 
 pub use proto::{
-    k2_publish_message::*, K2PublishMessage, PublishAgent, PublishOps,
+    K2PublishMessage, PublishAgent, PublishOps, k2_publish_message::*,
 };
 
 impl From<Vec<OpId>> for PublishOps {

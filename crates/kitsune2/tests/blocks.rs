@@ -21,9 +21,9 @@ use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
     feature = "transport-iroh"
 ))]
 use kitsune2_transport_iroh::{
-    config::{IrohTransportConfig, IrohTransportModConfig},
-    test_utils::{spawn_iroh_relay_server, Server},
     IrohTransportFactory,
+    config::{IrohTransportConfig, IrohTransportModConfig},
+    test_utils::{Server, spawn_iroh_relay_server},
 };
 
 use std::sync::mpsc::{Receiver, Sender};
@@ -118,7 +118,9 @@ impl TxBaseHandler for TestTxHandler {
 
     fn peer_disconnect(&self, peer: Url, _reason: Option<String>) {
         if self.peer_disconnect_sender.send(peer).is_err() {
-            tracing::error!("Failed to send peer disconnect. This is okay if it happens at the end of a test if the receiver has been dropped before the connection got dropped.");
+            tracing::error!(
+                "Failed to send peer disconnect. This is okay if it happens at the end of a test if the receiver has been dropped before the connection got dropped."
+            );
         };
     }
 }
@@ -1018,18 +1020,20 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     // message over the old WebRTC connection still that Bob has already
     // closed on his end and Bob won't ever receive it.
     iter_check!(500, {
-        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv() {
-            if peer_url == peer_url_bob {
-                break;
-            }
+        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
+            && peer_url == peer_url_bob
+        {
+            break;
         }
     });
 
     // To double-check, verify additionally that no space message has been
     // handled by Bob.
-    assert!(recv_notify_recv_bob
-        .recv_timeout(std::time::Duration::from_millis(50))
-        .is_err());
+    assert!(
+        recv_notify_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err()
+    );
 
     // Now have Alice join the space with a second agent which Bob should then
     // receive via the preflight and consequently let further messages through
@@ -1174,18 +1178,20 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     // message over the old WebRTC connection still that Bob has already
     // closed on his end and Bob won't ever receive it.
     iter_check!(500, {
-        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv() {
-            if peer_url == peer_url_bob {
-                break;
-            }
+        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
+            && peer_url == peer_url_bob
+        {
+            break;
         }
     });
 
     // To double-check, verify additionally that no module message has been
     // handled by Bob.
-    assert!(recv_module_msg_recv_bob
-        .recv_timeout(std::time::Duration::from_millis(50))
-        .is_err());
+    assert!(
+        recv_module_msg_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err()
+    );
 
     // Now have Alice join the space with a second agent which Bob should then
     // receive via the preflight and consequently let further messages through
@@ -1311,12 +1317,10 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
+            && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
+            && c.outgoing == 1
         {
-            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
-                if c.outgoing == 1 {
-                    break;
-                }
-            }
+            break;
         }
     });
 
@@ -1329,18 +1333,20 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
     // message over the old WebRTC connection still that Bob has already
     // closed on his end and Bob won't ever receive it.
     iter_check!(500, {
-        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv() {
-            if peer_url == peer_url_bob {
-                break;
-            }
+        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
+            && peer_url == peer_url_bob
+        {
+            break;
         }
     });
 
     // To double-check, verify additionally that no space message has been
     // handled by Bob in the meantime.
-    assert!(recv_notify_recv_bob
-        .recv_timeout(std::time::Duration::from_millis(50))
-        .is_err());
+    assert!(
+        recv_notify_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err()
+    );
 
     // Now have Bob join the space with a second agent and insert it to Alice's
     // peer store to simulate bootstrapping.
@@ -1388,12 +1394,10 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
+            && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
+            && c.outgoing == 1
         {
-            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
-                if c.outgoing == 1 {
-                    break;
-                }
-            }
+            break;
         }
     });
 }
@@ -1484,12 +1488,10 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
+            && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
+            && c.outgoing == 1
         {
-            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
-                if c.outgoing == 1 {
-                    break;
-                }
-            }
+            break;
         }
     });
 
@@ -1502,18 +1504,20 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
     // message over the old WebRTC connection still that Bob has already
     // closed on his end and Bob won't ever receive it.
     iter_check!(500, {
-        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv() {
-            if peer_url == peer_url_bob {
-                break;
-            }
+        if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
+            && peer_url == peer_url_bob
+        {
+            break;
         }
     });
 
     // To double-check, verify additionally that no module message has been
     // handled by Bob in the meantime.
-    assert!(recv_module_msg_recv_bob
-        .recv_timeout(std::time::Duration::from_millis(50))
-        .is_err());
+    assert!(
+        recv_module_msg_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err()
+    );
 
     // Now have Bob join the space with a second agent and insert it to Alice's
     // peer store to simulate bootstrapping.
@@ -1562,12 +1566,10 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
+            && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
+            && c.outgoing == 1
         {
-            if let Some(c) = space_blocks.get(&TEST_SPACE_ID) {
-                if c.outgoing == 1 {
-                    break;
-                }
-            }
+            break;
         }
     });
 }

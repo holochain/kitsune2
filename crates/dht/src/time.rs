@@ -289,7 +289,7 @@ impl TimePartition {
                     Some(hash) => {
                         let mut hash = bytes::BytesMut::from(hash);
                         // Combine the stored hash with the new op hash
-                        combine::combine_hashes(&mut hash, op.op_id.0 .0);
+                        combine::combine_hashes(&mut hash, op.op_id.0.0);
 
                         // and store the new value
                         store
@@ -306,7 +306,7 @@ impl TimePartition {
                             .store_slice_hash(
                                 self.sector_constraint,
                                 slice_index as u64,
-                                op.op_id.0 .0,
+                                op.op_id.0.0,
                             )
                             .await?;
                     }
@@ -342,7 +342,7 @@ impl TimePartition {
                     if op.created_at >= partial.start {
                         combine::combine_hashes(
                             &mut partial.hash,
-                            op.op_id.0 .0,
+                            op.op_id.0.0,
                         );
 
                         // Belongs in exactly one partial, stop after finding the right one.
@@ -1173,11 +1173,9 @@ mod tests {
 
         // Store a new op which will currently be outside the last partial slice
         store
-            .process_incoming_ops(vec![MemoryOp::new(
-                current_time,
-                vec![13; 32],
-            )
-            .into()])
+            .process_incoming_ops(vec![
+                MemoryOp::new(current_time, vec![13; 32]).into(),
+            ])
             .await
             .unwrap();
 
@@ -1238,11 +1236,13 @@ mod tests {
 
         // Store a new op, currently in the first partial slice, but will be in the next full slice.
         store
-            .process_incoming_ops(vec![MemoryOp::new(
-                pt.full_slice_end_timestamp(), // Start of the next full slice
-                vec![13; 32],
-            )
-            .into()])
+            .process_incoming_ops(vec![
+                MemoryOp::new(
+                    pt.full_slice_end_timestamp(), // Start of the next full slice
+                    vec![13; 32],
+                )
+                .into(),
+            ])
             .await
             .unwrap();
 
@@ -1387,11 +1387,10 @@ mod tests {
 
         // Now insert an op at the current time
         store
-            .process_incoming_ops(vec![MemoryOp::new(
-                pt.full_slice_end_timestamp(),
-                vec![7; 32],
-            )
-            .into()])
+            .process_incoming_ops(vec![
+                MemoryOp::new(pt.full_slice_end_timestamp(), vec![7; 32])
+                    .into(),
+            ])
             .await
             .unwrap();
         // and compute the new state in the future
@@ -1462,11 +1461,9 @@ mod tests {
         let store = test_store().await;
         // Insert a single op in the first time slice
         store
-            .process_incoming_ops(vec![MemoryOp::new(
-                UNIX_TIMESTAMP,
-                vec![7, 0, 0, 0],
-            )
-            .into()])
+            .process_incoming_ops(vec![
+                MemoryOp::new(UNIX_TIMESTAMP, vec![7, 0, 0, 0]).into(),
+            ])
             .await
             .unwrap();
 
@@ -1655,12 +1652,14 @@ mod tests {
         validate_partial_slices(&pt);
 
         assert!(pt.partial_slice_hash(0).is_ok());
-        assert!(pt
-            .partial_slice_hash(pt.partial_slices.len() as u32)
-            .is_err());
-        assert!(pt
-            .partial_slice_hash(pt.partial_slices.len() as u32 + 1)
-            .is_err());
+        assert!(
+            pt.partial_slice_hash(pt.partial_slices.len() as u32)
+                .is_err()
+        );
+        assert!(
+            pt.partial_slice_hash(pt.partial_slices.len() as u32 + 1)
+                .is_err()
+        );
     }
 
     fn validate_partial_slices(pt: &TimePartition) {

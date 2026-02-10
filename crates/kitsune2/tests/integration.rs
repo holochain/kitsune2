@@ -6,11 +6,11 @@ use kitsune2_api::{
     Timestamp,
 };
 use kitsune2_core::{
-    factories::{
-        config::{CoreBootstrapConfig, CoreBootstrapModConfig},
-        MemoryOp,
-    },
     Ed25519LocalAgent,
+    factories::{
+        MemoryOp,
+        config::{CoreBootstrapConfig, CoreBootstrapModConfig},
+    },
 };
 use kitsune2_gossip::{K2GossipConfig, K2GossipModConfig};
 use kitsune2_test_utils::{
@@ -24,9 +24,9 @@ use kitsune2_test_utils::{
     feature = "transport-iroh"
 ))]
 use kitsune2_transport_iroh::{
-    config::{IrohTransportConfig, IrohTransportModConfig},
-    test_utils::{spawn_iroh_relay_server, Server},
     IrohTransportFactory,
+    config::{IrohTransportConfig, IrohTransportModConfig},
+    test_utils::{Server, spawn_iroh_relay_server},
 };
 use std::sync::Arc;
 #[cfg(any(
@@ -36,8 +36,8 @@ use std::sync::Arc;
 ))]
 use {
     kitsune2_transport_tx5::{
-        config::{Tx5TransportConfig, Tx5TransportModConfig},
         Tx5TransportFactory,
+        config::{Tx5TransportConfig, Tx5TransportModConfig},
     },
     sbd_server::SbdServer,
 };
@@ -459,7 +459,9 @@ async fn shutdown_space() {
         if current_tasks == initial_tasks {
             break;
         } else {
-            println!("Current tasks: {current_tasks}, Initial tasks: {initial_tasks}");
+            println!(
+                "Current tasks: {current_tasks}, Initial tasks: {initial_tasks}"
+            );
         }
     });
 

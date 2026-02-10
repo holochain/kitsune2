@@ -1,6 +1,6 @@
-use crate::gossip::DropAbortHandle;
 use crate::K2GossipConfig;
-use kitsune2_api::{Timestamp, Url, UNIX_TIMESTAMP};
+use crate::gossip::DropAbortHandle;
+use kitsune2_api::{Timestamp, UNIX_TIMESTAMP, Url};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
@@ -69,7 +69,9 @@ impl AcceptBurstTracker {
         entry.retain(|t| *t > threshold);
 
         if entry.len() >= max_burst {
-            tracing::info!("Peer {peer_url} has reached the burst limit, this gossip request will be ignored");
+            tracing::info!(
+                "Peer {peer_url} has reached the burst limit, this gossip request will be ignored"
+            );
             false
         } else {
             entry.push(timestamp);

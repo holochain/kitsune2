@@ -72,7 +72,7 @@ impl GossipRoundState {
 mod tests {
     use crate::error::K2GossipError;
     use crate::protocol::K2GossipBusyMessage;
-    use crate::respond::harness::{test_session_id, RespondTestHarness};
+    use crate::respond::harness::{RespondTestHarness, test_session_id};
     use kitsune2_api::DhtArc;
     use kitsune2_test_utils::enable_tracing;
 

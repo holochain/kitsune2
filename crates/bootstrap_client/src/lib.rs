@@ -173,11 +173,11 @@ pub fn blocking_put_auth(
 
     let mut res = priv_put(&put_url, &encoded, &auth_material);
 
-    if let Some(auth_material) = auth_material {
-        if res.needs_auth() {
-            auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
-            res = priv_put(&put_url, &encoded, &Some(auth_material));
-        }
+    if let Some(auth_material) = auth_material
+        && res.needs_auth()
+    {
+        auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
+        res = priv_put(&put_url, &encoded, &Some(auth_material));
     }
 
     res.into()
@@ -240,11 +240,11 @@ pub fn blocking_get_auth(
 
     let mut res = priv_get(&get_url, &auth_material);
 
-    if let Some(auth_material) = auth_material {
-        if res.needs_auth() {
-            auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
-            res = priv_get(&get_url, &Some(auth_material));
-        }
+    if let Some(auth_material) = auth_material
+        && res.needs_auth()
+    {
+        auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
+        res = priv_get(&get_url, &Some(auth_material));
     }
 
     let res = K2Result::from(res)?;

@@ -7,7 +7,7 @@ use kitsune2_api::{
     TxBaseHandler, TxHandler, TxModuleHandler, TxSpaceHandler, Url,
 };
 
-use crate::{config, Tx5TransportFactory};
+use crate::{Tx5TransportFactory, config};
 
 /// Test harness for the transport_tx5 module
 pub struct Tx5TransportTestHarness {

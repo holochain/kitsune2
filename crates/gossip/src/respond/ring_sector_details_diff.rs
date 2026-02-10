@@ -1,9 +1,9 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_agent_infos, encode_op_ids, GossipMessage, K2GossipAgentsMessage,
-    K2GossipRingSectorDetailsDiffMessage,
+    GossipMessage, K2GossipAgentsMessage, K2GossipRingSectorDetailsDiffMessage,
     K2GossipRingSectorDetailsDiffResponseMessage, K2GossipTerminateMessage,
+    encode_agent_infos, encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,
@@ -222,6 +222,7 @@ impl GossipRoundState {
 
 #[cfg(test)]
 mod tests {
+    use crate::K2GossipConfig;
     use crate::protocol::{
         AcceptResponseMessage, GossipMessage,
         K2GossipRingSectorDetailsDiffMessage, RingSectorHashes,
@@ -229,9 +230,8 @@ mod tests {
     };
     use crate::respond::harness::RespondTestHarness;
     use crate::state::{RoundStage, RoundStageAccepted};
-    use crate::K2GossipConfig;
     use bytes::Bytes;
-    use kitsune2_api::{decode_ids, DhtArc, Gossip, OpId, Timestamp};
+    use kitsune2_api::{DhtArc, Gossip, OpId, Timestamp, decode_ids};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
     use kitsune2_test_utils::enable_tracing;

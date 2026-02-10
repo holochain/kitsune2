@@ -9,7 +9,7 @@ use kitsune2_api::{
     StoredOp, UNIX_TIMESTAMP,
 };
 use kitsune2_core::factories::MemoryOp;
-use kitsune2_core::{default_test_builder, Ed25519LocalAgent, Ed25519Verifier};
+use kitsune2_core::{Ed25519LocalAgent, Ed25519Verifier, default_test_builder};
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::tx_handler::TestTxHandler;
 use std::collections::HashSet;
