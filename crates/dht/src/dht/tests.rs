@@ -22,7 +22,7 @@ async fn take_minimal_snapshot() {
     let store = test_store().await;
     store
         .process_incoming_ops(vec![
-            MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into()
+            MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]).into(),
         ])
         .await
         .unwrap();

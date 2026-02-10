@@ -6,7 +6,7 @@ pub(crate) mod proto {
     include!("../proto/gen/kitsune2.wire.rs");
 }
 
-pub use proto::{k2_proto::K2WireType, K2Proto};
+pub use proto::{K2Proto, k2_proto::K2WireType};
 
 impl K2Proto {
     /// Decode this message from a byte array.

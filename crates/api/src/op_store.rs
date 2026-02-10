@@ -1,7 +1,7 @@
 //! Kitsune2 op store types.
 
 use crate::{
-    builder, config, BoxFut, DhtArc, K2Result, OpId, SpaceId, Timestamp,
+    BoxFut, DhtArc, K2Result, OpId, SpaceId, Timestamp, builder, config,
 };
 use bytes::Bytes;
 use futures::future::BoxFuture;

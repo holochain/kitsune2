@@ -1,20 +1,20 @@
 //! Tests that span multiple message responders.
 
+use crate::K2GossipConfig;
 use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
 use crate::protocol::{
-    encode_agent_ids, ArcSetMessage, DiscSliceHashes, GossipMessage,
-    K2GossipAcceptMessage, K2GossipDiscSectorDetailsDiffMessage,
+    ArcSetMessage, DiscSliceHashes, GossipMessage, K2GossipAcceptMessage,
+    K2GossipDiscSectorDetailsDiffMessage,
     K2GossipDiscSectorDetailsDiffResponseMessage, K2GossipInitiateMessage,
-    SnapshotDiscSectorDetailsMessage,
+    SnapshotDiscSectorDetailsMessage, encode_agent_ids,
 };
-use crate::respond::harness::{test_session_id, RespondTestHarness};
+use crate::respond::harness::{RespondTestHarness, test_session_id};
 use crate::state::{
     RoundStage, RoundStageDiscSectorDetailsDiff, RoundStageDiscSectorsDiff,
 };
-use crate::K2GossipConfig;
 use bytes::Bytes;
 use kitsune2_api::{
-    decode_ids, DhtArc, Gossip, OpId, Timestamp, UNIX_TIMESTAMP,
+    DhtArc, Gossip, OpId, Timestamp, UNIX_TIMESTAMP, decode_ids,
 };
 use kitsune2_core::factories::MemoryOp;
 use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
@@ -312,9 +312,9 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
                     .agent
                     .clone()]),
                 arc_set: Some(ArcSetMessage {
-                    value: ArcSet::new(vec![remote_agent
-                        .local
-                        .get_tgt_storage_arc()])
+                    value: ArcSet::new(vec![
+                        remote_agent.local.get_tgt_storage_arc(),
+                    ])
                     .unwrap()
                     .encode(),
                 }),
@@ -480,10 +480,12 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
     );
 
     // End of the round, so the state should be removed
-    assert!(!harness
-        .gossip
-        .accepted_round_states
-        .read()
-        .await
-        .contains_key(remote_agent.url.as_ref().unwrap()));
+    assert!(
+        !harness
+            .gossip
+            .accepted_round_states
+            .read()
+            .await
+            .contains_key(remote_agent.url.as_ref().unwrap())
+    );
 }

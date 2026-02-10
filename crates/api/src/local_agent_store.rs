@@ -1,5 +1,5 @@
 use crate::agent::DynLocalAgent;
-use crate::{builder, config, id, BoxFut, K2Result};
+use crate::{BoxFut, K2Result, builder, config, id};
 use std::sync::Arc;
 
 /// A store for local agents.

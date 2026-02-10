@@ -1,7 +1,7 @@
 use crate::app::App;
 use bytes::Bytes;
-use rustyline::error::ReadlineError;
 use rustyline::ExternalPrinter;
+use rustyline::error::ReadlineError;
 use std::borrow::Cow;
 use std::path::Path;
 use std::str::FromStr;

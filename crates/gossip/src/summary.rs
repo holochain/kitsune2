@@ -68,7 +68,7 @@ impl K2Gossip {
                                     format!("{start}..{end}")
                                 }
                                 DhtArc::Empty => {
-                                    return Err(K2Error::other("empty arc"))
+                                    return Err(K2Error::other("empty arc"));
                                 }
                             },
                             DhtSegmentState {

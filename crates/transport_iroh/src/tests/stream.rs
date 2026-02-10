@@ -59,7 +59,7 @@ async fn mock_send_stream_can_fail() {
 async fn mock_send_stream_frame_encoding_integration() {
     // This demonstrates how we can now test frame encoding + stream writing
     // without requiring actual network I/O
-    use crate::frame::{encode_frame, Frame};
+    use crate::frame::{Frame, encode_frame};
 
     let mock_stream = MockSendStream::new();
 
@@ -148,8 +148,8 @@ async fn mock_recv_stream_can_fail() {
 async fn mock_recv_stream_frame_decoding_integration() {
     // This demonstrates how we can now test stream reading + frame decoding
     // without requiring actual network I/O
-    use crate::frame::{encode_frame, Frame};
-    use crate::{decode_frame_header, FRAME_HEADER_LEN};
+    use crate::frame::{Frame, encode_frame};
+    use crate::{FRAME_HEADER_LEN, decode_frame_header};
 
     let test_data = Bytes::from_static(b"test payload");
     let frame = encode_frame(Frame::Data(test_data.clone()), 1024 * 1024)

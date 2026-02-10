@@ -79,10 +79,10 @@ impl K2Gossip {
 #[cfg(test)]
 mod tests {
     use crate::protocol::{
-        encode_agent_ids, ArcSetMessage, GossipMessage,
-        K2GossipInitiateMessage, K2GossipTerminateMessage,
+        ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
+        K2GossipTerminateMessage, encode_agent_ids,
     };
-    use crate::respond::harness::{test_session_id, RespondTestHarness};
+    use crate::respond::harness::{RespondTestHarness, test_session_id};
     use kitsune2_api::DhtArc;
     use kitsune2_dht::ArcSet;
     use kitsune2_test_utils::enable_tracing;
@@ -109,9 +109,10 @@ mod tests {
         assert!(response.is_err());
         let err = response.unwrap_err();
 
-        assert!(err
-            .to_string()
-            .contains("Unsolicited termination message from"));
+        assert!(
+            err.to_string()
+                .contains("Unsolicited termination message from")
+        );
     }
 
     #[tokio::test]
@@ -216,9 +217,10 @@ mod tests {
             "Wanted error response, got: {response:?}"
         );
         let err = response.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("Unsolicited termination message from"));
+        assert!(
+            err.to_string()
+                .contains("Unsolicited termination message from")
+        );
 
         // Check that the session is still in the initiated state
         let initiated = harness.gossip.initiated_round_state.lock().await;
@@ -296,9 +298,9 @@ mod tests {
                         .agent
                         .clone()]),
                     arc_set: Some(ArcSetMessage {
-                        value: ArcSet::new(vec![remote_agent
-                            .local
-                            .get_tgt_storage_arc()])
+                        value: ArcSet::new(vec![
+                            remote_agent.local.get_tgt_storage_arc(),
+                        ])
                         .unwrap()
                         .encode(),
                     }),
@@ -384,9 +386,9 @@ mod tests {
                         .agent
                         .clone()]),
                     arc_set: Some(ArcSetMessage {
-                        value: ArcSet::new(vec![remote_agent
-                            .local
-                            .get_tgt_storage_arc()])
+                        value: ArcSet::new(vec![
+                            remote_agent.local.get_tgt_storage_arc(),
+                        ])
                         .unwrap()
                         .encode(),
                     }),

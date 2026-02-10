@@ -1,10 +1,10 @@
 //! Kitsune2 fetch types.
 
 use crate::{
-    builder, config, transport::DynTransport, BoxFut, DynOpStore, DynReport,
-    K2Result, OpId, SpaceId, Url,
+    BoxFut, DynOpStore, DynReport, K2Result, OpId, SpaceId, Url, builder,
+    config, transport::DynTransport,
 };
-use crate::{op_store, DynPeerMetaStore};
+use crate::{DynPeerMetaStore, op_store};
 use bytes::{Bytes, BytesMut};
 use prost::Message;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub(crate) mod proto {
 }
 
 pub use proto::{
-    k2_fetch_message::*, FetchRequest, FetchResponse, K2FetchMessage,
+    FetchRequest, FetchResponse, K2FetchMessage, k2_fetch_message::*,
 };
 
 impl From<Vec<OpId>> for FetchRequest {

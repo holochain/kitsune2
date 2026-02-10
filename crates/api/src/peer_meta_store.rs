@@ -1,4 +1,4 @@
-use crate::{builder, config, BoxFut, K2Error, K2Result, Timestamp, Url};
+use crate::{BoxFut, K2Error, K2Result, Timestamp, Url, builder, config};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use std::{collections::HashMap, sync::Arc};

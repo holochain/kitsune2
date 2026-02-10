@@ -1,8 +1,8 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_op_ids, GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
-    K2GossipHashesMessage, K2GossipTerminateMessage,
+    GossipMessage, K2GossipDiscSectorDetailsDiffResponseMessage,
+    K2GossipHashesMessage, K2GossipTerminateMessage, encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
@@ -173,6 +173,7 @@ impl GossipRoundState {
 
 #[cfg(test)]
 mod tests {
+    use crate::K2GossipConfig;
     use crate::protocol::{
         DiscSliceHashes, GossipMessage,
         K2GossipDiscSectorDetailsDiffResponseMessage,
@@ -180,9 +181,8 @@ mod tests {
     };
     use crate::respond::harness::RespondTestHarness;
     use crate::state::{RoundStage, RoundStageDiscSectorDetailsDiff};
-    use crate::K2GossipConfig;
     use bytes::Bytes;
-    use kitsune2_api::{decode_ids, DhtArc, Gossip, OpId, Timestamp};
+    use kitsune2_api::{DhtArc, Gossip, OpId, Timestamp, decode_ids};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
     use kitsune2_test_utils::enable_tracing;
@@ -329,11 +329,13 @@ mod tests {
         );
 
         // End of the round, so the state should be removed
-        assert!(!harness
-            .gossip
-            .accepted_round_states
-            .read()
-            .await
-            .contains_key(remote_agent.url.as_ref().unwrap()));
+        assert!(
+            !harness
+                .gossip
+                .accepted_round_states
+                .read()
+                .await
+                .contains_key(remote_agent.url.as_ref().unwrap())
+        );
     }
 }

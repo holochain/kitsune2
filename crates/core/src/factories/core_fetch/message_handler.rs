@@ -40,7 +40,10 @@ impl TxModuleHandler for FetchMessageHandler {
                 {
                     match err {
                         tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                            tracing::info!(?err, "could not insert incoming request into queue, dropping it");
+                            tracing::info!(
+                                ?err,
+                                "could not insert incoming request into queue, dropping it"
+                            );
                         }
                         tokio::sync::mpsc::error::TrySendError::Closed(_) => {
                             tracing::warn!(
@@ -72,7 +75,10 @@ impl TxModuleHandler for FetchMessageHandler {
                 {
                     match err {
                         tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                            tracing::info!(?err, "incoming response queue is full, dropping response");
+                            tracing::info!(
+                                ?err,
+                                "incoming response queue is full, dropping response"
+                            );
                         }
                         tokio::sync::mpsc::error::TrySendError::Closed(_) => {
                             tracing::warn!(
@@ -101,10 +107,10 @@ impl TxBaseHandler for FetchMessageHandler {}
 #[cfg(test)]
 mod test {
     use super::FetchMessageHandler;
+    use crate::factories::MOD_NAME;
     use crate::factories::core_fetch::test::test_utils::{
         make_op, random_peer_url,
     };
-    use crate::factories::MOD_NAME;
     use bytes::Bytes;
     use kitsune2_api::*;
     use kitsune2_test_utils::id::{create_op_id_list, random_op_id};

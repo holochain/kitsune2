@@ -1,13 +1,13 @@
 use crate::burst::AcceptBurstTracker;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::protocol::{deserialize_gossip_message, GossipMessage};
+use crate::protocol::{GossipMessage, deserialize_gossip_message};
 use crate::state::GossipRoundState;
 use crate::{K2GossipConfig, MOD_NAME};
 use base64::Engine;
 use bytes::Bytes;
 use kitsune2_api::*;
-use kitsune2_core::{default_test_builder, Ed25519LocalAgent};
+use kitsune2_core::{Ed25519LocalAgent, default_test_builder};
 use kitsune2_dht::{ArcSet, Dht};
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
@@ -166,7 +166,9 @@ impl RespondTestHarness {
         with_remote_agent: &TestAgent,
     ) -> Bytes {
         let mut accepted = self.gossip.accepted_round_states.write().await;
-        assert!(!accepted.contains_key(with_remote_agent.url.as_ref().unwrap()));
+        assert!(
+            !accepted.contains_key(with_remote_agent.url.as_ref().unwrap())
+        );
         let state = GossipRoundState::new(
             with_remote_agent.url.clone().unwrap(),
             vec![local_agent.agent.clone()],

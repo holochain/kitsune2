@@ -4,7 +4,7 @@ use kitsune2_test_utils::{
     enable_tracing, retry_fn_until_timeout, space::TEST_SPACE_ID,
 };
 use kitsune2_transport_iroh::test_utils::{
-    dummy_url, IrohTransportTestHarness, MockTxHandler,
+    IrohTransportTestHarness, MockTxHandler, dummy_url,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{

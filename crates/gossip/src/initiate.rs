@@ -1,6 +1,6 @@
+use crate::K2GossipConfig;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::K2GossipConfig;
 use kitsune2_api::*;
 use kitsune2_api::{AgentId, K2Result, Timestamp, Url};
 use std::collections::HashSet;

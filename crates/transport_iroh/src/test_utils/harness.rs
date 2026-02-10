@@ -1,6 +1,6 @@
 use crate::{
-    test_utils::relay_server::{spawn_iroh_relay_server, Server},
     IrohTransportConfig, IrohTransportFactory, IrohTransportModConfig,
+    test_utils::relay_server::{Server, spawn_iroh_relay_server},
 };
 use kitsune2_api::{
     BoxFut, Builder, DynTransport, DynTxHandler, K2Result, SpaceId, Timestamp,

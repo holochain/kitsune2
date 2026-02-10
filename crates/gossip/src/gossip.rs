@@ -3,8 +3,8 @@ use crate::error::K2GossipError;
 use crate::initiate::spawn_initiate_task;
 use crate::peer_meta_store::K2PeerMetaStore;
 use crate::protocol::{
-    deserialize_gossip_message, encode_agent_ids, serialize_gossip_message,
     ArcSetMessage, GossipMessage, K2GossipInitiateMessage,
+    deserialize_gossip_message, encode_agent_ids, serialize_gossip_message,
 };
 use crate::state::{GossipRoundState, RoundStage};
 use crate::storage_arc::update_storage_arcs;
@@ -463,21 +463,25 @@ mod test {
 
         // Join extra agents for each peer. Try to sync them with gossip.
         let secret_agent_1 = harness_1.join_local_agent(DhtArc::FULL).await;
-        assert!(harness_2
-            .space
-            .peer_store()
-            .get(secret_agent_1.agent.clone())
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            harness_2
+                .space
+                .peer_store()
+                .get(secret_agent_1.agent.clone())
+                .await
+                .unwrap()
+                .is_none()
+        );
         let secret_agent_2 = harness_2.join_local_agent(DhtArc::FULL).await;
-        assert!(harness_1
-            .space
-            .peer_store()
-            .get(secret_agent_2.agent.clone())
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            harness_1
+                .space
+                .peer_store()
+                .get(secret_agent_2.agent.clone())
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         // Simulate peer discovery so that gossip can sync agents
         harness_1

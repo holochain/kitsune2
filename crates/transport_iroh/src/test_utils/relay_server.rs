@@ -1,7 +1,7 @@
 //! Test utilities associated with iroh relay servers.
 
-use iroh::test_utils::run_relay_server;
 use iroh::RelayUrl;
+use iroh::test_utils::run_relay_server;
 use iroh_relay::RelayMap;
 
 pub use iroh_relay::server::Server;

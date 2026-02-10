@@ -199,7 +199,9 @@ impl TxImpHnd {
                 if let Err(e) =
                     space_handler.set_unresponsive(peer.clone(), when).await
                 {
-                    tracing::error!("Failed to mark peer with url {peer} as unresponsive in space {space_id}: {e}");
+                    tracing::error!(
+                        "Failed to mark peer with url {peer} as unresponsive in space {space_id}: {e}"
+                    );
                 };
             }
             Ok(())
@@ -257,7 +259,11 @@ impl TxImpHnd {
         // for blocks.
         let space_id = match space_id {
             None => {
-                tracing::warn!(?peer_url, "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.", message_type);
+                tracing::warn!(
+                    ?peer_url,
+                    "Received a message of type {:?} without space id which is violating the protocol. Dropping the message and closing the connection.",
+                    message_type
+                );
                 return Err(K2Error::other(
                     "Received a message without space id.",
                 ));
@@ -278,7 +284,13 @@ impl TxImpHnd {
 
 impl std::fmt::Debug for TxImpHnd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,"TxImpHnd {{ handler: {:?}, space_map: [{} entries], mod_map: [{} entries] }}", self.handler, self.space_map.lock().unwrap().len(), self.mod_map.lock().unwrap().len() )
+        write!(
+            f,
+            "TxImpHnd {{ handler: {:?}, space_map: [{} entries], mod_map: [{} entries] }}",
+            self.handler,
+            self.space_map.lock().unwrap().len(),
+            self.mod_map.lock().unwrap().len()
+        )
     }
 }
 

@@ -10,9 +10,9 @@ use futures::future::BoxFuture;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use sbd_server::{
-    handle_upgraded, preflight_ip_check, spawn_prune_task, to_canonical_ip,
+    Config, IpRate, PubKey, WeakCSlot, handle_upgraded, preflight_ip_check,
+    spawn_prune_task, to_canonical_ip,
     ws::{Payload, SbdWebsocket},
-    Config, IpRate, PubKey, WeakCSlot,
 };
 use std::io;
 use std::io::Error;
@@ -94,14 +94,14 @@ impl SbdWebsocket for WebsocketForSbd {
                         let msg = r.map_err(Error::other)?;
                         match msg {
                             Message::Text(s) => {
-                                return Ok(Payload::Vec(s.as_bytes().to_vec()))
+                                return Ok(Payload::Vec(s.as_bytes().to_vec()));
                             }
                             Message::Binary(v) => {
-                                return Ok(Payload::Vec(v.to_vec()))
+                                return Ok(Payload::Vec(v.to_vec()));
                             }
                             Message::Ping(_) | Message::Pong(_) => (),
                             Message::Close(_) => {
-                                return Err(Error::other("closed"))
+                                return Err(Error::other("closed"));
                             }
                         }
                     }
@@ -190,14 +190,11 @@ pub async fn handle_sbd(
         .expect("Missing SBD state")
         .config
         .trusted_ip_header
-    {
-        if let Some(header) =
+        && let Some(header) =
             headers.get(trusted_ip_header).and_then(|h| h.to_str().ok())
-        {
-            if let Ok(ip) = header.parse::<IpAddr>() {
-                calc_ip = to_canonical_ip(ip);
-            }
-        }
+        && let Ok(ip) = header.parse::<IpAddr>()
+    {
+        calc_ip = to_canonical_ip(ip);
     }
 
     // finalize the upgrade process by returning upgrade callback.

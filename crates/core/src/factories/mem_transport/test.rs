@@ -135,10 +135,10 @@ impl TrackHnd {
 
     pub fn check_connect(&self, peer: &Url) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
-            if let Track::Connect(u) = t {
-                if u == peer {
-                    return Ok(());
-                }
+            if let Track::Connect(u) = t
+                && u == peer
+            {
+                return Ok(());
             }
         }
         Err(K2Error::other(format!(
@@ -157,12 +157,11 @@ impl TrackHnd {
                 if u != peer {
                     continue;
                 }
-                if let Some(reason) = reason {
-                    if let Some(r) = r {
-                        if r.contains(reason) {
-                            return Ok(());
-                        }
-                    }
+                if let Some(reason) = reason
+                    && let Some(r) = r
+                    && r.contains(reason)
+                {
+                    return Ok(());
                 }
             }
         }
@@ -179,10 +178,12 @@ impl TrackHnd {
         msg: &[u8],
     ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
-            if let Track::SpaceRecv(u, s, d) = t {
-                if u == peer && space_id == s && &d[..] == msg {
-                    return Ok(());
-                }
+            if let Track::SpaceRecv(u, s, d) = t
+                && u == peer
+                && space_id == s
+                && &d[..] == msg
+            {
+                return Ok(());
             }
         }
         Err(K2Error::other(format!(
@@ -200,10 +201,13 @@ impl TrackHnd {
         msg: &[u8],
     ) -> K2Result<()> {
         for t in self.track.lock().unwrap().iter() {
-            if let Track::ModRecv(u, s, m, d) = t {
-                if u == peer && space_id == s && module == m && &d[..] == msg {
-                    return Ok(());
-                }
+            if let Track::ModRecv(u, s, m, d) = t
+                && u == peer
+                && space_id == s
+                && module == m
+                && &d[..] == msg
+            {
+                return Ok(());
             }
         }
         Err(K2Error::other(format!(
@@ -232,7 +236,9 @@ impl TrackHnd {
         .expect("No messages found");
 
         if preflight_index > message_index {
-            panic!("Preflight messages were not sent/received before other messages");
+            panic!(
+                "Preflight messages were not sent/received before other messages"
+            );
         }
     }
 

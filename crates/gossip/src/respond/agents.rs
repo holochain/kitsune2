@@ -70,8 +70,8 @@ impl GossipRoundState {
 #[cfg(test)]
 mod tests {
     use crate::error::K2GossipError;
-    use crate::protocol::{encode_agent_infos, K2GossipAgentsMessage};
-    use crate::respond::harness::{test_session_id, RespondTestHarness};
+    use crate::protocol::{K2GossipAgentsMessage, encode_agent_infos};
+    use crate::respond::harness::{RespondTestHarness, test_session_id};
     use crate::state::RoundStage;
     use kitsune2_api::DhtArc;
     use kitsune2_test_utils::enable_tracing;
@@ -101,13 +101,15 @@ mod tests {
         let discovered_agent_2 = harness.create_agent(DhtArc::FULL).await;
 
         // Should be nothing in the peer store yet.
-        assert!(harness
-            .gossip
-            .peer_store
-            .get_all()
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            harness
+                .gossip
+                .peer_store
+                .get_all()
+                .await
+                .unwrap()
+                .is_empty()
+        );
 
         let response = harness
             .gossip
@@ -309,7 +311,8 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, K2GossipError::PeerBehaviorError{ .. }),
+        assert!(
+            matches!(error, K2GossipError::PeerBehaviorError { .. }),
             "Expected PeerBehavior error for unsolicited Agents message, got: {error:?}"
         );
 

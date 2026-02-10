@@ -103,7 +103,9 @@ impl Config {
             worker_thread_count: 2,
             max_entries_per_space: 32,
             request_listen_duration: std::time::Duration::from_millis(10),
-            listen_address_list: vec![(std::net::Ipv4Addr::LOCALHOST, 0).into()],
+            listen_address_list: vec![
+                (std::net::Ipv4Addr::LOCALHOST, 0).into(),
+            ],
             prune_interval: std::time::Duration::from_secs(10),
             tls_cert: None,
             tls_key: None,

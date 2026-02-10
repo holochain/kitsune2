@@ -459,7 +459,16 @@ async fn nonexistent_peer_marked_unresponsive() {
 
     assert_eq!(faulty_url, url);
 
-    assert!(transport1.dump_network_stats().await.unwrap().transport_stats.connections.is_empty(), "Expected no connections to be present in the transport after sending to a non-existent peer, but found some.");
+    assert!(
+        transport1
+            .dump_network_stats()
+            .await
+            .unwrap()
+            .transport_stats
+            .connections
+            .is_empty(),
+        "Expected no connections to be present in the transport after sending to a non-existent peer, but found some."
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -513,7 +522,9 @@ async fn dump_network_stats() {
         feature = "backend-go-pion",
         feature = "backend-libdatachannel"
     ))]
-    panic!("This test must be run with either libdatachannel or go-pion enabled, but not both.");
+    panic!(
+        "This test must be run with either libdatachannel or go-pion enabled, but not both."
+    );
 
     let peer_url_1 = stats_1.transport_stats.peer_urls.first().unwrap();
     let peer_id_1 = peer_url_1.peer_id().unwrap();

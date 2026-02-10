@@ -264,8 +264,10 @@ mod tests {
         assert_eq!(remote_with_overlapping_arc.len(), 1);
         assert!(remote_with_overlapping_arc.contains(&remote_agent_1));
         assert!(!remote_with_overlapping_arc.contains(&remote_agent_2));
-        assert!(!remote_with_overlapping_arc
-            .contains(&remote_agent_for_local_agent_1));
+        assert!(
+            !remote_with_overlapping_arc
+                .contains(&remote_agent_for_local_agent_1)
+        );
     }
 
     #[tokio::test]
@@ -325,7 +327,9 @@ mod tests {
         assert_eq!(remote_near_location.len(), 1);
         assert!(remote_near_location.contains(&remote_agent_1));
         assert!(!remote_near_location.contains(&remote_agent_2));
-        assert!(!remote_near_location.contains(&remote_agent_for_local_agent_1));
+        assert!(
+            !remote_near_location.contains(&remote_agent_for_local_agent_1)
+        );
     }
 
     #[tokio::test]
@@ -397,14 +401,16 @@ mod tests {
         assert_eq!(all_responsive_remote_agents.len(), 1);
         assert!(all_responsive_remote_agents.contains(&remote_agent_1));
         assert!(!all_responsive_remote_agents.contains(&remote_agent_2));
-        assert!(!all_responsive_remote_agents
-            .contains(&remote_agent_for_local_agent));
+        assert!(
+            !all_responsive_remote_agents
+                .contains(&remote_agent_for_local_agent)
+        );
         assert!(!all_responsive_remote_agents.contains(&unresponsive_agent));
     }
 
     #[tokio::test]
-    async fn get_responsive_remote_agents_by_overlapping_storage_arc_filters_unresponsive(
-    ) {
+    async fn get_responsive_remote_agents_by_overlapping_storage_arc_filters_unresponsive()
+     {
         let remote_agent_1 = AgentBuilder::default()
             .with_storage_arc(DhtArc::FULL)
             .with_url(Some(Url::from_str("ws://responsi.ve:80/1").unwrap()))
@@ -483,10 +489,14 @@ mod tests {
         assert!(
             !responsive_remote_with_overlapping_arc.contains(&remote_agent_2)
         );
-        assert!(!responsive_remote_with_overlapping_arc
-            .contains(&remote_agent_for_local_agent));
-        assert!(!responsive_remote_with_overlapping_arc
-            .contains(&unresponsive_agent));
+        assert!(
+            !responsive_remote_with_overlapping_arc
+                .contains(&remote_agent_for_local_agent)
+        );
+        assert!(
+            !responsive_remote_with_overlapping_arc
+                .contains(&unresponsive_agent)
+        );
     }
 
     #[tokio::test]
@@ -564,8 +574,10 @@ mod tests {
         assert_eq!(responsive_remote_near_location.len(), 1);
         assert!(responsive_remote_near_location.contains(&remote_agent_1));
         assert!(!responsive_remote_near_location.contains(&remote_agent_2));
-        assert!(!responsive_remote_near_location
-            .contains(&remote_agent_for_local_agent));
+        assert!(
+            !responsive_remote_near_location
+                .contains(&remote_agent_for_local_agent)
+        );
         assert!(!responsive_remote_near_location.contains(&unresponsive_agent));
     }
 
@@ -618,18 +630,22 @@ mod tests {
         let agent = AgentBuilder::default().build(TestLocalAgent::default());
         let agent_id = agent.agent.clone();
 
-        assert!(!blocks
-            .is_blocked(BlockTarget::Agent(agent_id.clone()))
-            .await
-            .unwrap());
+        assert!(
+            !blocks
+                .is_blocked(BlockTarget::Agent(agent_id.clone()))
+                .await
+                .unwrap()
+        );
 
         block_and_remove_agent(&peer_store, &blocks, agent_id.clone())
             .await
             .unwrap();
 
-        assert!(blocks
-            .is_blocked(BlockTarget::Agent(agent_id))
-            .await
-            .unwrap());
+        assert!(
+            blocks
+                .is_blocked(BlockTarget::Agent(agent_id))
+                .await
+                .unwrap()
+        );
     }
 }

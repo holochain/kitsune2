@@ -46,7 +46,7 @@ use kitsune2_api::*;
 use message_handler::PublishMessageHandler;
 use std::sync::Arc;
 use tokio::{
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender, channel},
     task::AbortHandle,
 };
 

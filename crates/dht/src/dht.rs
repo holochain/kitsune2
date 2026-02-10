@@ -1,5 +1,5 @@
-use crate::arc_set::ArcSet;
 use crate::HashPartition;
+use crate::arc_set::ArcSet;
 use kitsune2_api::{
     BoxFut, DynOpStore, K2Error, K2Result, OpId, StoredOp, Timestamp,
 };

@@ -1,10 +1,10 @@
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
-    encode_agent_infos, encode_op_ids, AcceptResponseMessage, GossipMessage,
-    K2GossipAcceptMessage, K2GossipDiscSectorsDiffMessage,
-    K2GossipNoDiffMessage, K2GossipRingSectorDetailsDiffMessage,
-    K2GossipTerminateMessage,
+    AcceptResponseMessage, GossipMessage, K2GossipAcceptMessage,
+    K2GossipDiscSectorsDiffMessage, K2GossipNoDiffMessage,
+    K2GossipRingSectorDetailsDiffMessage, K2GossipTerminateMessage,
+    encode_agent_infos, encode_op_ids,
 };
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorsDiff,
@@ -313,15 +313,15 @@ impl GossipRoundState {
 
 #[cfg(test)]
 mod tests {
+    use crate::K2GossipConfig;
     use crate::protocol::k2_gossip_accept_message::SnapshotMinimalMessage;
     use crate::protocol::{
-        encode_agent_ids, ArcSetMessage, GossipMessage, K2GossipAcceptMessage,
+        ArcSetMessage, GossipMessage, K2GossipAcceptMessage, encode_agent_ids,
     };
     use crate::respond::harness::RespondTestHarness;
-    use crate::K2GossipConfig;
     use bytes::Bytes;
     use kitsune2_api::{
-        decode_ids, DhtArc, Gossip, LocalAgent, OpId, Timestamp, UNIX_TIMESTAMP,
+        DhtArc, Gossip, LocalAgent, OpId, Timestamp, UNIX_TIMESTAMP, decode_ids,
     };
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::{ArcSet, DhtSnapshot};

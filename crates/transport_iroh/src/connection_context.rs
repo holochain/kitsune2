@@ -1,9 +1,9 @@
 use crate::connection::DynConnection;
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
 use crate::{
-    decode_frame_header, decode_frame_preflight,
-    frame::{encode_frame, Frame},
-    Connections, FrameType, FRAME_HEADER_LEN,
+    Connections, FRAME_HEADER_LEN, FrameType, decode_frame_header,
+    decode_frame_preflight,
+    frame::{Frame, encode_frame},
 };
 use bytes::Bytes;
 use iroh::endpoint::ConnectionType;
@@ -12,8 +12,8 @@ use n0_watcher::Watcher;
 use std::{
     fmt,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
