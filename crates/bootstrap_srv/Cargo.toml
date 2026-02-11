@@ -21,6 +21,8 @@ axum = { workspace = true, default-features = false, features = [
 ] }
 axum-server = { workspace = true, features = ["tls-rustls-no-provider"] }
 tower-http = { workspace = true, features = ["cors"] }
+tower = { workspace = true }
+governor = { workspace = true }
 http = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 base64 = { workspace = true }
@@ -47,15 +49,23 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
-axum-reverse-proxy = { workspace = true, optional = true }
 iroh = { workspace = true, optional = true }
 iroh-relay = { workspace = true, features = ["server"], optional = true }
+tokio-websockets = { version = "0.12", features = [
+  "rustls-bring-your-own-connector",
+  "ring",
+  "getrandom",
+  "rand",
+  "server",
+], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
 rcgen = { workspace = true }
 sbd-client = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
+iroh-base = { workspace = true }
+rand_chacha = "0.9"
 kitsune2_test_utils = { workspace = true }
 
 [features]
@@ -68,4 +78,4 @@ http2 = ["axum/http2"]
 sbd = ["dep:sbd-server"]
 
 # use iroh relay server
-iroh-relay = ["dep:axum-reverse-proxy", "dep:iroh", "dep:iroh-relay"]
+iroh-relay = ["dep:iroh", "dep:iroh-relay", "dep:tokio-websockets"]

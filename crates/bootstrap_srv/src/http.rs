@@ -6,8 +6,6 @@ use http::{HeaderName, HeaderValue, Method};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-#[cfg(feature = "iroh-relay")]
-use {axum_reverse_proxy::ReverseProxy, tracing::info};
 
 pub struct HttpResponse {
     pub status: u16,
@@ -148,7 +146,7 @@ pub struct AppState {
     pub sbd_state: Option<crate::sbd::SbdState>,
 
     #[cfg(feature = "iroh-relay")]
-    pub _iroh_relay_server: Arc<iroh_relay::server::Server>,
+    pub iroh_relay_service: iroh_relay::server::RelayService,
 }
 
 type BoxFut<'a, T> =
@@ -260,9 +258,6 @@ fn tokio_thread(
                     .allow_credentials(allow_credentials)
                 );
 
-            #[cfg(feature = "iroh-relay")]
-            let iroh_relay_server = crate::iroh_relay::start_iroh_relay_server(&config.iroh_relay.limits).await;
-
             if !config.no_relay_server {
                 #[cfg(feature = "sbd")]
                 {
@@ -270,19 +265,20 @@ fn tokio_thread(
                 }
                 #[cfg(feature = "iroh-relay")]
                 {
-                    // Set up the reverse proxy to forward requests to iroh_relay server
-                    // The proxy acts as a fallback for all unspecified routes.
+                    // Create a separate router for the relay with its own state
+                    let (relay_state, rate_limiter) = crate::iroh_relay::create_relay_state(&config.iroh_relay.limits);
+                    let mut relay_router = Router::new()
+                        .route("/relay", routing::get(crate::iroh_relay::relay_handler))
+                        .route("/ping", routing::get(crate::iroh_relay::relay_probe_handler))
+                        .with_state(relay_state);
 
-                    // Get the actual bound port
-                    let iroh_relay_addr = iroh_relay_server
-                        .http_addr()
-                        .expect("iroh relay server should have HTTP address");
-                    info!("Internal iroh relay server started at {}", iroh_relay_addr);
+                    // Apply rate limiting if configured
+                    if let Some(limiter) = rate_limiter {
+                        relay_router = relay_router.layer(crate::iroh_relay::RateLimitLayer::new(limiter));
+                    }
 
-                    // The iroh relay server always runs with a plain text HTTP protocol.
-                    // as it's a localhost address that is not exposed to the WAN, this
-                    // doesn't mean a security risk.
-                    app = app.merge(ReverseProxy::new("/", &format!("http://{}", iroh_relay_addr)));
+                    // Merge the relay router into the main app
+                    app = app.merge(relay_router);
                 }
             }
 
@@ -308,8 +304,6 @@ fn tokio_thread(
                             })
                         }
                     },
-                    #[cfg(feature = "iroh-relay")]
-                    _iroh_relay_server: Arc::new(iroh_relay_server),
                 });
 
             let receiver = HttpReceiver(h_recv);
