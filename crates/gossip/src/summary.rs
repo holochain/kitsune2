@@ -122,6 +122,10 @@ impl K2Gossip {
                         .peer_meta_store
                         .peer_terminated(url.clone())
                         .await?,
+                    peer_unresponsive: self
+                        .peer_meta_store
+                        .get_unresponsive(url.clone())
+                        .await?,
                     completed_rounds: self
                         .peer_meta_store
                         .completed_rounds(url.clone())
