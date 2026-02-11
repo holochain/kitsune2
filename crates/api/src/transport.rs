@@ -567,10 +567,10 @@ impl DefaultTransport {
     ) -> K2Result<()> {
         let space_handler =
             self.space_map.lock().unwrap().get(&space_id).cloned();
-        if let Some(handler) = space_handler {
-            if !handler.has_local_agents().await? {
-                return Err(K2Error::NoLocalAgentsDuringPreflight);
-            }
+        if let Some(handler) = space_handler
+            && !handler.has_local_agents().await?
+        {
+            return Err(K2Error::NoLocalAgentsDuringPreflight);
         }
         Ok(())
     }
