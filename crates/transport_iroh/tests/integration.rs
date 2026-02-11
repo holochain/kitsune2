@@ -325,7 +325,65 @@ async fn peer_is_set_unresponsive_after_attempting_send_to_invalid_peer_id() {
 }
 
 #[tokio::test]
-async fn peer_is_set_unresponsive_after_connection_creation_error() {
+async fn peer_is_set_unresponsive_after_connection_timeout() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler = Arc::new(MockTxHandler {
+        set_unresponsive: Arc::new(move |peer, timestamp| {
+            set_unresponsive_sender.send((peer, timestamp)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep = harness.build_transport(handler.clone()).await;
+    ep.register_space_handler(TEST_SPACE_ID, handler.clone());
+
+    // Create a URL that will timeout when attempting to connect.
+    // It will correctly decode to an endpoint address, but will not be reachable.
+    let unreachable_url = Url::from_str(
+        "https://iroh-relay.invalid:443/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+
+    let expected_timestamp = Timestamp::now();
+
+    // Try to send to the unreachable peer
+    let result = ep
+        .send_space_notify(
+            unreachable_url.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"test"),
+        )
+        .await;
+
+    // Send should fail due to connection timeout
+    assert!(
+        result.is_err(),
+        "send should fail when connection times out"
+    );
+
+    // Verify set_unresponsive was called
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let (unresponsive_url, timestamp) =
+            set_unresponsive_receiver.recv().await.unwrap();
+        assert_eq!(unresponsive_url, unreachable_url);
+        // Timestamp should be accurate to ~1 second
+        assert!(
+            timestamp
+                .as_micros()
+                .abs_diff(expected_timestamp.as_micros())
+                <= 1_000_000
+        );
+    })
+    .await
+    .expect("peer should be marked unresponsive after timeout");
+}
+
+#[tokio::test]
+async fn peer_is_set_unresponsive_after_send_preflight_error() {
     enable_tracing();
     let harness = IrohTransportTestHarness::new().await;
     let dummy_url = dummy_url();
@@ -334,14 +392,14 @@ async fn peer_is_set_unresponsive_after_connection_creation_error() {
     let ep_1 = harness.build_transport(handler_1.clone()).await;
     ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
 
-    // ep_2 will fail preflight gathering and track set_unresponsive calls
+    // ep_2 will send a huge preflight that exceeds max_frame_bytes and track set_unresponsive calls
     let (set_unresponsive_sender, mut set_unresponsive_receiver) =
         tokio::sync::mpsc::unbounded_channel();
     let handler_2 = Arc::new(MockTxHandler {
         preflight_gather_outgoing: Arc::new(|_| {
-            Err(kitsune2_api::K2Error::other(
-                "preflight gather failed - simulating error",
-            ))
+            // Return a preflight that will exceed max_frame_bytes when encoded
+            // Default max_frame_bytes is 1MB, so send 2MB of data
+            Ok(Bytes::from(vec![0u8; 2 * 1024 * 1024]))
         }),
         set_unresponsive: Arc::new(move |peer, timestamp| {
             set_unresponsive_sender.send((peer, timestamp)).unwrap();
@@ -358,17 +416,17 @@ async fn peer_is_set_unresponsive_after_connection_creation_error() {
             handler_1.current_url.lock().unwrap().clone() != dummy_url
                 && handler_2.current_url.lock().unwrap().clone() != dummy_url
         },
-        Some(6000),
+        Some(5000),
         Some(500),
     )
     .await
     .unwrap();
 
     let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+    let expected_timestamp = Timestamp::now();
 
-    // Try to send to ep_1, which will fail during preflight gathering
-    // This causes peer_connect to fail, which causes create_connection_and_context to fail,
-    // which should trigger set_unresponsive with the staged changes
+    // Try to send to ep_1, which will fail when trying to encode/send the oversized preflight frame
+    // This causes send_preflight_frame to fail, which should trigger set_unresponsive
     let result = ep_2
         .send_space_notify(
             ep_1_url.clone(),
@@ -380,17 +438,24 @@ async fn peer_is_set_unresponsive_after_connection_creation_error() {
     // Send should fail
     assert!(
         result.is_err(),
-        "send should fail when connection creation fails"
+        "send should fail when preflight frame send fails"
     );
 
     // Verify set_unresponsive was called
     tokio::time::timeout(Duration::from_secs(1), async {
-        let (unresponsive_url, _) =
+        let (unresponsive_url, timestamp) =
             set_unresponsive_receiver.recv().await.unwrap();
         assert_eq!(unresponsive_url, ep_1_url);
+        // Timestamp should be accurate to ~1 second
+        assert!(
+            timestamp
+                .as_micros()
+                .abs_diff(expected_timestamp.as_micros())
+                <= 1_000_000
+        );
     })
     .await
-    .unwrap();
+    .expect("peer should be marked unresponsive after preflight send error");
 }
 
 #[tokio::test]
