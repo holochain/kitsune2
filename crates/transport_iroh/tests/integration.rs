@@ -6,7 +6,7 @@ use kitsune2_test_utils::{
 use kitsune2_transport_iroh::test_utils::{
     IrohTransportTestHarness, MockTxHandler, dummy_url,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
     sync::Arc,
     time::{Duration, SystemTime},
@@ -271,6 +271,191 @@ async fn peer_is_set_unresponsive_after_connection_error() {
     })
     .await
     .expect("peer not set unresponsive");
+}
+
+#[tokio::test]
+async fn peer_is_set_unresponsive_after_attempting_send_to_invalid_peer_id() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler = Arc::new(MockTxHandler {
+        set_unresponsive: Arc::new(move |peer, timestamp| {
+            set_unresponsive_sender.send((peer, timestamp)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep = harness.build_transport(handler.clone()).await;
+    ep.register_space_handler(TEST_SPACE_ID, handler.clone());
+
+    // Create an invalid peer url
+    let invalid_url = Url::from_str("https://example.com.:443").unwrap();
+
+    let expected_timestamp = Timestamp::now();
+
+    // Try to send to the invalid peer url
+    let result = ep
+        .send_space_notify(
+            invalid_url.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"test"),
+        )
+        .await;
+
+    // Send should fail
+    assert!(result.is_err());
+
+    // Verify set_unresponsive was called
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let (unresponsive_url, timestamp) =
+            set_unresponsive_receiver.recv().await.unwrap();
+        assert_eq!(unresponsive_url, invalid_url);
+        // Timestamp should be accurate to ~1 second
+        assert!(
+            timestamp
+                .as_micros()
+                .abs_diff(expected_timestamp.as_micros())
+                <= 1_000_000
+        );
+    })
+    .await
+    .expect("peer should be marked unresponsive");
+}
+
+#[tokio::test]
+async fn peer_is_set_unresponsive_after_connection_timeout() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler = Arc::new(MockTxHandler {
+        set_unresponsive: Arc::new(move |peer, timestamp| {
+            set_unresponsive_sender.send((peer, timestamp)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep = harness.build_transport(handler.clone()).await;
+    ep.register_space_handler(TEST_SPACE_ID, handler.clone());
+
+    // Create a URL that will timeout when attempting to connect.
+    // It will correctly decode to an endpoint address, but will not be reachable.
+    let unreachable_url = Url::from_str(
+        "https://iroh-relay.invalid:443/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+
+    let expected_timestamp = Timestamp::now();
+
+    // Try to send to the unreachable peer
+    let result = ep
+        .send_space_notify(
+            unreachable_url.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"test"),
+        )
+        .await;
+
+    // Send should fail due to connection timeout
+    assert!(
+        result.is_err(),
+        "send should fail when connection times out"
+    );
+
+    // Verify set_unresponsive was called
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let (unresponsive_url, timestamp) =
+            set_unresponsive_receiver.recv().await.unwrap();
+        assert_eq!(unresponsive_url, unreachable_url);
+        // Timestamp should be accurate to ~1 second
+        assert!(
+            timestamp
+                .as_micros()
+                .abs_diff(expected_timestamp.as_micros())
+                <= 1_000_000
+        );
+    })
+    .await
+    .expect("peer should be marked unresponsive after timeout");
+}
+
+#[tokio::test]
+async fn peer_is_set_unresponsive_after_send_preflight_error() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    let handler_1 = Arc::new(MockTxHandler::default());
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    // ep_2 will send a huge preflight that exceeds max_frame_bytes and track set_unresponsive calls
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_2 = Arc::new(MockTxHandler {
+        preflight_gather_outgoing: Arc::new(|_| {
+            // Return a preflight that will exceed max_frame_bytes when encoded
+            // Default max_frame_bytes is 1MB, so send 2MB of data
+            Ok(Bytes::from(vec![0u8; 2 * 1024 * 1024]))
+        }),
+        set_unresponsive: Arc::new(move |peer, timestamp| {
+            set_unresponsive_sender.send((peer, timestamp)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    // Wait for URLs to be updated
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(5000),
+        Some(500),
+    )
+    .await
+    .unwrap();
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+    let expected_timestamp = Timestamp::now();
+
+    // Try to send to ep_1, which will fail when trying to encode/send the oversized preflight frame
+    // This causes send_preflight_frame to fail, which should trigger set_unresponsive
+    let result = ep_2
+        .send_space_notify(
+            ep_1_url.clone(),
+            TEST_SPACE_ID,
+            bytes::Bytes::from_static(b"test"),
+        )
+        .await;
+
+    // Send should fail
+    assert!(
+        result.is_err(),
+        "send should fail when preflight frame send fails"
+    );
+
+    // Verify set_unresponsive was called
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let (unresponsive_url, timestamp) =
+            set_unresponsive_receiver.recv().await.unwrap();
+        assert_eq!(unresponsive_url, ep_1_url);
+        // Timestamp should be accurate to ~1 second
+        assert!(
+            timestamp
+                .as_micros()
+                .abs_diff(expected_timestamp.as_micros())
+                <= 1_000_000
+        );
+    })
+    .await
+    .expect("peer should be marked unresponsive after preflight send error");
 }
 
 #[tokio::test]
@@ -934,4 +1119,93 @@ async fn network_stats() {
     );
     // It's not guaranteed that by now the connection has been upgraded
     // to a direct connection, so this isn't asserted.
+}
+
+/// Test that when a peer fails to return a preflight
+/// due to having no local agents, the connecting peer should NOT be marked as unresponsive.
+///
+/// Scenario:
+/// 1. ep_1 connects to ep_2 and sends its preflight
+/// 2. ep_2 receives the preflight but fails to return its own because
+///    ep_2 has no local agents (has_local_agents returns false)
+/// 3. The connection fails, but ep_1 should NOT be marked as unresponsive
+///    because this is a temporary state (no local agents yet), not a network failure
+///
+/// THIS TEST IS EXPECTED TO FAIL without the fix that adds a specific error type
+/// for "no local agents" and handles it specially in spawn_connection_reader.
+///
+/// The fix requires:
+/// 1. A specific K2Error variant (NoLocalAgentsDuringPreflight) instead of K2Error::other
+/// 2. Checking for this error type in spawn_connection_reader and skipping set_unresponsive
+#[tokio::test]
+async fn no_local_agents_should_not_mark_peer_unresponsive() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    // ep_1 is the initiating peer - it will connect to ep_2
+    let handler_1 = Arc::new(MockTxHandler::default());
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    // Track whether set_unresponsive was called on ep_2's handler
+    let set_unresponsive_called = Arc::new(AtomicBool::new(false));
+    let set_unresponsive_called_clone = set_unresponsive_called.clone();
+
+    // ep_2 has no local agents - this will cause peer_connect to fail
+    // when trying to generate the return preflight.
+    // The error is created by the real code in TxImpHnd::peer_connect.
+    let handler_2 = Arc::new(MockTxHandler {
+        has_local_agents: Arc::new(|| Ok(false)), // No local agents!
+        set_unresponsive: Arc::new(move |_peer, _timestamp| {
+            // Track that set_unresponsive was called
+            set_unresponsive_called_clone.store(true, Ordering::SeqCst);
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    // Wait for URLs to be updated
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6000),
+        Some(500),
+    )
+    .await
+    .unwrap();
+
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+
+    // ep_1 tries to send a message to ep_2
+    // This will:
+    // 1. ep_1 connects to ep_2 and sends its preflight
+    // 2. ep_2 receives ep_1's preflight
+    // 3. ep_2 tries to return its preflight but fails because has_local_agents=false
+    // 4. The connection fails with "Cannot generate preflight before local agent has joined space"
+    let message = Bytes::from_static(b"hello");
+    let _ = ep_1
+        .send_space_notify(ep_2_url.clone(), TEST_SPACE_ID, message)
+        .await;
+
+    // Wait for the error handling to complete
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // ASSERTION: set_unresponsive should NOT be called for "no local agents" errors
+    //
+    // This assertion will FAIL without the fix because currently ALL errors
+    // from handle_incoming_stream cause set_unresponsive to be called.
+    //
+    // After the fix (using K2Error::NoLocalAgentsDuringPreflight and handling it
+    // specially), this assertion will PASS.
+    assert!(
+        !set_unresponsive_called.load(Ordering::SeqCst),
+        "BUG: set_unresponsive was called when connection failed due to 'no local agents' error. \
+         This is incorrect - 'no local agents' is a temporary state, not a network failure, \
+         and should not cause the peer to be marked as unresponsive."
+    );
 }

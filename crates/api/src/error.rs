@@ -56,6 +56,13 @@ pub enum K2Error {
         #[source]
         src: DynInnerError,
     },
+
+    /// No local agent has joined any space yet, so preflight cannot be
+    /// generated. This is a temporary state that will resolve once an
+    /// agent joins a space, and should not cause peers to be marked as
+    /// unresponsive.
+    #[error("No local agent has joined a space during preflight")]
+    NoLocalAgentsDuringPreflight,
 }
 
 impl K2Error {

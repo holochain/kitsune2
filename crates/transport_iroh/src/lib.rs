@@ -525,12 +525,23 @@ impl IrohTransport {
         config: &IrohTransportConfig,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
-        let conn = tokio::time::timeout(
+        let conn = match tokio::time::timeout(
             Duration::from_secs(config.connect_timeout_s as u64),
             endpoint.connect(target.clone(), ALPN),
         )
         .await
-        .map_err(|err| K2Error::other_src("iroh connect timed out", err))??;
+        {
+            Err(e) => {
+                // On connection establishment error, mark the peer unresponsive
+                let _ = handler
+                    .set_unresponsive(remote_url.clone(), Timestamp::now())
+                    .await;
+
+                Err(K2Error::other_src("iroh connect timed out", e))
+            }
+            Ok(res) => res,
+        }?;
+
         let conn_opened_at_s = SystemTime::UNIX_EPOCH
             .elapsed()
             .unwrap_or_else(|err| {
@@ -558,11 +569,20 @@ impl IrohTransport {
                 max_frame_bytes: config.max_frame_bytes,
             });
 
-            ctx.send_preflight_frame(
-                current_local_url.clone(),
-                preflight_bytes,
-            )
-            .await?;
+            if let Err(e) = ctx
+                .send_preflight_frame(
+                    current_local_url.clone(),
+                    preflight_bytes,
+                )
+                .await
+            {
+                // On send preflight error, mark the peer unresponsive
+                let _ = handler
+                    .set_unresponsive(remote_url.clone(), Timestamp::now())
+                    .await;
+
+                return Err(e);
+            }
 
             Ok(ctx)
         } else {
@@ -599,7 +619,23 @@ impl TxImp for IrohTransport {
         let connection_locks = self.connection_locks.clone();
 
         Box::pin(async move {
-            let remote = endpoint_from_url(&remote_url)?;
+            let remote = match endpoint_from_url(&remote_url) {
+                Err(e) => {
+                    // If we cannot convert the url to an endpoint address, mark the peer unresponsive
+                    let _ = self
+                        .handler
+                        .set_unresponsive(remote_url.clone(), Timestamp::now())
+                        .await;
+
+                    Err(K2Error::other_src(
+                        format!(
+                            "iroh send error converting Url to EndpointAddr {remote_url}"
+                        ),
+                        e,
+                    ))
+                }
+                ok => ok,
+            }?;
 
             // Get or create the connection lock for this peer to serialize connection creation.
             let peer_lock = {

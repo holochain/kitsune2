@@ -128,7 +128,7 @@ jobs:
 
       - uses: cachix/cachix-action@v16
         with:
-          name: holochain-wind-tunnel
+          name: holochain-ci
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - run: nix build --verbose -L .#bootstrap-srv
