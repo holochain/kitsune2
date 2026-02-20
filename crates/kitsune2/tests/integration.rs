@@ -26,7 +26,6 @@ use kitsune2_test_utils::{
 use kitsune2_transport_iroh::{
     IrohTransportFactory,
     config::{IrohTransportConfig, IrohTransportModConfig},
-    test_utils::{Server, spawn_iroh_relay_server},
 };
 use std::sync::Arc;
 #[cfg(any(
@@ -178,38 +177,16 @@ async fn sbd_signal_server() -> (String, SbdServer) {
     (relay_server_url, signal_server)
 }
 
+/// For iroh transport, the relay functionality is integrated into the bootstrap server.
+/// This function returns the relay URL (bootstrap server URL + /relay).
 #[cfg(all(
     not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
     not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
-async fn iroh_relay_server() -> (String, Server) {
-    let (_, relay_server_url, relay_server) = spawn_iroh_relay_server().await;
-    (relay_server_url.to_string(), relay_server)
-}
-
-macro_rules! relay_server_with_url {
-    () => {{
-        #[cfg(any(
-            feature = "transport-tx5-backend-libdatachannel",
-            feature = "transport-tx5-backend-go-pion",
-            feature = "transport-tx5-datachannel-vendored"
-        ))]
-        {
-            sbd_signal_server().await
-        }
-
-        #[cfg(all(
-            not(feature = "transport-tx5-backend-libdatachannel"),
-            not(feature = "transport-tx5-backend-go-pion"),
-            not(feature = "transport-tx5-datachannel-vendored"),
-            feature = "transport-iroh"
-        ))]
-        {
-            iroh_relay_server().await
-        }
-    }};
+async fn iroh_relay_from_bootstrap(bootstrap: &TestBootstrapSrv) -> String {
+    format!("{}/relay", bootstrap.addr())
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {
@@ -253,10 +230,23 @@ async fn start_space(kitsune: &DynKitsune) -> DynSpace {
 async fn two_node_gossip() {
     enable_tracing();
 
-    let (relay_server_url, _relay_server) = relay_server_with_url!();
-
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+    #[cfg(any(
+        feature = "transport-tx5-backend-libdatachannel",
+        feature = "transport-tx5-backend-go-pion",
+        feature = "transport-tx5-datachannel-vendored"
+    ))]
+    let (relay_server_url, _relay_server) = sbd_signal_server().await;
+
+    #[cfg(all(
+        not(feature = "transport-tx5-backend-libdatachannel"),
+        not(feature = "transport-tx5-backend-go-pion"),
+        not(feature = "transport-tx5-datachannel-vendored"),
+        feature = "transport-iroh"
+    ))]
+    let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances...
     let kitsune_1 =
@@ -336,10 +326,23 @@ async fn two_node_gossip() {
 async fn shutdown_space() {
     enable_tracing();
 
-    let (relay_server_url, _relay_server) = relay_server_with_url!();
-
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+    #[cfg(any(
+        feature = "transport-tx5-backend-libdatachannel",
+        feature = "transport-tx5-backend-go-pion",
+        feature = "transport-tx5-datachannel-vendored"
+    ))]
+    let (relay_server_url, _relay_server) = sbd_signal_server().await;
+
+    #[cfg(all(
+        not(feature = "transport-tx5-backend-libdatachannel"),
+        not(feature = "transport-tx5-backend-go-pion"),
+        not(feature = "transport-tx5-datachannel-vendored"),
+        feature = "transport-iroh"
+    ))]
+    let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances..
     let kitsune_1 =
