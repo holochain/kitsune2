@@ -12,7 +12,7 @@ fn test_endpoint_id() -> EndpointId {
 }
 
 // URLs with invalid scheme or host are tested in url module of kitsune2_api.
-// RelayUrls in iroh are fully qualified domain names and thus have a trailing dot.
+// Note: If the input URL has a trailing dot, iroh preserves it in the output.
 #[test]
 fn canonicalize_relay_url_https_without_port() {
     let relay_url =
@@ -33,7 +33,7 @@ fn canonicalize_relay_url_https_with_port() {
     let endpoint_id = test_endpoint_id();
     let result = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let expected =
-        Url::from_str(format!("https://example.com.:444/{endpoint_id}"))
+        Url::from_str(format!("https://example.com:444/{endpoint_id}"))
             .unwrap();
     assert_eq!(result, expected);
 }
@@ -44,7 +44,7 @@ fn canonicalize_relay_url_http_without_port() {
     let endpoint_id = test_endpoint_id();
     let result = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let expected =
-        Url::from_str(format!("http://example.com.:80/{endpoint_id}")).unwrap();
+        Url::from_str(format!("http://example.com:80/{endpoint_id}")).unwrap();
     assert_eq!(result, expected);
 }
 
@@ -54,7 +54,7 @@ fn canonicalize_relay_url_http_with_port() {
     let endpoint_id = test_endpoint_id();
     let result = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let expected =
-        Url::from_str(format!("http://example.com.:444/{endpoint_id}"))
+        Url::from_str(format!("http://example.com:444/{endpoint_id}"))
             .unwrap();
     assert_eq!(result, expected);
 }
@@ -113,7 +113,7 @@ fn get_url_with_first_relay_one_relay() {
     );
     let result = get_url_with_first_relay(&endpoint_addr).unwrap();
     let expected =
-        Url::from_str(format!("https://example.com.:443/{endpoint_id}"))
+        Url::from_str(format!("https://example.com:443/{endpoint_id}"))
             .unwrap();
     assert_eq!(result, expected);
 }
@@ -143,7 +143,7 @@ fn get_url_with_first_relay_multiple_relays() {
     );
     let result = get_url_with_first_relay(&endpoint_addr).unwrap();
     let expected =
-        Url::from_str(format!("https://example1.com.:443/{endpoint_id}"))
+        Url::from_str(format!("https://example1.com:443/{endpoint_id}"))
             .unwrap();
     assert_eq!(result, expected);
 }
@@ -151,12 +151,12 @@ fn get_url_with_first_relay_multiple_relays() {
 #[test]
 fn endpoint_from_url_valid_https() {
     let endpoint_id = test_endpoint_id();
-    let url = Url::from_str(format!("https://example.com.:443/{endpoint_id}"))
+    let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
         .unwrap();
     let result = endpoint_from_url(&url).unwrap();
     let expected_id = test_endpoint_id();
     let expected_relay =
-        RelayUrl::from_str("https://example.com.:443/").unwrap();
+        RelayUrl::from_str("https://example.com:443/").unwrap();
     assert_eq!(result.id, expected_id);
     assert_eq!(result.addrs.len(), 1);
     let actual_transport_addr = result.addrs.iter().next().unwrap();
@@ -173,10 +173,10 @@ fn endpoint_from_url_valid_https() {
 fn endpoint_from_url_valid_http() {
     let endpoint_id = test_endpoint_id();
     let url =
-        Url::from_str(format!("http://example.com.:80/{endpoint_id}")).unwrap();
+        Url::from_str(format!("http://example.com:80/{endpoint_id}")).unwrap();
     let result = endpoint_from_url(&url).unwrap();
     let expected_id = test_endpoint_id();
-    let expected_relay = RelayUrl::from_str("http://example.com.:80/").unwrap();
+    let expected_relay = RelayUrl::from_str("http://example.com:80/").unwrap();
     assert_eq!(result.id, expected_id);
     assert_eq!(result.addrs.len(), 1);
     let actual_transport_addr = result.addrs.iter().next().unwrap();
@@ -191,7 +191,7 @@ fn endpoint_from_url_valid_http() {
 
 #[test]
 fn endpoint_from_url_no_peer_id() {
-    let url = Url::from_str("https://example.com.:443").unwrap();
+    let url = Url::from_str("https://example.com:443").unwrap();
     let result = endpoint_from_url(&url);
     assert!(result.is_err());
     let err = result.unwrap_err();
