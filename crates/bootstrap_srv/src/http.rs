@@ -144,9 +144,6 @@ pub struct AppState {
     // SBD-specific (keep for SBD websockets)
     #[cfg(feature = "sbd")]
     pub sbd_state: Option<crate::sbd::SbdState>,
-
-    #[cfg(feature = "iroh-relay")]
-    pub iroh_relay_service: iroh_relay::server::RelayService,
 }
 
 type BoxFut<'a, T> =

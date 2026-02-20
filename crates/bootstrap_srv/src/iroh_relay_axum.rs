@@ -20,8 +20,8 @@
 
 use axum::{
     extract::{
-        ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
     },
     http::HeaderMap,
     response::{IntoResponse, Response},
@@ -43,14 +43,14 @@ use tower::{Layer, Service};
 use tracing::{debug, trace, warn};
 
 use iroh_relay::{
+    ExportKeyingMaterial, KeyCache,
     protos::{
         handshake, relay::PER_CLIENT_SEND_QUEUE_DEPTH, streams::StreamError,
     },
     server::{
-        client::Config, clients::Clients, streams::RelayedStream, AccessConfig,
-        ClientRateLimit, Metrics,
+        AccessConfig, ClientRateLimit, Metrics, client::Config,
+        clients::Clients, streams::RelayedStream,
     },
-    ExportKeyingMaterial, KeyCache,
 };
 
 pub type ConnectionRateLimiter =
@@ -452,7 +452,8 @@ fn create_connection_rate_limiter(
             original_rate = rate,
             clamped_rate = clamped_rate,
             "Relay connection rate limit out of bounds, clamping to valid range [{}, {}]",
-            MIN_RATE, MAX_RATE
+            MIN_RATE,
+            MAX_RATE
         );
     }
 
@@ -463,7 +464,8 @@ fn create_connection_rate_limiter(
             original_burst = burst,
             clamped_burst = clamped_burst,
             "Relay connection burst limit out of bounds, clamping to valid range [{}, {}]",
-            MIN_BURST, MAX_BURST
+            MIN_BURST,
+            MAX_BURST
         );
     }
 
@@ -518,8 +520,8 @@ pub fn create_relay_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::routing::get;
     use axum::Router;
+    use axum::routing::get;
     use futures::{SinkExt, StreamExt};
     use iroh_base::{RelayUrl, SecretKey};
     use rand_chacha::rand_core::SeedableRng;
@@ -579,8 +581,8 @@ mod tests {
     /// Integration test: Start an axum server with the relay handler and connect clients
     #[tokio::test]
     #[instrument]
-    async fn test_axum_relay_integration(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_axum_relay_integration()
+    -> Result<(), Box<dyn std::error::Error>> {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42u64);
 
         // Create relay state
