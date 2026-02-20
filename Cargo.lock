@@ -2190,7 +2190,8 @@ dependencies = [
 [[package]]
 name = "iroh"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?rev=1b62149468d2967470f6786a934833293673b051#1b62149468d2967470f6786a934833293673b051"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2374ba3cdaac152dc6ada92d971f7328e6408286faab3b7350842b2ebbed4789"
 dependencies = [
  "aead",
  "axum",
@@ -2245,7 +2246,8 @@ dependencies = [
 [[package]]
 name = "iroh-base"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?rev=1b62149468d2967470f6786a934833293673b051#1b62149468d2967470f6786a934833293673b051"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25a8c5fb1cc65589f0d7ab44269a76f615a8c4458356952c9b0ef1c93ea45ff8"
 dependencies = [
  "curve25519-dalek 5.0.0-pre.1",
  "data-encoding",
@@ -2349,7 +2351,8 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.95.1"
-source = "git+https://github.com/lucksus/iroh.git?rev=1b62149468d2967470f6786a934833293673b051#1b62149468d2967470f6786a934833293673b051"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43fbdf2aeffa7d6ede1a31f6570866c2199b1cee96a0b563994623795d1bac2c"
 dependencies = [
  "ahash",
  "blake3",
@@ -6875,3 +6878,18 @@ dependencies = [
  "log",
  "simd-adler32",
 ]
+
+[[patch.unused]]
+name = "iroh"
+version = "0.96.1"
+source = "git+https://github.com/holochain/iroh.git?rev=fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0#fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0"
+
+[[patch.unused]]
+name = "iroh-base"
+version = "0.96.1"
+source = "git+https://github.com/holochain/iroh.git?rev=fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0#fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0"
+
+[[patch.unused]]
+name = "iroh-relay"
+version = "0.96.1"
+source = "git+https://github.com/holochain/iroh.git?rev=fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0#fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0"
