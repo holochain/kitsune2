@@ -23,9 +23,7 @@ where
     W: n0_watcher::Watcher<Value = EndpointAddr> + Send + Sync + Unpin,
 {
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
-        Box::pin(async {
-            n0_watcher::Watcher::updated(&mut self.inner).await
-        })
+        Box::pin(async { n0_watcher::Watcher::updated(&mut self.inner).await })
     }
 }
 

@@ -180,9 +180,7 @@
 
 use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
-use iroh::{
-    Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl,
-};
+use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
 use kitsune2_api::*;
 use std::{
     collections::HashMap,

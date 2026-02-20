@@ -103,12 +103,22 @@ impl TestBootstrapSrv {
         let relay_state = {
             let (relay_state, _rate_limiter) =
                 kitsune2_bootstrap_srv::iroh_relay::create_relay_state(
-                    &Default::default()
+                    &Default::default(),
                 );
 
             let relay_router = Router::new()
-                .route("/relay", routing::get(kitsune2_bootstrap_srv::iroh_relay::relay_handler))
-                .route("/ping", routing::get(kitsune2_bootstrap_srv::iroh_relay::relay_probe_handler))
+                .route(
+                    "/relay",
+                    routing::get(
+                        kitsune2_bootstrap_srv::iroh_relay::relay_handler,
+                    ),
+                )
+                .route(
+                    "/ping",
+                    routing::get(
+                        kitsune2_bootstrap_srv::iroh_relay::relay_probe_handler,
+                    ),
+                )
                 .with_state(relay_state.clone());
 
             app = app.merge(relay_router);
