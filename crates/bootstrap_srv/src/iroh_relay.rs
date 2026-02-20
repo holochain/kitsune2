@@ -24,4 +24,4 @@ pub use crate::iroh_relay_axum::{
     RelayConfig, RelayState, create_relay_state, relay_handler,
     relay_probe_handler,
 };
-pub use iroh_relay::server::ClientRateLimit;
+pub use iroh_relay_holochain::server::ClientRateLimit;
