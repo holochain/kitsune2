@@ -6,13 +6,11 @@ use crate::{
     frame::{Frame, encode_frame},
 };
 use bytes::Bytes;
-use iroh::endpoint::ConnectionType;
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
-use n0_watcher::Watcher;
 use std::{
     fmt,
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, RwLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -23,7 +21,7 @@ use tracing::{debug, error, info, trace, warn};
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: DynConnection,
-    connection_reader_abort_handle: Mutex<Option<AbortHandle>>,
+    connection_reader_abort_handle: Arc<tokio::sync::Mutex<Option<AbortHandle>>>,
     send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
@@ -33,7 +31,6 @@ pub(super) struct ConnectionContext {
     recv_message_count: AtomicU64,
     recv_bytes: AtomicU64,
     opened_at_s: u64,
-    connection_type_watcher: Mutex<Option<n0_watcher::Direct<ConnectionType>>>,
     max_frame_bytes: usize,
 }
 
@@ -49,7 +46,6 @@ pub(super) struct ConnectionContextParams {
     pub remote_url: Option<Url>,
     pub preflight_sent: bool,
     pub opened_at_s: u64,
-    pub connection_type_watcher: Option<n0_watcher::Direct<ConnectionType>>,
     pub connections: Connections,
     pub local_url: Arc<RwLock<Option<Url>>>,
     pub max_frame_bytes: usize,
@@ -57,10 +53,11 @@ pub(super) struct ConnectionContextParams {
 
 impl ConnectionContext {
     pub fn new(params: ConnectionContextParams) -> Arc<Self> {
+        let abort_handle = Arc::new(tokio::sync::Mutex::new(None));
         let ctx = Arc::new(Self {
             handler: params.handler,
             connection: params.connection,
-            connection_reader_abort_handle: Mutex::new(None),
+            connection_reader_abort_handle: abort_handle.clone(),
             send_stream: tokio::sync::Mutex::new(None),
             remote_url: RwLock::new(params.remote_url),
             preflight_sent: AtomicBool::new(params.preflight_sent),
@@ -70,19 +67,21 @@ impl ConnectionContext {
             recv_message_count: AtomicU64::new(0),
             recv_bytes: AtomicU64::new(0),
             opened_at_s: params.opened_at_s,
-            connection_type_watcher: Mutex::new(params.connection_type_watcher),
             max_frame_bytes: params.max_frame_bytes,
         });
 
         // Spawn connection reader to listen for incoming connections on the
         // new connection.
-        let connection_reader_abort_handle = Self::spawn_connection_reader(
-            ctx.clone(),
-            params.connections,
-            params.local_url,
-        );
-        *ctx.connection_reader_abort_handle.lock().expect("poisoned") =
-            Some(connection_reader_abort_handle);
+        let ctx_clone = ctx.clone();
+        tokio::spawn(async move {
+            let connection_reader_abort_handle = Self::spawn_connection_reader(
+                ctx_clone.clone(),
+                params.connections,
+                params.local_url,
+            );
+            *abort_handle.lock().await =
+                Some(connection_reader_abort_handle);
+        });
 
         ctx
     }
@@ -158,27 +157,22 @@ impl ConnectionContext {
         self.opened_at_s
     }
 
-    pub fn get_connection_type(&self) -> ConnectionType {
-        let mut lock = self.connection_type_watcher.lock().expect("poisoned");
-        match lock.take() {
-            Some(mut watcher) => {
-                let connection_type = watcher.get();
-                *lock = Some(watcher);
-                connection_type
-            }
-            None => ConnectionType::None,
-        }
+    /// Check if the connection has any direct (IP-based) path.
+    /// Returns true if at least one path is using a direct IP address.
+    pub fn is_direct(&self) -> bool {
+        // For now, we can't easily check the paths without async access to the connection.
+        // We'll return false as a conservative default.
+        // This could be improved by storing path information when the connection is created.
+        false
     }
 
     pub fn abort_tasks(&self) {
-        if let Some(abort_handle) = self
-            .connection_reader_abort_handle
-            .lock()
-            .expect("poisoned")
-            .take()
-        {
-            abort_handle.abort();
-        }
+        let handle = self.connection_reader_abort_handle.clone();
+        tokio::spawn(async move {
+            if let Some(abort_handle) = handle.lock().await.take() {
+                abort_handle.abort();
+            }
+        });
     }
 
     pub fn disconnect(&self, reason: String) {

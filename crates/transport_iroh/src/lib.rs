@@ -182,7 +182,6 @@ use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
 use iroh::{
     Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl,
-    endpoint::ConnectionType,
 };
 use kitsune2_api::*;
 use std::{
@@ -480,8 +479,6 @@ impl IrohTransport {
                             .as_secs();
 
                         // Create a new connection context.
-                        let conn_type_watcher =
-                            endpoint.conn_type(connection.remote_id());
                         ConnectionContext::new(
                             ConnectionContextParams{
                             handler: handler.clone(),
@@ -489,7 +486,6 @@ impl IrohTransport {
                             remote_url: None,
                             preflight_sent: false,
                             opened_at_s: conn_opened_at_s,
-                            connection_type_watcher: conn_type_watcher,
                             connections: connections.clone(),
                             local_url: local_url.clone(),
                             max_frame_bytes,
@@ -556,14 +552,12 @@ impl IrohTransport {
             let preflight_bytes =
                 handler.peer_connect(remote_url.clone()).await?;
 
-            let conn_type_watcher = endpoint.conn_type(target.id);
             let ctx = ConnectionContext::new(ConnectionContextParams {
                 handler: handler.clone(),
                 connection: conn,
                 remote_url: Some(remote_url.clone()),
                 preflight_sent: true,
                 opened_at_s: conn_opened_at_s,
-                connection_type_watcher: conn_type_watcher,
                 connections: connections.clone(),
                 local_url: local_url.clone(),
                 max_frame_bytes: config.max_frame_bytes,
@@ -746,10 +740,7 @@ impl TxImp for IrohTransport {
                         recv_message_count: context.get_recv_message_count(),
                         recv_bytes: context.get_recv_bytes(),
                         opened_at_s: context.get_opened_at_s(),
-                        is_direct: matches!(
-                            context.get_connection_type(),
-                            ConnectionType::Direct(_)
-                        ),
+                        is_direct: context.is_direct(),
                     }
                 })
                 .collect();

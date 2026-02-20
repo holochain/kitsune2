@@ -1,6 +1,6 @@
 use crate::{
     IrohTransportConfig, IrohTransportFactory, IrohTransportModConfig,
-    test_utils::relay_server::{Server, spawn_iroh_relay_server},
+    test_utils::relay_server::{RelayServer, spawn_iroh_relay_server},
 };
 use kitsune2_api::{
     BoxFut, Builder, DynTransport, DynTxHandler, K2Result, SpaceId, Timestamp,
@@ -8,10 +8,10 @@ use kitsune2_api::{
 };
 use std::sync::{Arc, Mutex};
 
-/// Test harness for the transport_tx5 module
+/// Test harness for the transport_iroh module
 pub struct IrohTransportTestHarness {
     /// iroh relay server
-    pub _relay_server: Server,
+    pub _relay_server: RelayServer,
     /// kitsune2 builder
     pub builder: Arc<Builder>,
 }

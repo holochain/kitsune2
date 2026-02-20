@@ -14,7 +14,7 @@ edition.workspace = true
 bytes = { workspace = true }
 iroh = { workspace = true }
 # used for test-utils
-iroh-relay = { workspace = true, features = ["server"], optional = true }
+iroh-relay-holochain = { workspace = true, features = ["server"], optional = true }
 kitsune2_api = { workspace = true }
 # used for test-utils
 kitsune2_core = { workspace = true, optional = true }
@@ -42,4 +42,4 @@ iroh = { workspace = true, features = ["test-utils"] }
 [features]
 schema = ["dep:schemars"]
 
-test-utils = ["dep:iroh-relay", "dep:kitsune2_core", "iroh/test-utils"]
+test-utils = ["dep:iroh-relay-holochain", "iroh-relay-holochain?/test-utils", "dep:kitsune2_core", "iroh/test-utils"]

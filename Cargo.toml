@@ -71,11 +71,11 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
 # alternative transport implementation using iroh
-iroh = "0.95.1"
+iroh = "0.96.1"
 # automock traits for tests
 mockall = "0.14"
 # watchable stream of values used in iroh transport
-n0-watcher = "0.5.0"
+n0-watcher = "0.6.1"
 # bootstrap_srv uses this to determine worker thread count.
 num_cpus = "1.16.0"
 # api uses this for the kitsune2 wire protocol.
@@ -147,8 +147,8 @@ kitsune2_test_utils = { version = "0.4.0-dev.0", path = "crates/test_utils" }
 # used to test the bootstrap server with SBD enabled
 sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
-iroh-relay = "0.95.1"
-iroh-base = "0.95.1"
+iroh-relay-holochain = "0.96.1"
+iroh-base = "0.96.1"
 
 # used to hash op data
 sha2 = "0.10.8"
@@ -163,6 +163,3 @@ jsonschema = "0.30.0"
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
 #tx5-core = { path = "../tx5/crates/tx5-core" }
 #tx5 = { path = "../tx5/crates/tx5" }
-iroh = { git = "https://github.com/holochain/iroh.git", rev = "fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0" }
-iroh-base = { git = "https://github.com/holochain/iroh.git", rev = "fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0" }
-iroh-relay = { git = "https://github.com/holochain/iroh.git", rev = "fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0" }
