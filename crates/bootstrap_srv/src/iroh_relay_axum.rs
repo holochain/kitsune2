@@ -53,6 +53,7 @@ use iroh_relay_holochain::{
     },
 };
 
+/// Rate limiter for relay connections using the governor crate.
 pub type ConnectionRateLimiter =
     Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
 

@@ -2756,6 +2756,7 @@ dependencies = [
  "bytes",
  "futures",
  "kitsune2_api",
+ "kitsune2_bootstrap_srv",
  "rand 0.8.5",
  "serde_json",
  "tokio",

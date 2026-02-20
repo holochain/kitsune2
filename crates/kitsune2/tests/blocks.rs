@@ -24,7 +24,6 @@ use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 use kitsune2_transport_iroh::{
     IrohTransportFactory,
     config::{IrohTransportConfig, IrohTransportModConfig},
-    test_utils::{Server, spawn_iroh_relay_server},
 };
 
 use std::sync::mpsc::{Receiver, Sender};
@@ -218,8 +217,11 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
     not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
-async fn builder_with_iroh() -> (Arc<Builder>, Server) {
-    let (_, relay_server_url, relay_server) = spawn_iroh_relay_server().await;
+async fn builder_with_iroh() -> (Arc<Builder>, kitsune2_test_utils::bootstrap::TestBootstrapSrv) {
+    // Create a test bootstrap server with integrated relay support
+    let bootstrap_server = kitsune2_test_utils::bootstrap::TestBootstrapSrv::new(false).await;
+    let relay_url = format!("{}/relay", bootstrap_server.addr());
+
     let builder = Builder {
         transport: IrohTransportFactory::create(),
         gossip: CoreGossipStubFactory::create(),
@@ -233,13 +235,13 @@ async fn builder_with_iroh() -> (Arc<Builder>, Server) {
         .config
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
-                relay_url: Some(relay_server_url.to_string()),
+                relay_url: Some(relay_url),
                 ..Default::default()
             },
         })
         .unwrap();
 
-    (Arc::new(builder), relay_server)
+    (Arc::new(builder), bootstrap_server)
 }
 
 macro_rules! builder_with_relay {
