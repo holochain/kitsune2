@@ -178,7 +178,8 @@ async fn sbd_signal_server() -> (String, SbdServer) {
 }
 
 /// For iroh transport, the relay functionality is integrated into the bootstrap server.
-/// This function returns the relay URL (bootstrap server URL + /relay).
+/// This function returns the relay URL (bootstrap server URL + /relay/).
+/// Note: The trailing slash is important for proper URL construction.
 #[cfg(all(
     not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
@@ -186,7 +187,7 @@ async fn sbd_signal_server() -> (String, SbdServer) {
     feature = "transport-iroh"
 ))]
 async fn iroh_relay_from_bootstrap(bootstrap: &TestBootstrapSrv) -> String {
-    format!("{}/relay", bootstrap.addr())
+    format!("{}/relay/", bootstrap.addr())
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {

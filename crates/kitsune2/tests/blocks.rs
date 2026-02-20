@@ -220,7 +220,8 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
 async fn builder_with_iroh() -> (Arc<Builder>, kitsune2_test_utils::bootstrap::TestBootstrapSrv) {
     // Create a test bootstrap server with integrated relay support
     let bootstrap_server = kitsune2_test_utils::bootstrap::TestBootstrapSrv::new(false).await;
-    let relay_url = format!("{}/relay", bootstrap_server.addr());
+    // Note: relay_url must end with '/' for proper URL construction
+    let relay_url = format!("{}/relay/", bootstrap_server.addr());
 
     let builder = Builder {
         transport: IrohTransportFactory::create(),
