@@ -163,6 +163,6 @@ jsonschema = "0.30.0"
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
 #tx5-core = { path = "../tx5/crates/tx5-core" }
 #tx5 = { path = "../tx5/crates/tx5" }
-iroh = { git = "https://github.com/lucksus/iroh.git", rev = "1b62149468d2967470f6786a934833293673b051" }
-iroh-base = { git = "https://github.com/lucksus/iroh.git", rev = "1b62149468d2967470f6786a934833293673b051" }
-iroh-relay = { git = "https://github.com/lucksus/iroh.git", rev = "1b62149468d2967470f6786a934833293673b051" }
+iroh = { git = "https://github.com/holochain/iroh.git", rev = "fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0" }
+iroh-base = { git = "https://github.com/holochain/iroh.git", rev = "fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0" }
+iroh-relay = { git = "https://github.com/holochain/iroh.git", rev = "fe7f04f63e7fa61b5a28b0abda8c46d24f43eec0" }
