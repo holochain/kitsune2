@@ -91,7 +91,8 @@ impl RelayState {
             key_cache,
             access,
             metrics,
-            write_timeout: iroh_relay_holochain::defaults::timeouts::SERVER_WRITE_TIMEOUT,
+            write_timeout:
+                iroh_relay_holochain::defaults::timeouts::SERVER_WRITE_TIMEOUT,
             clients: Clients::default(),
         }
     }
@@ -106,8 +107,9 @@ pub async fn relay_handler(
     headers: HeaderMap,
 ) -> Response {
     // Extract the client auth header if present
-    let client_auth_header =
-        headers.get(iroh_relay_holochain::http::CLIENT_AUTH_HEADER).cloned();
+    let client_auth_header = headers
+        .get(iroh_relay_holochain::http::CLIENT_AUTH_HEADER)
+        .cloned();
 
     debug!("Relay WebSocket upgrade request");
 

@@ -54,8 +54,7 @@ fn canonicalize_relay_url_http_with_port() {
     let endpoint_id = test_endpoint_id();
     let result = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let expected =
-        Url::from_str(format!("http://example.com:444/{endpoint_id}"))
-            .unwrap();
+        Url::from_str(format!("http://example.com:444/{endpoint_id}")).unwrap();
     assert_eq!(result, expected);
 }
 

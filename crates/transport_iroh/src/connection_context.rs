@@ -21,7 +21,8 @@ use tracing::{debug, error, info, trace, warn};
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: DynConnection,
-    connection_reader_abort_handle: Arc<tokio::sync::Mutex<Option<AbortHandle>>>,
+    connection_reader_abort_handle:
+        Arc<tokio::sync::Mutex<Option<AbortHandle>>>,
     send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
@@ -79,8 +80,7 @@ impl ConnectionContext {
                 params.connections,
                 params.local_url,
             );
-            *abort_handle.lock().await =
-                Some(connection_reader_abort_handle);
+            *abort_handle.lock().await = Some(connection_reader_abort_handle);
         });
 
         ctx
