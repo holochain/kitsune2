@@ -50,7 +50,9 @@ sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
 iroh = { workspace = true, optional = true }
-iroh-relay-holochain = { workspace = true, features = ["server"], optional = true }
+iroh-relay-holochain = { workspace = true, features = [
+  "server",
+], optional = true }
 tokio-websockets = { version = "0.12", features = [
   "rustls-bring-your-own-connector",
   "ring",
