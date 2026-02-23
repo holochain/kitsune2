@@ -101,7 +101,6 @@ async fn make_kitsune_node(
                 server_url: Some(bootstrap_server_url.to_owned()),
                 backoff_min_ms: 1000,
                 backoff_max_ms: 1000,
-                ..Default::default()
             },
         })
         .unwrap();
