@@ -148,7 +148,7 @@ impl Stream for AxumWebSocketAdapter {
                 Poll::Ready(Some(Ok(msg))) => {
                     match msg {
                         AxumMessage::Binary(data) => {
-                            return Poll::Ready(Some(Ok(Bytes::from(data))));
+                            return Poll::Ready(Some(Ok(data)));
                         }
                         AxumMessage::Close(_) => return Poll::Ready(None),
                         _ => {
@@ -160,10 +160,7 @@ impl Stream for AxumWebSocketAdapter {
                 Poll::Ready(Some(Err(e))) => {
                     // Convert axum error to StreamError
                     return Poll::Ready(Some(Err(StreamError::Io(
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("{:?}", e),
-                        ),
+                        std::io::Error::other(format!("{:?}", e)),
                     ))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
@@ -182,12 +179,9 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
     ) -> Poll<Result<(), Self::Error>> {
         match self.inner.as_mut().poll_ready(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(StreamError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{:?}", e),
-                ))))
-            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
+                std::io::Error::other(format!("{:?}", e)),
+            ))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -200,10 +194,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
             .as_mut()
             .start_send(AxumMessage::Binary(item))
             .map_err(|e| {
-                StreamError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{:?}", e),
-                ))
+                StreamError::Io(std::io::Error::other(format!("{:?}", e)))
             })
     }
 
@@ -213,12 +204,9 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
     ) -> Poll<Result<(), Self::Error>> {
         match self.inner.as_mut().poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(StreamError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{:?}", e),
-                ))))
-            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
+                std::io::Error::other(format!("{:?}", e)),
+            ))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -229,12 +217,9 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
     ) -> Poll<Result<(), Self::Error>> {
         match self.inner.as_mut().poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(StreamError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{:?}", e),
-                ))))
-            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
+                std::io::Error::other(format!("{:?}", e)),
+            ))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -364,7 +349,7 @@ where
         // Clone the inner service so the future owns it instead of borrowing &mut self
         let mut inner = self.inner.clone();
         let future = inner.call(req);
-        Box::pin(async move { future.await })
+        Box::pin(future)
     }
 }
 
