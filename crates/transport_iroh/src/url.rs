@@ -24,28 +24,30 @@ pub(super) fn canonicalize_relay_url(
     relay_url: &RelayUrl,
     endpoint_id: EndpointId,
 ) -> K2Result<Url> {
-    let canonical_relay_url = if relay_url.port().is_none() {
-        let relay_host = relay_url
-            .host()
-            .ok_or_else(|| K2Error::other("relay url must have host"))?;
-        let relay_host = match relay_host {
-            ::url::Host::Ipv6(addr) => format!("[{addr}]"),
-            other => other.to_string(),
-        };
-        let relay_port =
-            relay_url.port_or_known_default().ok_or_else(|| {
-                K2Error::other("relay url must have known default port")
-            })?;
-        format!(
-            "{}://{}:{}/{}",
-            relay_url.scheme(),
-            relay_host,
-            relay_port,
-            endpoint_id
-        )
-    } else {
-        format!("{relay_url}{endpoint_id}")
+    // Extract host from relay URL
+    let relay_host = relay_url
+        .host()
+        .ok_or_else(|| K2Error::other("relay url must have host"))?;
+    let relay_host = match relay_host {
+        ::url::Host::Ipv6(addr) => format!("[{addr}]"),
+        other => other.to_string(),
     };
+
+    // Get port (either explicit or default for the scheme)
+    let relay_port = relay_url.port_or_known_default().ok_or_else(|| {
+        K2Error::other("relay url must have known default port")
+    })?;
+
+    // Construct kitsune2 URL with just scheme://host:port/endpoint_id
+    // This strips any path from the relay URL (like /relay/)
+    let canonical_relay_url = format!(
+        "{}://{}:{}/{}",
+        relay_url.scheme(),
+        relay_host,
+        relay_port,
+        endpoint_id
+    );
+
     Url::from_str(canonical_relay_url)
 }
 
