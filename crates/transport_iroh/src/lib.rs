@@ -610,8 +610,21 @@ impl TxImp for IrohTransport {
         let connections = self.connections.clone();
         let connection_locks = self.connection_locks.clone();
 
+        // Parse the configured relay URL if present
+        let configured_relay = self.config.relay_url.as_ref().and_then(|url| {
+            RelayUrl::from_str(url)
+                .map_err(|e| {
+                    warn!(?e, "Failed to parse configured relay URL");
+                    e
+                })
+                .ok()
+        });
+
         Box::pin(async move {
-            let remote = match endpoint_from_url(&remote_url) {
+            let remote = match endpoint_from_url(
+                &remote_url,
+                configured_relay.as_ref(),
+            ) {
                 Err(e) => {
                     // If we cannot convert the url to an endpoint address, mark the peer unresponsive
                     let _ = self
