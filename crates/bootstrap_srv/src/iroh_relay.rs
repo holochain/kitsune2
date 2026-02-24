@@ -12,7 +12,7 @@
 //! - `accept_conn_limit`: Maximum connections per second (sustained rate)
 //! - `accept_conn_burst`: Maximum burst size (token bucket capacity)
 //!
-//! When rate limits are exceeded, clients receive a 429 Too Many Requests response.
+//! When rate limits are exceeded, clients receive a "429 Too Many Requests" response.
 //!
 //! Note: Byte-level rate limiting (`client_rx`) is not supported in the axum
 //! integration since WebSocket connections are already established when they

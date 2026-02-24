@@ -70,7 +70,7 @@ pub type ConnectionRateLimiter =
 pub struct RelayState {
     /// Key cache for the relay
     pub key_cache: KeyCache,
-    /// Access control configuration (wrapped in Arc since AccessConfig can't be cloned)
+    /// Access control configuration
     pub access: Arc<AccessConfig>,
     /// Metrics for the relay server
     pub metrics: Arc<Metrics>,
@@ -354,6 +354,7 @@ where
 }
 
 /// Handler for the relay probe endpoint (`/ping`).
+///
 /// This is used for latency testing and availability checks.
 pub async fn relay_probe_handler() -> (
     axum::http::StatusCode,
@@ -525,7 +526,7 @@ mod tests {
 
     /// Test that RelayState can be created and cloned
     #[test]
-    fn test_relay_state_creation() {
+    fn relay_state_creation() {
         let key_cache = KeyCache::new(1024);
         let access = Arc::new(AccessConfig::Everyone);
         let metrics = Arc::new(Metrics::default());
