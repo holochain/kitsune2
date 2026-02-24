@@ -51,19 +51,29 @@ pub(super) fn canonicalize_relay_url(
     Url::from_str(canonical_relay_url)
 }
 
-pub(super) fn endpoint_from_url(url: &Url) -> K2Result<EndpointAddr> {
+pub(super) fn endpoint_from_url(
+    url: &Url,
+    configured_relay_url: Option<&RelayUrl>,
+) -> K2Result<EndpointAddr> {
     let peer_id = url
         .peer_id()
         .ok_or_else(|| K2Error::other("url must have peer id"))?;
     let endpoint_id = EndpointId::from_str(peer_id).map_err(|err| {
         K2Error::other_src("failed to convert peer id to endpoint id", err)
     })?;
-    let relay_addr = url.addr();
-    let relay_scheme = if url.uses_tls() { "https" } else { "http" };
-    let relay_url = format!("{relay_scheme}://{relay_addr}");
-    let relay_url = ::url::Url::from_str(&relay_url)
-        .map_err(|err| K2Error::other_src("invalid relay url", err))?;
-    let relay_url = RelayUrl::from(relay_url);
+
+    // Use the configured relay URL if available, otherwise reconstruct from peer URL
+    let relay_url = if let Some(configured) = configured_relay_url {
+        configured.clone()
+    } else {
+        let relay_addr = url.addr();
+        let relay_scheme = if url.uses_tls() { "https" } else { "http" };
+        let relay_url = format!("{relay_scheme}://{relay_addr}");
+        let relay_url = ::url::Url::from_str(&relay_url)
+            .map_err(|err| K2Error::other_src("invalid relay url", err))?;
+        RelayUrl::from(relay_url)
+    };
+
     Ok(EndpointAddr::from_parts(
         endpoint_id,
         [TransportAddr::Relay(relay_url)],
