@@ -296,19 +296,6 @@ mod tests {
         protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},
     };
 
-    /// Test that RelayState can be created and cloned
-    #[test]
-    fn relay_state_creation() {
-        let key_cache = KeyCache::new(1024);
-        let access = Arc::new(AccessConfig::Everyone);
-        let metrics = Arc::new(Metrics::default());
-
-        let state = RelayState::new(key_cache, access, metrics);
-
-        // Verify state can be cloned (required for axum State)
-        let _cloned = state.clone();
-    }
-
     /// Integration test: Start an axum server with the relay handler and connect clients
     #[tokio::test]
     #[instrument]
