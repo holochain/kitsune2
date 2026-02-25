@@ -21,8 +21,6 @@ axum = { workspace = true, default-features = false, features = [
 ] }
 axum-server = { workspace = true, features = ["tls-rustls-no-provider"] }
 tower-http = { workspace = true, features = ["cors"] }
-tower = { workspace = true }
-governor = { workspace = true }
 http = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 base64 = { workspace = true }
