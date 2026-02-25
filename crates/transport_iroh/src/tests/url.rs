@@ -12,7 +12,8 @@ fn test_endpoint_id() -> EndpointId {
 }
 
 // URLs with invalid scheme or host are tested in url module of kitsune2_api.
-// Note: If the input URL has a trailing dot, iroh preserves it in the output.
+// Note: A trailing dot in the hostname denotes an FQDN. Iroh preserves this
+// in the output, so our canonicalized URLs will also contain it.
 #[test]
 fn canonicalize_relay_url_https_without_port() {
     let relay_url =
