@@ -157,13 +157,9 @@ impl ConnectionContext {
         self.opened_at_s
     }
 
-    /// Check if the connection has any direct (IP-based) path.
-    /// Returns true if at least one path is using a direct IP address.
+    /// Check if the connection's selected path is direct (IP-based, non-relay).
     pub fn is_direct(&self) -> bool {
-        // For now, we can't easily check the paths without async access to the connection.
-        // We'll return false as a conservative default.
-        // This could be improved by storing path information when the connection is created.
-        false
+        self.connection.is_direct()
     }
 
     pub fn abort_tasks(&self) {
