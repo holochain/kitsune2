@@ -10,7 +10,7 @@ use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use std::{
     fmt,
     sync::{
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -21,8 +21,7 @@ use tracing::{debug, error, info, trace, warn};
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: DynConnection,
-    connection_reader_abort_handle:
-        Arc<tokio::sync::Mutex<Option<AbortHandle>>>,
+    connection_reader_abort_handle: Arc<Mutex<Option<AbortHandle>>>,
     send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
@@ -54,7 +53,7 @@ pub(super) struct ConnectionContextParams {
 
 impl ConnectionContext {
     pub fn new(params: ConnectionContextParams) -> Arc<Self> {
-        let abort_handle = Arc::new(tokio::sync::Mutex::new(None));
+        let abort_handle = Arc::new(Mutex::new(None));
         let ctx = Arc::new(Self {
             handler: params.handler,
             connection: params.connection,
@@ -74,14 +73,13 @@ impl ConnectionContext {
         // Spawn connection reader to listen for incoming connections on the
         // new connection.
         let ctx_clone = ctx.clone();
-        tokio::spawn(async move {
-            let connection_reader_abort_handle = Self::spawn_connection_reader(
-                ctx_clone.clone(),
-                params.connections,
-                params.local_url,
-            );
-            *abort_handle.lock().await = Some(connection_reader_abort_handle);
-        });
+        let connection_reader_abort_handle = Self::spawn_connection_reader(
+            ctx_clone,
+            params.connections,
+            params.local_url,
+        );
+        *abort_handle.lock().expect("poisoned") =
+            Some(connection_reader_abort_handle);
 
         ctx
     }
