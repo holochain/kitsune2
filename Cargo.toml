@@ -154,6 +154,8 @@ iroh-base = "0.96.1"
 sha2 = "0.10.8"
 # Generating test certificates in the bootstrap_srv
 rcgen = "0.13"
+# Deterministic RNG for reproducible tests
+rand_chacha = "0.9"
 # Used in the schema example
 jsonschema = "0.30.0"
 

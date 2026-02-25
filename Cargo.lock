@@ -2659,7 +2659,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "tokio-websockets",
  "tower",
  "tower-http",
  "tracing",
