@@ -24,6 +24,9 @@ pub(crate) trait Connection: 'static + Send + Sync {
 
     /// Close the connection with a code and reason.
     fn close(&self, code: u8, reason: &[u8]);
+
+    /// Check if the connection has a direct (non-relay) path.
+    fn is_direct(&self) -> bool;
 }
 
 /// Production implementation wrapping iroh's Connection.
@@ -66,6 +69,12 @@ impl Connection for IrohConnection {
 
     fn close(&self, code: u8, reason: &[u8]) {
         self.inner.close(code.into(), reason);
+    }
+
+    fn is_direct(&self) -> bool {
+        use n0_watcher::Watcher;
+        let paths = self.inner.paths().get();
+        paths.iter().any(|p| p.is_ip() && p.is_selected())
     }
 }
 
