@@ -224,8 +224,7 @@ async fn builder_with_iroh() -> (
     // Create a test bootstrap server with integrated relay support
     let bootstrap_server =
         kitsune2_test_utils::bootstrap::TestBootstrapSrv::new(false).await;
-    // Note: relay_url must end with '/' for proper URL construction
-    let relay_url = format!("{}/relay/", bootstrap_server.addr());
+    let relay_url = format!("{}/relay", bootstrap_server.addr());
 
     let builder = Builder {
         transport: IrohTransportFactory::create(),

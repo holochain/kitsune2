@@ -356,6 +356,20 @@ impl IrohTransport {
         config: IrohTransportConfig,
         handler: Arc<TxImpHnd>,
     ) -> K2Result<DynTxImp> {
+        // Ensure the relay URL ends with '/' so that iroh appends
+        // paths correctly rather than replacing the last segment.
+        // Normalize early so all downstream uses see the same URL.
+        let config = IrohTransportConfig {
+            relay_url: config.relay_url.map(|url| {
+                if url.ends_with('/') {
+                    url
+                } else {
+                    format!("{url}/")
+                }
+            }),
+            ..config
+        };
+
         // If a relay server is configured, only use that.
         // Otherwise, use the default relay servers provided by n0.
         let mut builder = if let Some(relay_url) = &config.relay_url {

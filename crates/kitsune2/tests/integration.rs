@@ -188,7 +188,7 @@ async fn sbd_signal_server() -> (String, SbdServer) {
     feature = "transport-iroh"
 ))]
 async fn iroh_relay_from_bootstrap(bootstrap: &TestBootstrapSrv) -> String {
-    format!("{}/relay/", bootstrap.addr())
+    format!("{}/relay", bootstrap.addr())
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {
