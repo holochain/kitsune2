@@ -163,12 +163,16 @@ impl ConnectionContext {
     }
 
     pub fn abort_tasks(&self) {
-        let handle = self.connection_reader_abort_handle.clone();
-        tokio::spawn(async move {
-            if let Some(abort_handle) = handle.lock().await.take() {
-                abort_handle.abort();
+        match self.connection_reader_abort_handle.try_lock() {
+            Ok(mut guard) => {
+                if let Some(abort_handle) = guard.take() {
+                    abort_handle.abort();
+                }
             }
-        });
+            Err(_) => {
+                warn!("Could not acquire lock to abort connection reader task");
+            }
+        }
     }
 
     pub fn disconnect(&self, reason: String) {
