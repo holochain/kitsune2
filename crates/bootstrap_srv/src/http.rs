@@ -262,19 +262,12 @@ fn tokio_thread(
                 }
                 #[cfg(feature = "iroh-relay")]
                 {
-                    // Create a separate router for the relay with its own state
-                    let (relay_state, rate_limiter) = crate::iroh_relay::create_relay_state(&config.iroh_relay.limits);
-                    let mut relay_router = Router::new()
+                    let relay_state = crate::iroh_relay::create_relay_state();
+                    let relay_router = Router::new()
                         .route("/relay", routing::get(crate::iroh_relay::relay_handler))
                         .route("/ping", routing::get(crate::iroh_relay::relay_probe_handler))
                         .with_state(relay_state);
 
-                    // Apply rate limiting if configured
-                    if let Some(limiter) = rate_limiter {
-                        relay_router = relay_router.layer(crate::iroh_relay::RateLimitLayer::new(limiter));
-                    }
-
-                    // Merge the relay router into the main app
                     app = app.merge(relay_router);
                 }
             }
