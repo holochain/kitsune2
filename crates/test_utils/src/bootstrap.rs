@@ -14,8 +14,7 @@ pub struct TestBootstrapSrv {
     halt: Arc<std::sync::atomic::AtomicBool>,
     addr: String,
     #[cfg(feature = "relay")]
-    #[allow(dead_code)] // Kept alive to maintain relay server state
-    relay_state: Option<kitsune2_bootstrap_srv::iroh_relay::RelayState>,
+    _relay_state: Option<kitsune2_bootstrap_srv::iroh_relay::RelayState>,
 }
 
 impl Drop for TestBootstrapSrv {
@@ -101,10 +100,8 @@ impl TestBootstrapSrv {
         // Add relay routes when the feature is enabled
         #[cfg(feature = "relay")]
         let relay_state = {
-            let (relay_state, _rate_limiter) =
-                kitsune2_bootstrap_srv::iroh_relay::create_relay_state(
-                    &Default::default(),
-                );
+            let relay_state =
+                kitsune2_bootstrap_srv::iroh_relay::create_relay_state();
 
             let relay_router = Router::new()
                 .route(
@@ -135,7 +132,7 @@ impl TestBootstrapSrv {
             halt,
             addr,
             #[cfg(feature = "relay")]
-            relay_state,
+            _relay_state: relay_state,
         }
     }
 
