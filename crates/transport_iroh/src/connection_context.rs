@@ -21,7 +21,7 @@ use tracing::{debug, error, info, trace, warn};
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: DynConnection,
-    connection_reader_abort_handle: Arc<Mutex<Option<AbortHandle>>>,
+    connection_reader_abort_handle: Mutex<Option<AbortHandle>>,
     send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
@@ -53,11 +53,10 @@ pub(super) struct ConnectionContextParams {
 
 impl ConnectionContext {
     pub fn new(params: ConnectionContextParams) -> Arc<Self> {
-        let abort_handle = Arc::new(Mutex::new(None));
         let ctx = Arc::new(Self {
             handler: params.handler,
             connection: params.connection,
-            connection_reader_abort_handle: abort_handle.clone(),
+            connection_reader_abort_handle: Mutex::new(None),
             send_stream: tokio::sync::Mutex::new(None),
             remote_url: RwLock::new(params.remote_url),
             preflight_sent: AtomicBool::new(params.preflight_sent),
@@ -72,13 +71,12 @@ impl ConnectionContext {
 
         // Spawn connection reader to listen for incoming connections on the
         // new connection.
-        let ctx_clone = ctx.clone();
         let connection_reader_abort_handle = Self::spawn_connection_reader(
-            ctx_clone,
+            ctx.clone(),
             params.connections,
             params.local_url,
         );
-        *abort_handle.lock().expect("poisoned") =
+        *ctx.connection_reader_abort_handle.lock().expect("poisoned") =
             Some(connection_reader_abort_handle);
 
         ctx
@@ -161,15 +159,13 @@ impl ConnectionContext {
     }
 
     pub fn abort_tasks(&self) {
-        match self.connection_reader_abort_handle.try_lock() {
-            Ok(mut guard) => {
-                if let Some(abort_handle) = guard.take() {
-                    abort_handle.abort();
-                }
-            }
-            Err(_) => {
-                warn!("Could not acquire lock to abort connection reader task");
-            }
+        if let Some(abort_handle) = self
+            .connection_reader_abort_handle
+            .lock()
+            .expect("poisoned")
+            .take()
+        {
+            abort_handle.abort();
         }
     }
 
