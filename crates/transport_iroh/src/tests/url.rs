@@ -12,8 +12,9 @@ fn test_endpoint_id() -> EndpointId {
 }
 
 // URLs with invalid scheme or host are tested in url module of kitsune2_api.
-// Note: A trailing dot in the hostname denotes an FQDN. Iroh preserves this
-// in the output, so our canonicalized URLs will also contain it.
+// Note: iroh 0.96.1 changed behavior around FQDN trailing dots.
+// In 0.95, RelayUrl::from_str("https://example.com:444") would normalize to https://example.com.:444/
+// (adding trailing dot). In 0.96, it preserves the input without adding a dot when the port is explicit.
 #[test]
 fn canonicalize_relay_url_https_without_port() {
     let relay_url =
