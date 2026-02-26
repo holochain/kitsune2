@@ -3,27 +3,23 @@
 use crate::connection::{DynConnection, IrohConnection};
 use iroh::EndpointAddr;
 use kitsune2_api::{BoxFut, K2Error, K2Result};
-use n0_watcher::Disconnected;
+use n0_watcher::{Disconnected, Watcher};
 use std::sync::Arc;
 
 pub(crate) trait EndpointAddrWatcher: Send + Sync {
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>>;
 }
 
-// Wrapper around iroh's watcher that implements our trait
-struct IrohWatcher<W>
-where
-    W: n0_watcher::Watcher<Value = EndpointAddr> + Send + Sync + Unpin,
-{
+struct IrohWatcher<W> {
     inner: W,
 }
 
 impl<W> EndpointAddrWatcher for IrohWatcher<W>
 where
-    W: n0_watcher::Watcher<Value = EndpointAddr> + Send + Sync + Unpin,
+    W: Watcher<Value = EndpointAddr> + Send + Sync,
 {
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
-        Box::pin(async { n0_watcher::Watcher::updated(&mut self.inner).await })
+        Box::pin(self.inner.updated())
     }
 }
 
