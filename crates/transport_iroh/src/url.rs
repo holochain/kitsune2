@@ -64,10 +64,9 @@ pub(super) fn endpoint_from_url(
 
     // Use the configured relay URL if available, otherwise reconstruct from peer URL
     let relay_url = if let Some(configured) = configured_relay_url {
-        let parsed = RelayUrl::from_str(configured).map_err(|err| {
+        RelayUrl::from_str(configured).map_err(|err| {
             K2Error::other_src("invalid configured relay url", err)
-        })?;
-        parsed
+        })?
     } else {
         let relay_addr = url.addr();
         let relay_scheme = if url.uses_tls() { "https" } else { "http" };
