@@ -14,7 +14,7 @@ pub struct TestBootstrapSrv {
     halt: Arc<std::sync::atomic::AtomicBool>,
     addr: String,
     #[cfg(feature = "relay")]
-    _relay_state: Option<kitsune2_bootstrap_srv::iroh_relay::RelayState>,
+    _relay_state: Option<kitsune2_bootstrap_srv::iroh_relay_axum::RelayState>,
 }
 
 impl Drop for TestBootstrapSrv {
@@ -101,19 +101,19 @@ impl TestBootstrapSrv {
         #[cfg(feature = "relay")]
         let relay_state = {
             let relay_state =
-                kitsune2_bootstrap_srv::iroh_relay::create_relay_state();
+                kitsune2_bootstrap_srv::iroh_relay_axum::create_relay_state();
 
             let relay_router = Router::new()
                 .route(
                     "/relay",
                     routing::get(
-                        kitsune2_bootstrap_srv::iroh_relay::relay_handler,
+                        kitsune2_bootstrap_srv::iroh_relay_axum::relay_handler,
                     ),
                 )
                 .route(
                     "/ping",
                     routing::get(
-                        kitsune2_bootstrap_srv::iroh_relay::relay_probe_handler,
+                        kitsune2_bootstrap_srv::iroh_relay_axum::relay_probe_handler,
                     ),
                 )
                 .with_state(relay_state.clone());

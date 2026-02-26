@@ -262,10 +262,10 @@ fn tokio_thread(
                 }
                 #[cfg(feature = "iroh-relay")]
                 {
-                    let relay_state = crate::iroh_relay::create_relay_state();
+                    let relay_state = crate::iroh_relay_axum::create_relay_state();
                     let relay_router = Router::new()
-                        .route("/relay", routing::get(crate::iroh_relay::relay_handler))
-                        .route("/ping", routing::get(crate::iroh_relay::relay_probe_handler))
+                        .route("/relay", routing::get(crate::iroh_relay_axum::relay_handler))
+                        .route("/ping", routing::get(crate::iroh_relay_axum::relay_probe_handler))
                         .with_state(relay_state);
 
                     app = app.merge(relay_router);

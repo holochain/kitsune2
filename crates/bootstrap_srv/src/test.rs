@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Write;
 
 #[cfg(feature = "iroh-relay")]
-mod iroh_relay;
+mod iroh_relay_axum;
 #[cfg(feature = "sbd")]
 mod sbd;
 
