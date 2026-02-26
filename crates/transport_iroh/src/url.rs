@@ -53,7 +53,7 @@ pub(super) fn canonicalize_relay_url(
 
 pub(super) fn endpoint_from_url(
     url: &Url,
-    configured_relay_url: Option<&RelayUrl>,
+    configured_relay_url: Option<&str>,
 ) -> K2Result<EndpointAddr> {
     let peer_id = url
         .peer_id()
@@ -64,7 +64,10 @@ pub(super) fn endpoint_from_url(
 
     // Use the configured relay URL if available, otherwise reconstruct from peer URL
     let relay_url = if let Some(configured) = configured_relay_url {
-        configured.clone()
+        let parsed = RelayUrl::from_str(configured).map_err(|err| {
+            K2Error::other_src("invalid configured relay url", err)
+        })?;
+        parsed
     } else {
         let relay_addr = url.addr();
         let relay_scheme = if url.uses_tls() { "https" } else { "http" };

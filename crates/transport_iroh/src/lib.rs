@@ -308,9 +308,21 @@ impl TransportFactory for IrohTransportFactory {
             let handler = TxImpHnd::new(handler);
             let config: IrohTransportModConfig =
                 builder.config.get_module_config()?;
-            let imp =
-                IrohTransport::create(config.iroh_transport, handler.clone())
-                    .await?;
+
+            // Ensure the relay URL ends with '/' so that iroh appends
+            // paths correctly rather than replacing the last segment.
+            let mut transport_config = config.iroh_transport;
+            transport_config.relay_url =
+                transport_config.relay_url.map(|url| {
+                    if url.ends_with('/') {
+                        url
+                    } else {
+                        format!("{url}/")
+                    }
+                });
+
+            let imp = IrohTransport::create(transport_config, handler.clone())
+                .await?;
             Ok(DefaultTransport::create(&handler, imp))
         })
     }
@@ -356,20 +368,6 @@ impl IrohTransport {
         config: IrohTransportConfig,
         handler: Arc<TxImpHnd>,
     ) -> K2Result<DynTxImp> {
-        // Ensure the relay URL ends with '/' so that iroh appends
-        // paths correctly rather than replacing the last segment.
-        // Normalize early so all downstream uses see the same URL.
-        let config = IrohTransportConfig {
-            relay_url: config.relay_url.map(|url| {
-                if url.ends_with('/') {
-                    url
-                } else {
-                    format!("{url}/")
-                }
-            }),
-            ..config
-        };
-
         // If a relay server is configured, only use that.
         // Otherwise, use the default relay servers provided by n0.
         let mut builder = if let Some(relay_url) = &config.relay_url {
@@ -624,20 +622,10 @@ impl TxImp for IrohTransport {
         let connections = self.connections.clone();
         let connection_locks = self.connection_locks.clone();
 
-        // Parse the configured relay URL if present
-        let configured_relay = self.config.relay_url.as_ref().and_then(|url| {
-            RelayUrl::from_str(url)
-                .map_err(|e| {
-                    warn!(?e, "Failed to parse configured relay URL");
-                    e
-                })
-                .ok()
-        });
-
         Box::pin(async move {
             let remote = match endpoint_from_url(
                 &remote_url,
-                configured_relay.as_ref(),
+                self.config.relay_url.as_deref(),
             ) {
                 Err(e) => {
                     // If we cannot convert the url to an endpoint address, mark the peer unresponsive
