@@ -4,6 +4,153 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.2...v0.4.0-dev.3)\] - 2026-02-28
+
+### Features
+
+- Add iroh relay axum integration and update fork rev. by @lucksus
+- *(bootstrap_srv)* Implement hybrid relay integration with hyper-util by @lucksus
+  - Successfully integrated iroh relay service using a hybrid approach:
+- *(bootstrap_srv)* Integrate iroh relay service directly by @lucksus
+  - This commit replaces the reverse proxy approach with direct integration of the iroh RelayService into the kitsune2 bootstrap server.
+- Add back local agents checks to send functions by @lucksus
+- Use ureq instead of reqwest by @lucksus
+- Bootstrap server authentication by @lucksus
+- Add transport-iroh support to showcase app by @mattyg in [#457](https://github.com/holochain/kitsune2/pull/457)
+- \[**BREAKING**\] Add configurable connect timeout to iroh transport by @jost-s in [#433](https://github.com/holochain/kitsune2/pull/433)
+
+### Bug Fixes
+
+- Comment around trailing dots by @lucksus
+- Comment about FQDN by @lucksus
+- Implement is_direct() again by @lucksus
+- Flaky tests with more robust relay url handling by @lucksus
+- Unflake testst. bootstrap default min backoff is 5s, override with 1s. by @lucksus
+- Canonicalize_url by @lucksus
+- Mark peer unresponsive when connection establishment errors by @mattyg
+- Mark peer unresponsive when you fail to convert their url to an endpoint by @mattyg
+- Run flaky test code only with transport-iroh to confirm it's only a tx5 problem by @lucksus
+- Unflake tests by removing unreliable recovery testing by @lucksus
+  - The send_before_local_agent_join_returns_error and send_module_before_local_agent_join_returns_error tests were flaky on macOS and Windows CI because re-establishing connections after a failed attempt (due to no local agents) is unreliable on slower machines.
+  - The main purpose of these tests is to verify that sending without a local agent returns an error. The recovery part (joining and then successfully sending) is already covered by other tests like incoming_notify_messages_from_blocked_peers_are_dropped.
+- Unflake tests by disconnecting after failed attempt by @lucksus
+- Unflake tests with iter_check! by @lucksus
+- Add NoLocalAgents error and don't mark peer unresponsive in that case by @lucksus
+- Test confirming @jost-s's scenario where not sending leads to peer marked unresponsive by @lucksus
+- Stop sending of pre-flight in peer_connect if no local agents by @lucksus
+- Error when trying to send while no local agent is in that space by @lucksus
+  - Which will result in an empty pre-flight and thus the other agent blocking us.
+- Use more spaced out timeouts to avoid flakiness by @lucksus
+- Set new auth config on client integration test by @lucksus
+- Old Rust version in use for the `test_auth_hook_server` image by @ThetaSinner in [#452](https://github.com/holochain/kitsune2/pull/452)
+- Enforce blocking more strictly (#440) by @veeso in [#440](https://github.com/holochain/kitsune2/pull/440)
+  - Now blocking checks if any agent for a peer is blocked, instead of all of them
+- Install crypto provider for iroh-relay (#435) by @lucksus in [#435](https://github.com/holochain/kitsune2/pull/435)
+
+### Miscellaneous Tasks
+
+- Support skipping semver checks
+- Remove re-export only module iroh-relay and use iroh-relay-axum directly in boostrap_srv by @lucksus in [#432](https://github.com/holochain/kitsune2/pull/432)
+- Clippy by @lucksus
+- Move relay URL validation to IrohTransportFactory and parsing to endpoint_from_url() by @lucksus
+- Remove remnants of other approaches by @lucksus
+- Remove unused deps tower and governor by @lucksus
+- Test is_direct() by @lucksus
+- Revert back to std mutex and sync spawning. by @lucksus
+- Remove static test by @lucksus
+- Move slash handling for paths into iroh transport by @lucksus
+- Clean-up deps and use workspace by @lucksus
+- Don't spawn in abort by @lucksus
+- Relay config not needed anymore without rate limiter by @lucksus
+- Remove inadequate rate limiting code and some clean-ups by @lucksus
+- Apply suggestions from code review by @lucksus
+- Clippy by @lucksus
+- Clippy by @lucksus
+- Taplo fmt by @lucksus
+- Fmt by @lucksus
+- Expect domain names without trailing dot by @lucksus
+- Refactor tests to use integrated relay by @lucksus
+- Upgrade iroh to 0.96.1 and iroh-relay to our fork by @lucksus
+- Fmt by @lucksus
+- Switch to holochain fork of iroh by @lucksus
+- Clone inner service instead of borrow by @lucksus
+- Pin-Box Websocket, use correct error type by @lucksus
+- Update to use iroh fork with stable v0.95.1 branch by @lucksus
+  - Updated Cargo.toml to point to embeddable-relay-server-v0.95.1 branch - Added hyper as direct dependency for Service trait usage - Working on body type conversion between axum and hyper
+- New chained if-let style by @lucksus in [#451](https://github.com/holochain/kitsune2/pull/451)
+- Update test comment by @lucksus
+- Revert "fix: unflake tests by removing unreliable recovery testing" by @lucksus
+  - This reverts commit d8faae511ff735d0f3888b73cdfb3c58c455528a.
+- Rename are_all_agents_at_url_blocked() in NoopHandler after merging master by @lucksus
+- Rename error type, remove redundant checks, use iter_check! macro by @lucksus
+- Remove unnecessary iter_check by @lucksus
+- Update old test local agents so our new requirements don't make it fail by @lucksus
+- Fmt by @lucksus
+- Less iter_checks in tests, comment fixes by @lucksus
+- Adjust old test by @lucksus
+- Clippy unused variable by @lucksus
+- Auth docs, hook server without path, clean-up by @lucksus in [#453](https://github.com/holochain/kitsune2/pull/453)
+  - Replace sbd link with auth docs inline - change hook server URL to be without path (assume /authenticate) - improve comments - rename variable for readability
+- Add tests that verifies client does re-authentication when token expires by @lucksus
+- Remove eprintln!s from test by @lucksus
+- Upgrade reqwest to 0.13 by @lucksus
+- Prune expired tokens by @lucksus
+- Add timeout to reqwst client call by @lucksus
+- URL formatting by @lucksus
+- Clippy by @lucksus
+- Fmt by @lucksus
+- Integration test for sbd independent auth code by @lucksus
+- Update deps by @ThetaSinner in [#455](https://github.com/holochain/kitsune2/pull/455)
+- Upgrade docker images in sbd bootstrap by @jost-s in [#429](https://github.com/holochain/kitsune2/pull/429)
+- Move cargo make tests with different features to member crates by @jost-s in [#420](https://github.com/holochain/kitsune2/pull/420)
+
+### Build System
+
+- Bump rust edition to 2024 by @mattyg in [#461](https://github.com/holochain/kitsune2/pull/461)
+- Bump to latest stable rust by @mattyg
+- Bump flake lock by @mattyg
+- Remove test-go-verify from makefile, which no longer exists by @mattyg in [#456](https://github.com/holochain/kitsune2/pull/456)
+- Remove rustup from nix flake by @mattyg
+- Add definition for bootstrap srv with iroh relay by @jost-s
+
+### CI
+
+- Update release actions
+- Use holochain-ci cachix by @mattyg in [#462](https://github.com/holochain/kitsune2/pull/462)
+- Remove nix build run on macos-15 by @jost-s in [#445](https://github.com/holochain/kitsune2/pull/445)
+
+### Refactor
+
+- Rename are_all_agents_at_url_blocked to is_any_agent_at_url_blocked and add comments to tests that need to be fixed once the blocking logic is fixed by @matthme in [#443](https://github.com/holochain/kitsune2/pull/443)
+- Abstract iroh endpoint by @jost-s in [#434](https://github.com/holochain/kitsune2/pull/434)
+- Abstract iroh connection by @jost-s
+- Abstract iroh recv stream and add mock implementation by @jost-s
+- Abstract iroh send stream and add mock implementation by @jost-s
+- Close connection when preflight couldn't be returned with iroh transport by @jost-s
+
+### Styling
+
+- Fix any_blocked variable name to match meaning by @matthme
+
+### Documentation
+
+- Identify relay integration challenge and add temporary handler by @lucksus
+  - Discovered that RelayService cannot be integrated as a simple axum handler because it requires connection-level access for WebSocket upgrades.
+  - Key findings: - RelayService implements Service<Request<Incoming>> specifically - Incoming is hyper's connection-level body type - Cannot safely convert between arbitrary body types and Incoming - WebSocket upgrades require access to the underlying TCP stream
+  - Proper solution requires: - Integration at the server/connection level using hyper-util - Routing between axum and RelayService before request handling - See: hyper-util's service combinators and connection routing
+  - Current status: - Code compiles successfully - Temporary handler returns 503 Service Unavailable - iroh-relay fork ready with exposed APIs - Need connection-level integration for full functionality
+- Add flow diagrams to iroh transport by @jost-s in [#444](https://github.com/holochain/kitsune2/pull/444)
+
+### Automated Changes
+
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#448](https://github.com/holochain/kitsune2/pull/448)
+- *(deps)* Bump holochain/actions/.github/workflows/prepare-release.yml by @dependabot[bot] in [#447](https://github.com/holochain/kitsune2/pull/447)
+- *(deps)* Bump holochain/actions/.github/workflows/publish-release.yml by @dependabot[bot] in [#446](https://github.com/holochain/kitsune2/pull/446)
+
+### First-time Contributors
+
+- @lucksus made their first contribution in [#432](https://github.com/holochain/kitsune2/pull/432)
+
 ## \[[0.4.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.1...v0.4.0-dev.2)\] - 2026-01-03
 
 ### Features
