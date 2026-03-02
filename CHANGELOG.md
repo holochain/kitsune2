@@ -4,6 +4,73 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.2...v0.4.0-dev.3)\] - 2026-03-02
+
+### Features
+
+- *(bootstrap_srv)* Integrate iroh relay service directly by @lucksus in [#432](https://github.com/holochain/kitsune2/pull/432)
+  - This change replaces the reverse proxy approach with direct integration of the iroh RelayService into the kitsune2 bootstrap server.
+- Bootstrap server authentication by @lucksus in [#453](https://github.com/holochain/kitsune2/pull/453)
+- Add transport-iroh support to showcase app by @mattyg in [#457](https://github.com/holochain/kitsune2/pull/457)
+- \[**BREAKING**\] Add configurable connect timeout to iroh transport by @jost-s in [#433](https://github.com/holochain/kitsune2/pull/433)
+
+### Bug Fixes
+
+- Mark peer unresponsive when connection establishment errors by @mattyg in [#462](https://github.com/holochain/kitsune2/pull/462)
+- Mark peer unresponsive when you fail to convert their url to an endpoint by @mattyg in [#462](https://github.com/holochain/kitsune2/pull/462)
+- Error when trying to send while no local agent is in that space by @lucksus in [#451](https://github.com/holochain/kitsune2/pull/451)
+  - Which will result in an empty pre-flight and thus the other agent blocking us.
+- Old Rust version in use for the `test_auth_hook_server` image by @ThetaSinner in [#452](https://github.com/holochain/kitsune2/pull/452)
+- Enforce blocking more strictly (#440) by @veeso in [#440](https://github.com/holochain/kitsune2/pull/440)
+  - Now blocking checks if any agent for a peer is blocked, instead of all of them
+- Install crypto provider for iroh-relay (#435) by @lucksus in [#435](https://github.com/holochain/kitsune2/pull/435)
+
+### Miscellaneous Tasks
+
+- Support skipping semver checks by @ThetaSinner in [#464](https://github.com/holochain/kitsune2/pull/464)
+- Update deps by @ThetaSinner in [#455](https://github.com/holochain/kitsune2/pull/455)
+- Upgrade docker images in sbd bootstrap by @jost-s in [#429](https://github.com/holochain/kitsune2/pull/429)
+- Move cargo make tests with different features to member crates by @jost-s in [#420](https://github.com/holochain/kitsune2/pull/420)
+
+### Build System
+
+- Bump rust edition to 2024 (#461) by @mattyg [#461](https://github.com/holochain/kitsune2/pull/461)
+- Bump to latest stable rust (#461) by @mattyg [#461](https://github.com/holochain/kitsune2/pull/461)
+- Bump flake lock by @mattyg in [#461](https://github.com/holochain/kitsune2/pull/461)
+- Remove test-go-verify from makefile, which no longer exists by @mattyg in [#456](https://github.com/holochain/kitsune2/pull/456)
+- Remove rustup from nix flake by @mattyg in [#456](https://github.com/holochain/kitsune2/pull/456)
+- Add definition for bootstrap srv with iroh relay by @jost-s in [#429](https://github.com/holochain/kitsune2/pull/429)
+
+### CI
+
+- Update release actions by @ThetaSinner in [#464](https://github.com/holochain/kitsune2/pull/464)
+- Use holochain-ci cachix by @mattyg in [#462](https://github.com/holochain/kitsune2/pull/462)
+- Remove nix build run on macos-15 by @jost-s in [#445](https://github.com/holochain/kitsune2/pull/445)
+
+### Refactor
+
+- Rename `are_all_agents_at_url_blocked` to `is_any_agent_at_url_blocked` and add comments to tests that need to be fixed once the blocking logic is fixed by @matthme in [#443](https://github.com/holochain/kitsune2/pull/443)
+- Abstract iroh endpoint by @jost-s in [#434](https://github.com/holochain/kitsune2/pull/434)
+- Close connection when preflight couldn't be returned with iroh transport by @jost-s in [#433](https://github.com/holochain/kitsune2/pull/433)
+
+### Styling
+
+- Fix `any_blocked` variable name to match meaning by @matthme in [#443](https://github.com/holochain/kitsune2/pull/443)
+
+### Documentation
+
+- Add flow diagrams to iroh transport by @jost-s in [#444](https://github.com/holochain/kitsune2/pull/444)
+
+### Automated Changes
+
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#448](https://github.com/holochain/kitsune2/pull/448)
+- *(deps)* Bump holochain/actions/.github/workflows/prepare-release.yml by @dependabot[bot] in [#447](https://github.com/holochain/kitsune2/pull/447)
+- *(deps)* Bump holochain/actions/.github/workflows/publish-release.yml by @dependabot[bot] in [#446](https://github.com/holochain/kitsune2/pull/446)
+
+### First-time Contributors
+
+- @lucksus made their first contribution
+
 ## \[[0.4.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.1...v0.4.0-dev.2)\] - 2026-01-03
 
 ### Features
