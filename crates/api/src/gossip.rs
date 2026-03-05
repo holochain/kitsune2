@@ -96,6 +96,8 @@ pub struct PeerMeta {
     pub completed_rounds: Option<u32>,
     /// The number of peer timeouts.
     pub peer_timeouts: Option<u32>,
+    /// The total DHT op count reported by this peer.
+    pub dht_op_count: Option<u64>,
     /// Whether this peer has declared itself as offline, and no longer reachable, with a tombstone.
     pub is_tombstone: bool,
     /// The storage arc that this peer is declaring.
@@ -120,4 +122,14 @@ pub struct GossipStateSummary {
     pub dht_summary: HashMap<String, DhtSegmentState>,
     /// Peer metadata dump for each agent in this space.
     pub peer_meta: HashMap<Url, PeerMeta>,
+    /// An estimate of the local node's op count.
+    ///
+    /// This is initialised from the op store on startup and incremented as
+    /// ops are stored.  It does **not** reflect cached data added after
+    /// startup.  The host application can query its own data store for
+    /// an up-to-date value.
+    ///
+    /// Compare against each peer's [`PeerMeta::dht_op_count`] to estimate
+    /// sync progress.
+    pub local_op_count: u64,
 }

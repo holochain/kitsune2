@@ -71,6 +71,26 @@ impl K2PeerMetaStore {
         .await
     }
 
+    /// Get the DHT op count last reported by the given peer.
+    pub async fn peer_dht_op_count(&self, peer: Url) -> K2Result<Option<u64>> {
+        self.get(peer, "gossip:dht_op_count").await
+    }
+
+    /// Set the DHT op count reported by the given peer.
+    pub(crate) async fn set_peer_dht_op_count(
+        &self,
+        peer: Url,
+        count: u64,
+    ) -> K2Result<()> {
+        self.put(
+            peer,
+            "gossip:dht_op_count",
+            count,
+            Some(Timestamp::now() + Duration::from_secs(24 * 60 * 60)),
+        )
+        .await
+    }
+
     /// Get the number of peer behavior errors.
     ///
     /// These are gossip rounds that have failed for a reason that we consider to be a wrong
@@ -307,6 +327,27 @@ mod tests {
         assert_eq!(
             Some(timestamp),
             store.new_ops_bookmark(peer.clone()).await.unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn round_trip_dht_op_count() {
+        let store = test_store().await;
+        let peer = Url::from_str("ws://test-host:80/1").unwrap();
+
+        store.set_peer_dht_op_count(peer.clone(), 42).await.unwrap();
+        assert_eq!(
+            Some(42),
+            store.peer_dht_op_count(peer.clone()).await.unwrap()
+        );
+
+        store
+            .set_peer_dht_op_count(peer.clone(), 100)
+            .await
+            .unwrap();
+        assert_eq!(
+            Some(100),
+            store.peer_dht_op_count(peer.clone()).await.unwrap()
         );
     }
 }

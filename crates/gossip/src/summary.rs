@@ -16,7 +16,10 @@ impl K2Gossip {
             accepted_rounds: Vec::new(),
             dht_summary: HashMap::new(),
             peer_meta: HashMap::new(),
+            local_op_count: 0,
         };
+
+        summary.local_op_count = self.dht.read().await.op_count();
 
         if let Some(current_round) =
             self.initiated_round_state.lock().await.as_ref()
@@ -129,6 +132,10 @@ impl K2Gossip {
                     peer_timeouts: self
                         .peer_meta_store
                         .peer_timeouts(url.clone())
+                        .await?,
+                    dht_op_count: self
+                        .peer_meta_store
+                        .peer_dht_op_count(url.clone())
                         .await?,
                     is_tombstone: agent.is_tombstone,
                     storage_arc: agent.storage_arc,

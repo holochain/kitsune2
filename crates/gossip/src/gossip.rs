@@ -238,6 +238,7 @@ impl K2Gossip {
             our_agents.clone(),
             our_arc_set.clone(),
         );
+        let dht_op_count = self.dht.read().await.op_count();
         let initiate = K2GossipInitiateMessage {
             session_id: round_state.session_id.clone(),
             participating_agents: encode_agent_ids(our_agents),
@@ -246,6 +247,7 @@ impl K2Gossip {
             }),
             new_since: new_since.as_micros(),
             max_op_data_bytes: self.config.max_gossip_op_bytes,
+            dht_op_count: Some(dht_op_count),
             tie_breaker: match &round_state.stage {
                 RoundStage::Initiated(i) => i.tie_breaker,
                 _ => unreachable!(),
@@ -441,11 +443,11 @@ impl TxModuleHandler for K2Gossip {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::harness::K2GossipFunctionalTestFactory;
+    use crate::harness::{K2GossipFunctionalTestFactory, MemoryOpRecord};
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::UNIT_TIME;
     use kitsune2_test_utils::space::TEST_SPACE_ID;
-    use kitsune2_test_utils::{enable_tracing, iter_check};
+    use kitsune2_test_utils::{enable_tracing, iter_check, random_bytes};
 
     #[tokio::test]
     async fn two_way_agent_sync() {
@@ -855,5 +857,99 @@ mod test {
 
         // Note that the total time elapsed by this point must be less than the initiate
         // interval. So we must have force initiated after timeouts.
+    }
+
+    #[tokio::test]
+    async fn dht_op_count_shared_via_gossip() {
+        enable_tracing();
+
+        let space = TEST_SPACE_ID;
+        let factory =
+            K2GossipFunctionalTestFactory::create(space.clone(), true, None)
+                .await;
+
+        let harness_1 = factory.new_instance().await;
+        let agent_info_1 = harness_1.join_local_agent(DhtArc::FULL).await;
+
+        const NUM_OPS: usize = 5;
+        let mut ops = Vec::<MemoryOpRecord>::with_capacity(NUM_OPS);
+        for _ in 0..NUM_OPS {
+            let op = MemoryOp::new(Timestamp::now(), random_bytes(128));
+            ops.push(MemoryOpRecord {
+                op_id: op.compute_op_id(),
+                op_data: op.op_data,
+                created_at: op.created_at,
+                stored_at: Timestamp::now(),
+                processed: false,
+            });
+        }
+
+        harness_1
+            .op_store
+            .write()
+            .await
+            .op_list
+            .extend(ops.iter().map(|op| (op.op_id.clone(), op.clone())));
+
+        let harness_2 = factory.new_instance().await;
+        let agent_info_2 = harness_2.join_local_agent(DhtArc::FULL).await;
+
+        harness_1
+            .space
+            .peer_store()
+            .insert(vec![agent_info_2.clone()])
+            .await
+            .unwrap();
+
+        harness_1
+            .wait_for_sync_with(&harness_2, std::time::Duration::from_secs(60))
+            .await;
+
+        let summary_2 = harness_2
+            .gossip
+            .get_state_summary(GossipStateSummaryRequest {
+                include_dht_summary: false,
+            })
+            .await
+            .unwrap();
+
+        let h1_url = agent_info_1.url.clone().unwrap();
+        let meta_for_h1 = summary_2
+            .peer_meta
+            .get(&h1_url)
+            .expect("expected peer_meta entry for harness_1");
+        assert!(
+            meta_for_h1.dht_op_count.is_some(),
+            "dht_op_count should be reported for harness_1"
+        );
+        assert!(
+            meta_for_h1.dht_op_count.unwrap() >= NUM_OPS as u64,
+            "expected at least {NUM_OPS} ops, got {:?}",
+            meta_for_h1.dht_op_count
+        );
+
+        let summary_1 = harness_1
+            .gossip
+            .get_state_summary(GossipStateSummaryRequest {
+                include_dht_summary: false,
+            })
+            .await
+            .unwrap();
+
+        let h2_url = agent_info_2.url.clone().unwrap();
+        let meta_for_h2 = summary_1
+            .peer_meta
+            .get(&h2_url)
+            .expect("expected peer_meta entry for harness_2");
+        assert!(
+            meta_for_h2.dht_op_count.is_some(),
+            "dht_op_count should be reported for harness_2"
+        );
+
+        assert!(
+            summary_1.local_op_count >= NUM_OPS as u64,
+            "expected local_op_count >= {NUM_OPS}, got {}",
+            summary_1.local_op_count
+        );
     }
 }

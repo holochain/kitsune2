@@ -177,6 +177,9 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
         &self,
         arc: DhtArc,
     ) -> BoxFuture<'_, K2Result<Vec<(u64, Bytes)>>>;
+
+    /// Return the total count of locally held ops.
+    fn query_total_op_count(&self) -> BoxFuture<'_, K2Result<u64>>;
 }
 
 /// Trait-object [OpStore].

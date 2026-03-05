@@ -71,6 +71,7 @@ impl Gossip for CoreGossipStub {
                 accepted_rounds: Vec::with_capacity(0),
                 dht_summary: HashMap::with_capacity(0),
                 peer_meta: HashMap::with_capacity(0),
+                local_op_count: 0,
             })
         })
     }
