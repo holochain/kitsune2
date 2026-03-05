@@ -2,7 +2,7 @@ use super::*;
 use crate::dht::tests::harness::SyncWithOutcome;
 use crate::test::test_store;
 use harness::DhtSyncHarness;
-use kitsune2_api::{DhtArc, UNIX_TIMESTAMP};
+use kitsune2_api::{DhtArc, DynOpStore, UNIX_TIMESTAMP};
 use kitsune2_core::factories::MemoryOp;
 use std::time::Duration;
 
@@ -523,4 +523,49 @@ async fn ring_sync_respects_arc() {
 
     // Now the DHTs should be in sync
     assert!(dht1.is_in_sync_with(&dht2).await.unwrap());
+}
+
+#[tokio::test]
+async fn op_count_starts_at_zero_for_empty_store() {
+    let dht = Dht::try_from_store(UNIX_TIMESTAMP, test_store().await)
+        .await
+        .unwrap();
+    assert_eq!(0, dht.op_count());
+}
+
+#[tokio::test]
+async fn op_count_incremented_by_inform_ops_stored() {
+    let current_time = Timestamp::now();
+    let mut harness = DhtSyncHarness::new(current_time, DhtArc::FULL).await;
+
+    harness
+        .inject_ops(vec![
+            MemoryOp::new(UNIX_TIMESTAMP, vec![7; 32]),
+            MemoryOp::new(UNIX_TIMESTAMP, vec![8; 32]),
+        ])
+        .await
+        .unwrap();
+    assert_eq!(2, harness.dht.op_count());
+
+    harness
+        .inject_ops(vec![MemoryOp::new(UNIX_TIMESTAMP, vec![9; 32])])
+        .await
+        .unwrap();
+    assert_eq!(3, harness.dht.op_count());
+}
+
+#[tokio::test]
+async fn op_count_loaded_from_store_on_startup() {
+    let store: DynOpStore = test_store().await;
+    store
+        .process_incoming_ops(vec![
+            MemoryOp::new(UNIX_TIMESTAMP, vec![1; 32]).into(),
+            MemoryOp::new(UNIX_TIMESTAMP, vec![2; 32]).into(),
+            MemoryOp::new(UNIX_TIMESTAMP, vec![3; 32]).into(),
+        ])
+        .await
+        .unwrap();
+
+    let dht = Dht::try_from_store(Timestamp::now(), store).await.unwrap();
+    assert_eq!(3, dht.op_count());
 }

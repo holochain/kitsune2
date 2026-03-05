@@ -164,4 +164,8 @@ impl OpStore for FileOpStore {
     ) -> BoxFut<'_, K2Result<Vec<(u64, Bytes)>>> {
         self.mem_op_store.retrieve_slice_hashes(arc)
     }
+
+    fn query_total_op_count(&self) -> BoxFut<'_, K2Result<u64>> {
+        self.mem_op_store.query_total_op_count()
+    }
 }

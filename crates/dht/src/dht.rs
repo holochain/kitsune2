@@ -36,12 +36,14 @@ mod tests;
 pub struct Dht {
     partition: HashPartition,
     store: DynOpStore,
+    op_count: u64,
 }
 
 impl std::fmt::Debug for Dht {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Dht")
             .field("partition", &self.partition)
+            .field("op_count", &self.op_count)
             .finish()
     }
 }
@@ -84,6 +86,13 @@ pub trait DhtApi: 'static + Send + Sync + std::fmt::Debug {
         &mut self,
         stored_ops: Vec<StoredOp>,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Get an estimate of the total number of ops known to this node.
+    ///
+    /// Initialised from the op store on startup and incremented on every
+    /// [`DhtApi::inform_ops_stored`] call.  This is an estimate because it
+    /// does not account for content evicted after startup.
+    fn op_count(&self) -> u64;
 
     /// Get a minimal snapshot of the DHT model.
     fn snapshot_minimal(
@@ -131,10 +140,17 @@ impl DhtApi for Dht {
         stored_ops: Vec<StoredOp>,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            let count = stored_ops.len() as u64;
             self.partition
                 .inform_ops_stored(self.store.clone(), stored_ops)
-                .await
+                .await?;
+            self.op_count += count;
+            Ok(())
         })
+    }
+
+    fn op_count(&self) -> u64 {
+        self.op_count
     }
 
     /// Get a minimal snapshot of the DHT model.
@@ -522,6 +538,7 @@ impl Dht {
         current_time: Timestamp,
         store: DynOpStore,
     ) -> K2Result<Dht> {
+        let op_count = store.query_total_op_count().await?;
         Ok(Dht {
             partition: HashPartition::try_from_store(
                 9,
@@ -530,6 +547,7 @@ impl Dht {
             )
             .await?,
             store,
+            op_count,
         })
     }
 

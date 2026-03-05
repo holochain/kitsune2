@@ -145,3 +145,41 @@ async fn retrieve_op_ids_bounded_across_multiple_arcs() {
     // Gets the remaining op in the second arc.
     assert_eq!(1, ops_in_arc_2.0.len());
 }
+
+#[tokio::test]
+async fn query_total_op_count_reflects_stored_ops() {
+    let op_store: DynOpStore =
+        Arc::new(Kitsune2MemoryOpStore::new(TEST_SPACE_ID));
+
+    assert_eq!(0, op_store.query_total_op_count().await.unwrap());
+
+    op_store
+        .process_incoming_ops(vec![
+            MemoryOp::new(Timestamp::now(), vec![1; 32]).into(),
+            MemoryOp::new(Timestamp::now(), vec![2; 32]).into(),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(2, op_store.query_total_op_count().await.unwrap());
+}
+
+#[tokio::test]
+async fn query_total_op_count_same_store() {
+    let op_store: DynOpStore =
+        Arc::new(Kitsune2MemoryOpStore::new(TEST_SPACE_ID));
+
+    let op = MemoryOp::new(Timestamp::now(), vec![1; 32]);
+    op_store
+        .process_incoming_ops(vec![op.clone().into()])
+        .await
+        .unwrap();
+    assert_eq!(1, op_store.query_total_op_count().await.unwrap());
+
+    // Storing the same op again should not increase the count.
+    op_store
+        .process_incoming_ops(vec![op.into()])
+        .await
+        .unwrap();
+    assert_eq!(1, op_store.query_total_op_count().await.unwrap());
+}

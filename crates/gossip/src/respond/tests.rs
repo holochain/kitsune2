@@ -103,6 +103,7 @@ async fn initiate_respect_size_limit_for_new_ops_and_disc() {
                 max_op_data_bytes: harness.gossip.config.max_gossip_op_bytes,
                 new_ops: vec![],
                 updated_new_since: Timestamp::now().as_micros(),
+                dht_op_count: Some(0),
                 snapshot: Some(SnapshotMinimalMessage {
                     disc_boundary: disc_boundary.as_micros(),
                     disc_top_hash: Bytes::new(),
@@ -321,6 +322,7 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
                 tie_breaker: rand::thread_rng().next_u32().saturating_add(1),
                 new_since: UNIX_TIMESTAMP.as_micros(),
                 max_op_data_bytes: harness.gossip.config.max_gossip_op_bytes,
+                dht_op_count: Some(0),
             },
         )
         .await

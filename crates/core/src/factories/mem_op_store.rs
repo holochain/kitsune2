@@ -420,4 +420,11 @@ impl OpStore for Kitsune2MemoryOpStore {
             Ok(self_lock.time_slice_hashes.get_all(&arc))
         })
     }
+
+    fn query_total_op_count(&self) -> BoxFuture<'_, K2Result<u64>> {
+        Box::pin(async move {
+            let lock = self.read().await;
+            Ok(lock.op_list.len() as u64)
+        })
+    }
 }

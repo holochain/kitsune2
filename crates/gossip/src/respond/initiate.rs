@@ -24,6 +24,14 @@ impl K2Gossip {
             return Ok(None);
         }
 
+        // Persist the peer's reported DHT op count on every accepted initiate,
+        // even if we respond with Busy.
+        if let Some(op_count) = initiate.dht_op_count {
+            self.peer_meta_store
+                .set_peer_dht_op_count(from_peer.clone(), op_count)
+                .await?;
+        }
+
         // If we've already accepted the maximum number of rounds, we can't accept another.
         // Send back a busy message to let the peer know.
         if self.config.max_concurrent_accepted_rounds != 0
@@ -115,6 +123,8 @@ impl K2Gossip {
         );
         state.peer_max_op_data_bytes -= used_bytes as i32;
 
+        let dht_op_count = self.dht.read().await.op_count();
+
         Ok(Some(GossipMessage::Accept(K2GossipAcceptMessage {
             session_id: initiate.session_id,
             participating_agents: encode_agent_ids(our_agents),
@@ -126,6 +136,7 @@ impl K2Gossip {
             max_op_data_bytes: self.config.max_gossip_op_bytes,
             new_ops: encode_op_ids(new_ops),
             updated_new_since: new_bookmark.as_micros(),
+            dht_op_count: Some(dht_op_count),
             snapshot,
         })))
     }
@@ -243,6 +254,7 @@ mod tests {
                     tie_breaker: 0,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
+                    dht_op_count: Some(0),
                 },
             )
             .await
@@ -341,6 +353,7 @@ mod tests {
                     tie_breaker: 0,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 0,
+                    dht_op_count: Some(0),
                 }),
             )
             .await
@@ -380,6 +393,7 @@ mod tests {
                         tie_breaker: 0,
                         new_since: Timestamp::now().as_micros(),
                         max_op_data_bytes: 0,
+                        dht_op_count: Some(0),
                     }),
                 )
                 .await
@@ -409,6 +423,7 @@ mod tests {
             tie_breaker: 0,
             new_since: Timestamp::now().as_micros(),
             max_op_data_bytes: 5_000,
+            dht_op_count: Some(0),
         });
 
         let terminate_message =
@@ -464,6 +479,7 @@ mod tests {
                     tie_breaker: 0,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
+                    dht_op_count: Some(0),
                 }),
             )
             .await
@@ -510,6 +526,7 @@ mod tests {
                     tie_breaker: 0,
                     new_since: 0,
                     max_op_data_bytes: 0,
+                    dht_op_count: Some(0),
                 }),
             )
             .await
@@ -570,6 +587,7 @@ mod tests {
                     tie_breaker: initiate.tie_breaker.saturating_add(1),
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
+                    dht_op_count: Some(0),
                 }),
             )
             .await
@@ -632,6 +650,7 @@ mod tests {
                     tie_breaker: initiate.tie_breaker,
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
+                    dht_op_count: Some(0),
                 }),
             )
             .await
@@ -674,6 +693,7 @@ mod tests {
                         .max_gossip_op_bytes,
                     new_ops: Vec::new(),
                     updated_new_since: UNIX_TIMESTAMP.as_micros(),
+                    dht_op_count: Some(0),
                     snapshot: None,
                 }),
             )
@@ -686,6 +706,65 @@ mod tests {
             ),
             "Expected 'Unsolicited Accept message', got: {response:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn dht_op_count_is_stored_from_initiate() {
+        let harness = RespondTestHarness::create().await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent.local.clone())
+            .await
+            .unwrap();
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+        let remote_url = remote_agent.url.clone().unwrap();
+
+        let response = harness
+            .gossip
+            .respond_to_initiate(
+                remote_url.clone(),
+                K2GossipInitiateMessage {
+                    session_id: test_session_id(),
+                    participating_agents: encode_agent_ids([remote_agent
+                        .agent
+                        .clone()]),
+                    arc_set: Some(ArcSetMessage {
+                        value: ArcSet::new(vec![DhtArc::FULL])
+                            .unwrap()
+                            .encode(),
+                    }),
+                    tie_breaker: rand::thread_rng()
+                        .next_u32()
+                        .saturating_add(1),
+                    new_since: Timestamp::now().as_micros(),
+                    max_op_data_bytes: 5_000,
+                    dht_op_count: Some(99),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            Some(99),
+            harness
+                .gossip
+                .peer_meta_store
+                .peer_dht_op_count(remote_url)
+                .await
+                .unwrap()
+        );
+
+        // The local store is empty, so the accept message should report 0 ops.
+        match response.unwrap() {
+            GossipMessage::Accept(accept) => {
+                assert_eq!(Some(0), accept.dht_op_count);
+            }
+            other => panic!("Expected Accept, got: {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -758,6 +837,7 @@ mod tests {
                         .gossip
                         .config
                         .max_gossip_op_bytes,
+                    dht_op_count: Some(0),
                 },
             )
             .await

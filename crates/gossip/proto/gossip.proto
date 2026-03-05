@@ -102,6 +102,8 @@ message K2GossipInitiateMessage {
   // those op ids should point to. The other party can't check this until they have fetched and checked the
   // op data, so you cannot rely on this being respected during gossip.
   uint32 max_op_data_bytes = 21;
+
+  optional uint64 dht_op_count = 22;
 }
 
 // A Kitsune2 gossip acceptance protocol message.
@@ -144,6 +146,8 @@ message K2GossipAcceptMessage {
   // Provide a new bookmark for the initiator. Any new ops will have been returned in `new_ops`
   // and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
   int64 updated_new_since = 23;
+
+  optional uint64 dht_op_count = 24;
 
   // The DHT snapshot of the acceptor.
   optional SnapshotMinimalMessage snapshot = 30;

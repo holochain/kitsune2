@@ -156,6 +156,8 @@ pub struct K2GossipInitiateMessage {
     /// op data, so you cannot rely on this being respected during gossip.
     #[prost(uint32, tag = "21")]
     pub max_op_data_bytes: u32,
+    #[prost(uint64, optional, tag = "22")]
+    pub dht_op_count: ::core::option::Option<u64>,
 }
 /// A Kitsune2 gossip acceptance protocol message.
 ///
@@ -192,6 +194,8 @@ pub struct K2GossipAcceptMessage {
     /// and the initiator should use this new timestamp in their `new_since` next time they gossip with us.
     #[prost(int64, tag = "23")]
     pub updated_new_since: i64,
+    #[prost(uint64, optional, tag = "24")]
+    pub dht_op_count: ::core::option::Option<u64>,
     /// The DHT snapshot of the acceptor.
     #[prost(message, optional, tag = "30")]
     pub snapshot: ::core::option::Option<

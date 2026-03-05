@@ -307,6 +307,7 @@ mod tests {
                     tie_breaker: 0,
                     new_since: 0,
                     max_op_data_bytes: 30_000,
+                    dht_op_count: Some(0),
                 }),
             )
             .await
@@ -395,6 +396,7 @@ mod tests {
                     tie_breaker: 0,
                     new_since: 0,
                     max_op_data_bytes: 30_000,
+                    dht_op_count: Some(0),
                 }),
             )
             .await

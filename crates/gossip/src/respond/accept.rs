@@ -40,6 +40,12 @@ impl K2Gossip {
         )
         .await?;
 
+        if let Some(op_count) = accept.dht_op_count {
+            self.peer_meta_store
+                .set_peer_dht_op_count(from_peer.clone(), op_count)
+                .await?;
+        }
+
         // Send discovered ops to the fetch queue
         self.fetch
             .request_ops(decode_ids(accept.new_ops), from_peer.clone())
@@ -328,6 +334,82 @@ mod tests {
     use kitsune2_test_utils::enable_tracing;
 
     #[tokio::test]
+    async fn dht_op_count_is_stored_from_accept() {
+        let harness = RespondTestHarness::create().await;
+
+        let local_agent = harness.create_agent(DhtArc::FULL).await;
+        harness
+            .gossip
+            .local_agent_store
+            .add(local_agent.local.clone())
+            .await
+            .unwrap();
+
+        let remote_agent = harness.create_agent(DhtArc::FULL).await;
+        let remote_url = remote_agent.url.clone().unwrap();
+
+        let session_id = harness
+            .insert_initiated_round_state(&local_agent, &remote_agent)
+            .await;
+
+        let disc_boundary = match harness
+            .gossip
+            .dht
+            .read()
+            .await
+            .snapshot_minimal(ArcSet::new(vec![DhtArc::FULL]).unwrap())
+            .await
+            .unwrap()
+        {
+            DhtSnapshot::Minimal { disc_boundary, .. } => disc_boundary,
+            _ => panic!("Expected a minimal snapshot"),
+        };
+
+        harness
+            .gossip
+            .respond_to_accept(
+                remote_url.clone(),
+                K2GossipAcceptMessage {
+                    session_id,
+                    participating_agents: encode_agent_ids([remote_agent
+                        .agent
+                        .clone()]),
+                    arc_set: Some(ArcSetMessage {
+                        value: ArcSet::new(vec![DhtArc::FULL])
+                            .unwrap()
+                            .encode(),
+                    }),
+                    missing_agents: vec![],
+                    new_since: UNIX_TIMESTAMP.as_micros(),
+                    max_op_data_bytes: harness
+                        .gossip
+                        .config
+                        .max_gossip_op_bytes,
+                    new_ops: vec![],
+                    updated_new_since: Timestamp::now().as_micros(),
+                    dht_op_count: Some(77),
+                    snapshot: Some(SnapshotMinimalMessage {
+                        disc_boundary: disc_boundary.as_micros(),
+                        disc_top_hash: Bytes::new(),
+                        ring_top_hashes: vec![],
+                    }),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            Some(77),
+            harness
+                .gossip
+                .peer_meta_store
+                .peer_dht_op_count(remote_url)
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn respect_size_limit_for_new_ops() {
         enable_tracing();
 
@@ -414,6 +496,7 @@ mod tests {
                         .max_gossip_op_bytes,
                     new_ops: vec![],
                     updated_new_since: Timestamp::now().as_micros(),
+                    dht_op_count: Some(0),
                     snapshot: Some(SnapshotMinimalMessage {
                         disc_boundary: disc_boundary.as_micros(),
                         disc_top_hash: Bytes::new(),
