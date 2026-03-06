@@ -104,12 +104,22 @@ impl AuthTokenTracker {
     }
 
     /// Remove expired tokens from the tracker.
-    pub fn prune_expired(&self, config: &AuthConfig) {
+    ///
+    /// Returns the list of tokens that were pruned so that other subsystems
+    /// (e.g. `RelayAllowlist`) can clean up their own state accordingly.
+    pub fn prune_expired(&self, config: &AuthConfig) -> Vec<Arc<str>> {
         let mut tokens = self.tokens.lock().unwrap();
         let now = Instant::now();
-        tokens.retain(|_, last_used| {
-            now.duration_since(*last_used) < config.auth_token_idle_timeout
+        let mut expired = Vec::new();
+        tokens.retain(|token, last_used| {
+            if now.duration_since(*last_used) < config.auth_token_idle_timeout {
+                true
+            } else {
+                expired.push(token.clone());
+                false
+            }
         });
+        expired
     }
 }
 
@@ -312,7 +322,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(150));
 
         // Prune expired tokens
-        tracker.prune_expired(&config);
+        let _ = tracker.prune_expired(&config);
 
         // All tokens should be gone
         assert!(!tracker.is_valid(&Some(Arc::from("token1")), &config));

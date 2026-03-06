@@ -221,6 +221,11 @@ pub use auth::*;
 mod sbd;
 
 #[cfg(feature = "iroh-relay")]
+mod relay_allowlist;
+#[cfg(feature = "iroh-relay")]
+pub use relay_allowlist::*;
+
+#[cfg(feature = "iroh-relay")]
 pub mod iroh_relay_axum;
 
 #[cfg(test)]

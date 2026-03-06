@@ -2742,6 +2742,7 @@ dependencies = [
  "iroh",
  "iroh-relay-holochain",
  "kitsune2_api",
+ "kitsune2_bootstrap_client",
  "kitsune2_core",
  "kitsune2_test_utils",
  "kitsune2_transport_iroh",

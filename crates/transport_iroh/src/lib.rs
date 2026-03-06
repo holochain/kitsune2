@@ -180,7 +180,9 @@
 
 use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
-use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
+use iroh::{
+    Endpoint, EndpointAddr, RelayConfig, RelayMap, RelayMode, RelayUrl,
+};
 use kitsune2_api::*;
 use std::{
     collections::HashMap,
@@ -321,8 +323,13 @@ impl TransportFactory for IrohTransportFactory {
                     }
                 });
 
-            let imp = IrohTransport::create(transport_config, handler.clone())
-                .await?;
+            let auth_material = builder.auth_material.clone();
+            let imp = IrohTransport::create(
+                transport_config,
+                handler.clone(),
+                auth_material,
+            )
+            .await?;
             Ok(DefaultTransport::create(&handler, imp))
         })
     }
@@ -367,14 +374,30 @@ impl IrohTransport {
     async fn create(
         config: IrohTransportConfig,
         handler: Arc<TxImpHnd>,
+        auth_material: Option<Vec<u8>>,
     ) -> K2Result<DynTxImp> {
+        // Determine whether we need to register with the relay before connecting.
+        // Registration is required when both a relay URL and auth material are provided.
+        let needs_relay_registration =
+            config.relay_url.is_some() && auth_material.is_some();
+
         // If a relay server is configured, only use that.
         // Otherwise, use the default relay servers provided by n0.
         let mut builder = if let Some(relay_url) = &config.relay_url {
-            let relay_url = RelayUrl::from_str(relay_url)
-                .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
-            let relay_map = RelayMap::from_iter([relay_url]);
-            Endpoint::empty_builder(RelayMode::Custom(relay_map))
+            if needs_relay_registration {
+                // Start with an empty relay map so the endpoint binds without
+                // immediately connecting to the relay. The relay transport is
+                // kept intact so that insert_relay (called after registration)
+                // can establish the WebSocket connection.
+                Endpoint::empty_builder(RelayMode::Custom(RelayMap::empty()))
+            } else {
+                let relay_url =
+                    RelayUrl::from_str(relay_url).map_err(|err| {
+                        K2Error::other_src("Invalid relay URL", err)
+                    })?;
+                let relay_map = RelayMap::from_iter([relay_url]);
+                Endpoint::empty_builder(RelayMode::Custom(relay_map))
+            }
         } else {
             Endpoint::empty_builder(RelayMode::Default)
         };
@@ -391,6 +414,51 @@ impl IrohTransport {
             K2Error::other_src("Failed to bind iroh endpoint", err)
         })?;
 
+        // If we need relay registration, authenticate and register our public
+        // key with the server before inserting the relay into the endpoint.
+        // insert_relay is deferred until after the watcher task is spawned so
+        // that the address update it fires is guaranteed to be observed.
+        if needs_relay_registration {
+            let relay_url_str = config
+                .relay_url
+                .as_deref()
+                .expect("relay_url checked above");
+            let auth_bytes =
+                auth_material.expect("auth_material checked above");
+
+            // Derive the server base URL from the relay URL by removing the path.
+            // e.g. "http://addr/relay/" -> "http://addr/"
+            let server_url = ::url::Url::parse(relay_url_str).map_err(|e| {
+                K2Error::other_src("Invalid relay URL for registration", e)
+            })?;
+            let mut server_url = server_url;
+            server_url.set_path("/");
+
+            let key_bytes = *endpoint.id().as_bytes();
+            let auth_material =
+                kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
+
+            // Perform the authentication and key registration synchronously.
+            tokio::task::spawn_blocking(move || {
+                kitsune2_bootstrap_client::blocking_register_relay_key(
+                    server_url,
+                    &auth_material,
+                    &key_bytes,
+                )
+            })
+            .await
+            .map_err(|e| K2Error::other_src("Registration task failed", e))??;
+        }
+
+        // Clone the raw endpoint before consuming it into IrohEndpoint so that
+        // insert_relay can be called after the watcher task is subscribed.
+        // iroh::Endpoint is Arc-backed so this is a cheap reference copy.
+        let raw_endpoint_for_relay = if needs_relay_registration {
+            Some(endpoint.clone())
+        } else {
+            None
+        };
+
         let endpoint = Arc::new(IrohEndpoint::new(endpoint));
         let local_url = Arc::new(RwLock::new(None));
         let connections = Arc::new(RwLock::new(HashMap::new()));
@@ -401,6 +469,27 @@ impl IrohTransport {
             handler.clone(),
             local_url.clone(),
         );
+
+        // The watcher is now subscribed. Insert the relay so that the address
+        // update it fires is captured by the running watcher task, ensuring
+        // local_url is populated before any outbound send can run.
+        if let Some(raw_ep) = raw_endpoint_for_relay {
+            let relay_url_str = config
+                .relay_url
+                .as_deref()
+                .expect("relay_url checked above");
+            let relay_url = RelayUrl::from_str(relay_url_str)
+                .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
+            raw_ep
+                .insert_relay(
+                    relay_url.clone(),
+                    Arc::new(RelayConfig {
+                        url: relay_url,
+                        quic: None,
+                    }),
+                )
+                .await;
+        }
 
         let accept_task = Self::spawn_accept_task(
             endpoint.clone(),
