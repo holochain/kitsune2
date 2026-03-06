@@ -183,6 +183,57 @@ pub fn blocking_put_auth(
     res.into()
 }
 
+/// Register an iroh endpoint public key with the relay on the bootstrap server.
+///
+/// After authenticating (which yields a bearer token), this function registers
+/// the 32-byte iroh public key with the server's relay allowlist so that the
+/// endpoint is permitted to connect to the relay.
+///
+/// This function should only be called when the server is configured with an
+/// auth hook server. Open relays do not expose the `relay/register` endpoint,
+/// and registration is not required when the relay has no access restrictions.
+///
+/// Note the `blocking_` prefix. This is a hint to the caller that if the
+/// function is used in an async context, it should be treated as a blocking
+/// operation.
+pub fn blocking_register_relay_key(
+    mut server_url: Url,
+    auth_material: &AuthMaterial,
+    key_bytes: &[u8; 32],
+) -> K2Result<()> {
+    server_url.set_path("authenticate");
+    let auth_url = server_url.as_str().to_string();
+    auth_material.priv_authenticate(&auth_url, AuthType::IfUninit)?;
+
+    server_url.set_path("relay/register");
+    let register_url = server_url.as_str().to_string();
+
+    fn priv_register(
+        register_url: &str,
+        key_bytes: &[u8; 32],
+        auth_material: &AuthMaterial,
+    ) -> Res<()> {
+        let token = auth_material.auth_token.lock().unwrap().clone().unwrap();
+        ureq::put(register_url)
+            .header("Content-Type", "application/octet-stream")
+            .header("Authorization", &format!("Bearer {token}"))
+            .send(key_bytes.as_ref())
+            .map(|_| ())
+            .into()
+    }
+
+    let mut res = priv_register(&register_url, key_bytes, auth_material);
+
+    if res.needs_auth() {
+        server_url.set_path("authenticate");
+        let auth_url = server_url.as_str().to_string();
+        auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
+        res = priv_register(&register_url, key_bytes, auth_material);
+    }
+
+    res.into()
+}
+
 /// Get all agent infos from the bootstrap server for the given space.
 ///
 /// Note the `blocking_` prefix. This is a hint to the caller that if the

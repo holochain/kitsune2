@@ -20,13 +20,14 @@ use std::{
 };
 use tracing::{debug, trace, warn};
 
+use futures::FutureExt;
 use iroh_relay_holochain::{
     ExportKeyingMaterial, KeyCache,
     protos::{
         handshake, relay::PER_CLIENT_SEND_QUEUE_DEPTH, streams::StreamError,
     },
     server::{
-        AccessConfig, Metrics, client::Config, clients::Clients,
+        Access, AccessConfig, Metrics, client::Config, clients::Clients,
         streams::RelayedStream,
     },
 };
@@ -270,10 +271,36 @@ pub async fn relay_probe_handler() -> (
 /// Creates a RelayState instance for the axum relay handler.
 ///
 /// This creates the state needed for the relay handler which can be mounted
-/// as a standard axum route.
+/// as a standard axum route. All connections are permitted.
 pub fn create_relay_state() -> RelayState {
     let key_cache = KeyCache::new(1024);
     let access = Arc::new(AccessConfig::Everyone);
+    let metrics = Arc::new(Metrics::default());
+    RelayState::new(key_cache, access, metrics)
+}
+
+/// Creates a RelayState that restricts connections to endpoints registered
+/// in the provided allowlist.
+///
+/// Use this when the bootstrap server is configured with an authentication
+/// hook server. Clients must call `PUT /authenticate` and then
+/// `PUT /relay/register` before their relay connection will be accepted.
+pub fn create_relay_state_with_allowlist(
+    allowlist: crate::RelayAllowlist,
+) -> RelayState {
+    let key_cache = KeyCache::new(1024);
+    let access =
+        Arc::new(AccessConfig::Restricted(Box::new(move |endpoint_id| {
+            let allowlist = allowlist.clone();
+            async move {
+                if allowlist.is_allowed(&endpoint_id) {
+                    Access::Allow
+                } else {
+                    Access::Deny
+                }
+            }
+            .boxed()
+        })));
     let metrics = Arc::new(Metrics::default());
     RelayState::new(key_cache, access, metrics)
 }

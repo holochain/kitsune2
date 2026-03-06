@@ -62,6 +62,8 @@ pub struct Server {
     tls_reload_handle: Option<tokio::task::AbortHandle>,
     shutdown: Option<axum_server::Handle>,
     auth_tracker: crate::auth::AuthTokenTracker,
+    #[cfg(feature = "iroh-relay")]
+    relay_allowlist: Option<crate::RelayAllowlist>,
 }
 
 impl Drop for Server {
@@ -96,6 +98,8 @@ impl Server {
                 tls_reload_handle,
                 shutdown,
                 auth_tracker,
+                #[cfg(feature = "iroh-relay")]
+                relay_allowlist,
             })) => Ok(Self {
                 t_join: Some(t_join),
                 addrs,
@@ -104,6 +108,8 @@ impl Server {
                 tls_reload_handle,
                 shutdown: Some(shutdown),
                 auth_tracker,
+                #[cfg(feature = "iroh-relay")]
+                relay_allowlist,
             }),
             Ok(Err(err)) => Err(err),
             Err(_) => Err(std::io::Error::other("failed to bind server")),
@@ -121,6 +127,11 @@ impl Server {
     pub fn auth_tracker(&self) -> &crate::auth::AuthTokenTracker {
         &self.auth_tracker
     }
+
+    #[cfg(feature = "iroh-relay")]
+    pub fn relay_allowlist(&self) -> Option<&crate::RelayAllowlist> {
+        self.relay_allowlist.as_ref()
+    }
 }
 
 struct Ready {
@@ -130,6 +141,8 @@ struct Ready {
     tls_reload_handle: Option<tokio::task::AbortHandle>,
     shutdown: axum_server::Handle,
     auth_tracker: crate::auth::AuthTokenTracker,
+    #[cfg(feature = "iroh-relay")]
+    relay_allowlist: Option<crate::RelayAllowlist>,
 }
 
 #[derive(Clone)]
@@ -144,6 +157,10 @@ pub struct AppState {
     // SBD-specific (keep for SBD websockets)
     #[cfg(feature = "sbd")]
     pub sbd_state: Option<crate::sbd::SbdState>,
+
+    // Iroh relay allowlist: Some when authentication hook server is configured
+    #[cfg(feature = "iroh-relay")]
+    pub relay_allowlist: Option<crate::RelayAllowlist>,
 }
 
 type BoxFut<'a, T> =
@@ -237,23 +254,38 @@ fn tokio_thread(
             let auth_tracker = crate::auth::AuthTokenTracker::default();
             let auth_config = Arc::new(config.auth.clone());
 
-            // CORS credentials based on auth config
-            let allow_credentials = config.auth.authentication_hook_server.is_some();
+            // CORS credentials only when auth is enabled AND specific origins are configured.
+            // Access-Control-Allow-Credentials cannot be combined with Access-Control-Allow-Origin: *
+            let allow_credentials = config.auth.authentication_hook_server.is_some()
+                && config
+                    .allowed_origins
+                    .as_ref()
+                    .is_some_and(|o| !o.is_empty());
 
-            let mut app = Router::<AppState>::new()
+            let app = Router::<AppState>::new()
                 .route("/authenticate", routing::put(handle_auth))
                 .route("/health", routing::get(handle_health_get))
                 .route("/bootstrap/{space}", routing::get(handle_boot_get))
                 .route(
                     "/bootstrap/{space}/{agent}",
                     routing::put(handle_boot_put),
-                )
+                );
+
+            let mut app = app
                 .layer(tower_http::cors::CorsLayer::new()
                     .allow_methods(tower_http::cors::AllowMethods::list([Method::GET, Method::PUT, Method::OPTIONS]))
                     .allow_headers(allowed_headers)
                     .allow_origin(origin)
                     .allow_credentials(allow_credentials)
                 );
+
+            #[cfg(feature = "iroh-relay")]
+            let relay_allowlist: Option<crate::RelayAllowlist> =
+                if config.auth.authentication_hook_server.is_some() {
+                    Some(crate::RelayAllowlist::default())
+                } else {
+                    None
+                };
 
             if !config.no_relay_server {
                 #[cfg(feature = "sbd")]
@@ -262,7 +294,17 @@ fn tokio_thread(
                 }
                 #[cfg(feature = "iroh-relay")]
                 {
-                    let relay_state = crate::iroh_relay_axum::create_relay_state();
+                    app = app.route(
+                        "/relay/register",
+                        routing::put(handle_relay_register),
+                    );
+
+                    let relay_state =
+                        if let Some(allowlist) = relay_allowlist.clone() {
+                            crate::iroh_relay_axum::create_relay_state_with_allowlist(allowlist)
+                        } else {
+                            crate::iroh_relay_axum::create_relay_state()
+                        };
                     let relay_router = Router::new()
                         .route("/relay", routing::get(crate::iroh_relay_axum::relay_handler))
                         .route("/ping", routing::get(crate::iroh_relay_axum::relay_probe_handler))
@@ -274,6 +316,8 @@ fn tokio_thread(
 
             // Clone auth_tracker before moving it into AppState so we can return it
             let auth_tracker_for_ready = auth_tracker.clone();
+            #[cfg(feature = "iroh-relay")]
+            let relay_allowlist_for_ready = relay_allowlist.clone();
 
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
@@ -294,6 +338,8 @@ fn tokio_thread(
                             })
                         }
                     },
+                    #[cfg(feature = "iroh-relay")]
+                    relay_allowlist,
                 });
 
             let receiver = HttpReceiver(h_recv);
@@ -380,6 +426,8 @@ fn tokio_thread(
                     tls_reload_handle,
                     shutdown: shutdown_handle,
                     auth_tracker: auth_tracker_for_ready,
+                    #[cfg(feature = "iroh-relay")]
+                    relay_allowlist: relay_allowlist_for_ready,
                 }))
                 .is_err()
             {
@@ -529,6 +577,66 @@ async fn handle_boot_put(
         HttpRequest::BootstrapPut { space, agent, body },
     )
     .await
+}
+
+#[cfg(feature = "iroh-relay")]
+async fn handle_relay_register(
+    extract::State(state): extract::State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: bytes::Bytes,
+) -> response::Response {
+    // Validate bearer token
+    let token: Option<Arc<str>> = headers
+        .get("Authorization")
+        .and_then(|t| t.to_str().ok())
+        .and_then(|t| t.strip_prefix("Bearer "))
+        .map(<Arc<str>>::from);
+
+    if !state.auth_tracker.is_valid(&token, &state.auth_config) {
+        return axum::response::IntoResponse::into_response((
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Unauthorized",
+        ));
+    }
+
+    // Expect exactly 32 bytes (iroh public key)
+    let key_bytes: &[u8; 32] = match body.as_ref().try_into() {
+        Ok(b) => b,
+        Err(_) => {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::BAD_REQUEST,
+                "Expected exactly 32 bytes (iroh public key)",
+            ));
+        }
+    };
+
+    let key = match iroh_base::PublicKey::from_bytes(key_bytes) {
+        Ok(k) => k,
+        Err(_) => {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::BAD_REQUEST,
+                "Invalid public key bytes",
+            ));
+        }
+    };
+
+    // Register the key in the allowlist (if auth is enabled).
+    // token must be Some here: is_valid returned true, and the allowlist is
+    // only present when an auth hook server is configured, which requires a
+    // bearer token for is_valid to succeed. Guard defensively anyway.
+    if let Some(allowlist) = &state.relay_allowlist {
+        let Some(token) = token else {
+            return axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error",
+            ));
+        };
+        allowlist.register(key, token);
+    }
+
+    axum::response::IntoResponse::into_response(axum::Json(serde_json::json!(
+        {}
+    )))
 }
 
 fn b64_to_bytes(
