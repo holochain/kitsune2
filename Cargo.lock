@@ -2748,6 +2748,8 @@ dependencies = [
  "kitsune2_transport_iroh",
  "mockall",
  "n0-watcher",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "schemars",
  "serde",
  "tokio",
@@ -3588,6 +3590,8 @@ dependencies = [
  "rand 0.9.2",
  "serde_json",
  "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

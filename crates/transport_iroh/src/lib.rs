@@ -202,6 +202,8 @@ mod connection_context;
 mod endpoint;
 mod stream;
 use connection_context::*;
+#[cfg(feature = "metrics")]
+mod metrics;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;

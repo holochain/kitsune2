@@ -149,6 +149,8 @@ sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
 iroh-relay-holochain = "0.96.1"
 iroh-base = "0.96.1"
+# used to test opentelemetry metrics
+opentelemetry_sdk = "0.30"
 
 # used to hash op data
 sha2 = "0.10.8"
