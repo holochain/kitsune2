@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.4](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.3...v0.4.0-dev.4)\] - 2026-03-10
+
+### Features
+
+- Gossip approximate DHT size and expose `dht_op_count` on `PeerMeta` as well as `local_op_count` on `GossipStateSummary` by @lucksus in [#469](https://github.com/holochain/kitsune2/pull/469)
+- Integrate iroh transport with relay authentication by @ThetaSinner in [#470](https://github.com/holochain/kitsune2/pull/470)
+
+### Automated Changes
+
+- *(deps)* Bump docker/metadata-action from 5 to 6 by @dependabot[bot] in [#473](https://github.com/holochain/kitsune2/pull/473)
+- *(deps)* Bump docker/build-push-action from 6 to 7 by @dependabot[bot] in [#472](https://github.com/holochain/kitsune2/pull/472)
+- *(deps)* Bump docker/login-action from 3 to 4 by @dependabot[bot] in [#471](https://github.com/holochain/kitsune2/pull/471)
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#468](https://github.com/holochain/kitsune2/pull/468)
+
 ## \[[0.4.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.2...v0.4.0-dev.3)\] - 2026-03-02
 
 ### Features
