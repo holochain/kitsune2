@@ -23,6 +23,11 @@ kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true, optional = true }
 # used for test-utils
 kitsune2_test_utils = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+# used for testing
+opentelemetry_sdk = { workspace = true, features = [
+  "testing",
+], optional = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = [
   "macros",
@@ -55,3 +60,5 @@ test-utils = [
   "kitsune2_test_utils?/relay",
   "iroh/test-utils",
 ]
+
+metrics = ["dep:opentelemetry", "dep:opentelemetry_sdk"]

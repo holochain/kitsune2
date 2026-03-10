@@ -1,4 +1,6 @@
 use crate::connection::DynConnection;
+#[cfg(feature = "metrics")]
+use crate::metrics::connection_counter_metric;
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
 use crate::{
     Connections, FRAME_HEADER_LEN, FrameType, decode_frame_header,
@@ -174,6 +176,9 @@ impl ConnectionContext {
         self.connection.close(0u8, reason.as_bytes());
         if let Some(peer) = self.remote_url() {
             self.handler.peer_disconnect(peer, Some(reason));
+            // Record connection counter metric.
+            #[cfg(feature = "metrics")]
+            connection_counter_metric().add(-1, &[]);
         }
     }
 
@@ -224,7 +229,7 @@ impl ConnectionContext {
                             connections.clone(),
                             local_url,
                         )
-                        .await
+                            .await
                         {
                             error!(?err, "Stream closed by remote");
                             // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
@@ -256,7 +261,7 @@ impl ConnectionContext {
                     .remove(&remote_url);
                 if !skip_unresponsive {
                     info!(?remote_url, "Setting peer unresponsive");
-                    if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await{
+                    if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await {
                         warn!(?err, ?remote_url, "Failed to set peer unresponsive");
                     }
                 } else {
@@ -298,7 +303,7 @@ impl ConnectionContext {
     ) -> K2Result<()> {
         if !ctx.preflight_received() {
             let result = tokio::time::timeout(Duration::from_secs(10), async {
-                let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&recv_stream,ctx.max_frame_bytes).await?;
+                let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&recv_stream, ctx.max_frame_bytes).await?;
 
                 ctx.set_remote_url(remote_url.clone());
                 ctx.handler
@@ -319,7 +324,7 @@ impl ConnectionContext {
                             local_url.clone(),
                             return_preflight,
                         )
-                        .await?;
+                            .await?;
                         info!(peer = ?ctx.connection.remote_id(),?local_url, "Sent preflight to peer from URL");
                         ctx.set_preflight_sent();
                     } else {
@@ -330,16 +335,19 @@ impl ConnectionContext {
 
                 Ok(remote_url)
             })
-        .await
-        .map_err(|err| {
-            K2Error::other_src("timed out waiting for preflight", err)
-        });
+                .await
+                .map_err(|err| {
+                    K2Error::other_src("timed out waiting for preflight", err)
+                });
             match result {
                 Ok(Ok(remote_url)) => {
                     connections
                         .write()
                         .expect("poisoned")
                         .insert(remote_url, ctx.clone());
+                    // Record connection counter metric.
+                    #[cfg(feature = "metrics")]
+                    connection_counter_metric().add(1, &[]);
                 }
                 Ok(Err(err)) | Err(err) => {
                     error!(?err, "failed to receive preflight frame");
