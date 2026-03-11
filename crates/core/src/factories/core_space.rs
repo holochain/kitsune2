@@ -106,14 +106,24 @@ impl SpaceFactory for CoreSpaceFactory {
                 .blocks
                 .create(builder.clone(), space_id.clone())
                 .await?;
+            let known_peers = builder
+                .known_peers
+                .create(builder.clone(), space_id.clone())
+                .await?;
             let peer_store = builder
                 .peer_store
-                .create(builder.clone(), space_id.clone(), blocks.clone())
+                .create(
+                    builder.clone(),
+                    space_id.clone(),
+                    blocks.clone(),
+                    known_peers.clone(),
+                )
                 .await?;
 
             let peer_access_state = Arc::new(CorePeerAccessState::new(
-                peer_store.clone(),
+                known_peers,
                 blocks.clone(),
+                &peer_store,
             )?);
 
             let bootstrap = builder

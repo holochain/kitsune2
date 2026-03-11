@@ -86,6 +86,7 @@ pub trait PeerStoreFactory: 'static + Send + Sync + std::fmt::Debug {
         builder: Arc<Builder>,
         space_id: SpaceId,
         blocks: DynBlocks,
+        known_peers: DynKnownPeers,
     ) -> BoxFut<'static, K2Result<DynPeerStore>>;
 }
 

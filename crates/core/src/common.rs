@@ -174,9 +174,14 @@ mod tests {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks)
+            .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
             .await
             .unwrap();
         let local_agent_store = builder
@@ -229,10 +234,14 @@ mod tests {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
-
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks)
+            .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
             .await
             .unwrap();
         let local_agent_store = builder
@@ -292,10 +301,14 @@ mod tests {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
-
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks)
+            .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
             .await
             .unwrap();
         let local_agent_store = builder
@@ -355,10 +368,14 @@ mod tests {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
-
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks)
+            .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
             .await
             .unwrap();
         let local_agent_store = builder
@@ -436,10 +453,14 @@ mod tests {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
-
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks)
+            .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
             .await
             .unwrap();
         let local_agent_store = builder
@@ -524,10 +545,14 @@ mod tests {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
-
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks)
+            .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
             .await
             .unwrap();
         let local_agent_store = builder
@@ -594,7 +619,16 @@ mod tests {
 
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks.clone())
+            .create(
+                builder.clone(),
+                TEST_SPACE_ID,
+                blocks.clone(),
+                builder
+                    .known_peers
+                    .create(builder.clone(), TEST_SPACE_ID)
+                    .await
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -623,7 +657,16 @@ mod tests {
 
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), TEST_SPACE_ID, blocks.clone())
+            .create(
+                builder.clone(),
+                TEST_SPACE_ID,
+                blocks.clone(),
+                builder
+                    .known_peers
+                    .create(builder.clone(), TEST_SPACE_ID)
+                    .await
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
