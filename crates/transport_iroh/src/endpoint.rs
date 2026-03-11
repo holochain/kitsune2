@@ -33,6 +33,9 @@ pub(crate) trait Endpoint:
     /// Returns None if the endpoint is closed.
     fn accept(&self) -> BoxFut<'_, Option<K2Result<DynConnection>>>;
 
+    /// Get the current EndpointAddr (addresses + node ID).
+    fn addr(&self) -> EndpointAddr;
+
     /// Connects to the given endpoint address.
     fn connect(
         &self,
@@ -53,6 +56,10 @@ impl IrohEndpoint {
 }
 
 impl Endpoint for IrohEndpoint {
+    fn addr(&self) -> EndpointAddr {
+        self.inner.addr()
+    }
+
     fn watch_addr(&self) -> Box<dyn EndpointAddrWatcher> {
         Box::new(IrohWatcher {
             inner: self.inner.watch_addr(),
