@@ -449,6 +449,14 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+
+    /// Get the local socket addresses discovered by the transport.
+    /// Returns direct addresses (LAN + reflexive/public) that can be used
+    /// as WebRTC ICE candidates. Default returns empty vec for transports
+    /// that do not support address discovery.
+    fn local_socket_addrs(&self) -> BoxFut<'_, K2Result<Vec<std::net::SocketAddr>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 /// Trait-object [TxImp].
@@ -518,6 +526,12 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
+
+    /// Get the local socket addresses discovered by the transport.
+    /// Returns direct addresses that can be used as WebRTC ICE candidates.
+    /// An empty list may mean either that no addresses have been discovered yet
+    /// or that the underlying transport does not expose socket addresses.
+    fn local_socket_addrs(&self) -> BoxFut<'_, K2Result<Vec<std::net::SocketAddr>>>;
 }
 
 /// Trait-object [Transport].
@@ -728,6 +742,10 @@ impl Transport for DefaultTransport {
                 blocked_message_counts: blocked_message_counts.clone(),
             })
         })
+    }
+
+    fn local_socket_addrs(&self) -> BoxFut<'_, K2Result<Vec<std::net::SocketAddr>>> {
+        self.imp.local_socket_addrs()
     }
 }
 
