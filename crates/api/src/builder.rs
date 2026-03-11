@@ -73,6 +73,10 @@ pub struct Builder {
 
     /// The [`BlocksFactory`] to be used for creating [`Blocks`] instances.
     pub blocks: DynBlocksFactory,
+
+    /// The [`KnownPeersFactory`] to be used for creating [`KnownPeers`]
+    /// instances.
+    pub known_peers: DynKnownPeersFactory,
 }
 
 impl Builder {
@@ -100,6 +104,7 @@ impl Builder {
                 local_agent_store,
                 publish,
                 blocks,
+                known_peers,
             } = &mut self;
 
             kitsune.default_config(config)?;
@@ -115,6 +120,7 @@ impl Builder {
             local_agent_store.default_config(config)?;
             publish.default_config(config)?;
             blocks.default_config(config)?;
+            known_peers.default_config(config)?;
 
             config.mark_defaults_set();
         }
@@ -137,6 +143,7 @@ impl Builder {
         self.local_agent_store.validate_config(&self.config)?;
         self.publish.validate_config(&self.config)?;
         self.blocks.validate_config(&self.config)?;
+        self.known_peers.validate_config(&self.config)?;
 
         self.config.mark_validated();
 

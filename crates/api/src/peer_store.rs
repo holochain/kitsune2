@@ -81,11 +81,18 @@ pub trait PeerStoreFactory: 'static + Send + Sync + std::fmt::Debug {
     fn validate_config(&self, config: &Config) -> K2Result<()>;
 
     /// Construct a peer store instance.
+    ///
+    /// Implementations **must** call [`KnownPeers::record`] with every
+    /// batch of agent infos *before* applying any block or expiry
+    /// filtering.  This ensures the access control layer can always
+    /// resolve a peer URL back to its agent IDs, even for agents that
+    /// have been blocked and removed from the peer store.
     fn create(
         &self,
         builder: Arc<Builder>,
         space_id: SpaceId,
         blocks: DynBlocks,
+        known_peers: DynKnownPeers,
     ) -> BoxFut<'static, K2Result<DynPeerStore>>;
 }
 
