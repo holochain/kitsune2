@@ -82,10 +82,10 @@ impl Inner {
     fn record(&mut self, agent_infos: Vec<Arc<AgentInfoSigned>>) {
         for agent_info in agent_infos {
             // Only keep the most recent info for each agent.
-            if let Some(existing) = self.store.get(&agent_info.agent) {
-                if existing.created_at >= agent_info.created_at {
-                    continue;
-                }
+            if self.store.get(&agent_info.agent).is_some_and(|existing| {
+                existing.created_at >= agent_info.created_at
+            }) {
+                continue;
             }
             self.store.insert(agent_info.agent.clone(), agent_info);
         }

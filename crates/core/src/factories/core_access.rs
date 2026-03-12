@@ -190,7 +190,7 @@ mod test {
     const AGENT_2: AgentId = AgentId(Id(bytes::Bytes::from_static(b"agent2")));
 
     fn make_url(s: &str) -> Url {
-        Url::from_str(&format!("ws://a.b:80/{s}")).unwrap()
+        Url::from_str(format!("ws://a.b:80/{s}")).unwrap()
     }
 
     fn make_peer_store(
@@ -217,8 +217,7 @@ mod test {
         let url = make_url("shared");
         let blocks = Arc::new(MemBlocks::default());
         let known_peers = Arc::new(MemKnownPeers::default());
-        let peer_store =
-            make_peer_store(blocks.clone(), known_peers.clone());
+        let peer_store = make_peer_store(blocks.clone(), known_peers.clone());
 
         let access_state = CorePeerAccessState::new(
             known_peers.clone(),
@@ -241,17 +240,13 @@ mod test {
             ..Default::default()
         }
         .build(TestLocalAgent::default());
-        peer_store
-            .insert(vec![info1, info2])
-            .await
-            .unwrap();
+        peer_store.insert(vec![info1, info2]).await.unwrap();
 
         // Allow async listener tasks to complete.
         tokio::task::yield_now().await;
 
         // Both agents present, neither blocked → Granted.
-        let decision =
-            access_state.get_access_decision(url.clone()).unwrap();
+        let decision = access_state.get_access_decision(url.clone()).unwrap();
         assert_eq!(
             decision.map(|d| d.decision),
             Some(AccessDecision::Granted),
@@ -267,8 +262,7 @@ mod test {
 
         // agent_1 is now blocked; even though agent_2 (non-blocked) is still
         // at the same URL, the URL must be Blocked.
-        let decision =
-            access_state.get_access_decision(url.clone()).unwrap();
+        let decision = access_state.get_access_decision(url.clone()).unwrap();
         assert_eq!(
             decision.map(|d| d.decision),
             Some(AccessDecision::Blocked),
@@ -282,8 +276,7 @@ mod test {
         let url = make_url("clean");
         let blocks = Arc::new(MemBlocks::default());
         let known_peers = Arc::new(MemKnownPeers::default());
-        let peer_store =
-            make_peer_store(blocks.clone(), known_peers.clone());
+        let peer_store = make_peer_store(blocks.clone(), known_peers.clone());
 
         let access_state = CorePeerAccessState::new(
             known_peers.clone(),
@@ -301,11 +294,7 @@ mod test {
         peer_store.insert(vec![info]).await.unwrap();
         tokio::task::yield_now().await;
 
-        let decision =
-            access_state.get_access_decision(url.clone()).unwrap();
-        assert_eq!(
-            decision.map(|d| d.decision),
-            Some(AccessDecision::Granted)
-        );
+        let decision = access_state.get_access_decision(url.clone()).unwrap();
+        assert_eq!(decision.map(|d| d.decision), Some(AccessDecision::Granted));
     }
 }
