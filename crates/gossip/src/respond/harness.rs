@@ -69,6 +69,11 @@ impl RespondTestHarness {
             .create(builder.clone(), TEST_SPACE_ID)
             .await
             .unwrap();
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), TEST_SPACE_ID)
+            .await
+            .unwrap();
 
         let config = Arc::new(config);
         Self {
@@ -80,7 +85,7 @@ impl RespondTestHarness {
                 space_id: TEST_SPACE_ID,
                 peer_store: builder
                     .peer_store
-                    .create(builder.clone(), TEST_SPACE_ID, blocks)
+                    .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
                     .await
                     .unwrap(),
                 local_agent_store: builder
