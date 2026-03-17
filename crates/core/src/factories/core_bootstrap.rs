@@ -1,5 +1,6 @@
 //! The core bootstrap implementation provided by Kitsune2.
 
+use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
 
@@ -12,6 +13,11 @@ pub mod config {
     pub struct CoreBootstrapConfig {
         /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
         pub server_url: Option<String>,
+
+        /// Base64-encoded auth material for connecting to bootstrap/signal
+        /// services. If set, this overrides the builder-level auth_material
+        /// for this specific space.
+        pub auth_material_base64: Option<String>,
 
         /// Minimum backoff in ms to use for both push and poll retry loops.
         ///
@@ -30,6 +36,7 @@ pub mod config {
         fn default() -> Self {
             Self {
                 server_url: None,
+                auth_material_base64: None,
                 backoff_min_ms: 1000 * 5,
                 backoff_max_ms: 1000 * 60 * 5,
             }
@@ -160,11 +167,20 @@ impl CoreBootstrap {
         peer_store: DynPeerStore,
         space: SpaceId,
     ) -> Self {
+        // Prefer per-space auth_material from config over builder-level.
+        let auth_material_bytes: Option<Vec<u8>> = config
+            .auth_material_base64
+            .as_ref()
+            .map(|b64| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(b64)
+                    .expect("invalid base64 in auth_material_base64")
+            })
+            .or_else(|| builder.auth_material.clone());
+
         let auth_material =
-            Arc::new(builder.auth_material.as_ref().map(|auth_material| {
-                kitsune2_bootstrap_client::AuthMaterial::new(
-                    auth_material.clone(),
-                )
+            Arc::new(auth_material_bytes.map(|bytes| {
+                kitsune2_bootstrap_client::AuthMaterial::new(bytes)
             }));
 
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
