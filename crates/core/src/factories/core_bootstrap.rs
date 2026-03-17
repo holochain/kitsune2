@@ -108,6 +108,17 @@ impl CoreBootstrapFactory {
             }
         }
 
+        if let Some(b64) = &config.core_bootstrap.auth_material_base64 {
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                    K2Error::other_src(
+                        "invalid base64 in auth_material_base64",
+                        e,
+                    )
+                })?;
+        }
+
         Ok(())
     }
 }
@@ -168,13 +179,14 @@ impl CoreBootstrap {
         space: SpaceId,
     ) -> Self {
         // Prefer per-space auth_material from config over builder-level.
+        // Safety: auth_material_base64 is validated during config validation.
         let auth_material_bytes: Option<Vec<u8>> = config
             .auth_material_base64
             .as_ref()
             .map(|b64| {
                 base64::engine::general_purpose::STANDARD
                     .decode(b64)
-                    .expect("invalid base64 in auth_material_base64")
+                    .expect("validated during config validation")
             })
             .or_else(|| builder.auth_material.clone());
 
