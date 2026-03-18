@@ -466,6 +466,12 @@ async fn handle_auth(
                 "Unauthorized",
             ))
         }
+        Err(crate::auth::AuthenticateError::Pending) => {
+            tracing::debug!("/authenticate: PENDING");
+            axum::response::IntoResponse::into_response(
+                axum::http::StatusCode::ACCEPTED,
+            )
+        }
         Err(crate::auth::AuthenticateError::HookServerError(err)) => {
             tracing::debug!(?err, "/authenticate: BAD_GATEWAY");
             axum::response::IntoResponse::into_response((
