@@ -128,6 +128,8 @@ impl AuthTokenTracker {
 pub enum AuthenticateError {
     /// The client provided invalid authentication credentials.
     Unauthorized,
+    /// The hook server accepted the request but the key is pending approval.
+    Pending,
     /// There was an error communicating with the hook server.
     HookServerError(Box<dyn std::error::Error + Send + Sync>),
     /// Some other internal error occurred.
@@ -155,6 +157,7 @@ pub async fn process_authenticate(
                 token_tracker.register_token(token.clone());
                 Ok(token)
             }
+            Err(AuthenticateError::Pending) => Err(AuthenticateError::Pending),
             Err(err) => {
                 auth_failures.add(1, &[]);
                 Err(err)
@@ -196,7 +199,12 @@ async fn call_hook_server(
 
     match response {
         Ok(response) => {
-            // Parse JSON response
+            // 202 ACCEPTED means the key is pending approval — no token yet.
+            if response.status() == 202 {
+                return Err(AuthenticateError::Pending);
+            }
+
+            // Parse JSON response (expected for 200 OK)
             let body = response
                 .into_body()
                 .read_to_string()
