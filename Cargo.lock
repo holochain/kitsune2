@@ -2738,11 +2738,14 @@ dependencies = [
 name = "kitsune2_transport_iroh"
 version = "0.4.0-dev.4"
 dependencies = [
+ "axum",
+ "base64",
  "bytes",
  "iroh",
  "iroh-relay-holochain",
  "kitsune2_api",
  "kitsune2_bootstrap_client",
+ "kitsune2_bootstrap_srv",
  "kitsune2_core",
  "kitsune2_test_utils",
  "kitsune2_transport_iroh",
@@ -2750,8 +2753,10 @@ dependencies = [
  "n0-watcher",
  "opentelemetry",
  "opentelemetry_sdk",
+ "rustls",
  "schemars",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "url",

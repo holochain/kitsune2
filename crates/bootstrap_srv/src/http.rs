@@ -188,14 +188,23 @@ fn tokio_thread(
             }
         };
 
-    let origin = match &config.allowed_origins {
+    let auth_enabled = config.auth.authentication_hook_server.is_some();
+
+    // When specific origins are listed, use them and allow credentials (if auth is on).
+    // When no origins are listed and auth is on, mirror the request origin back — this
+    // satisfies the CORS spec (credentials cannot be paired with `*`) while still
+    // accepting requests from any origin, including browsers.
+    // When auth is off, allow any origin without credentials.
+    let (origin, allow_credentials) = match &config.allowed_origins {
         Some(origins) if !origins.is_empty() => {
             match origins
                 .iter()
                 .map(|o| HeaderValue::from_str(o.as_str()))
                 .collect::<Result<Vec<_>, _>>()
             {
-                Ok(values) => tower_http::cors::AllowOrigin::list(values),
+                Ok(values) => {
+                    (tower_http::cors::AllowOrigin::list(values), auth_enabled)
+                }
                 Err(err) => {
                     if ready.send(Err(std::io::Error::other(err))).is_err() {
                         tracing::error!("Failed to send ready error");
@@ -204,7 +213,10 @@ fn tokio_thread(
                 }
             }
         }
-        _ => tower_http::cors::AllowOrigin::any(),
+        _ if auth_enabled => {
+            (tower_http::cors::AllowOrigin::mirror_request(), true)
+        }
+        _ => (tower_http::cors::AllowOrigin::any(), false),
     };
 
     tokio::runtime::Builder::new_multi_thread()
@@ -253,14 +265,6 @@ fn tokio_thread(
                 .build();
             let auth_tracker = crate::auth::AuthTokenTracker::default();
             let auth_config = Arc::new(config.auth.clone());
-
-            // CORS credentials only when auth is enabled AND specific origins are configured.
-            // Access-Control-Allow-Credentials cannot be combined with Access-Control-Allow-Origin: *
-            let allow_credentials = config.auth.authentication_hook_server.is_some()
-                && config
-                    .allowed_origins
-                    .as_ref()
-                    .is_some_and(|o| !o.is_empty());
 
             let app = Router::<AppState>::new()
                 .route("/authenticate", routing::put(handle_auth))
