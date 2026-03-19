@@ -869,6 +869,13 @@ impl TxImp for IrohTransport {
                 format!("{relay_url}/")
             };
 
+            info!(
+                %relay_url_str,
+                has_auth_material = auth_material.is_some(),
+                auth_material_len = auth_material.as_ref().map(|a| a.len()),
+                "IrohTransport::insert_relay called"
+            );
+
             // If auth material is provided, register our public key
             // with the relay server before connecting.
             if let Some(auth_bytes) = auth_material {
@@ -883,10 +890,17 @@ impl TxImp for IrohTransport {
                 server_url.set_path("/");
 
                 let key_bytes = endpoint.id_bytes();
+
+                info!(
+                    %server_url,
+                    endpoint_key = ?key_bytes,
+                    "Registering endpoint public key with relay server (authenticate + relay/register)"
+                );
+
                 let auth_material =
                     kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
 
-                tokio::task::spawn_blocking(move || {
+                match tokio::task::spawn_blocking(move || {
                     kitsune2_bootstrap_client::blocking_register_relay_key(
                         server_url,
                         &auth_material,
@@ -894,22 +908,62 @@ impl TxImp for IrohTransport {
                     )
                 })
                 .await
-                .map_err(|e| {
-                    K2Error::other_src("Registration task failed", e)
-                })??;
+                {
+                    Ok(Ok(())) => {
+                        info!(
+                            %relay_url_str,
+                            "Relay key registration successful"
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        error!(
+                            %relay_url_str,
+                            ?e,
+                            "Relay key registration FAILED (server rejected)"
+                        );
+                        return Err(e);
+                    }
+                    Err(e) => {
+                        error!(
+                            %relay_url_str,
+                            ?e,
+                            "Relay key registration FAILED (task error)"
+                        );
+                        return Err(K2Error::other_src(
+                            "Registration task failed",
+                            e,
+                        ));
+                    }
+                }
+            } else {
+                info!(
+                    %relay_url_str,
+                    "No auth material provided, skipping relay key registration"
+                );
             }
 
             let relay_url = RelayUrl::from_str(&relay_url_str)
                 .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
+
+            info!(
+                %relay_url,
+                "Inserting relay into iroh endpoint"
+            );
+
             endpoint
                 .insert_relay(
                     relay_url.clone(),
                     Arc::new(RelayConfig {
-                        url: relay_url,
+                        url: relay_url.clone(),
                         quic: None,
                     }),
                 )
                 .await;
+
+            info!(
+                %relay_url,
+                "Relay inserted into iroh endpoint successfully"
+            );
 
             Ok(())
         })

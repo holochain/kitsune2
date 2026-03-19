@@ -121,6 +121,19 @@ impl SpaceFactory for CoreSpaceFactory {
                 if let Some(relay_url) =
                     &bootstrap_config.core_bootstrap.relay_url
                 {
+                    let has_config_auth = bootstrap_config
+                        .core_bootstrap
+                        .auth_material_base64
+                        .is_some();
+                    let has_builder_auth = builder.auth_material.is_some();
+                    tracing::info!(
+                        ?space_id,
+                        %relay_url,
+                        has_config_auth,
+                        has_builder_auth,
+                        "Per-space relay URL override found, inserting relay into transport"
+                    );
+
                     let auth_material = bootstrap_config
                         .core_bootstrap
                         .auth_material_base64
@@ -132,7 +145,31 @@ impl SpaceFactory for CoreSpaceFactory {
                         })
                         .or_else(|| builder.auth_material.clone());
 
+                    tracing::info!(
+                        ?space_id,
+                        %relay_url,
+                        auth_source = if bootstrap_config.core_bootstrap.auth_material_base64.is_some() {
+                            "per-space config"
+                        } else if builder.auth_material.is_some() {
+                            "builder (global)"
+                        } else {
+                            "none"
+                        },
+                        "Calling insert_relay with auth_material"
+                    );
+
                     tx.insert_relay(relay_url.clone(), auth_material).await?;
+
+                    tracing::info!(
+                        ?space_id,
+                        %relay_url,
+                        "Per-space relay inserted successfully"
+                    );
+                } else {
+                    tracing::info!(
+                        ?space_id,
+                        "No per-space relay URL override configured"
+                    );
                 }
             }
 
