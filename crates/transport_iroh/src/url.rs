@@ -62,15 +62,32 @@ pub(super) fn endpoint_from_url(
         K2Error::other_src("failed to convert peer id to endpoint id", err)
     })?;
 
-    // Use the configured relay URL if available, otherwise reconstruct from peer URL
+    // Use the configured relay URL only if its host matches the peer URL's host.
+    // Peers on different relays (e.g. per-space overrides) will have a different
+    // host in their URL, so we reconstruct the relay URL from the peer URL instead.
+    let peer_addr = url.addr();
     let relay_url = if let Some(configured) = configured_relay_url {
-        RelayUrl::from_str(configured).map_err(|err| {
-            K2Error::other_src("invalid configured relay url", err)
-        })?
+        let configured_parsed = ::url::Url::from_str(configured).ok();
+        let configured_host = configured_parsed
+            .as_ref()
+            .and_then(|u| u.host_str().map(|h| h.to_string()));
+        let peer_host = peer_addr.split(':').next().map(|h| h.to_string());
+
+        if configured_host == peer_host {
+            RelayUrl::from_str(configured).map_err(|err| {
+                K2Error::other_src("invalid configured relay url", err)
+            })?
+        } else {
+            // Peer is on a different relay — reconstruct from the peer URL
+            let relay_scheme = if url.uses_tls() { "https" } else { "http" };
+            let relay_url = format!("{relay_scheme}://{peer_addr}");
+            let relay_url = ::url::Url::from_str(&relay_url)
+                .map_err(|err| K2Error::other_src("invalid relay url", err))?;
+            RelayUrl::from(relay_url)
+        }
     } else {
-        let relay_addr = url.addr();
         let relay_scheme = if url.uses_tls() { "https" } else { "http" };
-        let relay_url = format!("{relay_scheme}://{relay_addr}");
+        let relay_url = format!("{relay_scheme}://{peer_addr}");
         let relay_url = ::url::Url::from_str(&relay_url)
             .map_err(|err| K2Error::other_src("invalid relay url", err))?;
         RelayUrl::from(relay_url)
