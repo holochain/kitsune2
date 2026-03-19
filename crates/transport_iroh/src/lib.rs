@@ -947,7 +947,7 @@ impl TxImp for IrohTransport {
                 .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
 
             info!(
-                %relay_url,
+                %relay_url_str,
                 "Inserting relay into iroh endpoint"
             );
 

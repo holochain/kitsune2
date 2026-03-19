@@ -160,18 +160,20 @@ impl SpaceFactory for CoreSpaceFactory {
                         "Calling insert_relay with auth_material"
                     );
 
-                    tx.insert_relay(relay_url.clone(), auth_material).await?;
+                    let per_space_relay_url = tx.insert_relay(relay_url.clone(), auth_material).await?;
 
                     tracing::info!(
                         ?space_id,
                         %relay_url,
                         "Per-space relay inserted successfully"
                     );
+                    per_space_relay_url
                 } else {
                     tracing::info!(
                         ?space_id,
                         "No per-space relay URL override configured"
                     );
+                    None
                 }
             } else {
                 None
