@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.5](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.4...v0.4.0-dev.5)\] - 2026-03-19
+
+### Features
+
+- Add connection up down counter metric by @jost-s in [#475](https://github.com/holochain/kitsune2/pull/475)
+
+### Bug Fixes
+
+- Handle HTTP 202 pending-approval response in bootstrap auth by @ThetaSinner in [#480](https://github.com/holochain/kitsune2/pull/480)
+- Mirror request origin for auth-enabled servers without configured origins by @ThetaSinner
+
 ## \[[0.4.0-dev.4](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.3...v0.4.0-dev.4)\] - 2026-03-10
 
 ### Features
