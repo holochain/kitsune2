@@ -351,6 +351,14 @@ struct IrohTransport {
     watch_addr_task: AbortHandle,
     accept_task: AbortHandle,
     config: IrohTransportConfig,
+    /// Maps relay host -> full relay URL (with path) for dynamically inserted relays.
+    /// Used by `endpoint_from_url` to reconstruct the correct relay URL for peers
+    /// on non-global relays.
+    inserted_relays: Arc<RwLock<HashMap<String, String>>>,
+    /// Maps relay host -> our per-space URL on that relay.
+    /// Used to send the correct local URL in preflights for connections
+    /// through non-global relays.
+    per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
 }
 
 impl Drop for IrohTransport {
@@ -494,12 +502,15 @@ impl IrohTransport {
                 .await;
         }
 
+        let per_space_urls = Arc::new(RwLock::new(HashMap::new()));
+
         let accept_task = Self::spawn_accept_task(
             endpoint.clone(),
             handler.clone(),
             connections.clone(),
             local_url.clone(),
             config.max_frame_bytes,
+            per_space_urls.clone(),
         );
 
         let out: DynTxImp = Arc::new(Self {
@@ -511,6 +522,8 @@ impl IrohTransport {
             watch_addr_task,
             accept_task,
             config,
+            inserted_relays: Arc::new(RwLock::new(HashMap::new())),
+            per_space_urls,
         });
         Ok(out)
     }
@@ -566,6 +579,7 @@ impl IrohTransport {
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
         max_frame_bytes: usize,
+        per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
     ) -> AbortHandle {
         tokio::spawn(async move {
             loop {
@@ -590,6 +604,7 @@ impl IrohTransport {
                             opened_at_s: conn_opened_at_s,
                             connections: connections.clone(),
                             local_url: local_url.clone(),
+                            per_space_urls: per_space_urls.clone(),
                             max_frame_bytes,
                         });
                     }
@@ -608,6 +623,29 @@ impl IrohTransport {
         .abort_handle()
     }
 
+    /// Returns the correct local URL for a connection to the given remote.
+    /// If the remote is on an inserted (per-space) relay, returns our URL
+    /// on that relay. Otherwise returns the global local URL.
+    fn local_url_for_remote(
+        remote_url: &Url,
+        per_space_urls: &HashMap<String, Url>,
+        global_local_url: &Option<Url>,
+    ) -> Option<Url> {
+        // Extract host from remote URL
+        let remote_host = remote_url.addr().split(':').next().unwrap_or("");
+
+        if let Some(per_space_url) = per_space_urls.get(remote_host) {
+            info!(
+                %remote_url,
+                %per_space_url,
+                "Using per-space URL for preflight"
+            );
+            Some(per_space_url.clone())
+        } else {
+            global_local_url.clone()
+        }
+    }
+
     /// Creates a new connection and its associated context for a peer.
     ///
     /// The connection is established and the preflight frame is sent. If this
@@ -621,6 +659,7 @@ impl IrohTransport {
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
         config: &IrohTransportConfig,
+        per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
         let conn = match tokio::time::timeout(
@@ -649,7 +688,16 @@ impl IrohTransport {
             .as_secs();
 
         // Send preflight as first message on the new connection.
-        let maybe_local_url = local_url.read().expect("poisoned").clone();
+        // Use per-space URL if the remote is on an inserted relay,
+        // otherwise use the global local URL.
+        let global_local_url = local_url.read().expect("poisoned").clone();
+        let per_space_urls_snapshot =
+            per_space_urls.read().expect("poisoned").clone();
+        let maybe_local_url = Self::local_url_for_remote(
+            &remote_url,
+            &per_space_urls_snapshot,
+            &global_local_url,
+        );
         if let Some(current_local_url) = maybe_local_url {
             let preflight_bytes =
                 handler.peer_connect(remote_url.clone()).await?;
@@ -662,6 +710,7 @@ impl IrohTransport {
                 opened_at_s: conn_opened_at_s,
                 connections: connections.clone(),
                 local_url: local_url.clone(),
+                per_space_urls: per_space_urls.clone(),
                 max_frame_bytes: config.max_frame_bytes,
             });
 
@@ -682,6 +731,10 @@ impl IrohTransport {
 
             Ok(ctx)
         } else {
+            error!(
+                %remote_url,
+                "DEBUG: local_url is None - endpoint hasn't connected to any relay yet"
+            );
             Err(K2Error::other(
                 "Connection attempted before home relay URL is known",
             ))
@@ -715,9 +768,12 @@ impl TxImp for IrohTransport {
         let connection_locks = self.connection_locks.clone();
 
         Box::pin(async move {
+            let inserted_relays_map =
+                self.inserted_relays.read().expect("poisoned").clone();
             let remote = match endpoint_from_url(
                 &remote_url,
                 self.config.relay_url.as_deref(),
+                &inserted_relays_map,
             ) {
                 Err(e) => {
                     // If we cannot convert the url to an endpoint address, mark the peer unresponsive
@@ -784,6 +840,7 @@ impl TxImp for IrohTransport {
                         connections.clone(),
                         local_url.clone(),
                         &self.config,
+                        self.per_space_urls.clone(),
                     )
                     .await?;
 
@@ -863,6 +920,8 @@ impl TxImp for IrohTransport {
         auth_material: Option<Vec<u8>>,
     ) -> BoxFut<'_, K2Result<Option<Url>>> {
         let endpoint = self.endpoint.clone();
+        let inserted_relays = self.inserted_relays.clone();
+        let per_space_urls = self.per_space_urls.clone();
         Box::pin(async move {
             let relay_url_str = if relay_url.ends_with('/') {
                 relay_url
@@ -925,8 +984,36 @@ impl TxImp for IrohTransport {
             let per_space_url =
                 canonicalize_relay_url(&relay_url_parsed, endpoint_id)?;
 
+            // Store the relay URL keyed by host, ensuring the /relay/ path
+            // is present. iroh expects the relay WebSocket at /relay, and
+            // the configured URL may omit it (e.g. "https://host/").
+            // The global relay config always includes /relay/ so this only
+            // affects dynamically inserted relays.
+            if let Some(host) = relay_url_parsed.host_str() {
+                let mut stored_url = ::url::Url::parse(&relay_url_str)
+                    .map_err(|e| K2Error::other_src("invalid relay url", e))?;
+                if !stored_url.path().contains("relay") {
+                    stored_url.set_path("/relay/");
+                }
+                inserted_relays
+                    .write()
+                    .expect("poisoned")
+                    .insert(host.to_string(), stored_url.to_string());
+            }
+
+            // Store our per-space URL keyed by relay host, so that
+            // preflights on connections through this relay advertise the
+            // correct URL to the remote peer.
+            if let Some(host) = relay_url_parsed.host_str() {
+                per_space_urls
+                    .write()
+                    .expect("poisoned")
+                    .insert(host.to_string(), per_space_url.clone());
+            }
+
             info!(
                 %per_space_url,
+                %relay_url_str,
                 "insert_relay: constructed per-space URL on new relay"
             );
 

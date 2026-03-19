@@ -154,7 +154,7 @@ fn endpoint_from_url_valid_https() {
     let endpoint_id = test_endpoint_id();
     let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
         .unwrap();
-    let result = endpoint_from_url(&url, None).unwrap();
+    let result = endpoint_from_url(&url, None, &Default::default()).unwrap();
     let expected_id = test_endpoint_id();
     let expected_relay =
         RelayUrl::from_str("https://example.com:443/").unwrap();
@@ -175,7 +175,7 @@ fn endpoint_from_url_valid_http() {
     let endpoint_id = test_endpoint_id();
     let url =
         Url::from_str(format!("http://example.com:80/{endpoint_id}")).unwrap();
-    let result = endpoint_from_url(&url, None).unwrap();
+    let result = endpoint_from_url(&url, None, &Default::default()).unwrap();
     let expected_id = test_endpoint_id();
     let expected_relay = RelayUrl::from_str("http://example.com:80/").unwrap();
     assert_eq!(result.id, expected_id);
@@ -193,7 +193,7 @@ fn endpoint_from_url_valid_http() {
 #[test]
 fn endpoint_from_url_no_peer_id() {
     let url = Url::from_str("https://example.com:443").unwrap();
-    let result = endpoint_from_url(&url, None);
+    let result = endpoint_from_url(&url, None, &Default::default());
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.to_string().contains("url must have peer id"));
