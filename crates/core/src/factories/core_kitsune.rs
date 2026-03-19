@@ -144,8 +144,21 @@ impl Kitsune for CoreKitsune {
             // This is quick, we don't hold the lock very long,
             // because we're just constructing the future here,
             // not awaiting it.
+            tracing::info!(
+                ?space_id,
+                has_config_override = config_override.is_some(),
+                "CoreKitsune::space() called"
+            );
             let fut = match self.map.lock().unwrap().entry(space_id.clone()) {
-                Entry::Occupied(e) => e.get().clone(),
+                Entry::Occupied(e) => {
+                    if config_override.is_some() {
+                        tracing::info!(
+                            ?space_id,
+                            "Space already exists, config_override will be IGNORED"
+                        );
+                    }
+                    e.get().clone()
+                }
                 Entry::Vacant(e) => {
                     let builder = self.builder.clone();
                     let handler = self

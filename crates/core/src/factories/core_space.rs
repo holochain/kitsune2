@@ -93,9 +93,21 @@ impl SpaceFactory for CoreSpaceFactory {
         tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
+            tracing::info!(
+                ?space_id,
+                has_config_override = config_override.is_some(),
+                "CoreSpaceFactory::create() called"
+            );
             let builder = match config_override {
                 Some(cfg_override) => {
-                    Arc::new(builder.with_config_overrides(cfg_override)?)
+                    tracing::info!(
+                        ?space_id,
+                        override_config = ?cfg_override,
+                        "Applying config overrides to builder"
+                    );
+                    let b = Arc::new(builder.with_config_overrides(cfg_override)?);
+                    tracing::info!(?space_id, "Config overrides applied successfully");
+                    b
                 }
                 None => builder,
             };

@@ -142,6 +142,12 @@ impl BootstrapFactory for CoreBootstrapFactory {
             Self::validate_config_for_context(&builder.config, true)?;
             let config: CoreBootstrapModConfig =
                 builder.config.get_module_config()?;
+            tracing::info!(
+                ?space_id,
+                server_url = ?config.core_bootstrap.server_url,
+                has_auth_material = config.core_bootstrap.auth_material_base64.is_some(),
+                "CoreBootstrapFactory::create() - bootstrap config for space"
+            );
             let out: DynBootstrap = Arc::new(CoreBootstrap::new(
                 builder,
                 config.core_bootstrap,
@@ -178,6 +184,13 @@ impl CoreBootstrap {
         peer_store: DynPeerStore,
         space: SpaceId,
     ) -> Self {
+        tracing::info!(
+            ?space,
+            server_url = ?config.server_url,
+            has_config_auth = config.auth_material_base64.is_some(),
+            has_builder_auth = builder.auth_material.is_some(),
+            "CoreBootstrap::new() - starting push/poll tasks"
+        );
         // Prefer per-space auth_material from config over builder-level.
         // Safety: auth_material_base64 is validated during config validation.
         let auth_material_bytes: Option<Vec<u8>> = config
@@ -253,6 +266,11 @@ async fn push_task(
             .expect("bootstrap url not checked"),
     )
     .expect("invalid server url");
+    tracing::info!(
+        %server_url,
+        has_auth = auth_material.is_some(),
+        "Bootstrap push_task started"
+    );
     let mut wait = None;
 
     while let Some(info) = push_recv.recv().await {
@@ -324,6 +342,12 @@ async fn poll_task(
             .expect("bootstrap url not checked"),
     )
     .expect("invalid server url");
+    tracing::info!(
+        %server_url,
+        ?space_id,
+        has_auth = auth_material.is_some(),
+        "Bootstrap poll_task started"
+    );
 
     let mut wait = config.backoff_min();
 
