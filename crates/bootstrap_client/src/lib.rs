@@ -51,15 +51,27 @@ impl AuthMaterial {
         if matches!(auth_type, AuthType::IfUninit)
             && self.auth_token.lock().unwrap().is_some()
         {
+            tracing::info!(auth_url, "Auth: already have token, skipping");
             return Ok(());
         }
 
+        tracing::info!(
+            auth_url,
+            auth_material_len = self.auth_material.len(),
+            "Auth: authenticating with bootstrap server"
+        );
         let token = ureq::put(auth_url)
             .send(&self.auth_material[..])
-            .map_err(|err| K2Error::other_src("Authenticate Failed", err))?
+            .map_err(|err| {
+                tracing::info!(?err, auth_url, "Auth: HTTP request FAILED");
+                K2Error::other_src("Authenticate Failed", err)
+            })?
             .into_body()
             .read_to_string()
-            .map_err(|err| K2Error::other_src("Authenticate Failed", err))?;
+            .map_err(|err| {
+                tracing::info!(?err, auth_url, "Auth: reading response body FAILED");
+                K2Error::other_src("Authenticate Failed", err)
+            })?;
 
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -68,8 +80,12 @@ impl AuthMaterial {
         }
 
         let auth_token: AuthToken = serde_json::from_str(&token)
-            .map_err(|err| K2Error::other_src("Authenticate Failed", err))?;
+            .map_err(|err| {
+                tracing::info!(?err, auth_url, response = %token, "Auth: parsing token FAILED");
+                K2Error::other_src("Authenticate Failed", err)
+            })?;
 
+        tracing::info!(auth_url, "Auth: successfully obtained token");
         *self.auth_token.lock().unwrap() = Some(auth_token.auth_token);
 
         Ok(())
@@ -149,6 +165,12 @@ pub fn blocking_put_auth(
     ));
     let put_url = server_url.as_str().to_string();
 
+    tracing::info!(
+        %put_url,
+        has_auth = auth_material.is_some(),
+        "blocking_put_auth: starting"
+    );
+
     if let Some(auth_material) = &auth_material {
         auth_material.priv_authenticate(&auth_url, AuthType::IfUninit)?;
     }
@@ -176,8 +198,15 @@ pub fn blocking_put_auth(
     if let Some(auth_material) = auth_material
         && res.needs_auth()
     {
+        tracing::info!(%put_url, "blocking_put_auth: got 401, re-authenticating");
         auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
         res = priv_put(&put_url, &encoded, &Some(auth_material));
+    }
+
+    match &res {
+        Res::Ok(_) => tracing::info!(%put_url, "blocking_put_auth: success"),
+        Res::Auth => tracing::info!(%put_url, "blocking_put_auth: FAILED (401 unauthorized)"),
+        Res::Err(err) => tracing::info!(%put_url, ?err, "blocking_put_auth: FAILED"),
     }
 
     res.into()
@@ -261,6 +290,12 @@ pub fn blocking_get_auth(
     server_url.set_path("authenticate");
     let auth_url = server_url.as_str().to_string();
 
+    tracing::info!(
+        %server_url,
+        has_auth = auth_material.is_some(),
+        "blocking_get_auth: starting"
+    );
+
     if let Some(auth_material) = &mut auth_material {
         auth_material.priv_authenticate(&auth_url, AuthType::IfUninit)?;
     }
@@ -270,6 +305,8 @@ pub fn blocking_get_auth(
         base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**space_id)
     ));
     let get_url = server_url.as_str().to_string();
+
+    tracing::info!(%get_url, "blocking_get_auth: fetching peers");
 
     fn priv_get(
         get_url: &str,
@@ -294,13 +331,14 @@ pub fn blocking_get_auth(
     if let Some(auth_material) = auth_material
         && res.needs_auth()
     {
+        tracing::info!(%get_url, "blocking_get_auth: got 401, re-authenticating");
         auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
         res = priv_get(&get_url, &Some(auth_material));
     }
 
     let res = K2Result::from(res)?;
 
-    Ok(AgentInfoSigned::decode_list(&verifier, res.as_bytes())?
+    let peers: Vec<_> = AgentInfoSigned::decode_list(&verifier, res.as_bytes())?
         .into_iter()
         .filter_map(|l| {
             l.inspect_err(|err| {
@@ -308,5 +346,9 @@ pub fn blocking_get_auth(
             })
             .ok()
         })
-        .collect::<Vec<_>>())
+        .collect();
+
+    tracing::info!(%get_url, peer_count = peers.len(), "blocking_get_auth: done");
+
+    Ok(peers)
 }

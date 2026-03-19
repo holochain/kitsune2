@@ -274,6 +274,7 @@ async fn push_task(
     let mut wait = None;
 
     while let Some(info) = push_recv.recv().await {
+        tracing::info!(%server_url, "Bootstrap push: sending agent info");
         match tokio::task::spawn_blocking({
             let auth_material = auth_material.clone();
             let server_url = server_url.clone();
@@ -289,14 +290,16 @@ async fn push_task(
         .await
         {
             Ok(Ok(_)) => {
+                tracing::info!(%server_url, "Bootstrap push: success");
                 // the put was successful, we don't need to wait
                 // before sending the next info if it is ready
                 wait = None;
             }
             err => {
-                tracing::debug!(
+                tracing::info!(
                     ?err,
-                    "Failed to push agent info to bootstrap server"
+                    %server_url,
+                    "Bootstrap push: FAILED"
                 );
 
                 let now = Timestamp::now();
@@ -352,6 +355,7 @@ async fn poll_task(
     let mut wait = config.backoff_min();
 
     loop {
+        tracing::info!(%server_url, ?space_id, "Bootstrap poll: fetching peers");
         match tokio::task::spawn_blocking({
             let auth_material = auth_material.clone();
             let server_url = server_url.clone();
@@ -370,9 +374,14 @@ async fn poll_task(
         .map_err(|_| K2Error::other("task join error"))
         {
             Err(err) | Ok(Err(err)) => {
-                tracing::debug!(?err, "failure contacting bootstrap server");
+                tracing::info!(?err, %server_url, "Bootstrap poll: FAILED");
             }
             Ok(Ok(list)) => {
+                tracing::info!(
+                    %server_url,
+                    peer_count = list.len(),
+                    "Bootstrap poll: got peers"
+                );
                 let _ = peer_store.insert(list).await;
             }
         }
