@@ -449,6 +449,18 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+
+    /// Dynamically add a relay server to this transport.
+    /// If auth_material is provided, the endpoint's public key will be
+    /// registered with the relay server before connecting.
+    /// Default implementation is a no-op for transports that don't support relays.
+    fn insert_relay(
+        &self,
+        _relay_url: String,
+        _auth_material: Option<Vec<u8>>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Trait-object [TxImp].
@@ -518,6 +530,17 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
+
+    /// Dynamically add a relay server to this transport.
+    /// If auth_material is provided, the endpoint's public key will be
+    /// registered with the relay server before connecting.
+    fn insert_relay(
+        &self,
+        _relay_url: String,
+        _auth_material: Option<Vec<u8>>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Trait-object [Transport].
@@ -728,6 +751,14 @@ impl Transport for DefaultTransport {
                 blocked_message_counts: blocked_message_counts.clone(),
             })
         })
+    }
+
+    fn insert_relay(
+        &self,
+        relay_url: String,
+        auth_material: Option<Vec<u8>>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.imp.insert_relay(relay_url, auth_material)
     }
 }
 

@@ -855,4 +855,63 @@ impl TxImp for IrohTransport {
             })
         })
     }
+
+    fn insert_relay(
+        &self,
+        relay_url: String,
+        auth_material: Option<Vec<u8>>,
+    ) -> BoxFut<'_, K2Result<()>> {
+        let endpoint = self.endpoint.clone();
+        Box::pin(async move {
+            let relay_url_str = if relay_url.ends_with('/') {
+                relay_url
+            } else {
+                format!("{relay_url}/")
+            };
+
+            // If auth material is provided, register our public key
+            // with the relay server before connecting.
+            if let Some(auth_bytes) = auth_material {
+                let server_url =
+                    ::url::Url::parse(&relay_url_str).map_err(|e| {
+                        K2Error::other_src(
+                            "Invalid relay URL for registration",
+                            e,
+                        )
+                    })?;
+                let mut server_url = server_url;
+                server_url.set_path("/");
+
+                let key_bytes = endpoint.id_bytes();
+                let auth_material =
+                    kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
+
+                tokio::task::spawn_blocking(move || {
+                    kitsune2_bootstrap_client::blocking_register_relay_key(
+                        server_url,
+                        &auth_material,
+                        &key_bytes,
+                    )
+                })
+                .await
+                .map_err(|e| {
+                    K2Error::other_src("Registration task failed", e)
+                })??;
+            }
+
+            let relay_url = RelayUrl::from_str(&relay_url_str)
+                .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
+            endpoint
+                .insert_relay(
+                    relay_url.clone(),
+                    Arc::new(RelayConfig {
+                        url: relay_url,
+                        quic: None,
+                    }),
+                )
+                .await;
+
+            Ok(())
+        })
+    }
 }

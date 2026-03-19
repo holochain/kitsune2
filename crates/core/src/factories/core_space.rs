@@ -1,7 +1,9 @@
 //! The core space implementation provided by Kitsune2.
 
 use crate::factories::core_access::CorePeerAccessState;
+use crate::factories::core_bootstrap::CoreBootstrapModConfig;
 use crate::get_all_remote_agents;
+use base64::Engine;
 use kitsune2_api::*;
 use std::sync::{Arc, RwLock, Weak};
 
@@ -99,6 +101,29 @@ impl SpaceFactory for CoreSpaceFactory {
                 }
                 None => builder,
             };
+            // If this space has a per-space relay URL override,
+            // dynamically add it to the transport endpoint.
+            if let Ok(bootstrap_config) =
+                builder.config.get_module_config::<CoreBootstrapModConfig>()
+            {
+                if let Some(relay_url) =
+                    &bootstrap_config.core_bootstrap.relay_url
+                {
+                    let auth_material = bootstrap_config
+                        .core_bootstrap
+                        .auth_material_base64
+                        .as_ref()
+                        .map(|b64| {
+                            base64::engine::general_purpose::STANDARD
+                                .decode(b64)
+                                .expect("validated during config validation")
+                        })
+                        .or_else(|| builder.auth_material.clone());
+
+                    tx.insert_relay(relay_url.clone(), auth_material).await?;
+                }
+            }
+
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
                 builder_config.get_module_config()?;
