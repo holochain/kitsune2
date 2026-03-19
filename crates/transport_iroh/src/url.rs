@@ -39,8 +39,11 @@ pub(super) fn canonicalize_relay_url(
         K2Error::other("relay url must have known default port")
     })?;
 
-    // Construct kitsune2 URL with just scheme://host:port/endpoint_id
-    // This strips any path from the relay URL (like /relay/)
+    // Construct kitsune2 URL: scheme://host:port/endpoint_id
+    // The relay path (e.g. /relay/) is not included here because the
+    // kitsune2 Url format only allows a single path segment.
+    // When reconstructing the relay URL from a peer URL, we look up the
+    // relay host in a map of known relays to recover the full URL with path.
     let canonical_relay_url = format!(
         "{}://{}:{}/{}",
         relay_url.scheme(),
@@ -52,10 +55,17 @@ pub(super) fn canonicalize_relay_url(
     Url::from_str(canonical_relay_url)
 }
 
+/// Reconstruct an iroh EndpointAddr from a kitsune2 peer URL.
+///
+/// The peer URL has the format `scheme://host:port/endpoint_id`.
+/// To reconstruct the full relay URL (which may have a path like `/relay/`),
+/// we check `known_relays` (host -> full relay URL) first, then
+/// `configured_relay_url` if the host matches, then fall back to
+/// constructing `scheme://host:port/` (no path).
 pub(super) fn endpoint_from_url(
     url: &Url,
     configured_relay_url: Option<&str>,
-    inserted_relays: &HashMap<String, String>,
+    known_relays: &HashMap<String, String>,
 ) -> K2Result<EndpointAddr> {
     let peer_id = url
         .peer_id()
@@ -67,18 +77,15 @@ pub(super) fn endpoint_from_url(
     let peer_addr = url.addr();
     let peer_host = peer_addr.split(':').next().unwrap_or("");
 
-    // First check if this peer's host matches a dynamically inserted relay.
-    // These have the full URL with path (e.g. "https://host/relay/").
-    // Then fall back to the configured (global) relay URL if the host matches.
-    // Otherwise reconstruct from the peer URL.
-    let relay_url = if let Some(inserted_url) = inserted_relays.get(peer_host) {
-        tracing::info!(
-            %peer_host,
-            %inserted_url,
-            "endpoint_from_url: using inserted relay URL"
-        );
-        RelayUrl::from_str(inserted_url).map_err(|err| {
-            K2Error::other_src("invalid inserted relay url", err)
+    // Look up the relay URL for this peer's host:
+    // 1. Check known_relays map (populated by insert_relay with the
+    //    exact URL that was used to connect, preserving any path)
+    // 2. Check if configured relay host matches (use configured URL as-is)
+    // 3. Fall back to reconstructing from peer URL (no path)
+    let relay_url = if let Some(relay_url_str) = known_relays.get(peer_host)
+    {
+        RelayUrl::from_str(relay_url_str).map_err(|err| {
+            K2Error::other_src("invalid known relay url", err)
         })?
     } else if let Some(configured) = configured_relay_url {
         let configured_parsed = ::url::Url::from_str(configured).ok();
@@ -91,23 +98,31 @@ pub(super) fn endpoint_from_url(
                 K2Error::other_src("invalid configured relay url", err)
             })?
         } else {
-            // Peer is on an unknown relay — reconstruct from the peer URL
-            let relay_scheme = if url.uses_tls() { "https" } else { "http" };
-            let relay_url = format!("{relay_scheme}://{peer_addr}");
-            let relay_url = ::url::Url::from_str(&relay_url)
-                .map_err(|err| K2Error::other_src("invalid relay url", err))?;
-            RelayUrl::from(relay_url)
+            relay_url_from_peer_url(url, peer_addr)?
         }
     } else {
-        let relay_scheme = if url.uses_tls() { "https" } else { "http" };
-        let relay_url = format!("{relay_scheme}://{peer_addr}");
-        let relay_url = ::url::Url::from_str(&relay_url)
-            .map_err(|err| K2Error::other_src("invalid relay url", err))?;
-        RelayUrl::from(relay_url)
+        relay_url_from_peer_url(url, peer_addr)?
     };
+
+    tracing::info!(
+        peer_url = %url,
+        ?configured_relay_url,
+        resolved_relay_url = %relay_url,
+        %endpoint_id,
+        "endpoint_from_url: resolved peer -> relay"
+    );
 
     Ok(EndpointAddr::from_parts(
         endpoint_id,
         [TransportAddr::Relay(relay_url)],
     ))
+}
+
+/// Construct a RelayUrl from a peer URL by using scheme://host:port/
+fn relay_url_from_peer_url(url: &Url, peer_addr: &str) -> K2Result<RelayUrl> {
+    let relay_scheme = if url.uses_tls() { "https" } else { "http" };
+    let relay_url = format!("{relay_scheme}://{peer_addr}/");
+    let relay_url = ::url::Url::from_str(&relay_url)
+        .map_err(|err| K2Error::other_src("invalid relay url", err))?;
+    Ok(RelayUrl::from(relay_url))
 }
