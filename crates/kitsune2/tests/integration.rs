@@ -100,6 +100,7 @@ async fn make_kitsune_node(
             core_bootstrap: CoreBootstrapConfig {
                 server_url: Some(bootstrap_server_url.to_owned()),
                 auth_material_base64: None,
+                relay_url: None,
                 backoff_min_ms: 1000,
                 backoff_max_ms: 1000,
             },

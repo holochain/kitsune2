@@ -19,6 +19,11 @@ pub mod config {
         /// for this specific space.
         pub auth_material_base64: Option<String>,
 
+        /// Per-space relay URL override. If set, this relay will be
+        /// dynamically added to the iroh endpoint when the space is created,
+        /// allowing spaces with different relay servers to coexist.
+        pub relay_url: Option<String>,
+
         /// Minimum backoff in ms to use for both push and poll retry loops.
         ///
         /// Default: 5 seconds.
@@ -37,6 +42,7 @@ pub mod config {
             Self {
                 server_url: None,
                 auth_material_base64: None,
+                relay_url: None,
                 backoff_min_ms: 1000 * 5,
                 backoff_max_ms: 1000 * 60 * 5,
             }
