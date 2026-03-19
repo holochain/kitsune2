@@ -453,13 +453,15 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// Dynamically add a relay server to this transport.
     /// If auth_material is provided, the endpoint's public key will be
     /// registered with the relay server before connecting.
+    /// Returns the endpoint's URL on the new relay if successful,
+    /// so that per-space agent info can use the correct relay address.
     /// Default implementation is a no-op for transports that don't support relays.
     fn insert_relay(
         &self,
         _relay_url: String,
         _auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async { Ok(()) })
+    ) -> BoxFut<'_, K2Result<Option<Url>>> {
+        Box::pin(async { Ok(None) })
     }
 }
 
@@ -534,12 +536,13 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     /// Dynamically add a relay server to this transport.
     /// If auth_material is provided, the endpoint's public key will be
     /// registered with the relay server before connecting.
+    /// Returns the endpoint's URL on the new relay if successful.
     fn insert_relay(
         &self,
         _relay_url: String,
         _auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async { Ok(()) })
+    ) -> BoxFut<'_, K2Result<Option<Url>>> {
+        Box::pin(async { Ok(None) })
     }
 }
 
@@ -757,7 +760,7 @@ impl Transport for DefaultTransport {
         &self,
         relay_url: String,
         auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<()>> {
+    ) -> BoxFut<'_, K2Result<Option<Url>>> {
         self.imp.insert_relay(relay_url, auth_material)
     }
 }

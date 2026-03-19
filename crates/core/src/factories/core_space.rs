@@ -115,7 +115,9 @@ impl SpaceFactory for CoreSpaceFactory {
             };
             // If this space has a per-space relay URL override,
             // dynamically add it to the transport endpoint.
-            if let Ok(bootstrap_config) =
+            // The returned URL is the endpoint's address on the new relay,
+            // used as the pinned URL for this space's agent info.
+            let per_space_relay_url = if let Ok(bootstrap_config) =
                 builder.config.get_module_config::<CoreBootstrapModConfig>()
             {
                 if let Some(relay_url) =
@@ -171,7 +173,9 @@ impl SpaceFactory for CoreSpaceFactory {
                         "No per-space relay URL override configured"
                     );
                 }
-            }
+            } else {
+                None
+            };
 
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
@@ -197,7 +201,17 @@ impl SpaceFactory for CoreSpaceFactory {
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
             report.space(space_id.clone(), local_agent_store.clone());
-            let inner = Arc::new(RwLock::new(InnerData { current_url: None }));
+            if let Some(ref url) = per_space_relay_url {
+                tracing::info!(
+                    ?space_id,
+                    %url,
+                    "Using per-space relay URL for agent info"
+                );
+            }
+            let inner = Arc::new(RwLock::new(InnerData {
+                current_url: None,
+                pinned_url: per_space_relay_url,
+            }));
             let op_store = builder
                 .op_store
                 .create(builder.clone(), space_id.clone())
@@ -381,6 +395,9 @@ impl TxSpaceHandler for TxHandlerTranslator {
 
 struct InnerData {
     current_url: Option<Url>,
+    /// Per-space relay URL override. When set, this takes priority over
+    /// the global transport URL and is not overwritten by global URL updates.
+    pinned_url: Option<Url>,
 }
 
 struct CoreSpace {
@@ -460,6 +477,11 @@ impl CoreSpace {
     pub async fn new_url(&self, this_url: Url) {
         {
             let mut lock = self.inner.write().unwrap();
+            if lock.pinned_url.is_some() {
+                // This space has a per-space relay URL override;
+                // don't overwrite it with the global transport URL.
+                return;
+            }
             lock.current_url = Some(this_url);
         }
 
@@ -505,7 +527,8 @@ impl Space for CoreSpace {
     }
 
     fn current_url(&self) -> Option<Url> {
-        self.inner.read().unwrap().current_url.clone()
+        let lock = self.inner.read().unwrap();
+        lock.pinned_url.clone().or_else(|| lock.current_url.clone())
     }
 
     fn local_agent_join(
@@ -535,7 +558,12 @@ impl Space for CoreSpace {
                 let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    let url = inner.read().unwrap().current_url.clone();
+                    let url = {
+                        let lock = inner.read().unwrap();
+                        lock.pinned_url
+                            .clone()
+                            .or_else(|| lock.current_url.clone())
+                    };
 
                     if let Some(url) = url {
                         // sign a new agent info

@@ -181,7 +181,8 @@
 use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
 use iroh::{
-    Endpoint, EndpointAddr, RelayConfig, RelayMap, RelayMode, RelayUrl,
+    Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode,
+    RelayUrl,
 };
 use kitsune2_api::*;
 use std::{
@@ -860,7 +861,7 @@ impl TxImp for IrohTransport {
         &self,
         relay_url: String,
         auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<()>> {
+    ) -> BoxFut<'_, K2Result<Option<Url>>> {
         let endpoint = self.endpoint.clone();
         Box::pin(async move {
             let relay_url_str = if relay_url.ends_with('/') {
@@ -942,7 +943,7 @@ impl TxImp for IrohTransport {
                 );
             }
 
-            let relay_url = RelayUrl::from_str(&relay_url_str)
+            let relay_url_parsed = RelayUrl::from_str(&relay_url_str)
                 .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
 
             info!(
@@ -952,20 +953,32 @@ impl TxImp for IrohTransport {
 
             endpoint
                 .insert_relay(
-                    relay_url.clone(),
+                    relay_url_parsed.clone(),
                     Arc::new(RelayConfig {
-                        url: relay_url.clone(),
+                        url: relay_url_parsed.clone(),
                         quic: None,
                     }),
                 )
                 .await;
 
+            // Construct the endpoint's URL on this relay so that the
+            // per-space agent info can announce the correct relay address.
+            // Reuse canonicalize_relay_url to ensure the URL format matches
+            // what the address watcher produces for the global relay.
+            let endpoint_id = EndpointId::from(
+                iroh::PublicKey::from_bytes(&endpoint.id_bytes()).map_err(
+                    |e| K2Error::other_src("invalid endpoint public key", e),
+                )?,
+            );
+            let per_space_url =
+                canonicalize_relay_url(&relay_url_parsed, endpoint_id)?;
+
             info!(
-                %relay_url,
-                "Relay inserted into iroh endpoint successfully"
+                %per_space_url,
+                "insert_relay: constructed per-space URL on new relay"
             );
 
-            Ok(())
+            Ok(Some(per_space_url))
         })
     }
 }
