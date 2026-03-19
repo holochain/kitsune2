@@ -208,10 +208,9 @@ fn canonicalize_relay_url_strips_path() {
         RelayUrl::from_str("https://example.com:443/relay/").unwrap();
     let endpoint_id = test_endpoint_id();
     let result = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
-    let expected = Url::from_str(format!(
-        "https://example.com:443/{endpoint_id}"
-    ))
-    .unwrap();
+    let expected =
+        Url::from_str(format!("https://example.com:443/{endpoint_id}"))
+            .unwrap();
     assert_eq!(result, expected);
 }
 
@@ -219,17 +218,14 @@ fn canonicalize_relay_url_strips_path() {
 fn endpoint_from_url_uses_known_relays() {
     // When a relay host is in the known_relays map, use its full URL (with path)
     let endpoint_id = test_endpoint_id();
-    let url = Url::from_str(format!(
-        "https://example.com:443/{endpoint_id}"
-    ))
-    .unwrap();
+    let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
+        .unwrap();
     let mut known_relays = HashMap::new();
     known_relays.insert(
         "example.com".to_string(),
         "https://example.com:443/relay/".to_string(),
     );
-    let result =
-        endpoint_from_url(&url, None, &known_relays).unwrap();
+    let result = endpoint_from_url(&url, None, &known_relays).unwrap();
     let expected_relay =
         RelayUrl::from_str("https://example.com:443/relay/").unwrap();
     let actual_transport_addr = result.addrs.iter().next().unwrap();
@@ -245,10 +241,8 @@ fn endpoint_from_url_uses_known_relays() {
 #[test]
 fn endpoint_from_url_known_relay_takes_precedence_over_configured() {
     let endpoint_id = test_endpoint_id();
-    let url = Url::from_str(format!(
-        "https://example.com:443/{endpoint_id}"
-    ))
-    .unwrap();
+    let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
+        .unwrap();
     let mut known_relays = HashMap::new();
     known_relays.insert(
         "example.com".to_string(),
@@ -278,8 +272,7 @@ fn endpoint_from_url_roundtrip_without_path() {
     let relay_url =
         RelayUrl::from_str("https://relay.example.com:443/").unwrap();
     let endpoint_id = test_endpoint_id();
-    let peer_url =
-        canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
+    let peer_url = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let result =
         endpoint_from_url(&peer_url, None, &Default::default()).unwrap();
     let actual_relay = result.addrs.iter().next().unwrap();
@@ -296,18 +289,15 @@ fn endpoint_from_url_roundtrip_without_path() {
 fn endpoint_from_url_roundtrip_with_path_via_known_relays() {
     // Relays with a path need the known_relays map to roundtrip correctly
     let relay_url =
-        RelayUrl::from_str("http://bootstrap.example.com:4433/relay/")
-            .unwrap();
+        RelayUrl::from_str("http://bootstrap.example.com:4433/relay/").unwrap();
     let endpoint_id = test_endpoint_id();
-    let peer_url =
-        canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
+    let peer_url = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let mut known_relays = HashMap::new();
     known_relays.insert(
         "bootstrap.example.com".to_string(),
         "http://bootstrap.example.com:4433/relay/".to_string(),
     );
-    let result =
-        endpoint_from_url(&peer_url, None, &known_relays).unwrap();
+    let result = endpoint_from_url(&peer_url, None, &known_relays).unwrap();
     let actual_relay = result.addrs.iter().next().unwrap();
     assert!(
         matches!(

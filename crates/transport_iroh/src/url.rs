@@ -82,11 +82,9 @@ pub(super) fn endpoint_from_url(
     //    exact URL that was used to connect, preserving any path)
     // 2. Check if configured relay host matches (use configured URL as-is)
     // 3. Fall back to reconstructing from peer URL (no path)
-    let relay_url = if let Some(relay_url_str) = known_relays.get(peer_host)
-    {
-        RelayUrl::from_str(relay_url_str).map_err(|err| {
-            K2Error::other_src("invalid known relay url", err)
-        })?
+    let relay_url = if let Some(relay_url_str) = known_relays.get(peer_host) {
+        RelayUrl::from_str(relay_url_str)
+            .map_err(|err| K2Error::other_src("invalid known relay url", err))?
     } else if let Some(configured) = configured_relay_url {
         let configured_parsed = ::url::Url::from_str(configured).ok();
         let configured_host = configured_parsed
