@@ -118,8 +118,14 @@ impl SpaceFactory for CoreSpaceFactory {
                         .map(|b64| {
                             base64::engine::general_purpose::STANDARD
                                 .decode(b64)
-                                .expect("validated during config validation")
+                                .map_err(|e| {
+                                    K2Error::other_src(
+                                        "invalid base64 in auth_material_base64",
+                                        e,
+                                    )
+                                })
                         })
+                        .transpose()?
                         .or_else(|| builder.auth_material.clone());
 
                     tx.insert_relay(relay_url.clone(), auth_material).await?
