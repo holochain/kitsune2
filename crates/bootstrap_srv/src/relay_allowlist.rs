@@ -28,6 +28,16 @@ impl RelayAllowlist {
         self.entries.lock().unwrap().contains_key(key)
     }
 
+    /// Returns the number of entries in the allowlist.
+    pub fn len(&self) -> usize {
+        self.entries.lock().unwrap().len()
+    }
+
+    /// Returns true if the allowlist is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.lock().unwrap().is_empty()
+    }
+
     /// Remove entries whose associated bearer token has been pruned from
     /// the auth tracker (i.e. the token has expired).
     pub fn prune_for_expired_tokens(&self, expired_tokens: &[Arc<str>]) {

@@ -595,6 +595,8 @@ async fn handle_relay_register(
     headers: axum::http::HeaderMap,
     body: bytes::Bytes,
 ) -> response::Response {
+    tracing::debug!(body_len = body.len(), "Relay register request received");
+
     // Validate bearer token
     let token: Option<Arc<str>> = headers
         .get("Authorization")
@@ -603,6 +605,7 @@ async fn handle_relay_register(
         .map(<Arc<str>>::from);
 
     if !state.auth_tracker.is_valid(&token, &state.auth_config) {
+        tracing::warn!("Relay register: bearer token invalid or missing");
         return axum::response::IntoResponse::into_response((
             axum::http::StatusCode::UNAUTHORIZED,
             "Unauthorized",
@@ -613,6 +616,10 @@ async fn handle_relay_register(
     let key_bytes: &[u8; 32] = match body.as_ref().try_into() {
         Ok(b) => b,
         Err(_) => {
+            tracing::warn!(
+                body_len = body.len(),
+                "Relay register: expected 32 bytes"
+            );
             return axum::response::IntoResponse::into_response((
                 axum::http::StatusCode::BAD_REQUEST,
                 "Expected exactly 32 bytes (iroh public key)",
@@ -623,6 +630,7 @@ async fn handle_relay_register(
     let key = match iroh_base::PublicKey::from_bytes(key_bytes) {
         Ok(k) => k,
         Err(_) => {
+            tracing::warn!("Relay register: invalid public key bytes");
             return axum::response::IntoResponse::into_response((
                 axum::http::StatusCode::BAD_REQUEST,
                 "Invalid public key bytes",
@@ -642,6 +650,14 @@ async fn handle_relay_register(
             ));
         };
         allowlist.register(key, token);
+        tracing::info!(
+            key = %key.fmt_short(),
+            "Relay register: key added to allowlist"
+        );
+    } else {
+        tracing::warn!(
+            "Relay register: no allowlist configured, registration has no effect"
+        );
     }
 
     axum::response::IntoResponse::into_response(axum::Json(serde_json::json!(
