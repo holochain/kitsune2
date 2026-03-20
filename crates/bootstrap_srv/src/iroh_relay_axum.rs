@@ -293,11 +293,14 @@ pub fn create_relay_state_with_allowlist(
         Arc::new(AccessConfig::Restricted(Box::new(move |endpoint_id| {
             let allowlist = allowlist.clone();
             async move {
-                if allowlist.is_allowed(&endpoint_id) {
-                    Access::Allow
-                } else {
-                    Access::Deny
-                }
+                let allowed = allowlist.is_allowed(&endpoint_id);
+                tracing::debug!(
+                    key = %endpoint_id.fmt_short(),
+                    allowed,
+                    allowlist_size = allowlist.len(),
+                    "Relay access check"
+                );
+                if allowed { Access::Allow } else { Access::Deny }
             }
             .boxed()
         })));
