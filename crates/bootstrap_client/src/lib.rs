@@ -54,9 +54,22 @@ impl AuthMaterial {
             return Ok(());
         }
 
-        let token = ureq::put(auth_url)
+        tracing::debug!(url = auth_url, "Authenticating with bootstrap server");
+
+        let response = ureq::put(auth_url)
             .send(&self.auth_material[..])
-            .map_err(|err| K2Error::other_src("Authenticate Failed", err))?
+            .map_err(|err| K2Error::other_src("Authenticate Failed", err))?;
+
+        // A 202 Accepted response means the server received the credentials
+        // but the key is pending approval (e.g. waiting for an operator to
+        // allowlist it). There is no token yet, so we cannot proceed.
+        if response.status() == 202 {
+            return Err(K2Error::other(
+                "Authentication pending: key awaiting approval on the server",
+            ));
+        }
+
+        let token = response
             .into_body()
             .read_to_string()
             .map_err(|err| K2Error::other_src("Authenticate Failed", err))?;
@@ -72,6 +85,7 @@ impl AuthMaterial {
 
         *self.auth_token.lock().unwrap() = Some(auth_token.auth_token);
 
+        tracing::debug!("Authentication successful, token acquired");
         Ok(())
     }
 }
@@ -79,6 +93,7 @@ impl AuthMaterial {
 enum Res<T> {
     Ok(T),
     Auth,
+    HttpErr(u16),
     Err(K2Error),
 }
 
@@ -93,6 +108,7 @@ impl<T> From<Result<T, ureq::Error>> for Res<T> {
         match r {
             Ok(t) => Self::Ok(t),
             Err(ureq::Error::StatusCode(401)) => Self::Auth,
+            Err(ureq::Error::StatusCode(code)) => Self::HttpErr(code),
             Err(err) => Self::Err(K2Error::other(err)),
         }
     }
@@ -112,6 +128,9 @@ impl<T> From<Res<T>> for K2Result<T> {
         match r {
             Res::Ok(t) => Ok(t),
             Res::Auth => Err(K2Error::other("Unauthorized")),
+            Res::HttpErr(code) => Err(K2Error::other(format!(
+                "Bootstrap server returned HTTP {code}"
+            ))),
             Res::Err(err) => Err(err),
         }
     }
@@ -139,6 +158,12 @@ pub fn blocking_put_auth(
     agent_info: &AgentInfoSigned,
     auth_material: Option<&AuthMaterial>,
 ) -> K2Result<()> {
+    tracing::debug!(
+        space = %base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.space),
+        agent = %base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**agent_info.agent),
+        "Putting agent info to bootstrap server",
+    );
+
     server_url.set_path("authenticate");
     let auth_url = server_url.as_str().to_string();
 
@@ -180,6 +205,14 @@ pub fn blocking_put_auth(
         res = priv_put(&put_url, &encoded, &Some(auth_material));
     }
 
+    if let Res::HttpErr(code) = &res {
+        tracing::warn!(
+            url = put_url,
+            status = code,
+            "Bootstrap PUT returned HTTP error"
+        );
+    }
+
     res.into()
 }
 
@@ -201,6 +234,12 @@ pub fn blocking_register_relay_key(
     auth_material: &AuthMaterial,
     key_bytes: &[u8; 32],
 ) -> K2Result<()> {
+    tracing::info!(
+        server_url = %server_url,
+        iroh_key = %base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(key_bytes),
+        "Registering iroh endpoint key with relay service",
+    );
+
     server_url.set_path("authenticate");
     let auth_url = server_url.as_str().to_string();
     auth_material.priv_authenticate(&auth_url, AuthType::IfUninit)?;
@@ -225,13 +264,21 @@ pub fn blocking_register_relay_key(
     let mut res = priv_register(&register_url, key_bytes, auth_material);
 
     if res.needs_auth() {
+        tracing::debug!(
+            "Relay key registration returned 401, re-authenticating"
+        );
         server_url.set_path("authenticate");
         let auth_url = server_url.as_str().to_string();
         auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
         res = priv_register(&register_url, key_bytes, auth_material);
     }
 
-    res.into()
+    let result: K2Result<()> = res.into();
+    match &result {
+        Ok(()) => tracing::info!("Iroh relay key registration succeeded"),
+        Err(e) => tracing::warn!(?e, "Iroh relay key registration failed"),
+    }
+    result
 }
 
 /// Get all agent infos from the bootstrap server for the given space.
@@ -258,6 +305,11 @@ pub fn blocking_get_auth(
     verifier: DynVerifier,
     mut auth_material: Option<&AuthMaterial>,
 ) -> K2Result<Vec<Arc<AgentInfoSigned>>> {
+    tracing::debug!(
+        space = %base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(&**space_id),
+        "Getting agent infos from bootstrap server",
+    );
+
     server_url.set_path("authenticate");
     let auth_url = server_url.as_str().to_string();
 
@@ -294,13 +346,33 @@ pub fn blocking_get_auth(
     if let Some(auth_material) = auth_material
         && res.needs_auth()
     {
+        tracing::debug!(
+            url = get_url,
+            "Bootstrap GET returned 401, re-authenticating"
+        );
         auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
         res = priv_get(&get_url, &Some(auth_material));
     }
 
+    match &res {
+        Res::Auth => tracing::warn!(
+            url = get_url,
+            "Bootstrap GET returned 401 Unauthorized (even after re-auth)"
+        ),
+        Res::HttpErr(code) => tracing::warn!(
+            url = get_url,
+            status = code,
+            "Bootstrap GET returned HTTP error"
+        ),
+        Res::Err(_) | Res::Ok(_) => {}
+    }
     let res = K2Result::from(res)?;
 
-    Ok(AgentInfoSigned::decode_list(&verifier, res.as_bytes())?
+    let agents = AgentInfoSigned::decode_list(&verifier, res.as_bytes())
+        .map_err(|e| {
+            tracing::warn!(url = get_url, err = ?e, "Failed to decode bootstrap GET response body");
+            e
+        })?
         .into_iter()
         .filter_map(|l| {
             l.inspect_err(|err| {
@@ -308,5 +380,8 @@ pub fn blocking_get_auth(
             })
             .ok()
         })
-        .collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    tracing::debug!("Bootstrap GET complete");
+    Ok(agents)
 }

@@ -449,6 +449,8 @@ impl IrohTransport {
             let auth_material =
                 kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
 
+            info!(%server_url, relay_url = relay_url_str, "Starting relay key registration");
+
             // Perform the authentication and key registration synchronously.
             tokio::task::spawn_blocking(move || {
                 kitsune2_bootstrap_client::blocking_register_relay_key(
@@ -459,6 +461,10 @@ impl IrohTransport {
             })
             .await
             .map_err(|e| K2Error::other_src("Registration task failed", e))??;
+
+            info!(
+                "Relay key registration complete, proceeding to insert relay"
+            );
         }
 
         // Clone the raw endpoint before consuming it into IrohEndpoint so that
@@ -495,11 +501,15 @@ impl IrohTransport {
                 .insert_relay(
                     relay_url.clone(),
                     Arc::new(RelayConfig {
-                        url: relay_url,
+                        url: relay_url.clone(),
                         quic: None,
                     }),
                 )
                 .await;
+            info!(
+                ?relay_url,
+                "Relay inserted into endpoint, waiting for address assignment"
+            );
         }
 
         let per_space_urls = Arc::new(RwLock::new(HashMap::new()));
@@ -662,6 +672,7 @@ impl IrohTransport {
         per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
+        debug!(?target, connect_timeout_s = config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
         let conn = match tokio::time::timeout(
             Duration::from_secs(config.connect_timeout_s as u64),
             endpoint.connect(target.clone(), ALPN),
@@ -678,6 +689,7 @@ impl IrohTransport {
             }
             Ok(res) => res,
         }?;
+        info!(remote = ?remote_url.peer_id(), "QUIC connection established");
 
         let conn_opened_at_s = SystemTime::UNIX_EPOCH
             .elapsed()
@@ -731,9 +743,9 @@ impl IrohTransport {
 
             Ok(ctx)
         } else {
-            error!(
-                %remote_url,
-                "DEBUG: local_url is None - endpoint hasn't connected to any relay yet"
+            warn!(
+                ?remote_url,
+                "Outbound connection attempted before relay address is known; relay registration may still be in progress"
             );
             Err(K2Error::other(
                 "Connection attempted before home relay URL is known",
