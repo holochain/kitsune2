@@ -307,12 +307,21 @@ fn tokio_thread(
                         routing::put(handle_relay_register),
                     );
 
+                    // TODO: Temporarily bypass relay allowlist to test
+                    // whether the proxy is causing connection issues.
+                    // Restore the allowlist check once confirmed.
+                    let relay_state = {
+                        let _ = relay_allowlist.clone(); // keep the allowlist alive
+                        crate::iroh_relay_axum::create_relay_state()
+                    };
+                    /*
                     let relay_state =
                         if let Some(allowlist) = relay_allowlist.clone() {
                             crate::iroh_relay_axum::create_relay_state_with_allowlist(allowlist)
                         } else {
                             crate::iroh_relay_axum::create_relay_state()
                         };
+                    */
                     let relay_router = Router::new()
                         .route("/relay", routing::get(crate::iroh_relay_axum::relay_handler))
                         .route("/ping", routing::get(crate::iroh_relay_axum::relay_probe_handler))
