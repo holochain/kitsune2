@@ -62,7 +62,9 @@ pub struct Server {
     tls_reload_handle: Option<tokio::task::AbortHandle>,
     shutdown: Option<axum_server::Handle>,
     auth_tracker: crate::auth::AuthTokenTracker,
+    // TODO: Remove allow(dead_code) when allowlist pruning is re-enabled.
     #[cfg(feature = "iroh-relay")]
+    #[allow(dead_code)]
     relay_allowlist: Option<crate::RelayAllowlist>,
 }
 
@@ -128,7 +130,9 @@ impl Server {
         &self.auth_tracker
     }
 
+    // TODO: Remove allow(dead_code) when allowlist pruning is re-enabled.
     #[cfg(feature = "iroh-relay")]
+    #[allow(dead_code)]
     pub fn relay_allowlist(&self) -> Option<&crate::RelayAllowlist> {
         self.relay_allowlist.as_ref()
     }
