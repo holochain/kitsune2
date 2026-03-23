@@ -325,7 +325,7 @@ impl TransportFactory for IrohTransportFactory {
                     }
                 });
 
-            let auth_material = builder.auth_material.clone();
+            let auth_material = builder.auth_material_relay.clone();
             let imp = IrohTransport::create(
                 transport_config,
                 handler.clone(),

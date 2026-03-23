@@ -157,7 +157,8 @@ pub fn default_test_builder() -> Builder {
     Builder {
         config: Config::default(),
         verifier: Arc::new(Ed25519Verifier),
-        auth_material: None,
+        auth_material_bootstrap: None,
+        auth_material_relay: None,
         kitsune: factories::CoreKitsuneFactory::create(),
         space: factories::CoreSpaceFactory::create(),
         peer_store: factories::MemPeerStoreFactory::create(),
