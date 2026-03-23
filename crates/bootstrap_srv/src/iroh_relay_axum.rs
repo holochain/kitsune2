@@ -268,6 +268,39 @@ pub async fn relay_probe_handler() -> (
     )
 }
 
+/// Handler for the captive portal detection endpoint (`/generate_204`).
+///
+/// iroh clients probe this endpoint over plain HTTP to detect captive portals.
+/// The handler returns 204 No Content and echoes back any challenge header
+/// so the client can verify it's talking to the real relay, not a captive portal.
+pub async fn captive_portal_handler(
+    headers: HeaderMap,
+) -> axum::response::Response {
+    let mut response = axum::response::Response::builder()
+        .status(axum::http::StatusCode::NO_CONTENT);
+
+    if let Some(challenge) = headers.get("X-Iroh-Challenge")
+        && let Ok(challenge_str) = challenge.to_str()
+        && !challenge_str.is_empty()
+        && challenge_str.len() < 64
+        && challenge_str
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+    {
+        response = response
+            .header("X-Iroh-Response", format!("response {challenge_str}"));
+    }
+
+    response
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| {
+            axum::response::Response::builder()
+                .status(axum::http::StatusCode::NO_CONTENT)
+                .body(axum::body::Body::empty())
+                .unwrap()
+        })
+}
+
 /// Creates a RelayState instance for the axum relay handler.
 ///
 /// This creates the state needed for the relay handler which can be mounted
