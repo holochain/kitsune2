@@ -14,8 +14,7 @@ const CREATED_AT_CLOCK_SKEW_ALLOWED_MICROS: i64 =
 const EXPIRES_AT_DURATION_MAX_ALLOWED_MICROS: i64 =
     std::time::Duration::from_secs(60 * 30).as_micros() as i64;
 
-// TODO: Restore when allowlist pruning is re-enabled.
-// type OnTokensPruned = Option<Box<dyn Fn(&[Arc<str>]) + Send>>;
+type OnTokensPruned = Option<Box<dyn Fn(&[Arc<str>]) + Send>>;
 
 /// Print out a message if this thread dies.
 struct ThreadGuard(&'static str);
@@ -100,12 +99,6 @@ impl BootstrapSrv {
         let prune_space_map = space_map.clone();
         let prune_auth_tracker = server.auth_tracker().clone();
 
-        // TODO: Restore allowlist pruning once clients support periodic
-        // re-registration of their relay key. Currently, pruning the
-        // allowlist on token expiry causes relay reconnection failures
-        // because iroh reconnects don't trigger re-registration.
-        // See: the on_tokens_pruned callback that was passed to prune_worker.
-        /*
         #[cfg(feature = "iroh-relay")]
         let on_tokens_pruned: OnTokensPruned =
             server.relay_allowlist().cloned().map(|al| {
@@ -115,7 +108,6 @@ impl BootstrapSrv {
             });
         #[cfg(not(feature = "iroh-relay"))]
         let on_tokens_pruned: OnTokensPruned = None;
-        */
 
         workers.push(std::thread::spawn(move || {
             prune_worker(
@@ -123,6 +115,7 @@ impl BootstrapSrv {
                 prune_cont,
                 prune_space_map,
                 prune_auth_tracker,
+                on_tokens_pruned,
             )
         }));
 
@@ -177,6 +170,7 @@ fn prune_worker(
     cont: Arc<std::sync::atomic::AtomicBool>,
     space_map: crate::SpaceMap,
     auth_tracker: crate::auth::AuthTokenTracker,
+    on_tokens_pruned: OnTokensPruned,
 ) -> std::io::Result<()> {
     let _g = ThreadGuard("prune_worker thread has ended");
 
@@ -191,9 +185,13 @@ fn prune_worker(
             // Prune expired space infos
             space_map.update_all(config.max_entries_per_space);
 
-            // Prune expired auth tokens. The relay allowlist is
-            // intentionally NOT pruned here — see the TODO above.
-            let _expired_tokens = auth_tracker.prune_expired(&config.auth);
+            // Prune expired auth tokens and remove corresponding
+            // relay allowlist entries so that disconnected clients
+            // don't hold relay access indefinitely.
+            let expired_tokens = auth_tracker.prune_expired(&config.auth);
+            if let Some(ref cb) = on_tokens_pruned {
+                cb(&expired_tokens);
+            }
         }
     }
 

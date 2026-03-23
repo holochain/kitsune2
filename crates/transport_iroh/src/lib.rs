@@ -339,6 +339,14 @@ impl TransportFactory for IrohTransportFactory {
 
 type Connections = Arc<RwLock<HashMap<Url, Arc<ConnectionContext>>>>;
 
+/// Parameters needed for periodic relay key re-registration.
+#[derive(Debug)]
+struct RelayRegistrationParams {
+    server_url: ::url::Url,
+    auth_material: kitsune2_bootstrap_client::AuthMaterial,
+    key_bytes: [u8; 32],
+}
+
 /// Iroh-based transport implementation.
 #[derive(Debug)]
 struct IrohTransport {
@@ -349,6 +357,7 @@ struct IrohTransport {
     connection_locks: Arc<Mutex<HashMap<Url, Arc<tokio::sync::Mutex<()>>>>>,
     watch_addr_task: AbortHandle,
     accept_task: AbortHandle,
+    relay_re_registration_task: Option<AbortHandle>,
     config: IrohTransportConfig,
 }
 
@@ -357,6 +366,9 @@ impl Drop for IrohTransport {
         info!(local_url = ?self.local_url, "Dropping transport");
         self.watch_addr_task.abort();
         self.accept_task.abort();
+        if let Some(handle) = self.relay_re_registration_task.take() {
+            handle.abort();
+        }
         // The connection reader task inside the connection context
         // holds a reference to the context. Thus the context can
         // only be dropped once that reference is dropped, which
@@ -420,7 +432,7 @@ impl IrohTransport {
         // key with the server before inserting the relay into the endpoint.
         // insert_relay is deferred until after the watcher task is spawned so
         // that the address update it fires is guaranteed to be observed.
-        if needs_relay_registration {
+        let relay_registration_params = if needs_relay_registration {
             let relay_url_str = config
                 .relay_url
                 .as_deref()
@@ -440,14 +452,21 @@ impl IrohTransport {
             let auth_material =
                 kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
 
-            info!(%server_url, relay_url = relay_url_str, "Starting relay key registration");
+            let params = Arc::new(RelayRegistrationParams {
+                server_url,
+                auth_material,
+                key_bytes,
+            });
 
-            // Perform the authentication and key registration synchronously.
+            info!(server_url = %params.server_url, relay_url = relay_url_str, "Starting relay key registration");
+
+            // Perform the initial authentication and key registration.
+            let params_clone = params.clone();
             tokio::task::spawn_blocking(move || {
                 kitsune2_bootstrap_client::blocking_register_relay_key(
-                    server_url,
-                    &auth_material,
-                    &key_bytes,
+                    params_clone.server_url.clone(),
+                    &params_clone.auth_material,
+                    &params_clone.key_bytes,
                 )
             })
             .await
@@ -456,7 +475,11 @@ impl IrohTransport {
             info!(
                 "Relay key registration complete, proceeding to insert relay"
             );
-        }
+
+            Some(params)
+        } else {
+            None
+        };
 
         // Clone the raw endpoint before consuming it into IrohEndpoint so that
         // insert_relay can be called after the watcher task is subscribed.
@@ -511,6 +534,15 @@ impl IrohTransport {
             config.max_frame_bytes,
         );
 
+        // Spawn a periodic re-registration task so the relay allowlist
+        // entry is refreshed before the server prunes it. This also
+        // handles the case where the server restarts and loses its
+        // in-memory allowlist.
+        let relay_re_registration_task =
+            relay_registration_params.map(|params| {
+                Self::spawn_relay_re_registration_task(params)
+            });
+
         let out: DynTxImp = Arc::new(Self {
             endpoint,
             handler,
@@ -519,6 +551,7 @@ impl IrohTransport {
             connection_locks,
             watch_addr_task,
             accept_task,
+            relay_re_registration_task,
             config,
         });
         Ok(out)
@@ -557,6 +590,47 @@ impl IrohTransport {
                             "Address watcher update failed, stopping watch loop"
                         );
                         break;
+                    }
+                }
+            }
+        })
+        .abort_handle()
+    }
+
+    /// Spawns a periodic task that re-registers the relay key with the
+    /// bootstrap server. This keeps the allowlist entry alive and recovers
+    /// from server restarts that clear the in-memory allowlist.
+    ///
+    /// Re-registration runs every 2 minutes, well within the default
+    /// 5-minute auth token idle timeout on the server.
+    fn spawn_relay_re_registration_task(
+        params: Arc<RelayRegistrationParams>,
+    ) -> AbortHandle {
+        const RE_REGISTRATION_INTERVAL: Duration = Duration::from_secs(120);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(RE_REGISTRATION_INTERVAL).await;
+
+                let params = params.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    kitsune2_bootstrap_client::blocking_register_relay_key(
+                        params.server_url.clone(),
+                        &params.auth_material,
+                        &params.key_bytes,
+                    )
+                })
+                .await;
+
+                match result {
+                    Ok(Ok(())) => {
+                        debug!("Relay key re-registration succeeded");
+                    }
+                    Ok(Err(e)) => {
+                        warn!(?e, "Relay key re-registration failed");
+                    }
+                    Err(e) => {
+                        warn!(?e, "Relay key re-registration task panicked");
                     }
                 }
             }
