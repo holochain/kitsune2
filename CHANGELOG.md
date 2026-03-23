@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.6](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.5...v0.4.0-dev.6)\] - 2026-03-23
+
+### Features
+
+- Periodic relay key re-registration by @ThetaSinner in [#486](https://github.com/holochain/kitsune2/pull/486)
+  - Clients now re-register their relay key every 2 minutes, keeping the allowlist entry alive and recovering from server restarts. Server-side allowlist pruning on token expiry is re-enabled.
+- Handle missing captive portal check by @ThetaSinner
+
+### Miscellaneous Tasks
+
+- Add logs by @ThetaSinner
+
+### Refactor
+
+- \[**BREAKING**\] Split combined auth material into bootstrap and relay by @jost-s in [#485](https://github.com/holochain/kitsune2/pull/485)
+
 ## \[[0.4.0-dev.5](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.4...v0.4.0-dev.5)\] - 2026-03-19
 
 ### Features
