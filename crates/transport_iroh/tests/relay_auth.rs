@@ -62,7 +62,7 @@ async fn build_auth_transport(
     .with_default_config()
     .unwrap();
 
-    builder.auth_material = Some(auth_bytes);
+    builder.auth_material_relay = Some(auth_bytes);
     builder
         .config
         .set_module_config(&IrohTransportModConfig {

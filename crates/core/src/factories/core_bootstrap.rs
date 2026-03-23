@@ -161,11 +161,13 @@ impl CoreBootstrap {
         space: SpaceId,
     ) -> Self {
         let auth_material =
-            Arc::new(builder.auth_material.as_ref().map(|auth_material| {
-                kitsune2_bootstrap_client::AuthMaterial::new(
-                    auth_material.clone(),
-                )
-            }));
+            Arc::new(builder.auth_material_bootstrap.as_ref().map(
+                |auth_material| {
+                    kitsune2_bootstrap_client::AuthMaterial::new(
+                        auth_material.clone(),
+                    )
+                },
+            ));
 
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
 
