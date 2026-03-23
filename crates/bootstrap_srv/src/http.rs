@@ -325,6 +325,7 @@ fn tokio_thread(
                     let relay_router = Router::new()
                         .route("/relay", routing::get(crate::iroh_relay_axum::relay_handler))
                         .route("/ping", routing::get(crate::iroh_relay_axum::relay_probe_handler))
+                        .route("/generate_204", routing::get(crate::iroh_relay_axum::captive_portal_handler))
                         .with_state(relay_state);
 
                     app = app.merge(relay_router);
