@@ -297,7 +297,7 @@ fn tokio_thread(
                     app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
                 }
                 #[cfg(feature = "iroh-relay")]
-                {
+                let _relay_otel_metrics = {
                     app = app.route(
                         "/relay/register",
                         routing::put(handle_relay_register),
@@ -309,6 +309,12 @@ fn tokio_thread(
                         } else {
                             crate::iroh_relay_axum::create_relay_state()
                         };
+
+                    let relay_otel_metrics =
+                        crate::iroh_relay_metrics::register(
+                            relay_state.metrics.clone(),
+                        );
+
                     let relay_router = Router::new()
                         .route("/relay", routing::get(crate::iroh_relay_axum::relay_handler))
                         .route("/ping", routing::get(crate::iroh_relay_axum::relay_probe_handler))
@@ -316,7 +322,8 @@ fn tokio_thread(
                         .with_state(relay_state);
 
                     app = app.merge(relay_router);
-                }
+                    relay_otel_metrics
+                };
             }
 
             // Clone auth_tracker before moving it into AppState so we can return it
