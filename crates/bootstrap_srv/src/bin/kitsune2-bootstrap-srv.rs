@@ -181,6 +181,11 @@ fn main() {
         config.allowed_origins = Some(allowed_origins);
     }
 
+    // Setup opentelemetry metrics
+    let meter_provider =
+        metrics::enable_otlp_metrics(args.otlp_endpoint.as_deref())
+            .expect("Failed to initialize OTLP metrics");
+
     #[cfg(feature = "sbd")]
     {
         // Apply SBD command line arguments
@@ -199,13 +204,9 @@ fn main() {
         if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
             config.sbd.limit_ip_byte_burst = byte_burst;
         }
-        config.sbd.otlp_endpoint = args.otlp_endpoint;
+        config.sbd.otlp_endpoint = args.otlp_endpoint.clone();
         config.sbd.authentication_hook_server =
             args.authentication_hook_server.clone();
-
-        // Setup opentelemetry metrics
-        sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
-            .expect("Failed to initialize OTLP metrics");
     }
 
     #[cfg(feature = "iroh-relay")]
@@ -215,7 +216,6 @@ fn main() {
         }
     }
 
-    // Set auth in the new feature-independent location
     config.auth.authentication_hook_server = args.authentication_hook_server;
 
     tracing::info!(?config);
@@ -237,6 +237,13 @@ fn main() {
 
     tracing::info!("Terminating...");
     drop(srv);
+
+    if let Some(ref provider) = meter_provider
+        && let Err(e) = provider.force_flush()
+    {
+        tracing::warn!("Failed to flush OTEL metrics on shutdown: {e}");
+    }
+
     tracing::info!("Exit Process.");
     std::process::exit(0);
 }
