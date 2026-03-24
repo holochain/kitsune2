@@ -1,11 +1,11 @@
 extend = "../../Makefile.toml"
 
-# clippy is run with default features which covers sbd.
+# clippy is run with default features which covers iroh-relay.
 [tasks.clippy]
 workspace = false
-dependencies = ["clippy-iroh-relay"]
+dependencies = ["clippy-sbd"]
 
-[tasks.clippy-iroh-relay]
+[tasks.clippy-sbd]
 workspace = false
 command = "cargo"
 args = [
@@ -13,17 +13,17 @@ args = [
   "--all-targets",
   "--no-default-features",
   "--features",
-  "iroh-relay",
+  "sbd",
   "--",
   "--deny=warnings",
 ]
 
-# sbd is tested by extending the root makefile which runs `cargo test`.
+# iroh-relay is tested by extending the root makefile which runs `cargo test`.
 [tasks.test]
 workspace = false
-dependencies = ["test-iroh-relay"]
+dependencies = ["test-sbd"]
 
-[tasks.test-iroh-relay]
+[tasks.test-sbd]
 workspace = false
 command = "cargo"
-args = ["test", "--no-default-features", "--features", "iroh-relay"]
+args = ["test", "--no-default-features", "--features", "sbd"]

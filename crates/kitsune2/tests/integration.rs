@@ -18,9 +18,7 @@ use kitsune2_test_utils::{
     space::TEST_SPACE_ID,
 };
 #[cfg(all(
-    not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
-    not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
 use kitsune2_transport_iroh::{
@@ -28,11 +26,7 @@ use kitsune2_transport_iroh::{
     config::{IrohTransportConfig, IrohTransportModConfig},
 };
 use std::sync::Arc;
-#[cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
+#[cfg(feature = "transport-tx5-backend-go-pion")]
 use {
     kitsune2_transport_tx5::{
         Tx5TransportFactory,
@@ -77,16 +71,10 @@ async fn make_kitsune_node(
     bootstrap_server_url: &str,
 ) -> DynKitsune {
     let kitsune_builder = Builder {
-        #[cfg(any(
-            feature = "transport-tx5-backend-libdatachannel",
-            feature = "transport-tx5-backend-go-pion",
-            feature = "transport-tx5-datachannel-vendored"
-        ))]
+        #[cfg(feature = "transport-tx5-backend-go-pion")]
         transport: Tx5TransportFactory::create(),
         #[cfg(all(
-            not(feature = "transport-tx5-backend-libdatachannel"),
             not(feature = "transport-tx5-backend-go-pion"),
-            not(feature = "transport-tx5-datachannel-vendored"),
             feature = "transport-iroh"
         ))]
         transport: IrohTransportFactory::create(),
@@ -105,11 +93,7 @@ async fn make_kitsune_node(
         })
         .unwrap();
 
-    #[cfg(any(
-        feature = "transport-tx5-backend-libdatachannel",
-        feature = "transport-tx5-backend-go-pion",
-        feature = "transport-tx5-datachannel-vendored"
-    ))]
+    #[cfg(feature = "transport-tx5-backend-go-pion")]
     kitsune_builder
         .config
         .set_module_config(&Tx5TransportModConfig {
@@ -123,9 +107,7 @@ async fn make_kitsune_node(
         })
         .unwrap();
     #[cfg(all(
-        not(feature = "transport-tx5-backend-libdatachannel"),
         not(feature = "transport-tx5-backend-go-pion"),
-        not(feature = "transport-tx5-datachannel-vendored"),
         feature = "transport-iroh"
     ))]
     kitsune_builder
@@ -162,11 +144,7 @@ async fn make_kitsune_node(
     kitsune
 }
 
-#[cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
+#[cfg(feature = "transport-tx5-backend-go-pion")]
 async fn sbd_signal_server() -> (String, SbdServer) {
     let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
         bind: vec!["127.0.0.1:0".to_string()],
@@ -182,9 +160,7 @@ async fn sbd_signal_server() -> (String, SbdServer) {
 /// This function returns the relay URL (bootstrap server URL + /relay/).
 /// Note: The trailing slash is important for proper URL construction.
 #[cfg(all(
-    not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
-    not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
 async fn iroh_relay_from_bootstrap(bootstrap: &TestBootstrapSrv) -> String {
@@ -235,17 +211,11 @@ async fn two_node_gossip() {
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
 
-    #[cfg(any(
-        feature = "transport-tx5-backend-libdatachannel",
-        feature = "transport-tx5-backend-go-pion",
-        feature = "transport-tx5-datachannel-vendored"
-    ))]
+    #[cfg(feature = "transport-tx5-backend-go-pion")]
     let (relay_server_url, _relay_server) = sbd_signal_server().await;
 
     #[cfg(all(
-        not(feature = "transport-tx5-backend-libdatachannel"),
         not(feature = "transport-tx5-backend-go-pion"),
-        not(feature = "transport-tx5-datachannel-vendored"),
         feature = "transport-iroh"
     ))]
     let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
@@ -319,11 +289,7 @@ async fn two_node_gossip() {
 ///
 /// This isn't a perfect check for shutdown, but it's a reasonable expectation that if all the
 /// Tokio tasks for a space are gone, then it's not actively doing work in the background.
-#[cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
+#[cfg(feature = "transport-tx5-backend-go-pion")]
 #[tokio::test]
 async fn shutdown_space() {
     enable_tracing();
@@ -331,17 +297,11 @@ async fn shutdown_space() {
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
 
-    #[cfg(any(
-        feature = "transport-tx5-backend-libdatachannel",
-        feature = "transport-tx5-backend-go-pion",
-        feature = "transport-tx5-datachannel-vendored"
-    ))]
+    #[cfg(feature = "transport-tx5-backend-go-pion")]
     let (relay_server_url, _relay_server) = sbd_signal_server().await;
 
     #[cfg(all(
-        not(feature = "transport-tx5-backend-libdatachannel"),
         not(feature = "transport-tx5-backend-go-pion"),
-        not(feature = "transport-tx5-datachannel-vendored"),
         feature = "transport-iroh"
     ))]
     let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
@@ -482,11 +442,7 @@ async fn test_space_should_not_start_without_bootstrap_url_configured() {
     // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
     let kitsune_builder = default_builder().with_default_config().unwrap();
 
-    #[cfg(any(
-        feature = "transport-tx5-backend-libdatachannel",
-        feature = "transport-tx5-backend-go-pion",
-        feature = "transport-tx5-datachannel-vendored"
-    ))]
+    #[cfg(feature = "transport-tx5-backend-go-pion")]
     {
         let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
             bind: vec!["127.0.0.1:0".to_string()],
@@ -554,11 +510,7 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
     // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
     let kitsune_builder = default_builder().with_default_config().unwrap();
 
-    #[cfg(any(
-        feature = "transport-tx5-backend-libdatachannel",
-        feature = "transport-tx5-backend-go-pion",
-        feature = "transport-tx5-datachannel-vendored"
-    ))]
+    #[cfg(feature = "transport-tx5-backend-go-pion")]
     {
         let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
             bind: vec!["127.0.0.1:0".to_string()],

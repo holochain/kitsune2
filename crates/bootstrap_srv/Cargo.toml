@@ -63,7 +63,7 @@ rand_chacha = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 
 [features]
-default = ["sbd"]
+default = ["iroh-relay"]
 
 # enable axum http2 support
 http2 = ["axum/http2"]

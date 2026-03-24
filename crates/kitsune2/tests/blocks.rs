@@ -16,9 +16,7 @@ use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
 #[cfg(all(
-    not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
-    not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
 use kitsune2_transport_iroh::{
@@ -28,11 +26,7 @@ use kitsune2_transport_iroh::{
 
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OnceCell;
-#[cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
+#[cfg(feature = "transport-tx5-backend-go-pion")]
 use {kitsune2_transport_tx5::Tx5TransportFactory, sbd_server::SbdServer};
 
 /// A default test space handler that just drops received messages.
@@ -171,11 +165,7 @@ impl TxHandler for TestTxHandler {
     }
 }
 
-#[cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
+#[cfg(feature = "transport-tx5-backend-go-pion")]
 async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
     let sbd_server = SbdServer::new(Arc::new(sbd_server::Config {
         bind: vec!["127.0.0.1:0".to_string()],
@@ -212,9 +202,7 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
 }
 
 #[cfg(all(
-    not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
-    not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
 async fn builder_with_iroh() -> (
@@ -250,19 +238,13 @@ async fn builder_with_iroh() -> (
 
 macro_rules! builder_with_relay {
     () => {{
-        #[cfg(any(
-            feature = "transport-tx5-backend-libdatachannel",
-            feature = "transport-tx5-backend-go-pion",
-            feature = "transport-tx5-datachannel-vendored"
-        ))]
+        #[cfg(feature = "transport-tx5-backend-go-pion")]
         {
             builder_with_tx5().await
         }
 
         #[cfg(all(
-            not(feature = "transport-tx5-backend-libdatachannel"),
             not(feature = "transport-tx5-backend-go-pion"),
-            not(feature = "transport-tx5-datachannel-vendored"),
             feature = "transport-iroh"
         ))]
         {
