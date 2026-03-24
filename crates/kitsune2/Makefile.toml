@@ -1,9 +1,9 @@
 extend = "../../Makefile.toml"
 
-# runs clippy with default features, which covers `transport-tx5-datachannel-vendored`
+# runs clippy with default features, which covers `transport-iroh`
 [tasks.clippy]
 workspace = false
-dependencies = ["clippy-transport-tx5-backend-go-pion", "clippy-transport-iroh"]
+dependencies = ["clippy-transport-tx5-backend-go-pion"]
 
 [tasks.clippy-transport-tx5-backend-go-pion]
 workspace = false
@@ -18,23 +18,10 @@ args = [
   "--deny=warnings",
 ]
 
-[tasks.clippy-transport-iroh]
-workspace = false
-command = "cargo"
-args = [
-  "clippy",
-  "--all-targets",
-  "--no-default-features",
-  "--features",
-  "transport-iroh",
-  "--",
-  "--deny=warnings",
-]
-
-# runs test with default features, which covers `transport-tx5-datachannel-vendored`
+# runs test with default features, which covers `transport-iroh`
 [tasks.test]
 workspace = false
-dependencies = ["test-transport-tx5-backend-go-pion", "test-transport-iroh"]
+dependencies = ["test-transport-tx5-backend-go-pion"]
 
 [tasks.test-transport-tx5-backend-go-pion]
 workspace = false
@@ -44,18 +31,6 @@ args = [
   "--no-default-features",
   "--features",
   "transport-tx5-backend-go-pion",
-  "--",
-  "--nocapture",
-]
-
-[tasks.test-transport-iroh]
-workspace = false
-command = "cargo"
-args = [
-  "test",
-  "--no-default-features",
-  "--features",
-  "transport-iroh",
   "--",
   "--nocapture",
 ]

@@ -7,10 +7,10 @@
 //!
 //! Kitsune2 is the reference implementation of the [Kitsune2 API](kitsune2_api)
 //!
-//! [DHT](https://docs.rs/kitsune2_dht/latest/kitsune2_dht/)  
-//! [Gossip protocol](https://github.com/holochain/kitsune2/blob/main/crates/gossip/README.md)  
-//! [Bootstrap server](https://docs.rs/kitsune2_bootstrap_srv/latest/kitsune2_bootstrap_srv/)  
-//! [Core modules](kitsune2_core)  
+//! [DHT](https://docs.rs/kitsune2_dht/latest/kitsune2_dht/)
+//! [Gossip protocol](https://github.com/holochain/kitsune2/blob/main/crates/gossip/README.md)
+//! [Bootstrap server](https://docs.rs/kitsune2_bootstrap_srv/latest/kitsune2_bootstrap_srv/)
+//! [Core modules](kitsune2_core)
 
 use kitsune2_api::*;
 use kitsune2_core::{
@@ -19,17 +19,11 @@ use kitsune2_core::{
 };
 use kitsune2_gossip::K2GossipFactory;
 #[cfg(all(
-    not(feature = "transport-tx5-backend-libdatachannel"),
     not(feature = "transport-tx5-backend-go-pion"),
-    not(feature = "transport-tx5-datachannel-vendored"),
     feature = "transport-iroh"
 ))]
 use kitsune2_transport_iroh::IrohTransportFactory;
-#[cfg(any(
-    feature = "transport-tx5-backend-libdatachannel",
-    feature = "transport-tx5-backend-go-pion",
-    feature = "transport-tx5-datachannel-vendored"
-))]
+#[cfg(feature = "transport-tx5-backend-go-pion")]
 use kitsune2_transport_tx5::Tx5TransportFactory;
 
 /// Construct a default production builder for Kitsune2.
@@ -41,7 +35,7 @@ use kitsune2_transport_tx5::Tx5TransportFactory;
 /// - `bootstrap` - The default bootstrap is [factories::CoreBootstrapFactory].
 /// - `fetch` - The default fetch module is [factories::CoreFetchFactory].
 /// - `report` - The default report module is [factories::CoreReportFactory].
-/// - `transport` - The default transport is [Tx5TransportFactory].
+/// - `transport` - The default transport is [kitsune2_transport_iroh::IrohTransportFactory].
 /// - `op_store` - The default op store is [MemOpStoreFactory].
 ///   Note: you will likely want to implement your own op store.
 /// - `peer_meta_store` - The default peer meta store is [factories::MemPeerMetaStoreFactory].
@@ -63,16 +57,10 @@ pub fn default_builder() -> Builder {
         bootstrap: factories::CoreBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         report: factories::CoreReportFactory::create(),
-        #[cfg(any(
-            feature = "transport-tx5-backend-libdatachannel",
-            feature = "transport-tx5-backend-go-pion",
-            feature = "transport-tx5-datachannel-vendored"
-        ))]
+        #[cfg(feature = "transport-tx5-backend-go-pion")]
         transport: Tx5TransportFactory::create(),
         #[cfg(all(
-            not(feature = "transport-tx5-backend-libdatachannel"),
             not(feature = "transport-tx5-backend-go-pion"),
-            not(feature = "transport-tx5-datachannel-vendored"),
             feature = "transport-iroh"
         ))]
         transport: IrohTransportFactory::create(),
