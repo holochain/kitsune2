@@ -46,6 +46,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
 sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
 # iroh relay server-related dependencies
 iroh = { workspace = true, optional = true }
 iroh-base = { workspace = true, optional = true }
@@ -58,8 +60,10 @@ rand = { workspace = true }
 sbd-client = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
 iroh-base = { workspace = true }
+iroh-relay = { workspace = true, features = ["server"] }
 rand_chacha = { workspace = true }
 kitsune2_test_utils = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 [features]
 default = ["iroh-relay"]
