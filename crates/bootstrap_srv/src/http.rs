@@ -302,6 +302,12 @@ fn tokio_thread(
                     None
                 };
 
+            // Declare outside the `if` block so the guard lives until the
+            // server futures complete.  Dropping it earlier would
+            // unregister the OTEL observable-counter callbacks.
+            #[cfg(feature = "iroh-relay")]
+            let mut _relay_otel_metrics = None;
+
             if !config.no_relay_server {
                 #[cfg(feature = "sbd")]
                 {
@@ -320,6 +326,13 @@ fn tokio_thread(
                         } else {
                             crate::iroh_relay_axum::create_relay_state()
                         };
+
+                    _relay_otel_metrics = Some({
+                        crate::iroh_relay_metrics::register(
+                            relay_state.metrics.clone(),
+                        )
+                    });
+
                     let relay_router = Router::new()
                         .route("/relay", routing::get(crate::iroh_relay_axum::relay_handler))
                         .route("/ping", routing::get(crate::iroh_relay_axum::relay_probe_handler))
@@ -575,7 +588,7 @@ async fn handle_boot_get(
     headers: axum::http::HeaderMap,
     extract::State(state): extract::State<AppState>,
 ) -> response::Response {
-    // Check authentication (feature-independent)
+    // Check authentication
     let token: Option<Arc<str>> = headers
         .get("Authorization")
         .and_then(|t| t.to_str().ok())
@@ -602,7 +615,7 @@ async fn handle_boot_put(
     extract::State(state): extract::State<AppState>,
     body: bytes::Bytes,
 ) -> response::Response<body::Body> {
-    // Check authentication (feature-independent)
+    // Check authentication
     let token: Option<Arc<str>> = headers
         .get("Authorization")
         .and_then(|t| t.to_str().ok())

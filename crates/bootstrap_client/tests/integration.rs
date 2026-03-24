@@ -141,11 +141,12 @@ async fn auth_with_real_token_provider() {
 
     let mut config = Config::testing();
     let auth_hook_url = format!("http://{hook_addr:?}");
-    // Set auth on both config.auth (feature-independent) and config.sbd (for SBD websockets)
     config.auth.authentication_hook_server = Some(auth_hook_url.clone());
+
     // Note: sbd config still expects full URL with /authenticate path
     config.sbd.authentication_hook_server =
         Some(format!("{auth_hook_url}/authenticate"));
+
     config.allowed_origins = Some(vec!["http://localhost".into()]);
 
     let s =
