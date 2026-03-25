@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   SRV_IMAGE_NAME: holochain/kitsune2_bootstrap_srv
-  SRV_IROH_IMAGE_NAME: holochain/kitsune2_bootstrap_srv_iroh_relay
+  SRV_SBD_IMAGE_NAME: holochain/kitsune2_bootstrap_srv_sbd
   AUTH_TEST_IMAGE_NAME: holochain/kitsune2_test_auth_hook_server
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  docker-build-kitsune2-bootstrap-srv-iroh-relay:
+  docker-build-kitsune2-bootstrap-srv-sbd:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,12 +63,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.SRV_IROH_IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.SRV_SBD_IMAGE_NAME }}
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v7
         with:
-          file: docker/kitsune2_bootstrap_srv_iroh_relay/Dockerfile
+          file: docker/kitsune2_bootstrap_srv_sbd/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

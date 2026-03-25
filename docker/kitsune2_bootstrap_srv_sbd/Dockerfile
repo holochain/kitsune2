@@ -7,8 +7,8 @@ WORKDIR /usr/src/kitsune2
 COPY ["Cargo.toml", "Cargo.lock", "./"]
 COPY crates ./crates
 
-# Build the bootstrap server
-RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv --no-default-features --features iroh-relay
+# Build the bootstrap server with the SBD backend
+RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv --no-default-features --features sbd
 
 FROM debian:trixie-slim
 
