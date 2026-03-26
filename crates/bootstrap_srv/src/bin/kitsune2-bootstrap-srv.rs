@@ -170,6 +170,12 @@ fn main() {
         config.allowed_origins = Some(allowed_origins);
     }
 
+    // Setup opentelemetry metrics (feature-independent)
+    kitsune2_bootstrap_srv::metrics::enable_otlp_metrics(
+        args.otlp_endpoint.as_deref(),
+    )
+    .expect("Failed to initialize OTLP metrics");
+
     #[cfg(feature = "sbd")]
     {
         // Apply SBD command line arguments
@@ -188,13 +194,9 @@ fn main() {
         if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
             config.sbd.limit_ip_byte_burst = byte_burst;
         }
-        config.sbd.otlp_endpoint = args.otlp_endpoint;
+        config.sbd.otlp_endpoint = args.otlp_endpoint.clone();
         config.sbd.authentication_hook_server =
             args.authentication_hook_server.clone();
-
-        // Setup opentelemetry metrics
-        sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
-            .expect("Failed to initialize OTLP metrics");
     }
 
     // Set auth in the new feature-independent location

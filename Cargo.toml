@@ -126,8 +126,10 @@ schemars = { version = "0.9", features = ["preserve_order"] }
 rustyline = { version = "17.0" }
 # Used in showcase app for the commands
 strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
-# Used for telemetry in sbd server
+# Used for telemetry in sbd server and bootstrap relay metrics
 opentelemetry = "0.30"
+opentelemetry_sdk = "0.30"
+opentelemetry-otlp = { version = "0.30", features = ["http-proto"] }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
 # tools and so are not needed in any true dependency trees.
@@ -149,8 +151,6 @@ sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
 iroh-relay-holochain = "0.96.1"
 iroh-base = "0.96.1"
-# used to test opentelemetry metrics
-opentelemetry_sdk = "0.30"
 
 # used to hash op data
 sha2 = "0.10.8"
