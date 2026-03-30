@@ -662,26 +662,22 @@ impl IrohTransport {
     /// action succeeds, the context is returned. In case of error during the
     /// preflight, the context is dropped and an error returned.
     async fn create_connection_and_context(
-        endpoint: DynIrohEndpoint,
+        &self,
         target: EndpointAddr,
-        handler: Arc<TxImpHnd>,
         remote_url: Url,
-        connections: Connections,
-        local_url: Arc<RwLock<Option<Url>>>,
-        config: &IrohTransportConfig,
-        per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
-        debug!(?target, connect_timeout_s = config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
+        debug!(?target, connect_timeout_s = self.config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
         let conn = match tokio::time::timeout(
-            Duration::from_secs(config.connect_timeout_s as u64),
-            endpoint.connect(target.clone(), ALPN),
+            Duration::from_secs(self.config.connect_timeout_s as u64),
+            self.endpoint.connect(target.clone(), ALPN),
         )
         .await
         {
             Err(e) => {
                 // On connection establishment error, mark the peer unresponsive
-                let _ = handler
+                let _ = self
+                    .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
                     .await;
 
@@ -702,9 +698,9 @@ impl IrohTransport {
         // Send preflight as first message on the new connection.
         // Use per-space URL if the remote is on an inserted relay,
         // otherwise use the global local URL.
-        let global_local_url = local_url.read().expect("poisoned").clone();
+        let global_local_url = self.local_url.read().expect("poisoned").clone();
         let per_space_urls_snapshot =
-            per_space_urls.read().expect("poisoned").clone();
+            self.per_space_urls.read().expect("poisoned").clone();
         let maybe_local_url = Self::local_url_for_remote(
             &remote_url,
             &per_space_urls_snapshot,
@@ -712,18 +708,18 @@ impl IrohTransport {
         );
         if let Some(current_local_url) = maybe_local_url {
             let preflight_bytes =
-                handler.peer_connect(remote_url.clone()).await?;
+                self.handler.peer_connect(remote_url.clone()).await?;
 
             let ctx = ConnectionContext::new(ConnectionContextParams {
-                handler: handler.clone(),
+                handler: self.handler.clone(),
                 connection: conn,
                 remote_url: Some(remote_url.clone()),
                 preflight_sent: true,
                 opened_at_s: conn_opened_at_s,
-                connections: connections.clone(),
-                local_url: local_url.clone(),
-                per_space_urls: per_space_urls.clone(),
-                max_frame_bytes: config.max_frame_bytes,
+                connections: self.connections.clone(),
+                local_url: self.local_url.clone(),
+                per_space_urls: self.per_space_urls.clone(),
+                max_frame_bytes: self.config.max_frame_bytes,
             });
 
             if let Err(e) = ctx
@@ -734,7 +730,8 @@ impl IrohTransport {
                 .await
             {
                 // On send preflight error, mark the peer unresponsive
-                let _ = handler
+                let _ = self
+                    .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
                     .await;
 
@@ -773,9 +770,6 @@ impl TxImp for IrohTransport {
     }
 
     fn send(&self, remote_url: Url, data: Bytes) -> BoxFut<'_, K2Result<()>> {
-        let local_url = self.local_url.clone();
-        let endpoint = self.endpoint.clone();
-        let handler = self.handler.clone();
         let connections = self.connections.clone();
         let connection_locks = self.connection_locks.clone();
 
@@ -844,17 +838,12 @@ impl TxImp for IrohTransport {
                     // Connection doesn't exist, create it.
                     // This establishes the connection and sends the preflight to the remote.
                     info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
-                    let ctx = Self::create_connection_and_context(
-                        endpoint,
-                        remote,
-                        handler,
-                        remote_url.clone(),
-                        connections.clone(),
-                        local_url.clone(),
-                        &self.config,
-                        self.per_space_urls.clone(),
-                    )
-                    .await?;
+                    let ctx = self
+                        .create_connection_and_context(
+                            remote,
+                            remote_url.clone(),
+                        )
+                        .await?;
 
                     // Now that preflight has been sent successfully, add context to
                     // connections map.
