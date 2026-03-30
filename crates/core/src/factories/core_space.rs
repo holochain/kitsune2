@@ -126,7 +126,7 @@ impl SpaceFactory for CoreSpaceFactory {
                                 })
                         })
                         .transpose()?
-                        .or_else(|| builder.auth_material.clone());
+                        .or_else(|| builder.auth_material_relay.clone());
 
                     tx.insert_relay(relay_url.clone(), auth_material).await?
                 } else {
