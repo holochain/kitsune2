@@ -194,7 +194,7 @@ impl CoreBootstrap {
                     .decode(b64)
                     .expect("validated during config validation")
             })
-            .or_else(|| builder.auth_material.clone());
+            .or_else(|| builder.auth_material_bootstrap.clone());
 
         let auth_material =
             Arc::new(auth_material_bytes.map(|bytes| {

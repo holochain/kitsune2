@@ -223,7 +223,7 @@ impl TransportFactory for Tx5TransportFactory {
             let imp = Tx5Transport::create(
                 config.tx5_transport,
                 handler.clone(),
-                builder.auth_material.clone(),
+                builder.auth_material_relay.clone(),
             )
             .await?;
             Ok(DefaultTransport::create(&handler, imp))

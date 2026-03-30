@@ -36,7 +36,7 @@ impl Tx5TransportTestHarness {
         this.restart().await;
 
         let builder = Builder {
-            auth_material,
+            auth_material_relay: auth_material,
             transport: Tx5TransportFactory::create(),
             ..kitsune2_core::default_test_builder()
         }

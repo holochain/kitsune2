@@ -70,7 +70,7 @@ struct Test {
 impl Test {
     pub async fn new(server: &str, auth_material: Option<Vec<u8>>) -> Self {
         let builder = Builder {
-            auth_material,
+            auth_material_bootstrap: auth_material,
             verifier: Arc::new(TestCrypto),
             bootstrap: super::CoreBootstrapFactory::create(),
             ..crate::default_test_builder()
