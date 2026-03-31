@@ -1,6 +1,5 @@
 //! The core bootstrap implementation provided by Kitsune2.
 
-use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
 
@@ -13,16 +12,6 @@ pub mod config {
     pub struct CoreBootstrapConfig {
         /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
         pub server_url: Option<String>,
-
-        /// Base64-encoded auth material for connecting to bootstrap/signal
-        /// services. If set, this overrides the builder-level auth_material
-        /// for this specific space.
-        pub auth_material_base64: Option<String>,
-
-        /// Per-space relay URL override. If set, this relay will be
-        /// dynamically added to the iroh endpoint when the space is created,
-        /// allowing spaces with different relay servers to coexist.
-        pub relay_url: Option<String>,
 
         /// Minimum backoff in ms to use for both push and poll retry loops.
         ///
@@ -41,8 +30,6 @@ pub mod config {
         fn default() -> Self {
             Self {
                 server_url: None,
-                auth_material_base64: None,
-                relay_url: None,
                 backoff_min_ms: 1000 * 5,
                 backoff_max_ms: 1000 * 60 * 5,
             }
@@ -114,17 +101,6 @@ impl CoreBootstrapFactory {
             }
         }
 
-        if let Some(b64) = &config.core_bootstrap.auth_material_base64 {
-            base64::engine::general_purpose::STANDARD
-                .decode(b64)
-                .map_err(|e| {
-                    K2Error::other_src(
-                        "invalid base64 in auth_material_base64",
-                        e,
-                    )
-                })?;
-        }
-
         Ok(())
     }
 }
@@ -184,20 +160,8 @@ impl CoreBootstrap {
         peer_store: DynPeerStore,
         space: SpaceId,
     ) -> Self {
-        // Prefer per-space auth_material from config over builder-level.
-        // Safety: auth_material_base64 is validated during config validation.
-        let auth_material_bytes: Option<Vec<u8>> = config
-            .auth_material_base64
-            .as_ref()
-            .map(|b64| {
-                base64::engine::general_purpose::STANDARD
-                    .decode(b64)
-                    .expect("validated during config validation")
-            })
-            .or_else(|| builder.auth_material_bootstrap.clone());
-
         let auth_material =
-            Arc::new(auth_material_bytes.map(|bytes| {
+            Arc::new(builder.auth_material_bootstrap.clone().map(|bytes| {
                 kitsune2_bootstrap_client::AuthMaterial::new(bytes)
             }));
 
