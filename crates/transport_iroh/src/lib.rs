@@ -268,6 +268,29 @@ pub mod config {
         /// The actual config for the transport.
         pub iroh_transport: IrohTransportConfig,
     }
+
+    /// Per-space configuration for the iroh transport.
+    ///
+    /// When provided via per-space config overrides, the iroh transport
+    /// reads this in [`configure_for_space`](super::IrohTransport::configure_for_space)
+    /// to dynamically add a relay for the space.
+    #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct IrohTransportPerSpaceConfig {
+        /// Relay URL to use for this space. If set, the relay is
+        /// dynamically added to the shared iroh endpoint.
+        pub relay_url: Option<String>,
+    }
+
+    /// Module-level config wrapper for per-space iroh transport config.
+    #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct IrohTransportPerSpaceModConfig {
+        /// Per-space iroh transport configuration.
+        pub iroh_transport_per_space: IrohTransportPerSpaceConfig,
+    }
 }
 
 pub use config::*;
@@ -1090,5 +1113,23 @@ impl TxImp for IrohTransport {
 
             Ok(Some(per_space_url))
         })
+    }
+
+    fn configure_for_space(
+        &self,
+        _space_id: SpaceId,
+        config: &Config,
+        auth_material_relay: Option<Vec<u8>>,
+    ) -> BoxFut<'_, K2Result<Option<Url>>> {
+        let per_space_config: Option<IrohTransportPerSpaceModConfig> =
+            config.get_module_config().ok();
+
+        let relay_url = per_space_config
+            .and_then(|c| c.iroh_transport_per_space.relay_url);
+
+        match relay_url {
+            Some(url) => self.insert_relay(url, auth_material_relay),
+            None => Box::pin(async { Ok(None) }),
+        }
     }
 }

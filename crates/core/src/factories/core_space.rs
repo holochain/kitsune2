@@ -73,13 +73,6 @@ pub mod per_space_overrides_config {
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
     #[serde(rename_all = "camelCase")]
     pub struct CoreSpacePerSpaceOverridesConfig {
-        /// Per-space relay URL. If set, the relay is dynamically added
-        /// to the transport endpoint when the space is created via
-        /// [`Transport::insert_relay`](kitsune2_api::Transport::insert_relay).
-        /// The returned URL is used as the pinned URL for this space's
-        /// agent info.
-        pub relay_url: Option<String>,
-
         /// Base64-encoded auth material for the bootstrap service,
         /// overriding `builder.auth_material_bootstrap` for this space.
         pub auth_material_bootstrap_base64: Option<String>,
@@ -141,11 +134,19 @@ impl SpaceFactory for CoreSpaceFactory {
                 None => builder,
             };
 
-            // Apply per-space overrides from the dedicated config section.
-            // This updates builder-level auth material and handles dynamic
-            // relay insertion, keeping bootstrap and transport modules clean.
-            let (builder, per_space_relay_url) =
-                apply_per_space_overrides(builder, &tx).await?;
+            // Apply per-space auth material overrides to the builder
+            // clone, keeping bootstrap and transport modules clean.
+            let builder = apply_per_space_auth_overrides(builder)?;
+
+            // Let the transport handle any per-space configuration it
+            // understands (e.g., a per-space relay URL for iroh).
+            let per_space_relay_url = tx
+                .configure_for_space(
+                    space_id.clone(),
+                    &builder.config,
+                    builder.auth_material_relay.clone(),
+                )
+                .await?;
 
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
@@ -749,69 +750,53 @@ async fn broadcast_agent_info(
     Ok(())
 }
 
-/// Read the per-space overrides config and apply auth material overrides
-/// to a cloned builder. If a per-space relay URL is configured, insert it
-/// into the transport endpoint.
-///
-/// Returns the (potentially updated) builder and an optional per-space URL
-/// for agent info pinning.
-async fn apply_per_space_overrides(
+/// Read per-space auth material overrides from the dedicated config
+/// section and apply them to a cloned builder.
+fn apply_per_space_auth_overrides(
     builder: Arc<Builder>,
-    tx: &DynTransport,
-) -> K2Result<(Arc<Builder>, Option<Url>)> {
+) -> K2Result<Arc<Builder>> {
     let overrides: CoreSpacePerSpaceOverridesModConfig =
         match builder.config.get_module_config() {
             Ok(cfg) => cfg,
-            Err(_) => {
-                return Ok((builder, None));
-            }
+            Err(_) => return Ok(builder),
         };
     let o = &overrides.core_space_per_space_overrides;
 
-    let has_auth_overrides = o.auth_material_bootstrap_base64.is_some()
+    let has_overrides = o.auth_material_bootstrap_base64.is_some()
         || o.auth_material_relay_base64.is_some();
 
-    let builder = if has_auth_overrides {
-        let mut b = (*builder).clone();
-        if let Some(b64) = &o.auth_material_bootstrap_base64 {
-            b.auth_material_bootstrap = Some(
-                base64::engine::general_purpose::STANDARD
-                    .decode(b64)
-                    .map_err(|e| {
-                        K2Error::other_src(
-                            "invalid base64 in \
-                             auth_material_bootstrap_base64",
-                            e,
-                        )
-                    })?,
-            );
-        }
-        if let Some(b64) = &o.auth_material_relay_base64 {
-            b.auth_material_relay = Some(
-                base64::engine::general_purpose::STANDARD
-                    .decode(b64)
-                    .map_err(|e| {
-                        K2Error::other_src(
-                            "invalid base64 in \
-                             auth_material_relay_base64",
-                            e,
-                        )
-                    })?,
-            );
-        }
-        Arc::new(b)
-    } else {
-        builder
-    };
+    if !has_overrides {
+        return Ok(builder);
+    }
 
-    let per_space_relay_url = if let Some(relay_url) = &o.relay_url {
-        tx.insert_relay(relay_url.clone(), builder.auth_material_relay.clone())
-            .await?
-    } else {
-        None
-    };
-
-    Ok((builder, per_space_relay_url))
+    let mut b = (*builder).clone();
+    if let Some(b64) = &o.auth_material_bootstrap_base64 {
+        b.auth_material_bootstrap = Some(
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                    K2Error::other_src(
+                        "invalid base64 in \
+                         auth_material_bootstrap_base64",
+                        e,
+                    )
+                })?,
+        );
+    }
+    if let Some(b64) = &o.auth_material_relay_base64 {
+        b.auth_material_relay = Some(
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                    K2Error::other_src(
+                        "invalid base64 in \
+                         auth_material_relay_base64",
+                        e,
+                    )
+                })?,
+        );
+    }
+    Ok(Arc::new(b))
 }
 
 #[cfg(test)]
