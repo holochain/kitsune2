@@ -3,13 +3,16 @@
 use crate::{protocol::*, *};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 
 type SpaceMap = Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>;
 type ModMap = Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>;
 type MessageBlocksMap =
     Arc<Mutex<HashMap<Url, HashMap<SpaceId, MessageBlockCount>>>>;
+
+type PendingSpaceUrls = Arc<Mutex<HashMap<SpaceId, Url>>>;
+type PerSpaceManaged = Arc<Mutex<HashSet<SpaceId>>>;
 
 /// This is the low-level backend transport handler designed to work
 /// with [DefaultTransport].
@@ -21,6 +24,12 @@ pub struct TxImpHnd {
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
+    pending_space_urls: PendingSpaceUrls,
+    /// Spaces whose listening address is managed by the transport
+    /// (e.g., via per-space relay). These are excluded from the
+    /// global [`new_listening_address`](Self::new_listening_address)
+    /// broadcast.
+    per_space_managed: PerSpaceManaged,
 }
 
 impl TxImpHnd {
@@ -33,6 +42,8 @@ impl TxImpHnd {
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
             blocked_message_counts: Arc::new(Mutex::new(HashMap::new())),
+            pending_space_urls: Arc::new(Mutex::new(HashMap::new())),
+            per_space_managed: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -40,14 +51,15 @@ impl TxImpHnd {
     /// this local node can be reached by peers
     pub fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
         let handler = self.handler.clone();
-        let space_map = self
+        let managed = self.per_space_managed.lock().unwrap().clone();
+        let space_map: Vec<_> = self
             .space_map
-            .clone()
             .lock()
             .unwrap()
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+            .iter()
+            .filter(|(id, _)| !managed.contains(id))
+            .map(|(_, h)| h.clone())
+            .collect();
 
         Box::pin(async move {
             handler.new_listening_address(this_url.clone()).await;
@@ -55,6 +67,46 @@ impl TxImpHnd {
                 s.new_listening_address(this_url.clone()).await;
             }
         })
+    }
+
+    /// Deliver a listening address to a specific space.
+    ///
+    /// Used by transports that assign per-space relay addresses
+    /// asynchronously. If the space handler is not yet registered,
+    /// the URL is stored and delivered when the handler registers
+    /// (see [DefaultTransport::register_space_handler]).
+    pub fn new_listening_address_for_space(
+        &self,
+        space_id: &SpaceId,
+        url: Url,
+    ) -> BoxFut<'static, ()> {
+        self.per_space_managed
+            .lock()
+            .unwrap()
+            .insert(space_id.clone());
+
+        let handler =
+            self.space_map.lock().unwrap().get(space_id).cloned();
+        if let Some(h) = handler {
+            Box::pin(async move {
+                h.new_listening_address(url).await;
+            })
+        } else {
+            self.pending_space_urls
+                .lock()
+                .unwrap()
+                .insert(space_id.clone(), url);
+            Box::pin(async {})
+        }
+    }
+
+    /// Remove a space from the per-space managed set, so it will
+    /// again receive global address broadcasts.
+    pub fn unmark_per_space_managed(&self, space_id: &SpaceId) {
+        self.per_space_managed
+            .lock()
+            .unwrap()
+            .remove(space_id);
     }
 
     /// Call this when you establish an outgoing connection and
@@ -571,6 +623,7 @@ pub struct DefaultTransport {
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
+    pending_space_urls: PendingSpaceUrls,
 }
 
 impl DefaultTransport {
@@ -585,6 +638,7 @@ impl DefaultTransport {
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
             blocked_message_counts: hnd.blocked_message_counts.clone(),
+            pending_space_urls: hnd.pending_space_urls.clone(),
         });
         out
     }
@@ -614,11 +668,21 @@ impl Transport for DefaultTransport {
         space_id: SpaceId,
         handler: DynTxSpaceHandler,
     ) -> Option<Url> {
+        let pending_url = self
+            .pending_space_urls
+            .lock()
+            .unwrap()
+            .remove(&space_id);
+
         let mut lock = self.space_map.lock().unwrap();
         if lock.insert(space_id.clone(), handler).is_some() {
             panic!("Attempted to register duplicate space handler! {space_id}");
         }
-        // keep the lock locked while we fetch the url for atomicity.
+
+        if pending_url.is_some() {
+            return pending_url;
+        }
+
         self.imp.url()
     }
 
