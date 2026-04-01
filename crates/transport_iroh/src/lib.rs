@@ -281,6 +281,11 @@ pub mod config {
         /// Relay URL to use for this space. If set, the relay is
         /// dynamically added to the shared iroh endpoint.
         pub relay_url: Option<String>,
+
+        /// Base64-encoded auth material for relay registration.
+        /// When set alongside `relay_url`, the endpoint's public key
+        /// is registered with the relay server before connecting.
+        pub auth_material_relay_base64: Option<String>,
     }
 
     /// Module-level config wrapper for per-space iroh transport config.
@@ -397,6 +402,8 @@ struct IrohTransport {
     /// Used to send the correct local URL in preflights for connections
     /// through non-global relays.
     per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
+    /// Maps SpaceId -> relay host, so we can clean up on unconfigure.
+    space_relay_hosts: Arc<RwLock<HashMap<SpaceId, String>>>,
 }
 
 impl Drop for IrohTransport {
@@ -594,6 +601,7 @@ impl IrohTransport {
             config,
             known_relays: Arc::new(RwLock::new(HashMap::new())),
             per_space_urls,
+            space_relay_hosts: Arc::new(RwLock::new(HashMap::new())),
         });
         Ok(out)
     }
@@ -858,91 +866,89 @@ impl IrohTransport {
     ///
     /// Returns the endpoint's URL on the new relay so that per-space
     /// agent info can announce the correct relay address.
-    fn insert_relay(
-        &self,
+    async fn do_insert_relay(
+        endpoint: DynIrohEndpoint,
+        per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
+        known_relays: Arc<RwLock<HashMap<String, String>>>,
         relay_url: String,
         auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        let endpoint = self.endpoint.clone();
-        let per_space_urls = self.per_space_urls.clone();
-        Box::pin(async move {
-            let relay_url_str = if relay_url.ends_with('/') {
-                relay_url
-            } else {
-                format!("{relay_url}/")
-            };
+    ) -> K2Result<Option<Url>> {
+        let relay_url_str = if relay_url.ends_with('/') {
+            relay_url
+        } else {
+            format!("{relay_url}/")
+        };
 
-            if let Some(auth_bytes) = auth_material {
-                let server_url =
-                    ::url::Url::parse(&relay_url_str).map_err(|e| {
-                        K2Error::other_src(
-                            "Invalid relay URL for registration",
-                            e,
-                        )
-                    })?;
-                let mut server_url = server_url;
-                server_url.set_path("/");
-
-                let key_bytes = endpoint.id_bytes();
-                let auth_material =
-                    kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
-
-                tokio::task::spawn_blocking(move || {
-                    kitsune2_bootstrap_client::blocking_register_relay_key(
-                        server_url,
-                        &auth_material,
-                        &key_bytes,
+        if let Some(auth_bytes) = auth_material {
+            let server_url =
+                ::url::Url::parse(&relay_url_str).map_err(|e| {
+                    K2Error::other_src(
+                        "Invalid relay URL for registration",
+                        e,
                     )
-                })
-                .await
-                .map_err(|e| {
-                    K2Error::other_src("Registration task failed", e)
-                })??;
-            }
+                })?;
+            let mut server_url = server_url;
+            server_url.set_path("/");
 
-            let relay_url_parsed = RelayUrl::from_str(&relay_url_str)
-                .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
+            let key_bytes = endpoint.id_bytes();
+            let auth_material =
+                kitsune2_bootstrap_client::AuthMaterial::new(auth_bytes);
 
-            endpoint
-                .insert_relay(
-                    relay_url_parsed.clone(),
-                    Arc::new(RelayConfig {
-                        url: relay_url_parsed.clone(),
-                        quic: None,
-                    }),
+            tokio::task::spawn_blocking(move || {
+                kitsune2_bootstrap_client::blocking_register_relay_key(
+                    server_url,
+                    &auth_material,
+                    &key_bytes,
                 )
-                .await;
+            })
+            .await
+            .map_err(|e| {
+                K2Error::other_src("Registration task failed", e)
+            })??;
+        }
 
-            let endpoint_id = EndpointId::from(
-                iroh::PublicKey::from_bytes(&endpoint.id_bytes()).map_err(
-                    |e| K2Error::other_src("invalid endpoint public key", e),
-                )?,
-            );
-            let per_space_url =
-                canonicalize_relay_url(&relay_url_parsed, endpoint_id)?;
+        let relay_url_parsed = RelayUrl::from_str(&relay_url_str)
+            .map_err(|err| K2Error::other_src("Invalid relay URL", err))?;
 
-            if let Some(host) = relay_url_parsed.host_str() {
-                self.known_relays
-                    .write()
-                    .expect("poisoned")
-                    .insert(host.to_string(), relay_url_str.clone());
-            }
+        endpoint
+            .insert_relay(
+                relay_url_parsed.clone(),
+                Arc::new(RelayConfig {
+                    url: relay_url_parsed.clone(),
+                    quic: None,
+                }),
+            )
+            .await;
 
-            if let Some(host) = relay_url_parsed.host_str() {
-                per_space_urls
-                    .write()
-                    .expect("poisoned")
-                    .insert(host.to_string(), per_space_url.clone());
-            }
+        let endpoint_id = EndpointId::from(
+            iroh::PublicKey::from_bytes(&endpoint.id_bytes()).map_err(
+                |e| K2Error::other_src("invalid endpoint public key", e),
+            )?,
+        );
+        let per_space_url =
+            canonicalize_relay_url(&relay_url_parsed, endpoint_id)?;
 
-            info!(
-                %per_space_url,
-                %relay_url_str,
-                "insert_relay: constructed per-space URL on new relay"
-            );
+        if let Some(host) = relay_url_parsed.host_str() {
+            known_relays
+                .write()
+                .expect("poisoned")
+                .insert(host.to_string(), relay_url_str.clone());
+        }
 
-            Ok(Some(per_space_url))
-        })
+        if let Some(host) = relay_url_parsed.host_str() {
+            per_space_urls
+                .write()
+                .expect("poisoned")
+                .insert(host.to_string(), per_space_url.clone());
+        }
+
+        info!(
+            %per_space_url,
+            %relay_url_str,
+            "do_insert_relay: constructed per-space URL on new relay"
+        );
+
+        Ok(Some(per_space_url))
     }
 }
 
@@ -1112,24 +1118,124 @@ impl TxImp for IrohTransport {
 
     fn configure_for_space(
         &self,
-        _space_id: SpaceId,
+        space_id: SpaceId,
         config: &Config,
     ) -> BoxFut<'_, K2Result<()>> {
         let per_space_config: Option<IrohTransportPerSpaceModConfig> =
             config.get_module_config().ok();
 
-        let relay_url =
-            per_space_config.and_then(|c| c.iroh_transport_per_space.relay_url);
+        let per_space =
+            per_space_config.map(|c| c.iroh_transport_per_space);
 
-        match relay_url {
-            Some(url) => {
-                let this = self;
-                Box::pin(async move {
-                    this.insert_relay(url, None).await?;
-                    Ok(())
-                })
-            }
-            None => Box::pin(async { Ok(()) }),
+        let relay_url =
+            per_space.as_ref().and_then(|c| c.relay_url.clone());
+
+        let auth_material = per_space
+            .as_ref()
+            .and_then(|c| c.auth_material_relay_base64.as_ref())
+            .and_then(|b64| {
+                use ::base64::Engine;
+                ::base64::engine::general_purpose::STANDARD
+                    .decode(b64)
+                    .ok()
+            });
+
+        if let Some(url) = relay_url {
+            let endpoint = self.endpoint.clone();
+            let per_space_urls = self.per_space_urls.clone();
+            let known_relays = self.known_relays.clone();
+            let handler = self.handler.clone();
+            let space_relay_hosts = self.space_relay_hosts.clone();
+            let space_id_clone = space_id.clone();
+
+            Box::pin(async move {
+                let relay_host = {
+                    let parsed = ::url::Url::parse(&url).ok();
+                    parsed.and_then(|u| u.host_str().map(|s| s.to_string()))
+                };
+
+                if let Some(host) = &relay_host {
+                    space_relay_hosts
+                        .write()
+                        .expect("poisoned")
+                        .insert(space_id_clone.clone(), host.clone());
+                }
+
+                tokio::spawn(async move {
+                    match Self::do_insert_relay(
+                        endpoint,
+                        per_space_urls,
+                        known_relays,
+                        url,
+                        auth_material,
+                    )
+                    .await
+                    {
+                        Ok(Some(per_space_url)) => {
+                            handler
+                                .new_listening_address_for_space(
+                                    &space_id_clone,
+                                    per_space_url,
+                                )
+                                .await;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::error!(
+                                ?space_id_clone,
+                                ?e,
+                                "Background relay insertion failed"
+                            );
+                        }
+                    }
+                });
+
+                Ok(())
+            })
+        } else {
+            Box::pin(async { Ok(()) })
         }
+    }
+
+    fn unconfigure_for_space(
+        &self,
+        space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.handler.unmark_per_space_managed(&space_id);
+
+        Box::pin(async move {
+            let host = self
+                .space_relay_hosts
+                .write()
+                .expect("poisoned")
+                .remove(&space_id);
+
+            if let Some(host) = host {
+                let other_spaces_on_relay = self
+                    .space_relay_hosts
+                    .read()
+                    .expect("poisoned")
+                    .values()
+                    .any(|h| h == &host);
+
+                if !other_spaces_on_relay {
+                    self.per_space_urls
+                        .write()
+                        .expect("poisoned")
+                        .remove(&host);
+                    self.known_relays
+                        .write()
+                        .expect("poisoned")
+                        .remove(&host);
+                    tracing::info!(
+                        ?space_id,
+                        relay_host = %host,
+                        "Removed per-space relay (no remaining spaces)"
+                    );
+                }
+            }
+
+            Ok(())
+        })
     }
 }

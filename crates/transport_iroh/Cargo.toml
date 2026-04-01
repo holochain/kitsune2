@@ -11,6 +11,7 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 bytes = { workspace = true }
 iroh = { workspace = true }
 kitsune2_bootstrap_client = { workspace = true }
@@ -49,7 +50,6 @@ kitsune2_core = { workspace = true }
 kitsune2_bootstrap_srv = { workspace = true, features = ["iroh-relay"] }
 
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
-base64 = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 serde_json = { workspace = true }
 
