@@ -85,8 +85,7 @@ impl TxImpHnd {
             .unwrap()
             .insert(space_id.clone());
 
-        let handler =
-            self.space_map.lock().unwrap().get(space_id).cloned();
+        let handler = self.space_map.lock().unwrap().get(space_id).cloned();
         if let Some(h) = handler {
             Box::pin(async move {
                 h.new_listening_address(url).await;
@@ -103,10 +102,7 @@ impl TxImpHnd {
     /// Remove a space from the per-space managed set, so it will
     /// again receive global address broadcasts.
     pub fn unmark_per_space_managed(&self, space_id: &SpaceId) {
-        self.per_space_managed
-            .lock()
-            .unwrap()
-            .remove(space_id);
+        self.per_space_managed.lock().unwrap().remove(space_id);
     }
 
     /// Call this when you establish an outgoing connection and
@@ -698,11 +694,8 @@ impl Transport for DefaultTransport {
         space_id: SpaceId,
         handler: DynTxSpaceHandler,
     ) -> Option<Url> {
-        let pending_url = self
-            .pending_space_urls
-            .lock()
-            .unwrap()
-            .remove(&space_id);
+        let pending_url =
+            self.pending_space_urls.lock().unwrap().remove(&space_id);
 
         let mut lock = self.space_map.lock().unwrap();
         if lock.insert(space_id.clone(), handler).is_some() {

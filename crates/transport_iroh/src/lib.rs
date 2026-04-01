@@ -882,10 +882,7 @@ impl IrohTransport {
         if let Some(auth_bytes) = auth_material {
             let server_url =
                 ::url::Url::parse(&relay_url_str).map_err(|e| {
-                    K2Error::other_src(
-                        "Invalid relay URL for registration",
-                        e,
-                    )
+                    K2Error::other_src("Invalid relay URL for registration", e)
                 })?;
             let mut server_url = server_url;
             server_url.set_path("/");
@@ -902,9 +899,7 @@ impl IrohTransport {
                 )
             })
             .await
-            .map_err(|e| {
-                K2Error::other_src("Registration task failed", e)
-            })??;
+            .map_err(|e| K2Error::other_src("Registration task failed", e))??;
         }
 
         let relay_url_parsed = RelayUrl::from_str(&relay_url_str)
@@ -921,9 +916,9 @@ impl IrohTransport {
             .await;
 
         let endpoint_id = EndpointId::from(
-            iroh::PublicKey::from_bytes(&endpoint.id_bytes()).map_err(
-                |e| K2Error::other_src("invalid endpoint public key", e),
-            )?,
+            iroh::PublicKey::from_bytes(&endpoint.id_bytes()).map_err(|e| {
+                K2Error::other_src("invalid endpoint public key", e)
+            })?,
         );
         let per_space_url =
             canonicalize_relay_url(&relay_url_parsed, endpoint_id)?;
@@ -1124,20 +1119,16 @@ impl TxImp for IrohTransport {
         let per_space_config: Option<IrohTransportPerSpaceModConfig> =
             config.get_module_config().ok();
 
-        let per_space =
-            per_space_config.map(|c| c.iroh_transport_per_space);
+        let per_space = per_space_config.map(|c| c.iroh_transport_per_space);
 
-        let relay_url =
-            per_space.as_ref().and_then(|c| c.relay_url.clone());
+        let relay_url = per_space.as_ref().and_then(|c| c.relay_url.clone());
 
         let auth_material = per_space
             .as_ref()
             .and_then(|c| c.auth_material_relay_base64.as_ref())
             .and_then(|b64| {
                 use ::base64::Engine;
-                ::base64::engine::general_purpose::STANDARD
-                    .decode(b64)
-                    .ok()
+                ::base64::engine::general_purpose::STANDARD.decode(b64).ok()
             });
 
         if let Some(url) = relay_url {
@@ -1223,10 +1214,7 @@ impl TxImp for IrohTransport {
                         .write()
                         .expect("poisoned")
                         .remove(&host);
-                    self.known_relays
-                        .write()
-                        .expect("poisoned")
-                        .remove(&host);
+                    self.known_relays.write().expect("poisoned").remove(&host);
                     tracing::info!(
                         ?space_id,
                         relay_host = %host,

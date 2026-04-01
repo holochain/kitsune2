@@ -138,11 +138,8 @@ impl SpaceFactory for CoreSpaceFactory {
             // understands (e.g., a per-space relay URL for iroh).
             // This is non-blocking; the transport delivers the URL
             // asynchronously via the space handler's new_listening_address.
-            tx.configure_for_space(
-                space_id.clone(),
-                &builder.config,
-            )
-            .await?;
+            tx.configure_for_space(space_id.clone(), &builder.config)
+                .await?;
 
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
@@ -168,9 +165,7 @@ impl SpaceFactory for CoreSpaceFactory {
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
             report.space(space_id.clone(), local_agent_store.clone());
-            let inner = Arc::new(RwLock::new(InnerData {
-                current_url: None,
-            }));
+            let inner = Arc::new(RwLock::new(InnerData { current_url: None }));
             let op_store = builder
                 .op_store
                 .create(builder.clone(), space_id.clone())
