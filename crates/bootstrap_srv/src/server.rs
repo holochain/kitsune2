@@ -68,6 +68,8 @@ impl BootstrapSrv {
             } else {
                 None
             },
+            #[cfg(feature = "iroh-relay")]
+            quic_bind_addr: config.quic_bind_addr,
         };
 
         // virtual-memory-like file system storage for infos

@@ -228,5 +228,8 @@ pub use relay_allowlist::*;
 #[cfg(feature = "iroh-relay")]
 pub mod iroh_relay_axum;
 
+#[cfg(feature = "iroh-relay")]
+pub(crate) mod qad;
+
 #[cfg(test)]
 mod test;
