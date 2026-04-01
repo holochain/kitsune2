@@ -39,6 +39,9 @@ pub(crate) trait Endpoint:
         endpoint_addr: EndpointAddr,
         alpn: &[u8],
     ) -> BoxFut<'_, K2Result<DynConnection>>;
+
+    /// Closes the endpoint.
+    fn close(&self) -> BoxFut<'_, ()>;
 }
 
 #[derive(Debug)]
@@ -104,6 +107,10 @@ impl Endpoint for IrohEndpoint {
                     )
                 })
         })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async { self.inner.close().await })
     }
 }
 

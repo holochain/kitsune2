@@ -21,7 +21,7 @@ use std::{
 use tracing::{debug, trace, warn};
 
 use futures::FutureExt;
-use iroh_relay_holochain::{
+use iroh_relay::{
     ExportKeyingMaterial, KeyCache,
     protos::{
         handshake, relay::PER_CLIENT_SEND_QUEUE_DEPTH, streams::StreamError,
@@ -58,8 +58,7 @@ impl RelayState {
             key_cache,
             access,
             metrics,
-            write_timeout:
-                iroh_relay_holochain::defaults::timeouts::SERVER_WRITE_TIMEOUT,
+            write_timeout: iroh_relay::defaults::timeouts::SERVER_WRITE_TIMEOUT,
             clients: Clients::default(),
         }
     }
@@ -74,9 +73,8 @@ pub async fn relay_handler(
     headers: HeaderMap,
 ) -> Response {
     // Extract the client auth header if present
-    let client_auth_header = headers
-        .get(iroh_relay_holochain::http::CLIENT_AUTH_HEADER)
-        .cloned();
+    let client_auth_header =
+        headers.get(iroh_relay::http::CLIENT_AUTH_HEADER).cloned();
 
     let has_auth = client_auth_header.is_some();
     debug!(?has_auth, "Relay WebSocket upgrade request");
@@ -246,8 +244,7 @@ async fn handle_relay_websocket(
     // Register the client with the relay server
     state
         .clients
-        .register(client_conn_builder, state.metrics.clone())
-        .await;
+        .register(client_conn_builder, state.metrics.clone());
 
     Ok(())
 }
@@ -353,7 +350,7 @@ mod tests {
     use tokio::net::TcpListener;
     use tracing::{info, instrument};
 
-    use iroh_relay_holochain::{
+    use iroh_relay::{
         client::ClientBuilder,
         dns::DnsResolver,
         protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},

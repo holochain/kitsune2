@@ -15,9 +15,7 @@ bytes = { workspace = true }
 iroh = { workspace = true }
 kitsune2_bootstrap_client = { workspace = true }
 # used for test-utils
-iroh-relay-holochain = { workspace = true, features = [
-  "server",
-], optional = true }
+iroh-relay = { workspace = true, features = ["server"], optional = true }
 kitsune2_api = { workspace = true }
 # used for test-utils
 kitsune2_core = { workspace = true, optional = true }
@@ -60,8 +58,7 @@ iroh = { workspace = true, features = ["test-utils"] }
 schema = ["dep:schemars"]
 
 test-utils = [
-  "dep:iroh-relay-holochain",
-  "iroh-relay-holochain?/test-utils",
+  "iroh-relay/test-utils",
   "dep:kitsune2_core",
   "dep:kitsune2_test_utils",
   "kitsune2_test_utils?/relay",
