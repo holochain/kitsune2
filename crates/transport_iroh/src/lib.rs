@@ -1124,8 +1124,8 @@ impl TxImp for IrohTransport {
         let per_space_config: Option<IrohTransportPerSpaceModConfig> =
             config.get_module_config().ok();
 
-        let relay_url = per_space_config
-            .and_then(|c| c.iroh_transport_per_space.relay_url);
+        let relay_url =
+            per_space_config.and_then(|c| c.iroh_transport_per_space.relay_url);
 
         match relay_url {
             Some(url) => self.insert_relay(url, auth_material_relay),
