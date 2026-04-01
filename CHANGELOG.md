@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.7](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.6...v0.4.0-dev.7)\] - 2026-04-01
+
+### Features
+
+- Upgrade to Iroh 0.97 by @ThetaSinner in [#498](https://github.com/holochain/kitsune2/pull/498)
+- Switch default transport to iroh (#442) by @ThetaSinner in [#488](https://github.com/holochain/kitsune2/pull/488)
+  - Switch default transport from tx5 datachannel-vendored to iroh and default bootstrap server backend from sbd to iroh-relay.
+  - Remove tx5 datachannel-vendored and backend-libdatachannel features, keeping only backend-go-pion as the sole tx5 backend option.
+  - Simplify cfg gates, Makefile.toml tasks, and feature definitions across kitsune2, transport_tx5, bootstrap_srv, bootstrap_client, and kitsune2_showcase crates.
+
+### Bug Fixes
+
+- Update test workflow for renamed SBD docker image by @ThetaSinner in [#490](https://github.com/holochain/kitsune2/pull/490)
+- Align Docker image naming with new default transport by @ThetaSinner
+  - The default bootstrap_srv feature is now iroh-relay, so the base image (kitsune2_bootstrap_srv) builds with iroh-relay by default.
+  - Replace the kitsune2_bootstrap_srv_iroh_relay image with kitsune2_bootstrap_srv_sbd that explicitly enables the sbd feature.
+
+### Automated Changes
+
+- *(deps)* Bump cachix/cachix-action from 16 to 17 by @dependabot[bot] in [#484](https://github.com/holochain/kitsune2/pull/484)
+
 ## \[[0.4.0-dev.6](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.5...v0.4.0-dev.6)\] - 2026-03-23
 
 ### Features
