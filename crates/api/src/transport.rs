@@ -517,6 +517,21 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async { Ok(()) })
     }
+
+    /// Remove per-space configuration previously applied by
+    /// [`configure_for_space`](Self::configure_for_space).
+    ///
+    /// Called when a space is being torn down. Transports should
+    /// release any per-space resources (e.g., remove a relay that
+    /// was added exclusively for this space).
+    ///
+    /// Default implementation is a no-op.
+    fn unconfigure_for_space(
+        &self,
+        _space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Trait-object [TxImp].
@@ -599,6 +614,21 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
         &self,
         _space_id: SpaceId,
         _config: &config::Config,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Remove per-space configuration previously applied by
+    /// [`configure_for_space`](Self::configure_for_space).
+    ///
+    /// Called when a space is being torn down. Transports should
+    /// release any per-space resources (e.g., remove a relay that
+    /// was added exclusively for this space).
+    ///
+    /// Default implementation is a no-op.
+    fn unconfigure_for_space(
+        &self,
+        _space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async { Ok(()) })
     }
@@ -832,6 +862,13 @@ impl Transport for DefaultTransport {
         config: &config::Config,
     ) -> BoxFut<'_, K2Result<()>> {
         self.imp.configure_for_space(space_id, config)
+    }
+
+    fn unconfigure_for_space(
+        &self,
+        space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.imp.unconfigure_for_space(space_id)
     }
 }
 
