@@ -23,7 +23,10 @@ use kitsune2_test_utils::{
 ))]
 use kitsune2_transport_iroh::{
     IrohTransportFactory,
-    config::{IrohTransportConfig, IrohTransportModConfig},
+    config::{
+        IrohTransportConfig, IrohTransportModConfig,
+        IrohTransportPerSpaceConfig, IrohTransportPerSpaceModConfig,
+    },
 };
 use std::sync::Arc;
 #[cfg(feature = "transport-tx5-backend-go-pion")]
@@ -621,5 +624,213 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
             .unwrap()
             .is_none(),
         "Agent A should not be in space B's peer store"
+    );
+}
+
+/// Test that two spaces on the same Kitsune instance can use different
+/// iroh relays. Each space gets its own bootstrap server and relay via
+/// per-space config overrides.
+#[cfg(all(
+    not(feature = "transport-tx5-backend-go-pion"),
+    feature = "transport-iroh"
+))]
+#[tokio::test]
+async fn two_spaces_different_relays() {
+    enable_tracing();
+
+    let bootstrap_a = TestBootstrapSrv::new(false).await;
+    let bootstrap_b = TestBootstrapSrv::new(false).await;
+    let bootstrap_url_a = bootstrap_a.addr().to_string();
+    let bootstrap_url_b = bootstrap_b.addr().to_string();
+    let relay_url_a = format!("{}/relay", bootstrap_a.addr());
+    let relay_url_b = format!("{}/relay", bootstrap_b.addr());
+
+    // Build Kitsune2 with default builder (iroh transport) but NO global
+    // relay or bootstrap — those are provided per-space below.
+    let kitsune_builder = default_builder().with_default_config().unwrap();
+
+    kitsune_builder
+        .config
+        .set_module_config(&IrohTransportModConfig {
+            iroh_transport: IrohTransportConfig {
+                relay_url: None,
+                relay_allow_plain_text: true,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    kitsune_builder
+        .config
+        .set_module_config(&K2GossipModConfig {
+            k2_gossip: K2GossipConfig {
+                initiate_interval_ms: 1000,
+                min_initiate_interval_ms: 100,
+                initiate_jitter_ms: 100,
+                round_timeout_ms: 10_000,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    let kitsune = kitsune_builder.build().await.unwrap();
+    kitsune
+        .register_handler(Arc::new(TestKitsuneHandler))
+        .await
+        .unwrap();
+
+    // Per-space config for space A: bootstrap A + relay A
+    let config_a = Config::default();
+    config_a
+        .set_module_config(&CoreBootstrapModConfig {
+            core_bootstrap: CoreBootstrapConfig {
+                server_url: Some(bootstrap_url_a.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    config_a
+        .set_module_config(&IrohTransportPerSpaceModConfig {
+            iroh_transport_per_space: IrohTransportPerSpaceConfig {
+                relay_url: Some(relay_url_a.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    // Per-space config for space B: bootstrap B + relay B
+    let config_b = Config::default();
+    config_b
+        .set_module_config(&CoreBootstrapModConfig {
+            core_bootstrap: CoreBootstrapConfig {
+                server_url: Some(bootstrap_url_b.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    config_b
+        .set_module_config(&IrohTransportPerSpaceModConfig {
+            iroh_transport_per_space: IrohTransportPerSpaceConfig {
+                relay_url: Some(relay_url_b.clone()),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    let space_id_a = TEST_SPACE_ID;
+    let space_id_b = SpaceId(Id(Bytes::from("space_b_relay")));
+
+    let space_a = kitsune
+        .space(space_id_a, Some(config_a))
+        .await
+        .expect("Create space A with per-space relay");
+
+    let space_b = kitsune
+        .space(space_id_b, Some(config_b))
+        .await
+        .expect("Create space B with per-space relay");
+
+    // Join an agent to each space
+    let agent_a = Arc::new(Ed25519LocalAgent::default());
+    agent_a.set_tgt_storage_arc_hint(DhtArc::FULL);
+    iter_check!(60_000, 1_000, {
+        if space_a.local_agent_join(agent_a.clone()).await.is_ok() {
+            break;
+        }
+    });
+
+    let agent_b = Arc::new(Ed25519LocalAgent::default());
+    agent_b.set_tgt_storage_arc_hint(DhtArc::FULL);
+    iter_check!(60_000, 1_000, {
+        if space_b.local_agent_join(agent_b.clone()).await.is_ok() {
+            break;
+        }
+    });
+
+    // Verify each agent is in its own space's peer store
+    let agent_a_id = agent_a.agent();
+    let agent_b_id = agent_b.agent();
+
+    iter_check!(10_000, 500, {
+        if space_a
+            .peer_store()
+            .get(agent_a_id.clone())
+            .await
+            .unwrap()
+            .is_some()
+        {
+            break;
+        }
+    });
+    iter_check!(10_000, 500, {
+        if space_b
+            .peer_store()
+            .get(agent_b_id.clone())
+            .await
+            .unwrap()
+            .is_some()
+        {
+            break;
+        }
+    });
+
+    // Agents must not leak across spaces
+    assert!(
+        space_a
+            .peer_store()
+            .get(agent_b_id.clone())
+            .await
+            .unwrap()
+            .is_none(),
+        "Agent B should not be in space A's peer store"
+    );
+    assert!(
+        space_b
+            .peer_store()
+            .get(agent_a_id.clone())
+            .await
+            .unwrap()
+            .is_none(),
+        "Agent A should not be in space B's peer store"
+    );
+
+    // Verify each space got a relay-based URL. The relay address is
+    // assigned asynchronously, so poll until it's available.
+    let host_a = bootstrap_a
+        .addr()
+        .strip_prefix("http://")
+        .unwrap_or(&bootstrap_url_a)
+        .to_string();
+    let host_b = bootstrap_b
+        .addr()
+        .strip_prefix("http://")
+        .unwrap_or(&bootstrap_url_b)
+        .to_string();
+
+    iter_check!(10_000, 500, {
+        if let Some(url) = space_a.current_url() {
+            let s = url.to_string();
+            if s.contains(&host_a) {
+                tracing::info!("Space A URL: {s}");
+                break;
+            }
+        }
+    });
+    iter_check!(10_000, 500, {
+        if let Some(url) = space_b.current_url() {
+            let s = url.to_string();
+            if s.contains(&host_b) {
+                tracing::info!("Space B URL: {s}");
+                break;
+            }
+        }
+    });
+
+    // The relay hosts must differ (different relay servers). Assert on
+    // the host:port specifically, not the full URL, to avoid a false
+    // pass from differing public keys.
+    assert_ne!(
+        host_a, host_b,
+        "Relay hosts should differ between the two spaces"
     );
 }

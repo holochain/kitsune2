@@ -10,6 +10,7 @@ use crate::{
 use bytes::Bytes;
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use std::{
+    collections::HashMap,
     fmt,
     sync::{
         Arc, Mutex, RwLock,
@@ -34,6 +35,7 @@ pub(super) struct ConnectionContext {
     recv_bytes: AtomicU64,
     opened_at_s: u64,
     max_frame_bytes: usize,
+    per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
 }
 
 impl fmt::Debug for ConnectionContext {
@@ -50,6 +52,7 @@ pub(super) struct ConnectionContextParams {
     pub opened_at_s: u64,
     pub connections: Connections,
     pub local_url: Arc<RwLock<Option<Url>>>,
+    pub per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
     pub max_frame_bytes: usize,
 }
 
@@ -69,6 +72,7 @@ impl ConnectionContext {
             recv_bytes: AtomicU64::new(0),
             opened_at_s: params.opened_at_s,
             max_frame_bytes: params.max_frame_bytes,
+            per_space_urls: params.per_space_urls,
         });
 
         // Spawn connection reader to listen for incoming connections on the
@@ -315,8 +319,19 @@ impl ConnectionContext {
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
-                    let maybe_local_url =
-                        local_url.read().expect("poisoned").clone();
+                    // Use per-space URL if the remote is on an inserted relay,
+                    // otherwise use the global local URL.
+                    let global_url = local_url.read().expect("poisoned").clone();
+                    let remote_host = remote_url
+                        .addr()
+                        .split(':')
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    let maybe_local_url = {
+                        let per_space = ctx.per_space_urls.read().expect("poisoned");
+                        per_space.get(&remote_host).cloned()
+                    }.or(global_url);
                     if let Some(local_url) = maybe_local_url {
                         let return_preflight =
                             ctx.handler.peer_connect(remote_url.clone()).await?;
