@@ -342,8 +342,8 @@ async fn bootstrap_with_per_space_auth_override() {
         .unwrap();
 
     // Per-space config: bootstrap URL + base64-encoded auth material
-    let auth_b64 = base64::engine::general_purpose::STANDARD
-        .encode(b"per-space-secret");
+    let auth_b64 =
+        base64::engine::general_purpose::STANDARD.encode(b"per-space-secret");
 
     let space_config = Config::default();
     space_config
@@ -357,11 +357,10 @@ async fn bootstrap_with_per_space_auth_override() {
         .unwrap();
     space_config
         .set_module_config(&CoreSpacePerSpaceOverridesModConfig {
-            core_space_per_space_overrides:
-                CoreSpacePerSpaceOverridesConfig {
-                    auth_material_bootstrap_base64: Some(auth_b64),
-                    auth_material_relay_base64: None,
-                },
+            core_space_per_space_overrides: CoreSpacePerSpaceOverridesConfig {
+                auth_material_bootstrap_base64: Some(auth_b64),
+                auth_material_relay_base64: None,
+            },
         })
         .unwrap();
 

@@ -450,20 +450,6 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
 
-    /// Dynamically add a relay server to this transport.
-    /// If auth_material is provided, the endpoint's public key will be
-    /// registered with the relay server before connecting.
-    /// Returns the endpoint's URL on the new relay if successful,
-    /// so that per-space agent info can use the correct relay address.
-    /// Default implementation is a no-op for transports that don't support relays.
-    fn insert_relay(
-        &self,
-        _relay_url: String,
-        _auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        Box::pin(async { Ok(None) })
-    }
-
     /// Apply per-space configuration to this transport.
     ///
     /// Called by the space factory when creating a new space. The transport
@@ -552,18 +538,6 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
-
-    /// Dynamically add a relay server to this transport.
-    /// If auth_material is provided, the endpoint's public key will be
-    /// registered with the relay server before connecting.
-    /// Returns the endpoint's URL on the new relay if successful.
-    fn insert_relay(
-        &self,
-        _relay_url: String,
-        _auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        Box::pin(async { Ok(None) })
-    }
 
     /// Apply per-space configuration to this transport.
     ///
@@ -794,14 +768,6 @@ impl Transport for DefaultTransport {
                 blocked_message_counts: blocked_message_counts.clone(),
             })
         })
-    }
-
-    fn insert_relay(
-        &self,
-        relay_url: String,
-        auth_material: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        self.imp.insert_relay(relay_url, auth_material)
     }
 
     fn configure_for_space(
