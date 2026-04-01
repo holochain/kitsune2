@@ -109,6 +109,15 @@ pub struct Args {
     /// <https://github.com/holochain/sbd/blob/main/spec-auth.md>
     #[arg(long)]
     pub authentication_hook_server: Option<String>,
+
+    /// The address on which the QUIC Address Discovery (QAD) server should bind.
+    ///
+    /// QAD allows iroh clients to discover their public IP address via a QUIC
+    /// connection. Requires TLS cert/key to be configured.
+    ///
+    /// Default port is 7842 (iroh's default for QAD).
+    #[arg(long)]
+    pub quic_bind_addr: Option<std::net::SocketAddr>,
 }
 
 fn main() {
@@ -195,6 +204,11 @@ fn main() {
         // Setup opentelemetry metrics
         sbd_server::enable_otlp_metrics_if_configured(&config.sbd)
             .expect("Failed to initialize OTLP metrics");
+    }
+
+    #[cfg(feature = "iroh-relay")]
+    {
+        config.quic_bind_addr = args.quic_bind_addr;
     }
 
     // Set auth in the new feature-independent location

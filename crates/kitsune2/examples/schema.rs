@@ -92,7 +92,10 @@ const CURRENT_VALUE: &str = r#"
 }
 "#;
 
-#[cfg(feature = "transport-iroh")]
+#[cfg(all(
+    feature = "transport-iroh",
+    not(feature = "transport-tx5-backend-go-pion")
+))]
 const CURRENT_VALUE: &str = r#"
 {
     "coreBootstrap": {

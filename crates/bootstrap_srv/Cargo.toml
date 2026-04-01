@@ -50,10 +50,11 @@ opentelemetry = { workspace = true }
 iroh = { workspace = true, optional = true }
 iroh-base = { workspace = true, optional = true }
 iroh-relay = { workspace = true, features = ["server"], optional = true }
+rustls-pemfile = { workspace = true, optional = true }
+rcgen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
-rcgen = { workspace = true }
 sbd-client = { workspace = true }
 iroh = { workspace = true, features = ["test-utils"] }
 iroh-base = { workspace = true }
@@ -67,7 +68,13 @@ default = ["iroh-relay"]
 http2 = ["axum/http2"]
 
 # use sbd as signaling and relay server
-sbd = ["dep:sbd-server"]
+sbd = ["dep:sbd-server", "dep:rcgen"]
 
 # use iroh relay server
-iroh-relay = ["dep:iroh", "dep:iroh-base", "dep:iroh-relay"]
+iroh-relay = [
+  "dep:iroh",
+  "dep:iroh-base",
+  "dep:iroh-relay",
+  "dep:rustls-pemfile",
+  "dep:rcgen",
+]

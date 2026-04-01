@@ -52,6 +52,8 @@ pub struct ServerConfig {
     pub addrs: Vec<std::net::SocketAddr>,
     pub worker_thread_count: usize,
     pub tls_config: Option<TlsConfig>,
+    #[cfg(feature = "iroh-relay")]
+    pub quic_bind_addr: Option<std::net::SocketAddr>,
 }
 
 pub struct Server {
@@ -64,6 +66,9 @@ pub struct Server {
     auth_tracker: crate::auth::AuthTokenTracker,
     #[cfg(feature = "iroh-relay")]
     relay_allowlist: Option<crate::RelayAllowlist>,
+    /// Held to keep the QAD server task alive; dropped on shutdown.
+    #[cfg(feature = "iroh-relay")]
+    _qad_server: Option<iroh_relay::server::Server>,
 }
 
 impl Drop for Server {
@@ -100,6 +105,8 @@ impl Server {
                 auth_tracker,
                 #[cfg(feature = "iroh-relay")]
                 relay_allowlist,
+                #[cfg(feature = "iroh-relay")]
+                qad_server,
             })) => Ok(Self {
                 t_join: Some(t_join),
                 addrs,
@@ -110,6 +117,8 @@ impl Server {
                 auth_tracker,
                 #[cfg(feature = "iroh-relay")]
                 relay_allowlist,
+                #[cfg(feature = "iroh-relay")]
+                _qad_server: qad_server,
             }),
             Ok(Err(err)) => Err(err),
             Err(_) => Err(std::io::Error::other("failed to bind server")),
@@ -143,6 +152,8 @@ struct Ready {
     auth_tracker: crate::auth::AuthTokenTracker,
     #[cfg(feature = "iroh-relay")]
     relay_allowlist: Option<crate::RelayAllowlist>,
+    #[cfg(feature = "iroh-relay")]
+    qad_server: Option<iroh_relay::server::Server>,
 }
 
 #[derive(Clone)]
@@ -421,6 +432,32 @@ fn tokio_thread(
                 };
             }
 
+            // Spawn the QUIC Address Discovery (QAD) server if configured
+            #[cfg(feature = "iroh-relay")]
+            let qad_server = if let Some(quic_bind_addr) = server_config.quic_bind_addr {
+                let result = if let (Some(cert_path), Some(key_path)) = (&config.tls_cert, &config.tls_key) {
+                    crate::qad::spawn_qad_server(quic_bind_addr, cert_path, key_path).await
+                } else {
+                    tracing::info!("No TLS cert/key configured, using self-signed certificate for QAD");
+                    crate::qad::spawn_qad_server_self_signed(quic_bind_addr).await
+                };
+                match result {
+                    Ok(server) => {
+                        tracing::info!(
+                            addr = ?server.quic_addr(),
+                            "QAD (QUIC Address Discovery) server started"
+                        );
+                        Some(server)
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "Failed to start QAD server");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             tracing::info!("Sending ready signal");
 
             if ready
@@ -433,6 +470,8 @@ fn tokio_thread(
                     auth_tracker: auth_tracker_for_ready,
                     #[cfg(feature = "iroh-relay")]
                     relay_allowlist: relay_allowlist_for_ready,
+                    #[cfg(feature = "iroh-relay")]
+                    qad_server,
                 }))
                 .is_err()
             {
