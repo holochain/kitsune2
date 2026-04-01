@@ -645,13 +645,9 @@ async fn two_spaces_different_relays() {
     let relay_url_a = format!("{}/relay", bootstrap_a.addr());
     let relay_url_b = format!("{}/relay", bootstrap_b.addr());
 
-    // Build Kitsune2 with iroh transport but NO global relay or bootstrap.
-    let kitsune_builder = Builder {
-        transport: IrohTransportFactory::create(),
-        ..default_builder()
-    }
-    .with_default_config()
-    .unwrap();
+    // Build Kitsune2 with default builder (iroh transport) but NO global
+    // relay or bootstrap — those are provided per-space below.
+    let kitsune_builder = default_builder().with_default_config().unwrap();
 
     kitsune_builder
         .config
@@ -796,44 +792,43 @@ async fn two_spaces_different_relays() {
         "Agent A should not be in space B's peer store"
     );
 
-    // Verify each space got a relay-based URL.
-    let url_a = space_a
-        .current_url()
-        .expect("Space A should have a current URL from relay A");
-    let url_b = space_b
-        .current_url()
-        .expect("Space B should have a current URL from relay B");
-
-    let url_a_str = url_a.to_string();
-    let url_b_str = url_b.to_string();
-    tracing::info!("Space A URL: {url_a_str}");
-    tracing::info!("Space B URL: {url_b_str}");
-
-    // Extract host:port from the bootstrap server addresses — these are
-    // the same servers hosting the relays, so the relay URLs share the
-    // host:port prefix.
+    // Verify each space got a relay-based URL. The relay address is
+    // assigned asynchronously, so poll until it's available.
     let host_a = bootstrap_a
         .addr()
         .strip_prefix("http://")
-        .unwrap_or(&bootstrap_url_a);
+        .unwrap_or(&bootstrap_url_a)
+        .to_string();
     let host_b = bootstrap_b
         .addr()
         .strip_prefix("http://")
-        .unwrap_or(&bootstrap_url_b);
+        .unwrap_or(&bootstrap_url_b)
+        .to_string();
 
-    // The per-space URL for each space must contain its respective relay host.
-    assert!(
-        url_a_str.contains(host_a),
-        "Space A URL should reference relay A ({host_a}), got: {url_a_str}"
-    );
-    assert!(
-        url_b_str.contains(host_b),
-        "Space B URL should reference relay B ({host_b}), got: {url_b_str}"
-    );
+    iter_check!(10_000, 500, {
+        if let Some(url) = space_a.current_url() {
+            let s = url.to_string();
+            if s.contains(&host_a) {
+                tracing::info!("Space A URL: {s}");
+                break;
+            }
+        }
+    });
+    iter_check!(10_000, 500, {
+        if let Some(url) = space_b.current_url() {
+            let s = url.to_string();
+            if s.contains(&host_b) {
+                tracing::info!("Space B URL: {s}");
+                break;
+            }
+        }
+    });
 
-    // The two URLs must differ (different relay servers).
+    // The relay hosts must differ (different relay servers). Assert on
+    // the host:port specifically, not the full URL, to avoid a false
+    // pass from differing public keys.
     assert_ne!(
-        url_a_str, url_b_str,
-        "Space A and B URLs should differ because they use different relays"
+        host_a, host_b,
+        "Relay hosts should differ between the two spaces"
     );
 }
