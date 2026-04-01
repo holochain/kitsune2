@@ -454,20 +454,16 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// Called by the space factory when creating a new space. The transport
     /// reads any per-space settings it understands from the provided config
-    /// (e.g., a per-space relay URL) and applies them internally.
-    ///
-    /// Returns an optional URL that should be used as this space's
-    /// pinned address for agent info (e.g., the endpoint's address on
-    /// a per-space relay).
+    /// (e.g., a per-space relay URL and auth material) and applies them
+    /// internally.
     ///
     /// Default implementation is a no-op.
     fn configure_for_space(
         &self,
         _space_id: SpaceId,
         _config: &config::Config,
-        _auth_material_relay: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        Box::pin(async { Ok(None) })
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -543,20 +539,16 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     ///
     /// Called by the space factory when creating a new space. The transport
     /// reads any per-space settings it understands from the provided config
-    /// (e.g., a per-space relay URL) and applies them internally.
-    ///
-    /// Returns an optional URL that should be used as this space's
-    /// pinned address for agent info (e.g., the endpoint's address on
-    /// a per-space relay).
+    /// (e.g., a per-space relay URL and auth material) and applies them
+    /// internally.
     ///
     /// Default implementation is a no-op.
     fn configure_for_space(
         &self,
         _space_id: SpaceId,
         _config: &config::Config,
-        _auth_material_relay: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        Box::pin(async { Ok(None) })
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -774,10 +766,8 @@ impl Transport for DefaultTransport {
         &self,
         space_id: SpaceId,
         config: &config::Config,
-        auth_material_relay: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
-        self.imp
-            .configure_for_space(space_id, config, auth_material_relay)
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.imp.configure_for_space(space_id, config)
     }
 }
 

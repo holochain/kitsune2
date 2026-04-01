@@ -1114,8 +1114,7 @@ impl TxImp for IrohTransport {
         &self,
         _space_id: SpaceId,
         config: &Config,
-        auth_material_relay: Option<Vec<u8>>,
-    ) -> BoxFut<'_, K2Result<Option<Url>>> {
+    ) -> BoxFut<'_, K2Result<()>> {
         let per_space_config: Option<IrohTransportPerSpaceModConfig> =
             config.get_module_config().ok();
 
@@ -1123,8 +1122,14 @@ impl TxImp for IrohTransport {
             per_space_config.and_then(|c| c.iroh_transport_per_space.relay_url);
 
         match relay_url {
-            Some(url) => self.insert_relay(url, auth_material_relay),
-            None => Box::pin(async { Ok(None) }),
+            Some(url) => {
+                let this = self;
+                Box::pin(async move {
+                    this.insert_relay(url, None).await?;
+                    Ok(())
+                })
+            }
+            None => Box::pin(async { Ok(()) }),
         }
     }
 }

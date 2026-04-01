@@ -110,14 +110,9 @@ async fn configure_for_space_adds_relay() {
     let space_id = SpaceId(Id(bytes::Bytes::from_static(b"test-space")));
 
     // configure_for_space should read the per-space config and insert the relay
-    let result = tx
-        .configure_for_space(space_id, &per_space_config, None)
+    tx.configure_for_space(space_id, &per_space_config)
         .await
         .unwrap();
-    assert!(
-        result.is_some(),
-        "configure_for_space should return a per-space URL"
-    );
 
     // The transport should receive a relay-assigned listening address
     tokio::time::timeout(
@@ -169,14 +164,10 @@ async fn configure_for_space_noop_without_config() {
     let empty_config = Config::default();
     let space_id = SpaceId(Id(bytes::Bytes::from_static(b"test-space")));
 
-    let result = tx
-        .configure_for_space(space_id, &empty_config, None)
+    // Should succeed as a no-op when no per-space relay is configured
+    tx.configure_for_space(space_id, &empty_config)
         .await
         .unwrap();
-    assert!(
-        result.is_none(),
-        "configure_for_space should return None when no per-space relay is set"
-    );
 }
 
 #[test]

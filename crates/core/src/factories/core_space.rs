@@ -140,13 +140,11 @@ impl SpaceFactory for CoreSpaceFactory {
 
             // Let the transport handle any per-space configuration it
             // understands (e.g., a per-space relay URL for iroh).
-            let per_space_relay_url = tx
-                .configure_for_space(
-                    space_id.clone(),
-                    &builder.config,
-                    builder.auth_material_relay.clone(),
-                )
-                .await?;
+            tx.configure_for_space(
+                space_id.clone(),
+                &builder.config,
+            )
+            .await?;
 
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
@@ -172,16 +170,9 @@ impl SpaceFactory for CoreSpaceFactory {
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
             report.space(space_id.clone(), local_agent_store.clone());
-            if let Some(ref url) = per_space_relay_url {
-                tracing::info!(
-                    ?space_id,
-                    %url,
-                    "Using per-space relay URL for agent info"
-                );
-            }
             let inner = Arc::new(RwLock::new(InnerData {
                 current_url: None,
-                pinned_url: per_space_relay_url,
+                pinned_url: None,
             }));
             let op_store = builder
                 .op_store
