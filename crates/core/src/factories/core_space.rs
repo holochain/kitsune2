@@ -66,9 +66,9 @@ pub mod per_space_overrides_config {
     /// Per-space configuration overrides applied by [CoreSpaceFactory](super::CoreSpaceFactory)
     /// when creating a space with `config_override`.
     ///
-    /// These allow setting per-space auth material (which overrides the
-    /// builder-level values) and a per-space relay URL (which dynamically
-    /// adds a relay to the shared transport endpoint).
+    /// Bootstrap auth material can be overridden per-space here.
+    /// Transport-specific per-space settings (e.g., relay URL and
+    /// relay auth material) live in the transport's own per-space config.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
     #[serde(rename_all = "camelCase")]
@@ -76,10 +76,6 @@ pub mod per_space_overrides_config {
         /// Base64-encoded auth material for the bootstrap service,
         /// overriding `builder.auth_material_bootstrap` for this space.
         pub auth_material_bootstrap_base64: Option<String>,
-
-        /// Base64-encoded auth material for the relay service,
-        /// overriding `builder.auth_material_relay` for this space.
-        pub auth_material_relay_base64: Option<String>,
     }
 
     /// Module-level configuration for per-space overrides.
@@ -140,6 +136,8 @@ impl SpaceFactory for CoreSpaceFactory {
 
             // Let the transport handle any per-space configuration it
             // understands (e.g., a per-space relay URL for iroh).
+            // This is non-blocking; the transport delivers the URL
+            // asynchronously via the space handler's new_listening_address.
             tx.configure_for_space(
                 space_id.clone(),
                 &builder.config,
@@ -172,7 +170,6 @@ impl SpaceFactory for CoreSpaceFactory {
             report.space(space_id.clone(), local_agent_store.clone());
             let inner = Arc::new(RwLock::new(InnerData {
                 current_url: None,
-                pinned_url: None,
             }));
             let op_store = builder
                 .op_store
@@ -357,9 +354,6 @@ impl TxSpaceHandler for TxHandlerTranslator {
 
 struct InnerData {
     current_url: Option<Url>,
-    /// Per-space relay URL override. When set, this takes priority over
-    /// the global transport URL and is not overwritten by global URL updates.
-    pinned_url: Option<Url>,
 }
 
 struct CoreSpace {
@@ -439,11 +433,6 @@ impl CoreSpace {
     pub async fn new_url(&self, this_url: Url) {
         {
             let mut lock = self.inner.write().unwrap();
-            if lock.pinned_url.is_some() {
-                // This space has a per-space relay URL override;
-                // don't overwrite it with the global transport URL.
-                return;
-            }
             lock.current_url = Some(this_url);
         }
 
@@ -489,8 +478,7 @@ impl Space for CoreSpace {
     }
 
     fn current_url(&self) -> Option<Url> {
-        let lock = self.inner.read().unwrap();
-        lock.pinned_url.clone().or_else(|| lock.current_url.clone())
+        self.inner.read().unwrap().current_url.clone()
     }
 
     fn local_agent_join(
@@ -521,10 +509,7 @@ impl Space for CoreSpace {
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
                     let url = {
-                        let lock = inner.read().unwrap();
-                        lock.pinned_url
-                            .clone()
-                            .or_else(|| lock.current_url.clone())
+                        inner.read().unwrap().current_url.clone()
                     };
 
                     if let Some(url) = url {
@@ -753,10 +738,7 @@ fn apply_per_space_auth_overrides(
         };
     let o = &overrides.core_space_per_space_overrides;
 
-    let has_overrides = o.auth_material_bootstrap_base64.is_some()
-        || o.auth_material_relay_base64.is_some();
-
-    if !has_overrides {
+    if o.auth_material_bootstrap_base64.is_none() {
         return Ok(builder);
     }
 
@@ -769,19 +751,6 @@ fn apply_per_space_auth_overrides(
                     K2Error::other_src(
                         "invalid base64 in \
                          auth_material_bootstrap_base64",
-                        e,
-                    )
-                })?,
-        );
-    }
-    if let Some(b64) = &o.auth_material_relay_base64 {
-        b.auth_material_relay = Some(
-            base64::engine::general_purpose::STANDARD
-                .decode(b64)
-                .map_err(|e| {
-                    K2Error::other_src(
-                        "invalid base64 in \
-                         auth_material_relay_base64",
                         e,
                     )
                 })?,
