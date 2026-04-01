@@ -97,19 +97,20 @@ async fn configure_for_space_adds_relay() {
         .await
         .unwrap();
 
-    // Build a per-space config containing the relay URL
     let per_space_config = Config::default();
     per_space_config
         .set_module_config(&IrohTransportPerSpaceModConfig {
             iroh_transport_per_space: IrohTransportPerSpaceConfig {
                 relay_url: Some(relay_url),
+                ..Default::default()
             },
         })
         .unwrap();
 
     let space_id = SpaceId(Id(bytes::Bytes::from_static(b"test-space")));
 
-    // configure_for_space should read the per-space config and insert the relay
+    // configure_for_space is non-blocking — it spawns relay insertion
+    // in the background and returns immediately.
     tx.configure_for_space(space_id, &per_space_config)
         .await
         .unwrap();
@@ -160,7 +161,6 @@ async fn configure_for_space_noop_without_config() {
         .await
         .unwrap();
 
-    // Empty config -- no per-space relay configured
     let empty_config = Config::default();
     let space_id = SpaceId(Id(bytes::Bytes::from_static(b"test-space")));
 

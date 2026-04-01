@@ -693,6 +693,7 @@ async fn two_spaces_different_relays() {
         .set_module_config(&IrohTransportPerSpaceModConfig {
             iroh_transport_per_space: IrohTransportPerSpaceConfig {
                 relay_url: Some(relay_url_a.clone()),
+                ..Default::default()
             },
         })
         .unwrap();
@@ -711,6 +712,7 @@ async fn two_spaces_different_relays() {
         .set_module_config(&IrohTransportPerSpaceModConfig {
             iroh_transport_per_space: IrohTransportPerSpaceConfig {
                 relay_url: Some(relay_url_b.clone()),
+                ..Default::default()
             },
         })
         .unwrap();
