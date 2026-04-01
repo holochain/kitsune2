@@ -387,6 +387,8 @@ impl Drop for IrohTransport {
                 debug!(?remote_url, "Aborting connection context tasks");
                 ctx.abort_tasks();
             });
+        let endpoint = self.endpoint.clone();
+        tokio::spawn(async move { endpoint.close().await });
     }
 }
 
@@ -409,17 +411,19 @@ impl IrohTransport {
                 // immediately connecting to the relay. The relay transport is
                 // kept intact so that insert_relay (called after registration)
                 // can establish the WebSocket connection.
-                Endpoint::empty_builder(RelayMode::Custom(RelayMap::empty()))
+                Endpoint::empty_builder()
+                    .relay_mode(RelayMode::Custom(RelayMap::empty()))
             } else {
                 let relay_url =
                     RelayUrl::from_str(relay_url).map_err(|err| {
                         K2Error::other_src("Invalid relay URL", err)
                     })?;
                 let relay_map = RelayMap::from_iter([relay_url]);
-                Endpoint::empty_builder(RelayMode::Custom(relay_map))
+                Endpoint::empty_builder()
+                    .relay_mode(RelayMode::Custom(relay_map))
             }
         } else {
-            Endpoint::empty_builder(RelayMode::Default)
+            Endpoint::empty_builder().relay_mode(RelayMode::Default)
         };
         // Set kitsune2 protocol for handling data.
         builder = builder.alpns(vec![ALPN.to_vec()]);
@@ -427,7 +431,9 @@ impl IrohTransport {
         // Test relay server uses self-signed certificate, so skip certificate verification.
         #[cfg(feature = "test-utils")]
         {
-            builder = builder.insecure_skip_relay_cert_verify(true);
+            builder = builder.ca_roots_config(
+                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
+            );
         }
 
         let endpoint = builder.bind().await.map_err(|err| {

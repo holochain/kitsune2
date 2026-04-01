@@ -1,6 +1,5 @@
 use super::*;
-use iroh::{EndpointAddr, RelayConfig, RelayMap, RelayUrl};
-use iroh_base::SecretKey;
+use iroh::{EndpointAddr, RelayConfig, RelayMap, RelayUrl, SecretKey};
 use kitsune2_test_utils::enable_tracing;
 use rand_chacha::rand_core::SeedableRng;
 use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
@@ -224,12 +223,12 @@ fn assert_authenticated_relay_rejects_unregistered(addr: SocketAddr) {
         let ep_3_secret = SecretKey::generate(&mut rng);
 
         let build_endpoint = |secret_key: SecretKey| {
-            iroh::Endpoint::empty_builder(iroh::RelayMode::Custom(
+            iroh::Endpoint::empty_builder().relay_mode(iroh::RelayMode::Custom(
                 RelayMap::empty(),
             ))
             .secret_key(secret_key)
             .alpns(vec![TEST_ALPN.to_vec()])
-            .insecure_skip_relay_cert_verify(true)
+            .ca_roots_config(iroh_relay::tls::CaRootsConfig::insecure_skip_verify())
         };
 
         let ep_1 = build_endpoint(ep_1_secret).bind().await.unwrap();
@@ -356,12 +355,13 @@ fn create_two_authenticated_endpoints_and_assert_message_is_received(
             // Start with an empty relay map so the endpoint binds without
             // immediately connecting to the relay. The relay transport is
             // kept so that insert_relay (called after registration) works.
-            iroh::Endpoint::empty_builder(iroh::RelayMode::Custom(
-                RelayMap::empty(),
-            ))
-            .secret_key(secret_key)
-            .alpns(vec![TEST_ALPN.to_vec()])
-            .insecure_skip_relay_cert_verify(true)
+            iroh::Endpoint::empty_builder()
+                .relay_mode(iroh::RelayMode::Custom(RelayMap::empty()))
+                .secret_key(secret_key)
+                .alpns(vec![TEST_ALPN.to_vec()])
+                .ca_roots_config(
+                    iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
+                )
         };
 
         let ep_1 = build_endpoint_without_relay(ep_1_secret)
@@ -465,21 +465,24 @@ fn create_two_endpoints_and_assert_message_is_received(
             }),
         );
 
-        let ep_1 = iroh::Endpoint::empty_builder(iroh::RelayMode::Custom(
-            relay_map.clone(),
-        ))
-        .alpns(vec![TEST_ALPN.to_vec()])
-        .insecure_skip_relay_cert_verify(true)
-        .bind()
-        .await
-        .unwrap();
-        let ep_2 =
-            iroh::Endpoint::empty_builder(iroh::RelayMode::Custom(relay_map))
-                .alpns(vec![TEST_ALPN.to_vec()])
-                .insecure_skip_relay_cert_verify(true)
-                .bind()
-                .await
-                .unwrap();
+        let ep_1 = iroh::Endpoint::empty_builder()
+            .relay_mode(iroh::RelayMode::Custom(relay_map.clone()))
+            .alpns(vec![TEST_ALPN.to_vec()])
+            .ca_roots_config(
+                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
+            )
+            .bind()
+            .await
+            .unwrap();
+        let ep_2 = iroh::Endpoint::empty_builder()
+            .relay_mode(iroh::RelayMode::Custom(relay_map))
+            .alpns(vec![TEST_ALPN.to_vec()])
+            .ca_roots_config(
+                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
+            )
+            .bind()
+            .await
+            .unwrap();
         // Endpoint address is composed of the endpoint ID and the relay URL.
         let ep_2_addr =
             EndpointAddr::new(ep_2.id()).with_relay_url(relay_url.clone());
