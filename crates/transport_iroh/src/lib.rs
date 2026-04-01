@@ -272,7 +272,7 @@ pub mod config {
     /// Per-space configuration for the iroh transport.
     ///
     /// When provided via per-space config overrides, the iroh transport
-    /// reads this in [`configure_for_space`](super::IrohTransport::configure_for_space)
+    /// reads this in [`configure_for_space`](kitsune2_api::TxImp::configure_for_space)
     /// to dynamically add a relay for the space.
     #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
