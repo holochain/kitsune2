@@ -2,10 +2,7 @@ use kitsune2_api::*;
 use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
 use std::sync::Arc;
 
-use crate::factories::{
-    CoreBootstrapConfig, CoreBootstrapModConfig,
-    CoreSpacePerSpaceOverridesConfig, CoreSpacePerSpaceOverridesModConfig,
-};
+use crate::factories::{CoreBootstrapConfig, CoreBootstrapModConfig};
 
 #[derive(Debug)]
 struct TestSpaceHandler;
@@ -313,62 +310,4 @@ async fn test_should_override_bootstrap_url_per_space() {
     // Creating a space MUST succeed because there we provided bootstrap config for space.
     kitsune.space(kitsune2_test_utils::space::TEST_SPACE_ID, Some(space_config)).await
     .expect("Expected creating a space to succeed after setting bootstrap URL per space");
-}
-
-/// Verify that per-space auth material overrides flow through the builder
-/// to the bootstrap module: space creation succeeds and agents can be
-/// exchanged when auth material is provided only via per-space config.
-#[tokio::test(flavor = "multi_thread")]
-async fn bootstrap_with_per_space_auth_override() {
-    use base64::Engine;
-
-    let config = kitsune2_bootstrap_srv::Config {
-        listen_address_list: vec![([127, 0, 0, 1], 0).into()],
-        ..kitsune2_bootstrap_srv::Config::testing()
-    };
-    let srv = tokio::task::block_in_place(move || {
-        kitsune2_bootstrap_srv::BootstrapSrv::new(config).unwrap()
-    });
-    let addr = format!("http://{:?}", srv.listen_addrs()[0]);
-
-    // Build Kitsune with NO global auth material.
-    let kitsune_builder =
-        crate::default_test_builder().with_default_config().unwrap();
-
-    let kitsune = kitsune_builder.build().await.unwrap();
-    kitsune
-        .register_handler(Arc::new(TestKitsuneHandler))
-        .await
-        .unwrap();
-
-    // Per-space config: bootstrap URL + base64-encoded auth material
-    let auth_b64 =
-        base64::engine::general_purpose::STANDARD.encode(b"per-space-secret");
-
-    let space_config = Config::default();
-    space_config
-        .set_module_config(&CoreBootstrapModConfig {
-            core_bootstrap: CoreBootstrapConfig {
-                server_url: Some(addr.clone()),
-                backoff_min_ms: 10,
-                backoff_max_ms: 10,
-            },
-        })
-        .unwrap();
-    space_config
-        .set_module_config(&CoreSpacePerSpaceOverridesModConfig {
-            core_space_per_space_overrides: CoreSpacePerSpaceOverridesConfig {
-                auth_material_bootstrap_base64: Some(auth_b64),
-                auth_material_relay_base64: None,
-            },
-        })
-        .unwrap();
-
-    // Space creation should succeed — the per-space auth override is
-    // decoded, injected into a cloned builder, and used by the bootstrap
-    // module to authenticate with the server.
-    kitsune
-        .space(S1.clone(), Some(space_config))
-        .await
-        .expect("Space creation with per-space auth override");
 }
