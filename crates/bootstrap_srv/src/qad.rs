@@ -38,9 +38,12 @@ pub async fn spawn_qad_server_self_signed(
         ),
     );
 
-    let server_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert_der], key_der)?;
+    let server_config = rustls::ServerConfig::builder_with_provider(
+        std::sync::Arc::new(rustls::crypto::ring::default_provider()),
+    )
+    .with_safe_default_protocol_versions()?
+    .with_no_client_auth()
+    .with_single_cert(vec![cert_der], key_der)?;
 
     spawn_with_config(bind_addr, server_config).await
 }
@@ -82,9 +85,12 @@ fn build_rustls_server_config(
         rustls_pemfile::private_key(&mut &key_pem[..])?
             .ok_or("no private key found in key file")?;
 
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)?;
+    let config = rustls::ServerConfig::builder_with_provider(
+        std::sync::Arc::new(rustls::crypto::ring::default_provider()),
+    )
+    .with_safe_default_protocol_versions()?
+    .with_no_client_auth()
+    .with_single_cert(certs, key)?;
 
     Ok(config)
 }
