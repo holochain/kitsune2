@@ -113,7 +113,9 @@ pub struct Args {
     /// The address on which the QUIC Address Discovery (QAD) server should bind.
     ///
     /// QAD allows iroh clients to discover their public IP address via a QUIC
-    /// connection. Requires TLS cert/key to be configured.
+    /// connection. When TLS cert/key files are configured they are used for
+    /// QUIC; otherwise a self-signed certificate is generated for local
+    /// development and testing.
     ///
     /// Default port is 7842 (iroh's default for QAD).
     #[arg(long)]
@@ -208,7 +210,9 @@ fn main() {
 
     #[cfg(feature = "iroh-relay")]
     {
-        config.quic_bind_addr = args.quic_bind_addr;
+        if let Some(quic_bind_addr) = args.quic_bind_addr {
+            config.quic_bind_addr = Some(quic_bind_addr);
+        }
     }
 
     // Set auth in the new feature-independent location
