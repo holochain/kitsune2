@@ -450,8 +450,10 @@ fn tokio_thread(
                         Some(server)
                     }
                     Err(err) => {
-                        tracing::error!(?err, "Failed to start QAD server");
-                        None
+                        let _ = ready.send(Err(std::io::Error::other(format!(
+                            "failed to start QAD server: {err}"
+                        ))));
+                        return;
                     }
                 }
             } else {
