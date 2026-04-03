@@ -2453,7 +2453,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "bytes",
  "iroh",
@@ -2474,7 +2474,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_api"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "base64",
  "bytes",
@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_bootstrap_client"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "axum",
  "axum-server",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_bootstrap_srv"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "async-channel",
  "axum",
@@ -2547,7 +2547,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_core"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "bytes",
  "ed25519-dalek 2.2.0",
@@ -2568,7 +2568,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_dht"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "bytes",
  "kitsune2_api",
@@ -2582,7 +2582,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_gossip"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "base64",
  "bytes",
@@ -2604,7 +2604,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_showcase"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "bytes",
  "chrono",
@@ -2628,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_test_utils"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "axum",
  "bytes",
@@ -2644,7 +2644,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_transport_iroh"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "axum",
  "base64",
@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_transport_tx5"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "base64",
  "bytes",
@@ -5438,7 +5438,7 @@ dependencies = [
 
 [[package]]
 name = "tool_proto_build"
-version = "0.4.0-dev.7"
+version = "0.4.0-dev.9"
 dependencies = [
  "prost-build",
 ]
