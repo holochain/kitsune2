@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.9](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.7...v0.4.0-dev.9)\] - 2026-04-03
+
+### Bug Fixes
+
+- Downgrade iroh to 0.95.1 in the transport
+- Address review comments for QAD server integration by @ThetaSinner in [#499](https://github.com/holochain/kitsune2/pull/499)
+  - Update help text for --quic-bind-addr to reflect self-signed fallback - Don't overwrite preset quic_bind_addr with None when CLI flag is omitted - Propagate QAD startup failure instead of silently continuing
+- Explicitly set rustls crypto provider in QAD server by @ThetaSinner
+  - Use builder_with_provider(ring) instead of builder() which panics when no process-level CryptoProvider is installed. Matches the pattern used elsewhere in the codebase for mixed ring/aws-lc deps.
+
+### Other Changes
+
+- # This is a combination of 2 commits. by @ThetaSinner
+
 ## \[[0.4.0-dev.7](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.6...v0.4.0-dev.7)\] - 2026-04-01
 
 ### Features
