@@ -1219,3 +1219,60 @@ async fn no_local_agents_should_not_mark_peer_unresponsive() {
          and should not cause the peer to be marked as unresponsive."
     );
 }
+
+
+#[tokio::test]
+async fn local_socket_addrs_returns_addresses() {
+    let harness = IrohTransportTestHarness::new().await;
+    let handler = Arc::new(MockTxHandler::default());
+    let transport = harness.build_transport(handler.clone()).await;
+
+    // Retry for up to 5 seconds to allow address discovery to complete.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut addrs;
+    loop {
+        addrs = transport.local_socket_addrs().await.unwrap();
+        if !addrs.is_empty() || std::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    assert!(
+        !addrs.is_empty(),
+        "Expected at least one local socket address within 5 seconds, got none"
+    );
+
+    // Verify addresses are valid SocketAddrs (they are by type, but check port > 0).
+    for addr in &addrs {
+        assert_ne!(addr.port(), 0, "Socket address should have a non-zero port: {addr}");
+    }
+
+    println!("Discovered {} local socket addresses: {:?}", addrs.len(), addrs);
+}
+
+#[tokio::test]
+async fn local_socket_addrs_excludes_unspecified() {
+    let harness = IrohTransportTestHarness::new().await;
+    let handler = Arc::new(MockTxHandler::default());
+    let transport = harness.build_transport(handler.clone()).await;
+
+    // Retry for up to 5 seconds to allow address discovery.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut addrs;
+    loop {
+        addrs = transport.local_socket_addrs().await.unwrap();
+        if !addrs.is_empty() || std::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    // Verify no unspecified addresses (0.0.0.0 or ::) are returned.
+    for addr in &addrs {
+        assert!(
+            !addr.ip().is_unspecified(),
+            "Unspecified address should be filtered out: {addr}"
+        );
+    }
+}
