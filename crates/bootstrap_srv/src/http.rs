@@ -286,6 +286,7 @@ fn tokio_thread(
                     routing::put(handle_boot_put),
                 );
 
+            #[cfg_attr(not(feature = "iroh-relay"), allow(unused_mut))]
             let mut app = app
                 .layer(tower_http::cors::CorsLayer::new()
                     .allow_methods(tower_http::cors::AllowMethods::list([Method::GET, Method::PUT, Method::OPTIONS]))

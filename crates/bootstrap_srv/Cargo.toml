@@ -47,6 +47,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
+# NOTE: these are currently unused (iroh-relay feature disabled) because
+# the relay code was written against iroh-relay 0.97 private APIs.
 iroh = { workspace = true, optional = true }
 iroh-base = { workspace = true, optional = true }
 iroh-relay = { workspace = true, features = ["server"], optional = true }
@@ -62,7 +64,9 @@ rand_chacha = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 
 [features]
-default = ["iroh-relay"]
+# iroh-relay disabled: the relay module uses iroh-relay 0.97 private APIs
+# that aren't available in 0.95.1. Will be re-enabled when iroh stabilises.
+default = []
 
 # enable axum http2 support
 http2 = ["axum/http2"]

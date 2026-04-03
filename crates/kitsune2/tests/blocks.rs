@@ -207,12 +207,20 @@ async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
 ))]
 async fn builder_with_iroh() -> (
     Arc<Builder>,
-    kitsune2_test_utils::bootstrap::TestBootstrapSrv,
+    // Holds both bootstrap server and relay server to keep them alive.
+    (
+        kitsune2_test_utils::bootstrap::TestBootstrapSrv,
+        Box<dyn std::any::Any + Send>,
+    ),
 ) {
-    // Create a test bootstrap server with integrated relay support
     let bootstrap_server =
         kitsune2_test_utils::bootstrap::TestBootstrapSrv::new(false).await;
-    let relay_url = format!("{}/relay", bootstrap_server.addr());
+
+    // Use iroh's own test relay server
+    let (_relay_map, relay_url, relay_server) =
+        iroh::test_utils::run_relay_server()
+            .await
+            .expect("failed to start test relay server");
 
     let builder = Builder {
         transport: IrohTransportFactory::create(),
@@ -227,13 +235,17 @@ async fn builder_with_iroh() -> (
         .config
         .set_module_config(&IrohTransportModConfig {
             iroh_transport: IrohTransportConfig {
-                relay_url: Some(relay_url),
+                relay_url: Some(relay_url.to_string()),
+                relay_allow_plain_text: true,
                 ..Default::default()
             },
         })
         .unwrap();
 
-    (Arc::new(builder), bootstrap_server)
+    (
+        Arc::new(builder),
+        (bootstrap_server, Box::new(relay_server)),
+    )
 }
 
 macro_rules! builder_with_relay {
