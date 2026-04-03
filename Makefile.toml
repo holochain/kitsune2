@@ -21,8 +21,12 @@ args = ["format", "--check"]
 [tasks.doc-check]
 description = "Check documetation generation, similarly to how docs.rs will do it"
 script_runner = "@shell"
+# Use --all-features for most crates, but exclude kitsune2_bootstrap_srv's
+# iroh-relay feature which depends on iroh 0.97 crates not available while
+# iroh is pinned to 0.95.1. Build bootstrap_srv separately with compatible features.
 script = '''
-${CARGO_NIGHTLY:-cargo +nightly} doc --all-features --no-deps
+${CARGO_NIGHTLY:-cargo +nightly} doc --workspace --all-features --no-deps --exclude kitsune2_bootstrap_srv
+${CARGO_NIGHTLY:-cargo +nightly} doc --no-deps -p kitsune2_bootstrap_srv --features sbd
 '''
 env = { RUSTDOCFLAGS = "--cfg docsrs --deny=warnings" }
 install_crate = false

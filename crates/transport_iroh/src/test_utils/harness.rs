@@ -10,8 +10,10 @@ use std::sync::{Arc, Mutex};
 
 /// Test harness for the transport_iroh module
 pub struct IrohTransportTestHarness {
-    /// Bootstrap server with integrated relay support
+    /// Bootstrap server
     pub _bootstrap_server: TestBootstrapSrv,
+    /// Relay server from iroh's test-utils (kept alive by ownership).
+    _relay_server: Box<dyn std::any::Any + Send>,
     /// kitsune2 builder
     pub builder: Arc<Builder>,
 }
@@ -26,15 +28,21 @@ impl IrohTransportTestHarness {
         .with_default_config()
         .unwrap();
 
-        // Spawn a test bootstrap server with integrated relay support
+        // Spawn a test bootstrap server (no relay — relay is separate)
         let bootstrap_server = TestBootstrapSrv::new(false).await;
-        let relay_url = format!("{}/relay", bootstrap_server.addr());
+
+        // Spawn an iroh relay server from iroh's own test utilities
+        let (_relay_map, relay_url, relay_server) =
+            iroh::test_utils::run_relay_server()
+                .await
+                .expect("failed to start test relay server");
 
         builder
             .config
             .set_module_config(&IrohTransportModConfig {
                 iroh_transport: IrohTransportConfig {
-                    relay_url: Some(relay_url),
+                    relay_url: Some(relay_url.to_string()),
+                    relay_allow_plain_text: true,
                     ..Default::default()
                 },
             })
@@ -43,6 +51,7 @@ impl IrohTransportTestHarness {
         Self {
             builder,
             _bootstrap_server: bootstrap_server,
+            _relay_server: Box::new(relay_server),
         }
     }
 
