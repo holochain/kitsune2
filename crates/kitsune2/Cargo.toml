@@ -32,6 +32,9 @@ serde_json = { workspace = true, optional = true }
 kitsune2_gossip = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
+iroh = { git = "https://github.com/holochain/iroh95.git", branch = "0.95.1-maint", features = [
+  "test-utils",
+] }
 sbd-server = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

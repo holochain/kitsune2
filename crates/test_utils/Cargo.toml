@@ -28,4 +28,5 @@ kitsune2_bootstrap_srv = { workspace = true, optional = true }
 
 [features]
 # Enable relay server support in TestBootstrapSrv (for iroh transport tests)
-relay = ["dep:kitsune2_bootstrap_srv", "kitsune2_bootstrap_srv?/iroh-relay"]
+# iroh-relay disabled while iroh client is pinned to 0.95.1
+relay = ["dep:kitsune2_bootstrap_srv"]

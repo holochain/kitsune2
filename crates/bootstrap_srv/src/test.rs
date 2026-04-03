@@ -1,5 +1,7 @@
 use crate::*;
+#[cfg(any(feature = "iroh-relay", feature = "sbd"))]
 use std::fs::File;
+#[cfg(any(feature = "iroh-relay", feature = "sbd"))]
 use std::io::Write;
 
 #[cfg(feature = "iroh-relay")]
@@ -876,6 +878,7 @@ fn expiration_prune() {
     assert_eq!(1, res.len());
 }
 
+#[cfg(any(feature = "iroh-relay", feature = "sbd"))]
 #[test]
 fn start_with_tls() {
     // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't

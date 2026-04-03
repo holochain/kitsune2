@@ -12,10 +12,10 @@ edition.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
-iroh = { workspace = true }
+# Pinned to 0.95.1 while upstream stabilises. The bootstrap_srv relay
+# uses upstream iroh 0.97 separately.
+iroh = { git = "https://github.com/holochain/iroh95.git", branch = "0.95.1-maint" }
 kitsune2_bootstrap_client = { workspace = true }
-# used for test-utils
-iroh-relay = { workspace = true, features = ["server"], optional = true }
 kitsune2_api = { workspace = true }
 # used for test-utils
 kitsune2_core = { workspace = true, optional = true }
@@ -38,13 +38,14 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true }
 url = { workspace = true }
 schemars = { workspace = true, optional = true }
-n0-watcher = { workspace = true }
+# Must match iroh 0.95.1's n0-watcher version, not the workspace's 0.6.1
+n0-watcher = "0.5"
 
 [dev-dependencies]
 kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
 kitsune2_test_utils = { workspace = true }
 kitsune2_core = { workspace = true }
-kitsune2_bootstrap_srv = { workspace = true, features = ["iroh-relay"] }
+kitsune2_bootstrap_srv = { workspace = true }
 
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
 base64 = { workspace = true }
@@ -52,17 +53,13 @@ rustls = { workspace = true, features = ["ring"] }
 serde_json = { workspace = true }
 
 mockall = { workspace = true }
-iroh = { workspace = true, features = ["test-utils"] }
+iroh = { git = "https://github.com/holochain/iroh95.git", branch = "0.95.1-maint", features = [
+  "test-utils",
+] }
 
 [features]
 schema = ["dep:schemars"]
 
-test-utils = [
-  "iroh-relay/test-utils",
-  "dep:kitsune2_core",
-  "dep:kitsune2_test_utils",
-  "kitsune2_test_utils?/relay",
-  "iroh/test-utils",
-]
+test-utils = ["dep:kitsune2_core", "dep:kitsune2_test_utils", "iroh/test-utils"]
 
 metrics = ["dep:opentelemetry", "dep:opentelemetry_sdk"]

@@ -4,17 +4,12 @@ use axum::*;
 use std::sync::atomic::*;
 use std::sync::{Arc, Mutex};
 
-/// A test bootstrap server with optional relay support.
-///
-/// When the "relay" feature is enabled, this server also provides
-/// iroh relay endpoints at `/relay` and `/ping`.
+/// A test bootstrap server.
 pub struct TestBootstrapSrv {
     kill: Option<tokio::sync::oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<std::io::Result<()>>,
     halt: Arc<std::sync::atomic::AtomicBool>,
     addr: String,
-    #[cfg(feature = "relay")]
-    _relay_state: Option<kitsune2_bootstrap_srv::iroh_relay_axum::RelayState>,
 }
 
 impl Drop for TestBootstrapSrv {
@@ -28,9 +23,6 @@ impl Drop for TestBootstrapSrv {
 
 impl TestBootstrapSrv {
     /// Construct a test bootstrap server.
-    ///
-    /// When compiled with the "relay" feature, this server also provides
-    /// iroh relay functionality at `/relay` and `/ping` endpoints.
     pub async fn new(initial_halt: bool) -> Self {
         let (kill, kill_r) = tokio::sync::oneshot::channel();
         let kill = Some(kill);
@@ -60,8 +52,7 @@ impl TestBootstrapSrv {
         };
         let put_state = get_state.clone();
 
-        #[cfg_attr(not(feature = "relay"), allow(unused_mut))]
-        let mut app: Router = Router::new()
+        let app: Router = Router::new()
             .route(
                 "/bootstrap/{space}",
                 routing::get(move || async move {
@@ -97,31 +88,6 @@ impl TestBootstrapSrv {
                 }),
             );
 
-        // Add relay routes when the feature is enabled
-        #[cfg(feature = "relay")]
-        let relay_state = {
-            let relay_state =
-                kitsune2_bootstrap_srv::iroh_relay_axum::create_relay_state();
-
-            let relay_router = Router::new()
-                .route(
-                    "/relay",
-                    routing::get(
-                        kitsune2_bootstrap_srv::iroh_relay_axum::relay_handler,
-                    ),
-                )
-                .route(
-                    "/ping",
-                    routing::get(
-                        kitsune2_bootstrap_srv::iroh_relay_axum::relay_probe_handler,
-                    ),
-                )
-                .with_state(relay_state.clone());
-
-            app = app.merge(relay_router);
-            Some(relay_state)
-        };
-
         let task = tokio::task::spawn(std::future::IntoFuture::into_future(
             serve(l, app).with_graceful_shutdown(kill_r),
         ));
@@ -131,8 +97,6 @@ impl TestBootstrapSrv {
             task,
             halt,
             addr,
-            #[cfg(feature = "relay")]
-            _relay_state: relay_state,
         }
     }
 
