@@ -96,9 +96,15 @@ impl Test {
             .await
             .unwrap();
 
+        let known_peers = builder
+            .known_peers
+            .create(builder.clone(), S1.clone())
+            .await
+            .unwrap();
+
         let peer_store = builder
             .peer_store
-            .create(builder.clone(), S1.clone(), blocks)
+            .create(builder.clone(), S1.clone(), blocks, known_peers)
             .await
             .unwrap();
 
