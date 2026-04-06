@@ -237,7 +237,7 @@ pub mod config {
         /// Set the maximum size in bytes for a frame that the transport
         /// can transmit.
         ///
-        /// Defaults to 1 MiB.
+        /// Defaults to 100 MiB.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub max_frame_bytes: usize,
 
@@ -253,7 +253,7 @@ pub mod config {
             Self {
                 relay_url: None,
                 relay_allow_plain_text: false,
-                max_frame_bytes: 1024 * 1024,
+                max_frame_bytes: 100 * 1024 * 1024,
                 connect_timeout_s: 60,
             }
         }
@@ -733,7 +733,7 @@ impl IrohTransport {
             }
             Ok(res) => res,
         }?;
-        info!(remote = ?remote_url.peer_id(), "QUIC connection established");
+        info!(remote = ?remote_url.peer_id(), "Connection established");
 
         let conn_opened_at_s = SystemTime::UNIX_EPOCH
             .elapsed()
