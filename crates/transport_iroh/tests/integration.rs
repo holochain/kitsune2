@@ -403,8 +403,8 @@ async fn peer_is_set_unresponsive_after_send_preflight_error() {
     let handler_2 = Arc::new(MockTxHandler {
         preflight_gather_outgoing: Arc::new(|_| {
             // Return a preflight that will exceed max_frame_bytes when encoded
-            // Default max_frame_bytes is 1MB, so send 2MB of data
-            Ok(Bytes::from(vec![0u8; 2 * 1024 * 1024]))
+            // Default max_frame_bytes is 100 MiB, so send 100 MiB of data
+            Ok(vec![0; 100 * 1024 * 1024].into())
         }),
         set_unresponsive: Arc::new(move |peer, timestamp| {
             set_unresponsive_sender.send((peer, timestamp)).unwrap();
