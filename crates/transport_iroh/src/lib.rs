@@ -188,7 +188,7 @@ use std::{
     collections::HashMap,
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 use tokio::task::AbortHandle;
 use tracing::{debug, error, info, warn};
@@ -722,6 +722,7 @@ impl IrohTransport {
     ) -> K2Result<Arc<ConnectionContext>> {
         // Establish connection
         debug!(?target, connect_timeout_s = config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
+        let start = Instant::now();
         let conn = match tokio::time::timeout(
             Duration::from_secs(config.connect_timeout_s as u64),
             endpoint.connect(target.clone(), ALPN),
@@ -729,16 +730,24 @@ impl IrohTransport {
         .await
         {
             Err(e) => {
-                // On connection establishment error, mark the peer unresponsive
+                // On connection establishment timeout, mark the peer unresponsive
                 let _ = handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
                     .await;
 
                 Err(K2Error::other_src("iroh connect timed out", e))
             }
-            Ok(res) => res,
+            Ok(Err(e)) => {
+                // On connection establishment error, mark the peer unresponsive
+                let _ = handler
+                    .set_unresponsive(remote_url.clone(), Timestamp::now())
+                    .await;
+
+                Err(K2Error::other_src("iroh connect error", e))
+            }
+            Ok(Ok(conn)) => Ok(conn),
         }?;
-        info!(remote = ?remote_url.peer_id(), "QUIC connection established");
+        info!(remote = ?remote_url.peer_id(), direct = ?conn.is_direct(), duration = ?start.elapsed(), "QUIC connection established");
 
         let conn_opened_at_s = SystemTime::UNIX_EPOCH
             .elapsed()
