@@ -244,7 +244,8 @@ async fn handle_relay_websocket(
     // Register the client with the relay server
     state
         .clients
-        .register(client_conn_builder, state.metrics.clone());
+        .register(client_conn_builder, state.metrics.clone())
+        .await;
 
     Ok(())
 }
