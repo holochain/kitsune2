@@ -324,8 +324,15 @@ async fn peer_is_set_unresponsive_after_attempting_send_to_invalid_peer_id() {
     .expect("peer should be marked unresponsive");
 }
 
+/// End-to-end smoke test that drives the full
+/// `send_space_notify → create_connection_and_context → real iroh Endpoint`
+/// path with an unreachable relay. The deterministic branch coverage for
+/// the inner `Ok(Err(_))` and outer `tokio::time::timeout` paths lives in
+/// the `tests::connect_failure` unit tests; this test exists to catch
+/// wiring regressions (e.g. a missing space-handler registration) that
+/// the unit tests cannot.
 #[tokio::test]
-async fn peer_is_set_unresponsive_after_connection_timeout() {
+async fn peer_is_set_unresponsive_when_connect_fails() {
     enable_tracing();
     let harness = IrohTransportTestHarness::new().await;
 
@@ -341,8 +348,9 @@ async fn peer_is_set_unresponsive_after_connection_timeout() {
     let ep = harness.build_transport(handler.clone()).await;
     ep.register_space_handler(TEST_SPACE_ID, handler.clone());
 
-    // Create a URL that will timeout when attempting to connect.
-    // It will correctly decode to an endpoint address, but will not be reachable.
+    // A URL that decodes to a valid endpoint address but is unreachable —
+    // iroh's `connect()` will return an error (DNS / relay resolution
+    // fails) well before the outer connect timeout could fire.
     let unreachable_url = Url::from_str(
         "https://iroh-relay.invalid:443/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
@@ -359,11 +367,8 @@ async fn peer_is_set_unresponsive_after_connection_timeout() {
         )
         .await;
 
-    // Send should fail due to connection timeout
-    assert!(
-        result.is_err(),
-        "send should fail when connection times out"
-    );
+    // Send should fail because the connect attempt fails.
+    assert!(result.is_err(), "send should fail when connect fails");
 
     // Verify set_unresponsive was called
     tokio::time::timeout(Duration::from_secs(1), async {
@@ -379,7 +384,7 @@ async fn peer_is_set_unresponsive_after_connection_timeout() {
         );
     })
     .await
-    .expect("peer should be marked unresponsive after timeout");
+    .expect("peer should be marked unresponsive after connect failure");
 }
 
 #[tokio::test]
