@@ -423,6 +423,15 @@ impl IrohTransport {
         } else {
             Endpoint::empty_builder(RelayMode::Default)
         };
+
+        let mut transport_config = iroh::endpoint::TransportConfig::default();
+        transport_config
+            .keep_alive_interval(Some(Duration::from_secs(5)))
+            .max_idle_timeout(Some(
+                iroh::endpoint::VarInt::from_u32(60_000).into(),
+            ));
+        builder = builder.transport_config(transport_config);
+
         // Set kitsune2 protocol for handling data.
         builder = builder.alpns(vec![ALPN.to_vec()]);
 
