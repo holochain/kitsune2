@@ -14,6 +14,8 @@ edition.workspace = true
 bytes = { workspace = true }
 iroh = { workspace = true }
 kitsune2_bootstrap_client = { workspace = true }
+# used for test-utils
+iroh-relay = { workspace = true, features = ["server"], optional = true }
 kitsune2_api = { workspace = true }
 # used for test-utils
 kitsune2_core = { workspace = true, optional = true }
@@ -42,7 +44,7 @@ n0-watcher = { workspace = true }
 kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
 kitsune2_test_utils = { workspace = true }
 kitsune2_core = { workspace = true }
-kitsune2_bootstrap_srv = { workspace = true }
+kitsune2_bootstrap_srv = { workspace = true, features = ["iroh-relay"] }
 
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
 base64 = { workspace = true }
@@ -55,6 +57,12 @@ iroh = { workspace = true, features = ["test-utils"] }
 [features]
 schema = ["dep:schemars"]
 
-test-utils = ["dep:kitsune2_core", "dep:kitsune2_test_utils", "iroh/test-utils"]
+test-utils = [
+  "iroh-relay/test-utils",
+  "dep:kitsune2_core",
+  "dep:kitsune2_test_utils",
+  "kitsune2_test_utils?/relay",
+  "iroh/test-utils",
+]
 
 metrics = ["dep:opentelemetry", "dep:opentelemetry_sdk"]

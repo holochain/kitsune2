@@ -71,13 +71,11 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
 # alternative transport implementation using iroh
-# Pinned to 0.95.1 while upstream stabilises reliability issues.
-iroh = "=0.95.1"
+iroh = "0.97"
 # automock traits for tests
 mockall = "0.14"
 # watchable stream of values used in iroh transport
-# Must match iroh 0.95.1's n0-watcher version
-n0-watcher = "0.5"
+n0-watcher = "0.6.1"
 # bootstrap_srv uses this to determine worker thread count.
 num_cpus = "1.16.0"
 # api uses this for the kitsune2 wire protocol.
@@ -150,10 +148,8 @@ kitsune2_test_utils = { version = "0.4.0-dev.0", path = "crates/test_utils" }
 # used to test the bootstrap server with SBD enabled
 sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
-# NOTE: iroh-relay and iroh-base are commented out while iroh is pinned to
-# 0.95.1 — the relay code was written against 0.97 private APIs.
-# iroh-relay = "0.97"
-# iroh-base = "0.97"
+iroh-relay = "0.97"
+iroh-base = "0.97"
 # used to test opentelemetry metrics
 opentelemetry_sdk = "0.30"
 

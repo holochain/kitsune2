@@ -4,7 +4,6 @@ use crate::stream::{
     DynIrohRecvStream, DynIrohSendStream, IrohRecvStream, IrohSendStream,
 };
 use iroh::EndpointId;
-use iroh::endpoint::ConnectionType;
 use kitsune2_api::{BoxFut, K2Error, K2Result};
 use std::sync::Arc;
 
@@ -33,20 +32,12 @@ pub(crate) trait Connection: 'static + Send + Sync {
 /// Production implementation wrapping iroh's Connection.
 pub(crate) struct IrohConnection {
     inner: Arc<iroh::endpoint::Connection>,
-    endpoint: Arc<iroh::Endpoint>,
 }
 
 impl IrohConnection {
-    /// Create a new wrapper around an iroh Connection, with access to
-    /// the endpoint for connection type queries (iroh 0.95.1 API).
-    pub fn new(
-        connection: Arc<iroh::endpoint::Connection>,
-        endpoint: Arc<iroh::Endpoint>,
-    ) -> Self {
-        Self {
-            inner: connection,
-            endpoint,
-        }
+    /// Create a new wrapper around an iroh Connection.
+    pub fn new(connection: Arc<iroh::endpoint::Connection>) -> Self {
+        Self { inner: connection }
     }
 }
 
@@ -82,15 +73,8 @@ impl Connection for IrohConnection {
 
     fn is_direct(&self) -> bool {
         use n0_watcher::Watcher;
-        self.endpoint
-            .conn_type(self.inner.remote_id())
-            .map(|mut watcher| {
-                matches!(
-                    watcher.get(),
-                    ConnectionType::Direct(_) | ConnectionType::Mixed(_, _)
-                )
-            })
-            .unwrap_or(false)
+        let paths = self.inner.paths().get();
+        paths.iter().any(|p| p.is_ip() && p.is_selected())
     }
 }
 

@@ -156,18 +156,15 @@ async fn sbd_signal_server() -> (String, SbdServer) {
     (relay_server_url, signal_server)
 }
 
-/// Start an iroh relay server using iroh's built-in test utilities.
-/// Returns the relay URL and a boxed guard that keeps the server alive.
+/// For iroh transport, the relay functionality is integrated into the bootstrap server.
+/// This function returns the relay URL (bootstrap server URL + /relay/).
+/// Note: The trailing slash is important for proper URL construction.
 #[cfg(all(
     not(feature = "transport-tx5-backend-go-pion"),
     feature = "transport-iroh"
 ))]
-async fn iroh_test_relay_server() -> (String, Box<dyn std::any::Any + Send>) {
-    let (_relay_map, relay_url, relay_server) =
-        iroh::test_utils::run_relay_server()
-            .await
-            .expect("failed to start test relay server");
-    (relay_url.to_string(), Box::new(relay_server))
+async fn iroh_relay_from_bootstrap(bootstrap: &TestBootstrapSrv) -> String {
+    format!("{}/relay", bootstrap.addr())
 }
 
 async fn start_space(kitsune: &DynKitsune) -> DynSpace {
@@ -221,7 +218,7 @@ async fn two_node_gossip() {
         not(feature = "transport-tx5-backend-go-pion"),
         feature = "transport-iroh"
     ))]
-    let (relay_server_url, _iroh_relay) = iroh_test_relay_server().await;
+    let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances...
     let kitsune_1 =
@@ -307,7 +304,7 @@ async fn shutdown_space() {
         not(feature = "transport-tx5-backend-go-pion"),
         feature = "transport-iroh"
     ))]
-    let (relay_server_url, _iroh_relay) = iroh_test_relay_server().await;
+    let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances..
     let kitsune_1 =

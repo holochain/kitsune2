@@ -91,17 +91,6 @@ async fn authenticated_relay_two_transports_can_communicate() {
     let real_relay_url = std::env::var("KITSUNE2_TEST_RELAY_URL").ok();
     let real_auth_material = std::env::var("KITSUNE2_TEST_AUTH_MATERIAL").ok();
 
-    // The local bootstrap+relay fallback requires the iroh-relay feature
-    // on bootstrap_srv, which is disabled while iroh is pinned to 0.95.1.
-    // Skip unless external relay env vars are set.
-    if real_relay_url.is_none() || real_auth_material.is_none() {
-        eprintln!(
-            "SKIPPED: set KITSUNE2_TEST_RELAY_URL and \
-             KITSUNE2_TEST_AUTH_MATERIAL to run this test"
-        );
-        return;
-    }
-
     // _servers keeps the local servers alive for the duration of the test.
     let (relay_url, auth_bytes, allow_plain_text, _servers) = match (
         real_relay_url,
