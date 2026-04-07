@@ -47,29 +47,22 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
-# NOTE: these are currently commented out (iroh-relay feature disabled)
-# because the relay code was written against iroh-relay 0.97 private APIs
-# and iroh is pinned to 0.95.1.
-# iroh = { workspace = true, optional = true }
-# iroh-base = { workspace = true, optional = true }
-# iroh-relay = { workspace = true, features = ["server"], optional = true }
+iroh = { workspace = true, optional = true }
+iroh-base = { workspace = true, optional = true }
+iroh-relay = { workspace = true, features = ["server"], optional = true }
 rustls-pemfile = { workspace = true, optional = true }
 rcgen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
 sbd-client = { workspace = true }
-# iroh dev-deps commented out: only used in iroh-relay tests which are
-# disabled while iroh is pinned to 0.95.1
-# iroh = { workspace = true, features = ["test-utils"] }
-# iroh-base = { workspace = true }
+iroh = { workspace = true, features = ["test-utils"] }
+iroh-base = { workspace = true }
 rand_chacha = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 
 [features]
-# iroh-relay disabled: the relay module uses iroh-relay 0.97 private APIs
-# that aren't available in 0.95.1. Will be re-enabled when iroh stabilises.
-default = []
+default = ["iroh-relay"]
 
 # enable axum http2 support
 http2 = ["axum/http2"]
@@ -77,13 +70,11 @@ http2 = ["axum/http2"]
 # use sbd as signaling and relay server
 sbd = ["dep:sbd-server", "dep:rcgen"]
 
-# use iroh relay server — currently non-functional, iroh deps commented out
-# while iroh is pinned to 0.95.1. Feature kept defined so cfg(feature = "iroh-relay")
-# checks remain valid.
+# use iroh relay server
 iroh-relay = [
-  # "dep:iroh",
-  # "dep:iroh-base",
-  # "dep:iroh-relay",
+  "dep:iroh",
+  "dep:iroh-base",
+  "dep:iroh-relay",
   "dep:rustls-pemfile",
   "dep:rcgen",
 ]

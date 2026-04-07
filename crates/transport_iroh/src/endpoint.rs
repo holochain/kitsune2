@@ -46,14 +46,12 @@ pub(crate) trait Endpoint:
 
 #[derive(Debug)]
 pub(crate) struct IrohEndpoint {
-    inner: Arc<iroh::Endpoint>,
+    inner: iroh::Endpoint,
 }
 
 impl IrohEndpoint {
     pub(crate) fn new(inner: iroh::Endpoint) -> Self {
-        Self {
-            inner: Arc::new(inner),
-        }
+        Self { inner }
     }
 }
 
@@ -69,14 +67,11 @@ impl Endpoint for IrohEndpoint {
             match self.inner.accept().await {
                 Some(incoming) => {
                     // Await the incoming connection and wrap it
-                    let endpoint = self.inner.clone();
                     let result = incoming
                         .await
                         .map(|conn| {
-                            Arc::new(IrohConnection::new(
-                                Arc::new(conn),
-                                endpoint,
-                            )) as DynConnection
+                            Arc::new(IrohConnection::new(Arc::new(conn)))
+                                as DynConnection
                         })
                         .map_err(|err| {
                             K2Error::other_src(
@@ -98,12 +93,11 @@ impl Endpoint for IrohEndpoint {
     ) -> BoxFut<'_, K2Result<DynConnection>> {
         let alpn = alpn.to_vec();
         Box::pin(async move {
-            let endpoint = self.inner.clone();
             self.inner
                 .connect(endpoint_addr, &alpn)
                 .await
                 .map(|conn| {
-                    Arc::new(IrohConnection::new(Arc::new(conn), endpoint))
+                    Arc::new(IrohConnection::new(Arc::new(conn)))
                         as DynConnection
                 })
                 .map_err(|err| {
