@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod connect_failure;
 mod frame;
 mod stream;
 mod url;
