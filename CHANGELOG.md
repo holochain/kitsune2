@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.0-dev.10](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.9...v0.4.0-dev.10)\] - 2026-04-07
+
+### Features
+
+- Increase default for iroh transport max frame bytes to 100 MiB
+- Downgrade Iroh to 0.95 while keeping relay integration
+- Tune QUIC keep alive to be less noisy and more forgiving for timeouts
+
+### Bug Fixes
+
+- Missing unresponsive mark on error path for opening connections
+
+### Miscellaneous Tasks
+
+- Revert "fix: Downgrade iroh to 0.95.1 in the transport"
+  - This reverts commit 26236973080a0dfe627c96f1ea3b826312195380.
+
+### Testing
+
+- Increase coverage of connection error handling
+
 ## \[[0.4.0-dev.9](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.7...v0.4.0-dev.9)\] - 2026-04-03
 
 ### Bug Fixes
