@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.0](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.7...v0.5.0-dev.0)\] - 2026-04-09
+
+### Features
+
+- Tune QUIC keep alive to be less noisy and more forgiving for timeouts by @ThetaSinner
+- Increase default for iroh transport max frame bytes to 100 MiB by @jost-s in [#510](https://github.com/holochain/kitsune2/pull/510)
+
+### Bug Fixes
+
+- Missing unresponsive mark on error path for opening connections by @ThetaSinner
+- Address review comments for QAD server integration by @ThetaSinner in [#499](https://github.com/holochain/kitsune2/pull/499)
+  - Update help text for --quic-bind-addr to reflect self-signed fallback - Don't overwrite preset quic_bind_addr with None when CLI flag is omitted - Propagate QAD startup failure instead of silently continuing
+- Explicitly set rustls crypto provider in QAD server by @ThetaSinner
+  - Use builder_with_provider(ring) instead of builder() which panics when no process-level CryptoProvider is installed. Matches the pattern used elsewhere in the codebase for mixed ring/aws-lc deps.
+
+### Miscellaneous Tasks
+
+- Update nixpkgs to 25.11 from 25.05 by @ThetaSinner
+- Remove unused makefile by @ThetaSinner
+
+### Testing
+
+- Increase coverage of connection error handling by @ThetaSinner in [#517](https://github.com/holochain/kitsune2/pull/517)
+
+### Documentation
+
+- Add a CLAUDE.md by @ThetaSinner in [#518](https://github.com/holochain/kitsune2/pull/518)
+
+### Other Changes
+
+- # This is a combination of 2 commits. by @ThetaSinner
+
 ## \[[0.4.0-dev.7](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.6...v0.4.0-dev.7)\] - 2026-04-01
 
 ### Features
