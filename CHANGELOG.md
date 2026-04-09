@@ -32,10 +32,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Add a CLAUDE.md by @ThetaSinner in [#518](https://github.com/holochain/kitsune2/pull/518)
 
-### Other Changes
-
-- # This is a combination of 2 commits. by @ThetaSinner
-
 ## \[[0.4.0-dev.7](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.6...v0.4.0-dev.7)\] - 2026-04-01
 
 ### Features
