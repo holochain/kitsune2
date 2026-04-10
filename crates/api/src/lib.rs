@@ -89,6 +89,9 @@ pub use peer_meta_store::*;
 mod gossip;
 pub use gossip::*;
 
+mod known_peers;
+pub use known_peers::*;
+
 mod local_agent_store;
 pub use local_agent_store::*;
 
