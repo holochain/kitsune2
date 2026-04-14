@@ -810,7 +810,8 @@ impl IrohTransport {
             }
             Ok(Err(e)) => {
                 // On connection establishment error, mark the peer unresponsive
-                let _ = handler
+                let _ = self
+                    .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
                     .await;
 

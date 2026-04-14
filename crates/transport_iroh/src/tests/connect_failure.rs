@@ -10,7 +10,7 @@ use crate::test_utils::MockTxHandler;
 use crate::url::endpoint_from_url;
 use crate::{IrohTransport, IrohTransportConfig};
 use bytes::Bytes;
-use iroh::EndpointAddr;
+use iroh::{EndpointAddr, RelayConfig, RelayUrl};
 use kitsune2_api::{
     BoxFut, DefaultTransport, K2Error, K2Result, TransportStats, TxImp,
     TxImpHnd, Url,
@@ -55,6 +55,18 @@ impl Endpoint for FakeEndpoint {
 
     fn close(&self) -> BoxFut<'_, ()> {
         Box::pin(async {})
+    }
+
+    fn insert_relay(
+        &self,
+        _url: RelayUrl,
+        _config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn id_bytes(&self) -> [u8; 32] {
+        [0u8; 32]
     }
 }
 
@@ -133,6 +145,34 @@ fn fake_remote_url() -> Url {
     .unwrap()
 }
 
+/// Build an `IrohTransport` directly from its component pieces, bypassing the
+/// async `create()` constructor so unit tests can inject a fake `Endpoint`
+/// and observe `connections` / `local_url` after the test runs. The
+/// background tasks held by the struct are stubbed out with no-op spawns.
+fn build_transport(
+    endpoint: DynIrohEndpoint,
+    handler: Arc<TxImpHnd>,
+    connections: crate::Connections,
+    local_url: Arc<RwLock<Option<Url>>>,
+    config: IrohTransportConfig,
+) -> IrohTransport {
+    let noop_handle = || tokio::spawn(async {}).abort_handle();
+    IrohTransport {
+        endpoint,
+        handler,
+        local_url,
+        connections,
+        connection_locks: Arc::new(Mutex::new(HashMap::new())),
+        watch_addr_task: noop_handle(),
+        accept_task: noop_handle(),
+        relay_re_registration_task: None,
+        config,
+        known_relays: Arc::new(RwLock::new(HashMap::new())),
+        per_space_urls: Arc::new(RwLock::new(HashMap::new())),
+        space_relay_hosts: Arc::new(RwLock::new(HashMap::new())),
+    }
+}
+
 fn config() -> IrohTransportConfig {
     IrohTransportConfig {
         // Make the outer wrapper effectively unreachable so the test
@@ -156,23 +196,27 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
     });
 
     let remote_url = fake_remote_url();
-    let target =
-        endpoint_from_url(&remote_url, Some("https://relay.example.com:443/"))
-            .unwrap();
+    let target = endpoint_from_url(
+        &remote_url,
+        Some("https://relay.example.com:443/"),
+        &HashMap::new(),
+    )
+    .unwrap();
 
     let connections = Arc::new(RwLock::new(HashMap::new()));
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
 
-    let result = IrohTransport::create_connection_and_context(
+    let transport = build_transport(
         fake_endpoint,
-        target,
         handler,
-        remote_url.clone(),
         connections.clone(),
         local_url,
-        &config(),
-    )
-    .await;
+        config(),
+    );
+
+    let result = transport
+        .create_connection_and_context(target, remote_url.clone())
+        .await;
 
     let err_str = result.expect_err("connect should fail").to_string();
     assert!(
@@ -224,14 +268,27 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
         fn close(&self) -> BoxFut<'_, ()> {
             Box::pin(async {})
         }
+        fn insert_relay(
+            &self,
+            _url: RelayUrl,
+            _config: Arc<RelayConfig>,
+        ) -> BoxFut<'_, ()> {
+            Box::pin(async {})
+        }
+        fn id_bytes(&self) -> [u8; 32] {
+            [0u8; 32]
+        }
     }
 
     let endpoint: DynIrohEndpoint = Arc::new(HangingEndpoint);
 
     let remote_url = fake_remote_url();
-    let target =
-        endpoint_from_url(&remote_url, Some("https://relay.example.com:443/"))
-            .unwrap();
+    let target = endpoint_from_url(
+        &remote_url,
+        Some("https://relay.example.com:443/"),
+        &HashMap::new(),
+    )
+    .unwrap();
 
     let connections = Arc::new(RwLock::new(HashMap::new()));
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
@@ -243,17 +300,13 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
         ..Default::default()
     };
 
+    let transport =
+        build_transport(endpoint, handler, connections.clone(), local_url, cfg);
+
     let start = std::time::Instant::now();
-    let result = IrohTransport::create_connection_and_context(
-        endpoint,
-        target,
-        handler,
-        remote_url.clone(),
-        connections.clone(),
-        local_url,
-        &cfg,
-    )
-    .await;
+    let result = transport
+        .create_connection_and_context(target, remote_url.clone())
+        .await;
     let elapsed = start.elapsed();
 
     let err_str = result.expect_err("connect should time out").to_string();
