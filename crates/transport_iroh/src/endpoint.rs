@@ -40,6 +40,9 @@ pub(crate) trait Endpoint:
         alpn: &[u8],
     ) -> BoxFut<'_, K2Result<DynConnection>>;
 
+    /// Closes the endpoint.
+    fn close(&self) -> BoxFut<'_, ()>;
+
     /// Dynamically add a relay server to this endpoint.
     fn insert_relay(
         &self,
@@ -114,6 +117,10 @@ impl Endpoint for IrohEndpoint {
                     )
                 })
         })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async { self.inner.close().await })
     }
 
     fn insert_relay(

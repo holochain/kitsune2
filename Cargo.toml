@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.0-dev.6"
+version = "0.5.0-dev.0"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
 homepage = "https://www.holochain.org/"
 repository = "https://github.com/holochain/kitsune2"
@@ -35,13 +35,13 @@ panic = "abort"
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.
-kitsune2 = { version = "0.4.0-dev.0", path = "crates/kitsune2", default-features = false }
-kitsune2_api = { version = "0.4.0-dev.0", path = "crates/api" }
-kitsune2_dht = { version = "0.4.0-dev.0", path = "crates/dht" }
-kitsune2_gossip = { version = "0.4.0-dev.0", path = "crates/gossip" }
-kitsune2_transport_tx5 = { version = "0.4.0-dev.0", path = "crates/transport_tx5", default-features = false }
-kitsune2_transport_iroh = { version = "0.4.0-dev.0", path = "crates/transport_iroh" }
-kitsune2_bootstrap_client = { version = "0.4.0-dev.0", path = "crates/bootstrap_client" }
+kitsune2 = { version = "0.5.0-dev.0", path = "crates/kitsune2", default-features = false }
+kitsune2_api = { version = "0.5.0-dev.0", path = "crates/api" }
+kitsune2_dht = { version = "0.5.0-dev.0", path = "crates/dht" }
+kitsune2_gossip = { version = "0.5.0-dev.0", path = "crates/gossip" }
+kitsune2_transport_tx5 = { version = "0.5.0-dev.0", path = "crates/transport_tx5", default-features = false }
+kitsune2_transport_iroh = { version = "0.5.0-dev.0", path = "crates/transport_iroh" }
+kitsune2_bootstrap_client = { version = "0.5.0-dev.0", path = "crates/bootstrap_client" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"
@@ -71,7 +71,7 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
 # alternative transport implementation using iroh
-iroh = "0.96.1"
+iroh = "0.97"
 # automock traits for tests
 mockall = "0.14"
 # watchable stream of values used in iroh transport
@@ -116,6 +116,7 @@ tx5 = { version = "0.8", default-features = false }
 axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
+rustls-pemfile = "2.2"
 # embedded in the bootstrap server and to test the tx5 integration
 sbd-server = { version = "0.4.0" }
 # axum-server integration with the SBD server
@@ -140,15 +141,15 @@ prost-build = "0.14"
 # Please be careful to only include them in dev dependencies or move them
 # above this section.
 # --- dev-dependencies ---
-kitsune2_bootstrap_srv = { version = "0.4.0-dev.0", path = "crates/bootstrap_srv" }
-kitsune2_core = { version = "0.4.0-dev.0", path = "crates/core" }
-kitsune2_test_utils = { version = "0.4.0-dev.0", path = "crates/test_utils" }
+kitsune2_bootstrap_srv = { version = "0.5.0-dev.0", path = "crates/bootstrap_srv" }
+kitsune2_core = { version = "0.5.0-dev.0", path = "crates/core" }
+kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }
 
 # used to test the bootstrap server with SBD enabled
 sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
-iroh-relay-holochain = "0.96.1"
-iroh-base = "0.96.1"
+iroh-relay = "0.97"
+iroh-base = "0.97"
 # used to test opentelemetry metrics
 opentelemetry_sdk = "0.30"
 

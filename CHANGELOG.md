@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.0](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.7...v0.5.0-dev.0)\] - 2026-04-09
+
+### Features
+
+- Tune QUIC keep alive to be less noisy and more forgiving for timeouts by @ThetaSinner
+- Increase default for iroh transport max frame bytes to 100 MiB by @jost-s in [#510](https://github.com/holochain/kitsune2/pull/510)
+
+### Bug Fixes
+
+- Missing unresponsive mark on error path for opening connections by @ThetaSinner
+- Address review comments for QAD server integration by @ThetaSinner in [#499](https://github.com/holochain/kitsune2/pull/499)
+  - Update help text for --quic-bind-addr to reflect self-signed fallback - Don't overwrite preset quic_bind_addr with None when CLI flag is omitted - Propagate QAD startup failure instead of silently continuing
+- Explicitly set rustls crypto provider in QAD server by @ThetaSinner
+  - Use builder_with_provider(ring) instead of builder() which panics when no process-level CryptoProvider is installed. Matches the pattern used elsewhere in the codebase for mixed ring/aws-lc deps.
+
+### Miscellaneous Tasks
+
+- Update nixpkgs to 25.11 from 25.05 by @ThetaSinner
+- Remove unused makefile by @ThetaSinner
+
+### Testing
+
+- Increase coverage of connection error handling by @ThetaSinner in [#517](https://github.com/holochain/kitsune2/pull/517)
+
+### Documentation
+
+- Add a CLAUDE.md by @ThetaSinner in [#518](https://github.com/holochain/kitsune2/pull/518)
+
+## \[[0.4.0-dev.7](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.6...v0.4.0-dev.7)\] - 2026-04-01
+
+### Features
+
+- Upgrade to Iroh 0.97 by @ThetaSinner in [#498](https://github.com/holochain/kitsune2/pull/498)
+- Switch default transport to iroh (#442) by @ThetaSinner in [#488](https://github.com/holochain/kitsune2/pull/488)
+  - Switch default transport from tx5 datachannel-vendored to iroh and default bootstrap server backend from sbd to iroh-relay.
+  - Remove tx5 datachannel-vendored and backend-libdatachannel features, keeping only backend-go-pion as the sole tx5 backend option.
+  - Simplify cfg gates, Makefile.toml tasks, and feature definitions across kitsune2, transport_tx5, bootstrap_srv, bootstrap_client, and kitsune2_showcase crates.
+
+### Bug Fixes
+
+- Update test workflow for renamed SBD docker image by @ThetaSinner in [#490](https://github.com/holochain/kitsune2/pull/490)
+- Align Docker image naming with new default transport by @ThetaSinner
+  - The default bootstrap_srv feature is now iroh-relay, so the base image (kitsune2_bootstrap_srv) builds with iroh-relay by default.
+  - Replace the kitsune2_bootstrap_srv_iroh_relay image with kitsune2_bootstrap_srv_sbd that explicitly enables the sbd feature.
+
+### Automated Changes
+
+- *(deps)* Bump cachix/cachix-action from 16 to 17 by @dependabot[bot] in [#484](https://github.com/holochain/kitsune2/pull/484)
+
 ## \[[0.4.0-dev.6](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.5...v0.4.0-dev.6)\] - 2026-03-23
 
 ### Features

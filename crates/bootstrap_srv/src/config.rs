@@ -74,6 +74,14 @@ pub struct Config {
     /// - `None`
     pub tls_key: Option<std::path::PathBuf>,
 
+    /// The socket address on which the QUIC Address Discovery (QAD) server
+    /// should bind. When set (along with TLS cert/key), a QUIC endpoint is
+    /// started that lets iroh clients discover their public address.
+    ///
+    /// Default: `None` (disabled)
+    #[cfg(feature = "iroh-relay")]
+    pub quic_bind_addr: Option<std::net::SocketAddr>,
+
     /// Disable the relay server.
     pub no_relay_server: bool,
 
@@ -105,6 +113,8 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(10),
             tls_cert: None,
             tls_key: None,
+            #[cfg(feature = "iroh-relay")]
+            quic_bind_addr: Some((std::net::Ipv4Addr::LOCALHOST, 0).into()),
             no_relay_server: false,
             allowed_origins: None,
             auth: crate::auth::AuthConfig::default(),
@@ -126,6 +136,10 @@ impl Config {
             prune_interval: std::time::Duration::from_secs(60),
             tls_cert: None,
             tls_key: None,
+            #[cfg(feature = "iroh-relay")]
+            quic_bind_addr: Some(
+                (std::net::Ipv6Addr::UNSPECIFIED, 7842).into(),
+            ),
             no_relay_server: false,
             allowed_origins: None,
             auth: crate::auth::AuthConfig::default(),
