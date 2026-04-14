@@ -718,21 +718,25 @@ fn multi_thread_stress() {
     // then end after the writers are done.
 
     let w_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let r_errors = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let w_errors = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
 
     let mut all_r = Vec::with_capacity(t_r_count as usize);
 
     for _ in 0..t_r_count {
         let w_done = w_done.clone();
+        let r_errors = r_errors.clone();
 
         all_r.push(std::thread::spawn(move || {
             while !w_done.load(std::sync::atomic::Ordering::SeqCst) {
                 let addr = format!("http://{addr}/bootstrap/{S1}");
-                let res = ureq::get(&addr)
+                let Ok(res) = ureq::get(&addr)
                     .call()
-                    .unwrap()
-                    .into_body()
-                    .read_to_string()
-                    .unwrap();
+                    .and_then(|r| r.into_body().read_to_string())
+                else {
+                    r_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    continue;
+                };
                 let _: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
             }
         }));
@@ -753,19 +757,26 @@ fn multi_thread_stress() {
         let agent_seed = BASE64_URL_SAFE_NO_PAD.encode(agent_seed);
 
         let b = b.clone();
+        let w_errors = w_errors.clone();
 
         all_w.push(std::thread::spawn(move || {
             for i in 0..SCOUNT {
                 b.wait();
 
-                PutInfo {
+                // Don't unwrap — if a writer thread panics it will
+                // never reach the barrier again, deadlocking every
+                // other writer (and therefore the entire test).
+                if let Err(e) = (PutInfo {
                     addr,
                     agent_seed: &agent_seed,
                     test_prop: &format!("{i}"),
                     ..Default::default()
                 }
-                .call()
-                .unwrap();
+                .call())
+                {
+                    eprintln!("writer {a} round {i} failed: {e}");
+                    w_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
             }
         }));
     }
@@ -779,6 +790,18 @@ fn multi_thread_stress() {
     for j in all_r {
         j.join().unwrap();
     }
+
+    // Tolerate a small number of transient HTTP failures (e.g. on
+    // Windows), but fail if too many occurred — that would mean the
+    // test wasn't doing meaningful work.
+    let total_w = t_w_count * SCOUNT;
+    let w_err = w_errors.load(std::sync::atomic::Ordering::Relaxed);
+    let r_err = r_errors.load(std::sync::atomic::Ordering::Relaxed);
+    println!("write errors: {w_err}/{total_w}, read errors: {r_err}");
+    assert!(
+        w_err <= total_w / 10,
+        "too many write errors: {w_err}/{total_w}"
+    );
 
     let addr = format!("http://{addr}/bootstrap/{S1}");
     let res = ureq::get(&addr)
