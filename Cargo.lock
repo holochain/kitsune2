@@ -2531,6 +2531,8 @@ dependencies = [
  "kitsune2_test_utils",
  "num_cpus",
  "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
  "rand 0.8.5",
  "rand_chacha 0.9.0",
  "rcgen 0.13.2",

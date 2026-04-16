@@ -217,6 +217,8 @@ pub use tls::*;
 mod auth;
 pub use auth::*;
 
+pub mod metrics;
+
 #[cfg(feature = "sbd")]
 mod sbd;
 
@@ -230,6 +232,9 @@ pub mod iroh_relay_axum;
 
 #[cfg(feature = "iroh-relay")]
 pub(crate) mod qad;
+
+#[cfg(feature = "iroh-relay")]
+pub mod iroh_relay_metrics;
 
 #[cfg(test)]
 mod test;
