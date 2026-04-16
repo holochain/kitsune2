@@ -18,7 +18,8 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tracing::{debug, trace, warn};
+use tokio::time::timeout;
+use tracing::{debug, info, trace, warn};
 
 use futures::FutureExt;
 use iroh_relay::http::ProtocolVersion;
@@ -91,7 +92,19 @@ pub async fn relay_handler(
         if let Err(e) =
             handle_relay_websocket(socket, state, client_auth_header).await
         {
-            warn!("Error handling relay WebSocket: {:?}", e);
+            let msg = e.to_string();
+            let is_expected = msg.contains("timed out")
+                || msg.contains("Connection reset")
+                || msg.contains("connection closed")
+                || msg.contains("Broken pipe")
+                || msg.contains("not allowed")
+                || msg.contains("denied")
+                || msg.contains("WebSocket protocol error");
+            if is_expected {
+                debug!("Relay WebSocket ended: {msg}");
+            } else {
+                warn!("Error handling relay WebSocket: {msg}");
+            }
         }
     })
 }
@@ -134,7 +147,7 @@ impl Stream for AxumWebSocketAdapter {
                 Poll::Ready(Some(Err(e))) => {
                     // Convert axum error to StreamError
                     return Poll::Ready(Some(Err(StreamError::Io(
-                        std::io::Error::other(format!("{:?}", e)),
+                        std::io::Error::other(e.to_string()),
                     ))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
@@ -154,7 +167,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         match self.inner.as_mut().poll_ready(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(format!("{:?}", e)),
+                std::io::Error::other(e.to_string()),
             ))),
             Poll::Pending => Poll::Pending,
         }
@@ -167,9 +180,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         self.inner
             .as_mut()
             .start_send(AxumMessage::Binary(item))
-            .map_err(|e| {
-                StreamError::Io(std::io::Error::other(format!("{:?}", e)))
-            })
+            .map_err(|e| StreamError::Io(std::io::Error::other(e.to_string())))
     }
 
     fn poll_flush(
@@ -179,7 +190,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         match self.inner.as_mut().poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(format!("{:?}", e)),
+                std::io::Error::other(e.to_string()),
             ))),
             Poll::Pending => Poll::Pending,
         }
@@ -192,7 +203,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         match self.inner.as_mut().poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(format!("{:?}", e)),
+                std::io::Error::other(e.to_string()),
             ))),
             Poll::Pending => Poll::Pending,
         }
@@ -224,19 +235,34 @@ async fn handle_relay_websocket(
     // Wrap the axum WebSocket to implement Stream/Sink
     let mut adapter = AxumWebSocketAdapter::new(socket);
 
-    // Perform the relay protocol handshake
-    let authentication =
-        handshake::serverside(&mut adapter, client_auth_header).await?;
+    // Perform the relay protocol handshake with a timeout to prevent
+    // stalled clients from holding the WebSocket open indefinitely.
+    const HANDSHAKE_TIMEOUT: std::time::Duration =
+        std::time::Duration::from_secs(30);
 
-    trace!(?authentication.mechanism, "accept: verified authentication");
+    let client_key = timeout(HANDSHAKE_TIMEOUT, async {
+        let authentication =
+            handshake::serverside(&mut adapter, client_auth_header).await?;
 
-    let is_authorized =
-        state.access.is_allowed(authentication.client_key).await;
-    let client_key = authentication
-        .authorize_if(is_authorized, &mut adapter)
-        .await?;
+        debug!(?authentication.mechanism, "accept: verified authentication");
 
-    trace!("accept: verified authorization");
+        let is_authorized =
+            state.access.is_allowed(authentication.client_key).await;
+        let client_key = authentication
+            .authorize_if(is_authorized, &mut adapter)
+            .await?;
+
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(client_key)
+    })
+    .await
+    .map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "Relay handshake timed out",
+        )
+    })??;
+
+    debug!(key = %client_key.fmt_short(), "accept: verified authorization");
 
     // Wrap in RelayedStream for encryption
     let io = RelayedStream::new(adapter, state.key_cache.clone());
@@ -255,6 +281,8 @@ async fn handle_relay_websocket(
     state
         .clients
         .register(client_conn_builder, state.metrics.clone());
+
+    info!(key = %client_key.fmt_short(), "relay client registered");
 
     Ok(())
 }

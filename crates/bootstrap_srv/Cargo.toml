@@ -57,12 +57,19 @@ rustls-pemfile = { workspace = true, optional = true }
 rcgen = { workspace = true, optional = true }
 
 [dev-dependencies]
-rand = { workspace = true }
-sbd-client = { workspace = true }
+criterion = { workspace = true }
 iroh = { workspace = true, features = ["tls-aws-lc-rs", "test-utils"] }
 iroh-base = { workspace = true }
-rand_chacha = { workspace = true }
+iroh-relay = { workspace = true }
 kitsune2_test_utils = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+sbd-client = { workspace = true }
+
+[[bench]]
+name = "iroh_relay_bench"
+harness = false
+required-features = ["iroh-relay"]
 
 [features]
 default = ["iroh-relay"]
