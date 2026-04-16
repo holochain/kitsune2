@@ -141,6 +141,8 @@ prost-build = "0.14"
 # Please be careful to only include them in dev dependencies or move them
 # above this section.
 # --- dev-dependencies ---
+# Criterion benchmarks
+criterion = { version = "0.5", features = ["async_tokio"] }
 kitsune2_bootstrap_srv = { version = "0.5.0-dev.0", path = "crates/bootstrap_srv" }
 kitsune2_core = { version = "0.5.0-dev.0", path = "crates/core" }
 kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }

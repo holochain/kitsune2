@@ -535,10 +535,7 @@ impl IrohTransport {
             raw_ep
                 .insert_relay(
                     relay_url.clone(),
-                    Arc::new(RelayConfig {
-                        url: relay_url.clone(),
-                        quic: None,
-                    }),
+                    Arc::new(RelayConfig::from(relay_url.clone())),
                 )
                 .await;
             info!(
