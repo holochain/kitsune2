@@ -49,14 +49,17 @@ opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
 iroh = { workspace = true, optional = true }
 iroh-base = { workspace = true, optional = true }
-iroh-relay = { workspace = true, features = ["server"], optional = true }
+iroh-relay = { workspace = true, features = [
+  "tls-aws-lc-rs",
+  "server",
+], optional = true }
 rustls-pemfile = { workspace = true, optional = true }
 rcgen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
 sbd-client = { workspace = true }
-iroh = { workspace = true, features = ["test-utils"] }
+iroh = { workspace = true, features = ["tls-aws-lc-rs", "test-utils"] }
 iroh-base = { workspace = true }
 rand_chacha = { workspace = true }
 kitsune2_test_utils = { workspace = true }

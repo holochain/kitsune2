@@ -12,7 +12,7 @@ edition.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
-iroh = { workspace = true }
+iroh = { workspace = true, features = ["tls-aws-lc-rs"] }
 kitsune2_bootstrap_client = { workspace = true }
 # used for test-utils
 iroh-relay = { workspace = true, features = ["server"], optional = true }

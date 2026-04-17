@@ -1,7 +1,7 @@
 use super::*;
+use iroh::endpoint::presets::Minimal;
 use iroh::{EndpointAddr, RelayConfig, RelayMap, RelayUrl, SecretKey};
 use kitsune2_test_utils::enable_tracing;
-use rand_chacha::rand_core::SeedableRng;
 use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 
 const TEST_ALPN: &[u8] = b"alpn";
@@ -217,13 +217,12 @@ fn assert_authenticated_relay_rejects_unregistered(addr: SocketAddr) {
         let relay_url =
             RelayUrl::from_str(&format!("http://{addr:?}")).unwrap();
 
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42u64);
-        let ep_1_secret = SecretKey::generate(&mut rng);
-        let ep_2_secret = SecretKey::generate(&mut rng);
-        let ep_3_secret = SecretKey::generate(&mut rng);
+        let ep_1_secret = SecretKey::generate();
+        let ep_2_secret = SecretKey::generate();
+        let ep_3_secret = SecretKey::generate();
 
         let build_endpoint = |secret_key: SecretKey| {
-            iroh::Endpoint::empty_builder().relay_mode(iroh::RelayMode::Custom(
+            iroh::Endpoint::builder(Minimal).relay_mode(iroh::RelayMode::Custom(
                 RelayMap::empty(),
             ))
             .secret_key(secret_key)
@@ -271,10 +270,10 @@ fn assert_authenticated_relay_rejects_unregistered(addr: SocketAddr) {
             "expected 401 Unauthorized, got {err:?}"
         );
 
-        let relay_cfg = Arc::new(RelayConfig {
-            url: relay_url.clone(),
-            quic: None,
-        });
+        let relay_cfg = Arc::new(RelayConfig::new(
+            relay_url.clone(),
+            None,
+        ));
         ep_1.insert_relay(relay_url.clone(), relay_cfg.clone()).await;
         ep_2.insert_relay(relay_url.clone(), relay_cfg.clone()).await;
         ep_3.insert_relay(relay_url.clone(), relay_cfg.clone()).await;
@@ -347,15 +346,14 @@ fn create_two_authenticated_endpoints_and_assert_message_is_received(
         // Create two iroh endpoints without relay initially.
         // We must register each endpoint's public key with the server before
         // connecting to the relay.
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(99u64);
-        let ep_1_secret = SecretKey::generate(&mut rng);
-        let ep_2_secret = SecretKey::generate(&mut rng);
+        let ep_1_secret = SecretKey::generate();
+        let ep_2_secret = SecretKey::generate();
 
         let build_endpoint_without_relay = |secret_key: SecretKey| {
             // Start with an empty relay map so the endpoint binds without
             // immediately connecting to the relay. The relay transport is
             // kept so that insert_relay (called after registration) works.
-            iroh::Endpoint::empty_builder()
+            iroh::Endpoint::builder(Minimal)
                 .relay_mode(iroh::RelayMode::Custom(RelayMap::empty()))
                 .secret_key(secret_key)
                 .alpns(vec![TEST_ALPN.to_vec()])
@@ -400,10 +398,7 @@ fn create_two_authenticated_endpoints_and_assert_message_is_received(
 
         // Insert the relay into both endpoints. The relay WebSocket connection
         // is established lazily when traffic is needed.
-        let relay_cfg = Arc::new(RelayConfig {
-            url: relay_url.clone(),
-            quic: None,
-        });
+        let relay_cfg = Arc::new(RelayConfig::new(relay_url.clone(), None));
         ep_1.insert_relay(relay_url.clone(), relay_cfg.clone())
             .await;
         ep_2.insert_relay(relay_url.clone(), relay_cfg.clone())
@@ -459,13 +454,10 @@ fn create_two_endpoints_and_assert_message_is_received(
         let relay_map = RelayMap::empty();
         relay_map.insert(
             relay_url.clone(),
-            Arc::new(RelayConfig {
-                quic: None,
-                url: relay_url.clone(),
-            }),
+            Arc::new(RelayConfig::new(relay_url.clone(), None)),
         );
 
-        let ep_1 = iroh::Endpoint::empty_builder()
+        let ep_1 = iroh::Endpoint::builder(Minimal)
             .relay_mode(iroh::RelayMode::Custom(relay_map.clone()))
             .alpns(vec![TEST_ALPN.to_vec()])
             .ca_roots_config(
@@ -474,7 +466,7 @@ fn create_two_endpoints_and_assert_message_is_received(
             .bind()
             .await
             .unwrap();
-        let ep_2 = iroh::Endpoint::empty_builder()
+        let ep_2 = iroh::Endpoint::builder(Minimal)
             .relay_mode(iroh::RelayMode::Custom(relay_map))
             .alpns(vec![TEST_ALPN.to_vec()])
             .ca_roots_config(
