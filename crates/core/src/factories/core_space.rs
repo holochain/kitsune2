@@ -148,14 +148,24 @@ impl SpaceFactory for CoreSpaceFactory {
                 .blocks
                 .create(builder.clone(), space_id.clone())
                 .await?;
+            let known_peers = builder
+                .known_peers
+                .create(builder.clone(), space_id.clone())
+                .await?;
             let peer_store = builder
                 .peer_store
-                .create(builder.clone(), space_id.clone(), blocks.clone())
+                .create(
+                    builder.clone(),
+                    space_id.clone(),
+                    blocks.clone(),
+                    known_peers.clone(),
+                )
                 .await?;
 
             let peer_access_state = Arc::new(CorePeerAccessState::new(
-                peer_store.clone(),
+                known_peers.clone(),
                 blocks.clone(),
+                &peer_store,
             )?);
 
             let bootstrap = builder
@@ -230,6 +240,7 @@ impl SpaceFactory for CoreSpaceFactory {
                     publish,
                     gossip,
                     blocks,
+                    known_peers,
                     peer_access_state,
                 )
             });
@@ -363,6 +374,7 @@ struct CoreSpace {
     publish: DynPublish,
     gossip: DynGossip,
     blocks: DynBlocks,
+    known_peers: DynKnownPeers,
     peer_access_state: DynPeerAccessState,
     inner: Arc<RwLock<InnerData>>,
     task_check_agent_infos: tokio::task::JoinHandle<()>,
@@ -400,6 +412,7 @@ impl CoreSpace {
         publish: DynPublish,
         gossip: DynGossip,
         blocks: DynBlocks,
+        known_peers: DynKnownPeers,
         peer_access_state: DynPeerAccessState,
     ) -> Self {
         let task_check_agent_infos = tokio::task::spawn(check_agent_infos(
@@ -422,6 +435,7 @@ impl CoreSpace {
             publish,
             gossip,
             blocks,
+            known_peers,
         }
     }
 
@@ -470,6 +484,10 @@ impl Space for CoreSpace {
 
     fn blocks(&self) -> &DynBlocks {
         &self.blocks
+    }
+
+    fn known_peers(&self) -> &DynKnownPeers {
+        &self.known_peers
     }
 
     fn current_url(&self) -> Option<Url> {

@@ -60,6 +60,9 @@ pub trait Space: 'static + Send + Sync + std::fmt::Debug {
     /// Get a reference to the blocks module being used by this space.
     fn blocks(&self) -> &DynBlocks;
 
+    /// Get a reference to the known-peers index being used by this space.
+    fn known_peers(&self) -> &known_peers::DynKnownPeers;
+
     /// The URL that this space is currently reachable at, if any.
     fn current_url(&self) -> Option<Url>;
 

@@ -1,4 +1,4 @@
-use crate::factories::MemBlocks;
+use crate::factories::{CoreKnownPeers, MemBlocks};
 
 use super::*;
 use kitsune2_test_utils::agent::*;
@@ -11,6 +11,7 @@ fn create() -> Inner {
         },
         std::time::Instant::now(),
         Arc::new(MemBlocks::default()),
+        Arc::new(CoreKnownPeers::default()),
     )
 }
 
@@ -269,6 +270,7 @@ async fn try_insert_blocked_agent() {
         },
         std::time::Instant::now(),
         blocks.clone(),
+        Arc::new(CoreKnownPeers::default()),
     );
 
     blocks.block(BlockTarget::Agent(AGENT_1)).await.unwrap();
@@ -297,6 +299,7 @@ async fn try_insert_multiple_agents_when_one_is_blocked() {
         },
         std::time::Instant::now(),
         blocks.clone(),
+        Arc::new(CoreKnownPeers::default()),
     );
 
     blocks.block(BlockTarget::Agent(AGENT_1)).await.unwrap();
@@ -333,6 +336,7 @@ async fn remove_blocked_agent() {
         },
         std::time::Instant::now(),
         blocks.clone(),
+        Arc::new(CoreKnownPeers::default()),
     );
 
     mem_store

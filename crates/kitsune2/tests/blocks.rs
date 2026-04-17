@@ -1044,14 +1044,12 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         }
     });
 
-    // Now have Bob close the connection so that we can verify later that
-    // resending a message from Alice succeeds after she joins with a new
-    // agent.
-    transport_bob.disconnect(peer_url_alice, None).await;
+    // Close the connection to get a clean slate before verifying that the
+    // URL remains blocked even when a non-blocked agent joins at it.
+    transport_bob.disconnect(peer_url_alice.clone(), None).await;
 
-    // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
-    // message over the old WebRTC connection still that Bob has already
-    // closed on his end and Bob won't ever receive it.
+    // Wait for Alice to see the disconnect so the next send opens a fresh
+    // connection (with a new preflight carrying the new agent info).
     iter_check!(500, {
         if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
             && peer_url == peer_url_bob
@@ -1060,39 +1058,30 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         }
     });
 
-    // To double-check, verify additionally that no space message has been
-    // handled by Bob.
+    // Double-check that no space message slipped through to Bob.
     assert!(
         recv_notify_recv_bob
             .recv_timeout(std::time::Duration::from_millis(50))
             .is_err()
     );
 
-    // Now have Alice join the space with a second agent which Bob should then
-    // receive via the preflight and consequently let further messages through
-    // again.
+    // Alice joins the space with a second (non-blocked) agent. Bob will
+    // learn about it via the preflight on the next connection, but the URL
+    // must remain blocked because the original blocked agent is still in
+    // KnownPeers. See https://github.com/holochain/kitsune2/issues/450
     let alice_local_agent_2 = Arc::new(Ed25519LocalAgent::default());
     space_alice
         .local_agent_join(alice_local_agent_2.clone())
         .await
         .unwrap();
 
-    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
-    // messages should keep being rejected. But currently, they are being let
-    // through again if there is at least one non-blocked agent communicating
-    // from the same peer url as well.
-    // See https://github.com/holochain/kitsune2/issues/450
-    let payload_unblocked = Bytes::from("Sending to unblocked");
-
-    // Sending too shortly after a disconnect can lead to a tx5 send error
-    // sporadically and would leave the test flaky. Therefore, we wrap the
-    // send into an iter_check in order to make sure it makes it through.
+    // Send another message from Alice — it should still be blocked by Bob.
     iter_check!(2_000, 500, {
         if transport_alice
             .send_space_notify(
                 peer_url_bob.clone(),
                 TEST_SPACE_ID,
-                payload_unblocked.clone(),
+                Bytes::from("Should still be blocked"),
             )
             .await
             .is_ok()
@@ -1101,11 +1090,24 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         }
     });
 
-    // Verify that the message is being received correctly by Bob
-    let payload_unblocked_received = recv_notify_recv_bob
-        .recv_timeout(std::time::Duration::from_secs(2))
-        .expect("timed out waiting for space message");
-    assert_eq!(payload_unblocked, payload_unblocked_received);
+    // Verify that Bob blocked this message too (incoming count increased).
+    iter_check!(500, {
+        let net_stats = transport_bob.dump_network_stats().await.unwrap();
+        if let Some(space_blocks) =
+            net_stats.blocked_message_counts.get(&peer_url_alice)
+            && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
+            && c.incoming >= 2
+        {
+            break;
+        }
+    });
+
+    // Confirm that Bob did not receive the message.
+    assert!(
+        recv_notify_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1202,14 +1204,12 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         }
     });
 
-    // Now have Bob close the connection so that we can verify later that
-    // resending a message from Alice succeeds after she joins with a new
-    // agent.
-    transport_bob.disconnect(peer_url_alice, None).await;
+    // Close the connection to get a clean slate before verifying that the
+    // URL remains blocked even when a non-blocked agent joins at it.
+    transport_bob.disconnect(peer_url_alice.clone(), None).await;
 
-    // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
-    // message over the old WebRTC connection still that Bob has already
-    // closed on his end and Bob won't ever receive it.
+    // Wait for Alice to see the disconnect so the next send opens a fresh
+    // connection (with a new preflight carrying the new agent info).
     iter_check!(500, {
         if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
             && peer_url == peer_url_bob
@@ -1218,40 +1218,31 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         }
     });
 
-    // To double-check, verify additionally that no module message has been
-    // handled by Bob.
+    // Double-check that no module message slipped through to Bob.
     assert!(
         recv_module_msg_recv_bob
             .recv_timeout(std::time::Duration::from_millis(50))
             .is_err()
     );
 
-    // Now have Alice join the space with a second agent which Bob should then
-    // receive via the preflight and consequently let further messages through
-    // again.
+    // Alice joins the space with a second (non-blocked) agent. Bob will
+    // learn about it via the preflight on the next connection, but the URL
+    // must remain blocked because the original blocked agent is still in
+    // KnownPeers. See https://github.com/holochain/kitsune2/issues/450
     let alice_local_agent_2 = Arc::new(Ed25519LocalAgent::default());
     space_alice
         .local_agent_join(alice_local_agent_2.clone())
         .await
         .unwrap();
 
-    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
-    // messages should keep being rejected. But currently, they are being let
-    // through again if there is at least one non-blocked agent communicating
-    // from the same peer url as well.
-    // See https://github.com/holochain/kitsune2/issues/450
-    let payload_unblocked = Bytes::from("Sending to unblocked");
-
-    // Sending too shortly after a disconnect can lead to a tx5 send error
-    // sporadically and would leave the test flaky. Therefore, we wrap the
-    // send into an iter_check in order to make sure it makes it through.
+    // Send another module message from Alice — it should still be blocked.
     iter_check!(2_000, 500, {
         if transport_alice
             .send_module(
                 peer_url_bob.clone(),
                 TEST_SPACE_ID,
                 "test".into(),
-                payload_unblocked.clone(),
+                Bytes::from("Should still be blocked"),
             )
             .await
             .is_ok()
@@ -1260,10 +1251,24 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         }
     });
 
-    let payload_unblocked_received = recv_module_msg_recv_bob
-        .recv_timeout(std::time::Duration::from_secs(2))
-        .expect("timed out waiting for module message");
-    assert_eq!(payload_unblocked, payload_unblocked_received);
+    // Verify that Bob blocked this message too (incoming count increased).
+    iter_check!(500, {
+        let net_stats = transport_bob.dump_network_stats().await.unwrap();
+        if let Some(space_blocks) =
+            net_stats.blocked_message_counts.get(&peer_url_alice)
+            && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
+            && c.incoming >= 2
+        {
+            break;
+        }
+    });
+
+    // Confirm that Bob did not receive the message.
+    assert!(
+        recv_module_msg_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1357,14 +1362,12 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         }
     });
 
-    // Now have Bob close the connection so that we can verify later that
-    // resending a message from Alice succeeds after she joins with a new
-    // agent.
+    // Close the connection to get a clean slate before verifying that the
+    // URL remains blocked even when a non-blocked agent joins at it.
     transport_bob.disconnect(peer_url_alice.clone(), None).await;
 
-    // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
-    // message over the old WebRTC connection still that Bob has already
-    // closed on his end and Bob won't ever receive it.
+    // Wait for Alice to see the disconnect so any subsequent send attempt
+    // starts from a clean connection state.
     iter_check!(500, {
         if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
             && peer_url == peer_url_bob
@@ -1373,16 +1376,17 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         }
     });
 
-    // To double-check, verify additionally that no space message has been
-    // handled by Bob in the meantime.
+    // Double-check that no space message slipped through to Bob.
     assert!(
         recv_notify_recv_bob
             .recv_timeout(std::time::Duration::from_millis(50))
             .is_err()
     );
 
-    // Now have Bob join the space with a second agent and insert it to Alice's
-    // peer store to simulate bootstrapping.
+    // Bob joins with a second (non-blocked) agent and Alice learns about it
+    // via peer store insertion (simulating bootstrapping). The URL must
+    // remain blocked because the original blocked agent is still in
+    // KnownPeers. See https://github.com/holochain/kitsune2/issues/450
     let agent_info_bob_2 =
         join_new_local_agent_and_wait_for_agent_info(space_bob).await;
 
@@ -1392,47 +1396,34 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
-    // messages should keep being rejected. But currently, they are being let
-    // through again if there is at least one non-blocked agent communicating
-    // from the same peer url as well.
-    // See https://github.com/holochain/kitsune2/issues/450
-    let payload_unblocked = Bytes::from("Sending to unblocked");
+    // Alice tries to send again — her transport should still drop it.
+    transport_alice
+        .send_space_notify(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            Bytes::from("Should still be blocked"),
+        )
+        .await
+        .unwrap();
 
-    // Sending too shortly after a disconnect can lead to a tx5 send error
-    // sporadically and would leave the test flaky. Therefore, we wrap the
-    // send into an iter_check in order to make sure it makes it through.
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_space_notify(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                payload_unblocked.clone(),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
-
-    // Verify that the message is being received correctly by Bob
-    let payload_unblocked_received = recv_notify_recv_bob
-        .recv_timeout(std::time::Duration::from_secs(2))
-        .expect("timed out waiting for space message");
-    assert_eq!(payload_unblocked, payload_unblocked_received);
-
-    // And that the message blocks count on Alice's side is still 1
+    // Verify that Alice's outgoing block count increased to 2.
     iter_check!(500, {
         let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
             && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
-            && c.outgoing == 1
+            && c.outgoing == 2
         {
             break;
         }
     });
+
+    // Confirm that Bob did not receive the message.
+    assert!(
+        recv_notify_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1528,14 +1519,12 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         }
     });
 
-    // Now have Bob close the connection so that we can verify later that
-    // re-sending a message from Alice succeeds after she joins with a new
-    // agent.
+    // Close the connection to get a clean slate before verifying that the
+    // URL remains blocked even when a non-blocked agent joins at it.
     transport_bob.disconnect(peer_url_alice, None).await;
 
-    // Wait for Alice to disconnect as well. Otherwise, Alice may send the next
-    // message over the old WebRTC connection still that Bob has already
-    // closed on his end and Bob won't ever receive it.
+    // Wait for Alice to see the disconnect so any subsequent send attempt
+    // starts from a clean connection state.
     iter_check!(500, {
         if let Ok(peer_url) = peer_disconnect_recv_alice.try_recv()
             && peer_url == peer_url_bob
@@ -1544,16 +1533,17 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         }
     });
 
-    // To double-check, verify additionally that no module message has been
-    // handled by Bob in the meantime.
+    // Double-check that no module message slipped through to Bob.
     assert!(
         recv_module_msg_recv_bob
             .recv_timeout(std::time::Duration::from_millis(50))
             .is_err()
     );
 
-    // Now have Bob join the space with a second agent and insert it to Alice's
-    // peer store to simulate bootstrapping.
+    // Bob joins with a second (non-blocked) agent and Alice learns about it
+    // via peer store insertion (simulating bootstrapping). The URL must
+    // remain blocked because the original blocked agent is still in
+    // KnownPeers. See https://github.com/holochain/kitsune2/issues/450
     let agent_info_bob_2 =
         join_new_local_agent_and_wait_for_agent_info(space_bob).await;
 
@@ -1563,48 +1553,35 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
         .await
         .unwrap();
 
-    // TODO: This test needs to be fixed! If any agent at a peer url is blocked
-    // messages should keep being rejected. But currently, they are being let
-    // through again if there is at least one non-blocked agent communicating
-    // from the same peer url as well.
-    // See https://github.com/holochain/kitsune2/issues/450
-    let payload_unblocked = Bytes::from("Sending to unblocked");
+    // Alice tries to send again — her transport should still drop it.
+    transport_alice
+        .send_module(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            "test".into(),
+            Bytes::from("Should still be blocked"),
+        )
+        .await
+        .unwrap();
 
-    // Sending too shortly after a disconnect can lead to a tx5 send error
-    // sporadically and would leave the test flaky. Therefore, we wrap the
-    // send into an iter_check in order to make sure it makes it through.
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_module(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                "test".into(),
-                payload_unblocked.clone(),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
-
-    // Verify that the message is being received correctly by Bob
-    let payload_unblocked_received = recv_module_msg_recv_bob
-        .recv_timeout(std::time::Duration::from_secs(2))
-        .expect("timed out waiting for module message");
-    assert_eq!(payload_unblocked, payload_unblocked_received);
-
-    // And that the message blocks count on Alice's side is still 1
+    // Verify that Alice's outgoing block count increased to 2.
     iter_check!(500, {
         let net_stats = transport_alice.dump_network_stats().await.unwrap();
         if let Some(space_blocks) =
             net_stats.blocked_message_counts.get(&peer_url_bob)
             && let Some(c) = space_blocks.get(&TEST_SPACE_ID)
-            && c.outgoing == 1
+            && c.outgoing == 2
         {
             break;
         }
     });
+
+    // Confirm that Bob did not receive the message.
+    assert!(
+        recv_module_msg_recv_bob
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .is_err()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
