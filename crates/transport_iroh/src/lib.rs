@@ -645,7 +645,7 @@ impl IrohTransport {
                                     *guard = Some(url.clone());
                                 }
                             }
-                            handler.new_listening_address(url.clone()).await;
+                            handler.new_listening_address(url.clone(), None).await;
                         }
                     }
                     Err(err) => {
@@ -1189,9 +1189,9 @@ impl TxImp for IrohTransport {
                     {
                         Ok(Some(per_space_url)) => {
                             handler
-                                .new_listening_address_for_space(
-                                    &space_id_clone,
+                                .new_listening_address(
                                     per_space_url,
+                                    Some(&space_id_clone),
                                 )
                                 .await;
                         }

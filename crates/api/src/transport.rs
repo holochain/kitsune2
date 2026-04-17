@@ -48,54 +48,56 @@ impl TxImpHnd {
     }
 
     /// Call this when you receive or bind a new address at which
-    /// this local node can be reached by peers
-    pub fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        let handler = self.handler.clone();
-        let managed = self.per_space_managed.lock().unwrap().clone();
-        let space_map: Vec<_> = self
-            .space_map
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(id, _)| !managed.contains(id))
-            .map(|(_, h)| h.clone())
-            .collect();
-
-        Box::pin(async move {
-            handler.new_listening_address(this_url.clone()).await;
-            for s in space_map {
-                s.new_listening_address(this_url.clone()).await;
-            }
-        })
-    }
-
-    /// Deliver a listening address to a specific space.
+    /// this local node can be reached by peers.
     ///
-    /// Used by transports that assign per-space relay addresses
-    /// asynchronously. If the space handler is not yet registered,
-    /// the URL is stored and delivered when the handler registers
+    /// When `for_space` is `None`, the URL is broadcast to all space
+    /// handlers that are not per-space managed.
+    ///
+    /// When `for_space` targets a specific space, that space is marked
+    /// as per-space managed (excluded from future global broadcasts)
+    /// and the URL is delivered only to that space's handler. If the
+    /// handler is not yet registered, the URL is stored and delivered
+    /// when the handler registers
     /// (see [DefaultTransport::register_space_handler]).
-    pub fn new_listening_address_for_space(
+    pub fn new_listening_address(
         &self,
-        space_id: &SpaceId,
-        url: Url,
+        this_url: Url,
+        for_space: Option<&SpaceId>,
     ) -> BoxFut<'static, ()> {
-        self.per_space_managed
-            .lock()
-            .unwrap()
-            .insert(space_id.clone());
-
-        let handler = self.space_map.lock().unwrap().get(space_id).cloned();
-        if let Some(h) = handler {
-            Box::pin(async move {
-                h.new_listening_address(url).await;
-            })
-        } else {
-            self.pending_space_urls
+        if let Some(space_id) = for_space {
+            self.per_space_managed
                 .lock()
                 .unwrap()
-                .insert(space_id.clone(), url);
-            Box::pin(async {})
+                .insert(space_id.clone());
+
+            let handler = self.space_map.lock().unwrap().get(space_id).cloned();
+            if let Some(h) = handler {
+                Box::pin(async move { h.new_listening_address(this_url).await })
+            } else {
+                self.pending_space_urls
+                    .lock()
+                    .unwrap()
+                    .insert(space_id.clone(), this_url);
+                Box::pin(async {})
+            }
+        } else {
+            let handler = self.handler.clone();
+            let managed = self.per_space_managed.lock().unwrap().clone();
+            let space_map: Vec<_> = self
+                .space_map
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(id, _)| !managed.contains(id))
+                .map(|(_, h)| h.clone())
+                .collect();
+
+            Box::pin(async move {
+                handler.new_listening_address(this_url.clone()).await;
+                for s in space_map {
+                    s.new_listening_address(this_url.clone()).await;
+                }
+            })
         }
     }
 
