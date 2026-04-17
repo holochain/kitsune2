@@ -2,6 +2,7 @@
 
 use crate::factories::core_access::CorePeerAccessState;
 use crate::get_all_remote_agents;
+use base64::Engine;
 use kitsune2_api::*;
 use std::sync::{Arc, RwLock, Weak};
 
@@ -60,6 +61,35 @@ mod config {
 
 pub use config::*;
 
+/// Per-space override configuration types.
+pub mod per_space_overrides_config {
+    /// Per-space configuration overrides applied by [CoreSpaceFactory](super::CoreSpaceFactory)
+    /// when creating a space with `config_override`.
+    ///
+    /// Bootstrap auth material can be overridden per-space here.
+    /// Transport-specific per-space settings (e.g., relay URL and
+    /// relay auth material) live in the transport's own per-space config.
+    #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct CoreSpacePerSpaceOverridesConfig {
+        /// Base64-encoded auth material for the bootstrap service,
+        /// overriding `builder.auth_material_bootstrap` for this space.
+        pub auth_material_bootstrap_base64: Option<String>,
+    }
+
+    /// Module-level configuration for per-space overrides.
+    #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct CoreSpacePerSpaceOverridesModConfig {
+        /// Per-space override configuration.
+        pub core_space_per_space_overrides: CoreSpacePerSpaceOverridesConfig,
+    }
+}
+
+pub use per_space_overrides_config::*;
+
 /// The core space implementation provided by Kitsune2.
 /// You probably will have no reason to use something other than this.
 /// This abstraction is mainly here for testing purposes.
@@ -99,6 +129,18 @@ impl SpaceFactory for CoreSpaceFactory {
                 }
                 None => builder,
             };
+
+            // Apply per-space auth material overrides to the builder
+            // clone, keeping bootstrap and transport modules clean.
+            let builder = apply_per_space_auth_overrides(builder)?;
+
+            // Let the transport handle any per-space configuration it
+            // understands (e.g., a per-space relay URL for iroh).
+            // This is non-blocking; the transport delivers the URL
+            // asynchronously via the space handler's new_listening_address.
+            tx.configure_for_space(space_id.clone(), &builder.config)
+                .await?;
+
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
                 builder_config.get_module_config()?;
@@ -479,7 +521,9 @@ impl Space for CoreSpace {
                 let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    let url = inner.read().unwrap().current_url.clone();
+                    let url = {
+                        inner.read().unwrap().current_url.clone()
+                    };
 
                     if let Some(url) = url {
                         // sign a new agent info
@@ -693,6 +737,39 @@ async fn broadcast_agent_info(
     tracing::info!("Broadcast new agent info to {} peers", ok);
 
     Ok(())
+}
+
+/// Read per-space auth material overrides from the dedicated config
+/// section and apply them to a cloned builder.
+fn apply_per_space_auth_overrides(
+    builder: Arc<Builder>,
+) -> K2Result<Arc<Builder>> {
+    let overrides: CoreSpacePerSpaceOverridesModConfig =
+        match builder.config.get_module_config() {
+            Ok(cfg) => cfg,
+            Err(_) => return Ok(builder),
+        };
+    let o = &overrides.core_space_per_space_overrides;
+
+    if o.auth_material_bootstrap_base64.is_none() {
+        return Ok(builder);
+    }
+
+    let mut b = (*builder).clone();
+    if let Some(b64) = &o.auth_material_bootstrap_base64 {
+        b.auth_material_bootstrap = Some(
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                    K2Error::other_src(
+                        "invalid base64 in \
+                         auth_material_bootstrap_base64",
+                        e,
+                    )
+                })?,
+        );
+    }
+    Ok(Arc::new(b))
 }
 
 #[cfg(test)]

@@ -2552,6 +2552,7 @@ dependencies = [
 name = "kitsune2_core"
 version = "0.5.0-dev.0"
 dependencies = [
+ "base64",
  "bytes",
  "ed25519-dalek 2.2.0",
  "futures",
