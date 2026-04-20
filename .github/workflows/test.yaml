@@ -110,6 +110,7 @@ jobs:
       - name: Test
         run: |-
           $env:SODIUM_LIB_DIR="$(pwd)\vcpkg\packages\libsodium_x64-windows-release\lib"
+          $env:RUST_LOG="info"
           cargo make test
 
   nix-build:
