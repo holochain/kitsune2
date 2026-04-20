@@ -295,7 +295,7 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .collect::<Vec<_>>();
 
             // Sort the ops by the time they were stored
-            candidate_ops.sort_by(|a, b| a.stored_at.cmp(&b.stored_at));
+            candidate_ops.sort_by_key(|a| a.stored_at);
 
             // Now take as many ops as we can up to the limit
             let mut total_bytes = 0;
@@ -336,8 +336,8 @@ impl OpStore for Kitsune2MemoryOpStore {
                 .read()
                 .await
                 .op_list
-                .iter()
-                .filter_map(|(_, op)| {
+                .values()
+                .filter_map(|op| {
                     if arc.contains(op.op_id.loc()) {
                         Some(op.created_at)
                     } else {
