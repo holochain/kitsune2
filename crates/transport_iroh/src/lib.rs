@@ -180,6 +180,7 @@
 
 use crate::endpoint::{DynIrohEndpoint, IrohEndpoint};
 use bytes::Bytes;
+use iroh::endpoint::presets::Minimal;
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode,
     RelayUrl,
@@ -450,7 +451,7 @@ impl IrohTransport {
                 // immediately connecting to the relay. The relay transport is
                 // kept intact so that insert_relay (called after registration)
                 // can establish the WebSocket connection.
-                Endpoint::empty_builder()
+                Endpoint::builder(Minimal)
                     .relay_mode(RelayMode::Custom(RelayMap::empty()))
             } else {
                 let relay_url =
@@ -458,11 +459,11 @@ impl IrohTransport {
                         K2Error::other_src("Invalid relay URL", err)
                     })?;
                 let relay_map = RelayMap::from_iter([relay_url]);
-                Endpoint::empty_builder()
+                Endpoint::builder(Minimal)
                     .relay_mode(RelayMode::Custom(relay_map))
             }
         } else {
-            Endpoint::empty_builder().relay_mode(RelayMode::Default)
+            Endpoint::builder(Minimal).relay_mode(RelayMode::Default)
         };
 
         let transport_config = iroh::endpoint::QuicTransportConfig::builder()
@@ -574,10 +575,7 @@ impl IrohTransport {
             raw_ep
                 .insert_relay(
                     relay_url.clone(),
-                    Arc::new(RelayConfig {
-                        url: relay_url.clone(),
-                        quic: None,
-                    }),
+                    Arc::new(RelayConfig::new(relay_url.clone(), None)),
                 )
                 .await;
             info!(

@@ -21,6 +21,7 @@ use std::{
 use tracing::{debug, trace, warn};
 
 use futures::FutureExt;
+use iroh_relay::http::ProtocolVersion;
 use iroh_relay::{
     ExportKeyingMaterial, KeyCache,
     protos::{
@@ -78,6 +79,13 @@ pub async fn relay_handler(
 
     let has_auth = client_auth_header.is_some();
     debug!(?has_auth, "Relay WebSocket upgrade request");
+
+    // iroh 0.98+ clients advertise a comma-separated list of supported relay
+    // protocol versions via `Sec-Websocket-Protocol` and fail the connection
+    // unless the server echoes back one it recognises. Our handshake/framing
+    // here is still V1-only (see `protocol_version` below), so restrict the
+    // negotiation to V1.
+    let ws = ws.protocols([ProtocolVersion::V1.to_str()]);
 
     ws.on_upgrade(move |socket| async move {
         if let Err(e) =
@@ -239,6 +247,8 @@ async fn handle_relay_websocket(
         stream: io,
         write_timeout: state.write_timeout,
         channel_capacity: PER_CLIENT_SEND_QUEUE_DEPTH,
+        // TODO Update in sync with the client and deploy at V2
+        protocol_version: ProtocolVersion::V1,
     };
 
     // Register the client with the relay server
@@ -345,7 +355,6 @@ mod tests {
     use axum::routing::get;
     use futures::{SinkExt, StreamExt};
     use iroh_base::{RelayUrl, SecretKey};
-    use rand_chacha::rand_core::SeedableRng;
     use std::net::Ipv4Addr;
     use tokio::net::TcpListener;
     use tracing::{info, instrument};
@@ -354,6 +363,7 @@ mod tests {
         client::ClientBuilder,
         dns::DnsResolver,
         protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},
+        tls::CaRootsConfig,
     };
 
     /// Integration test: Start an axum server with the relay handler and connect clients
@@ -361,8 +371,6 @@ mod tests {
     #[instrument]
     async fn axum_relay_integration() -> Result<(), Box<dyn std::error::Error>>
     {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(42u64);
-
         // Create relay state
         let state = create_relay_state();
 
@@ -385,8 +393,11 @@ mod tests {
         let relay_url = format!("http://{}/relay", addr);
         let relay_url: RelayUrl = relay_url.parse()?;
 
+        let tls_client_config = CaRootsConfig::default()
+            .client_config(iroh_relay::tls::default_provider())?;
+
         // Create client A
-        let a_secret_key = SecretKey::generate(&mut rng);
+        let a_secret_key = SecretKey::generate();
         let a_key = a_secret_key.public();
         let resolver = DnsResolver::new();
         info!("Connecting client A");
@@ -395,11 +406,12 @@ mod tests {
             a_secret_key,
             resolver.clone(),
         )
+        .tls_client_config(tls_client_config.clone())
         .connect()
         .await?;
 
         // Create client B
-        let b_secret_key = SecretKey::generate(&mut rng);
+        let b_secret_key = SecretKey::generate();
         let b_key = b_secret_key.public();
         info!("Connecting client B");
         let mut client_b = ClientBuilder::new(
@@ -407,6 +419,7 @@ mod tests {
             b_secret_key,
             resolver.clone(),
         )
+        .tls_client_config(tls_client_config)
         .connect()
         .await?;
 
