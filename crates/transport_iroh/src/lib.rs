@@ -931,10 +931,7 @@ impl IrohTransport {
         endpoint
             .insert_relay(
                 relay_url_parsed.clone(),
-                Arc::new(RelayConfig {
-                    url: relay_url_parsed.clone(),
-                    quic: None,
-                }),
+                Arc::new(RelayConfig::new(relay_url_parsed.clone(), None)),
             )
             .await;
 
