@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.1](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.0...v0.5.0-dev.1)\] - 2026-04-20
+
+### Features
+
+- Upgrade to Iroh 0.98 by @ThetaSinner in [#525](https://github.com/holochain/kitsune2/pull/525)
+
+### Bug Fixes
+
+- Prevent multi_thread_stress test deadlock on transient HTTP errors by @synchwire in [#523](https://github.com/holochain/kitsune2/pull/523)
+  - Writer and reader threads now handle HTTP errors gracefully instead of panicking. This prevents the Barrier deadlock that occurs when a writer thread panics and never reaches the next barrier round, which was causing CI to stall indefinitely on Windows.
+  - Error counts are tracked and asserted to stay below 10% of total writes, ensuring the test still does meaningful work.
+- Separate known-peers index from peer store to fix blocking for shared URLs by @ThetaSinner in [#477](https://github.com/holochain/kitsune2/pull/477)
+  - Introduce a new `KnownPeers` trait as an append-only index of all ever-seen agent infos. `MemPeerStore::insert` records to `KnownPeers` before any block or expiry filtering so that the URL→agent mapping is always available. `CorePeerAccessState` now uses `KnownPeers::get_by_url` instead of `PeerStore::get_by_url` for access control decisions, ensuring that blocked agents (which are excluded from `PeerStore`) still block incoming connections from a shared URL.
+
+### Miscellaneous Tasks
+
+- Update Rust to 1.95 by @ThetaSinner
+
+### CI
+
+- Reduce log level on Windows tests to `info` by @ThetaSinner in [#527](https://github.com/holochain/kitsune2/pull/527)
+
+### Automated Changes
+
+- *(deps)* Bump holochain/actions/.github/workflows/prepare-release.yml by @dependabot[bot] in [#521](https://github.com/holochain/kitsune2/pull/521)
+- *(deps)* Bump holochain/actions/.github/workflows/publish-release.yml by @dependabot[bot] in [#522](https://github.com/holochain/kitsune2/pull/522)
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#520](https://github.com/holochain/kitsune2/pull/520)
+
+### First-time Contributors
+
+- @synchwire made their first contribution in [#523](https://github.com/holochain/kitsune2/pull/523)
+
 ## \[[0.5.0-dev.0](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.7...v0.5.0-dev.0)\] - 2026-04-09
 
 ### Features
