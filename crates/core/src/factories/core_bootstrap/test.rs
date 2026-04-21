@@ -82,6 +82,7 @@ impl Test {
             .set_module_config(&super::CoreBootstrapModConfig {
                 core_bootstrap: super::CoreBootstrapConfig {
                     server_url: Some(server.into()),
+                    auth_material_base64: None,
                     backoff_min_ms: 10,
                     backoff_max_ms: 10,
                 },

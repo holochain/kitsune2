@@ -1,5 +1,6 @@
 //! The core bootstrap implementation provided by Kitsune2.
 
+use base64::Engine;
 use kitsune2_api::*;
 use std::sync::Arc;
 
@@ -12,6 +13,11 @@ pub mod config {
     pub struct CoreBootstrapConfig {
         /// The url of the kitsune2 bootstrap server. E.g. `https://boot.kitsu.ne`.
         pub server_url: Option<String>,
+
+        /// Base64-encoded auth material for the bootstrap service.
+        /// When set via a per-space config override, this takes
+        /// precedence over `builder.auth_material_bootstrap`.
+        pub auth_material_base64: Option<String>,
 
         /// Minimum backoff in ms to use for both push and poll retry loops.
         ///
@@ -30,6 +36,7 @@ pub mod config {
         fn default() -> Self {
             Self {
                 server_url: None,
+                auth_material_base64: None,
                 backoff_min_ms: 1000 * 5,
                 backoff_max_ms: 1000 * 60 * 5,
             }
@@ -129,7 +136,7 @@ impl BootstrapFactory for CoreBootstrapFactory {
                 config.core_bootstrap,
                 peer_store,
                 space_id,
-            ));
+            )?);
             Ok(out)
         })
     }
@@ -159,11 +166,19 @@ impl CoreBootstrap {
         config: CoreBootstrapConfig,
         peer_store: DynPeerStore,
         space: SpaceId,
-    ) -> Self {
-        let auth_material =
+    ) -> K2Result<Self> {
+        let auth_material = if let Some(b64) = &config.auth_material_base64 {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| {
+                K2Error::other_src("invalid base64 in auth_material_base64", e)
+            })?;
+            Arc::new(Some(kitsune2_bootstrap_client::AuthMaterial::new(bytes)))
+        } else {
             Arc::new(builder.auth_material_bootstrap.clone().map(|bytes| {
                 kitsune2_bootstrap_client::AuthMaterial::new(bytes)
-            }));
+            }))
+        };
 
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
 
@@ -182,12 +197,12 @@ impl CoreBootstrap {
             auth_material,
         ));
 
-        Self {
+        Ok(Self {
             space,
             push_send,
             push_task,
             poll_task,
-        }
+        })
     }
 }
 
