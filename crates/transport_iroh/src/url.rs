@@ -56,6 +56,19 @@ pub(super) fn canonicalize_relay_url(
     Url::from_str(canonical_relay_url)
 }
 
+/// Extract the relay URL from a kitsune2 peer URL.
+///
+/// Everything before the last path segment is the relay URL.
+pub(super) fn relay_url_from_peer_url(url: &Url) -> K2Result<RelayUrl> {
+    let s = url.as_str();
+    let last_slash = s
+        .rfind('/')
+        .ok_or_else(|| K2Error::other("url has no path"))?;
+    let relay_url_str = format!("{}/", &s[..last_slash]);
+    RelayUrl::from_str(&relay_url_str)
+        .map_err(|err| K2Error::other_src("invalid relay url", err))
+}
+
 /// Reconstruct an iroh EndpointAddr from a kitsune2 peer URL.
 ///
 /// The peer URL encodes the full relay path, so the relay URL can be
@@ -69,14 +82,7 @@ pub(super) fn endpoint_from_url(url: &Url) -> K2Result<EndpointAddr> {
         K2Error::other_src("failed to convert peer id to endpoint id", err)
     })?;
 
-    let s = url.as_str();
-    let last_slash = s
-        .rfind('/')
-        .ok_or_else(|| K2Error::other("url has no path"))?;
-    let relay_url_str = format!("{}/", &s[..last_slash]);
-
-    let relay_url = RelayUrl::from_str(&relay_url_str)
-        .map_err(|err| K2Error::other_src("invalid relay url", err))?;
+    let relay_url = relay_url_from_peer_url(url)?;
 
     tracing::info!(
         peer_url = %url,

@@ -3,6 +3,7 @@ use crate::connection::DynConnection;
 #[cfg(feature = "metrics")]
 use crate::metrics::connection_counter_metric;
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
+use crate::url::relay_url_from_peer_url;
 use crate::{
     Connections, FRAME_HEADER_LEN, FrameType, decode_frame_header,
     decode_frame_preflight,
@@ -319,20 +320,16 @@ impl ConnectionContext {
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
-                    // Use per-space URL if the remote is on an inserted relay,
-                    // otherwise use the global local URL.
                     let global_url = local_url.read().expect("poisoned").clone();
-                    let remote_host = remote_url
-                        .addr()
-                        .split(':')
-                        .next()
-                        .unwrap_or("")
-                        .to_string();
                     let maybe_local_url = {
                         let relays = ctx.space_relays.read().expect("poisoned");
-                        relays.values()
-                            .find(|(relay_url, _)| relay_url.host_str() == Some(&remote_host))
-                            .and_then(|(_, local_url)| local_url.clone())
+                        relay_url_from_peer_url(&remote_url)
+                            .ok()
+                            .and_then(|remote_relay| {
+                                relays.values()
+                                    .find(|(relay_url, _)| *relay_url == remote_relay)
+                                    .and_then(|(_, local_url)| local_url.clone())
+                            })
                     }.or(global_url);
                     if let Some(local_url) = maybe_local_url {
                         let return_preflight =

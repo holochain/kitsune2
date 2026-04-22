@@ -755,18 +755,18 @@ impl IrohTransport {
         space_relays: &HashMap<SpaceId, (RelayUrl, Option<Url>)>,
         global_local_url: &Option<Url>,
     ) -> Option<Url> {
-        let remote_host = remote_url.addr().split(':').next().unwrap_or("");
-
-        for (relay_url, local_url) in space_relays.values() {
-            if relay_url.host_str() == Some(remote_host)
-                && let Some(url) = local_url
-            {
-                info!(
-                    %remote_url,
-                    %url,
-                    "Using per-space URL for preflight"
-                );
-                return Some(url.clone());
+        if let Ok(remote_relay) = relay_url_from_peer_url(remote_url) {
+            for (relay_url, local_url) in space_relays.values() {
+                if *relay_url == remote_relay
+                    && let Some(url) = local_url
+                {
+                    info!(
+                        %remote_url,
+                        %url,
+                        "Using per-space URL for preflight"
+                    );
+                    return Some(url.clone());
+                }
             }
         }
 
