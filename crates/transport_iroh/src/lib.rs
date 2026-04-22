@@ -747,22 +747,23 @@ impl IrohTransport {
         .abort_handle()
     }
 
-    /// Returns the correct local URL for a connection to the given remote.
-    /// If the remote is on a per-space relay, returns our URL on that relay.
-    /// Otherwise returns the global local URL.
-    fn local_url_for_remote(
-        remote_url: &Url,
+    /// Choose which of our own URLs to advertise in a preflight to `peer_url`.
+    ///
+    /// If the peer is on one of our per-space relays, return our URL on
+    /// that relay. Otherwise fall back to our global URL.
+    fn own_url_for_preflight(
+        peer_url: &Url,
         space_relays: &HashMap<SpaceId, (RelayUrl, Option<Url>)>,
-        global_local_url: &Option<Url>,
+        global_url: &Option<Url>,
     ) -> Option<Url> {
-        if let Ok(remote_relay) = relay_url_from_peer_url(remote_url) {
-            for (relay_url, local_url) in space_relays.values() {
-                if *relay_url == remote_relay
-                    && let Some(url) = local_url
+        if let Ok(peer_relay) = relay_url_from_peer_url(peer_url) {
+            for (relay_url, our_url) in space_relays.values() {
+                if *relay_url == peer_relay
+                    && let Some(url) = our_url
                 {
                     info!(
-                        %remote_url,
-                        %url,
+                        %peer_url,
+                        own_url = %url,
                         "Using per-space URL for preflight"
                     );
                     return Some(url.clone());
@@ -770,7 +771,7 @@ impl IrohTransport {
             }
         }
 
-        global_local_url.clone()
+        global_url.clone()
     }
 
     /// Creates a new connection and its associated context for a peer.
@@ -823,15 +824,15 @@ impl IrohTransport {
             .as_secs();
 
         // Send preflight as first message on the new connection.
-        // Use per-space URL if the remote is on an inserted relay,
-        // otherwise use the global local URL.
-        let global_local_url = self.local_url.read().expect("poisoned").clone();
+        // Pick which of our URLs to advertise: per-space relay URL if
+        // the peer is on one of our per-space relays, global URL otherwise.
+        let global_url = self.local_url.read().expect("poisoned").clone();
         let space_relays_snapshot =
             self.space_relays.read().expect("poisoned").clone();
-        let maybe_local_url = Self::local_url_for_remote(
+        let maybe_local_url = Self::own_url_for_preflight(
             &remote_url,
             &space_relays_snapshot,
-            &global_local_url,
+            &global_url,
         );
         if let Some(current_local_url) = maybe_local_url {
             let preflight_bytes =

@@ -320,26 +320,29 @@ impl ConnectionContext {
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
+                    // Pick which of our URLs to advertise back: if the
+                    // peer is on one of our per-space relays, use our
+                    // URL on that relay; otherwise use our global URL.
                     let global_url = local_url.read().expect("poisoned").clone();
-                    let maybe_local_url = {
+                    let own_url = {
                         let relays = ctx.space_relays.read().expect("poisoned");
                         relay_url_from_peer_url(&remote_url)
                             .ok()
-                            .and_then(|remote_relay| {
+                            .and_then(|peer_relay| {
                                 relays.values()
-                                    .find(|(relay_url, _)| *relay_url == remote_relay)
-                                    .and_then(|(_, local_url)| local_url.clone())
+                                    .find(|(relay_url, _)| *relay_url == peer_relay)
+                                    .and_then(|(_, our_url)| our_url.clone())
                             })
                     }.or(global_url);
-                    if let Some(local_url) = maybe_local_url {
+                    if let Some(own_url) = own_url {
                         let return_preflight =
                             ctx.handler.peer_connect(remote_url.clone()).await?;
                         ctx.send_preflight_frame(
-                            local_url.clone(),
+                            own_url.clone(),
                             return_preflight,
                         )
                             .await?;
-                        info!(peer = ?ctx.connection.remote_id(),?local_url, "Sent preflight to peer from URL");
+                        info!(peer = ?ctx.connection.remote_id(), ?own_url, "Sent preflight to peer");
                         ctx.set_preflight_sent();
                     } else {
                         warn!(peer = ?ctx.connection.remote_id(), "Received preflight, but cannot return preflight because own URL is unknown");
