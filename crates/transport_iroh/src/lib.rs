@@ -751,7 +751,7 @@ impl IrohTransport {
     ///
     /// If the peer is on one of our per-space relays, return our URL on
     /// that relay. Otherwise fall back to our global URL.
-    fn own_url_for_preflight(
+    pub(crate) fn own_url_for_preflight(
         peer_url: &Url,
         space_relays: &HashMap<SpaceId, (RelayUrl, Option<Url>)>,
         global_url: &Option<Url>,

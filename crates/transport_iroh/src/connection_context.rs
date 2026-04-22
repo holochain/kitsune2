@@ -1,9 +1,9 @@
+use crate::IrohTransport;
 use crate::SpaceRelays;
 use crate::connection::DynConnection;
 #[cfg(feature = "metrics")]
 use crate::metrics::connection_counter_metric;
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
-use crate::url::relay_url_from_peer_url;
 use crate::{
     Connections, FRAME_HEADER_LEN, FrameType, decode_frame_header,
     decode_frame_preflight,
@@ -320,20 +320,13 @@ impl ConnectionContext {
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
-                    // Pick which of our URLs to advertise back: if the
-                    // peer is on one of our per-space relays, use our
-                    // URL on that relay; otherwise use our global URL.
                     let global_url = local_url.read().expect("poisoned").clone();
-                    let own_url = {
-                        let relays = ctx.space_relays.read().expect("poisoned");
-                        relay_url_from_peer_url(&remote_url)
-                            .ok()
-                            .and_then(|peer_relay| {
-                                relays.values()
-                                    .find(|(relay_url, _)| *relay_url == peer_relay)
-                                    .and_then(|(_, our_url)| our_url.clone())
-                            })
-                    }.or(global_url);
+                    let space_relays = ctx.space_relays.read().expect("poisoned").clone();
+                    let own_url = IrohTransport::own_url_for_preflight(
+                        &remote_url,
+                        &space_relays,
+                        &global_url,
+                    );
                     if let Some(own_url) = own_url {
                         let return_preflight =
                             ctx.handler.peer_connect(remote_url.clone()).await?;
