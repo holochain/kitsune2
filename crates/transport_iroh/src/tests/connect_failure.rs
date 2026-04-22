@@ -65,6 +65,13 @@ impl Endpoint for FakeEndpoint {
         Box::pin(async {})
     }
 
+    fn remove_relay(
+        &self,
+        _url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        Box::pin(async { None })
+    }
+
     fn id_bytes(&self) -> [u8; 32] {
         [0u8; 32]
     }
@@ -167,9 +174,7 @@ fn build_transport(
         accept_task: noop_handle(),
         relay_re_registration_task: None,
         config,
-        known_relays: Arc::new(RwLock::new(HashMap::new())),
-        per_space_urls: Arc::new(RwLock::new(HashMap::new())),
-        space_relay_hosts: Arc::new(RwLock::new(HashMap::new())),
+        space_relays: Arc::new(RwLock::new(HashMap::new())),
     }
 }
 
@@ -196,12 +201,7 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
     });
 
     let remote_url = fake_remote_url();
-    let target = endpoint_from_url(
-        &remote_url,
-        Some("https://relay.example.com:443/"),
-        &HashMap::new(),
-    )
-    .unwrap();
+    let target = endpoint_from_url(&remote_url).unwrap();
 
     let connections = Arc::new(RwLock::new(HashMap::new()));
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
@@ -275,6 +275,12 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
         ) -> BoxFut<'_, ()> {
             Box::pin(async {})
         }
+        fn remove_relay(
+            &self,
+            _url: &RelayUrl,
+        ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+            Box::pin(async { None })
+        }
         fn id_bytes(&self) -> [u8; 32] {
             [0u8; 32]
         }
@@ -283,12 +289,7 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
     let endpoint: DynIrohEndpoint = Arc::new(HangingEndpoint);
 
     let remote_url = fake_remote_url();
-    let target = endpoint_from_url(
-        &remote_url,
-        Some("https://relay.example.com:443/"),
-        &HashMap::new(),
-    )
-    .unwrap();
+    let target = endpoint_from_url(&remote_url).unwrap();
 
     let connections = Arc::new(RwLock::new(HashMap::new()));
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));

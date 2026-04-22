@@ -1,3 +1,4 @@
+use crate::SpaceRelays;
 use crate::connection::DynConnection;
 #[cfg(feature = "metrics")]
 use crate::metrics::connection_counter_metric;
@@ -10,7 +11,6 @@ use crate::{
 use bytes::Bytes;
 use kitsune2_api::{K2Error, K2Result, Timestamp, TxImpHnd, Url};
 use std::{
-    collections::HashMap,
     fmt,
     sync::{
         Arc, Mutex, RwLock,
@@ -35,7 +35,7 @@ pub(super) struct ConnectionContext {
     recv_bytes: AtomicU64,
     opened_at_s: u64,
     max_frame_bytes: usize,
-    per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
+    space_relays: SpaceRelays,
 }
 
 impl fmt::Debug for ConnectionContext {
@@ -52,7 +52,7 @@ pub(super) struct ConnectionContextParams {
     pub opened_at_s: u64,
     pub connections: Connections,
     pub local_url: Arc<RwLock<Option<Url>>>,
-    pub per_space_urls: Arc<RwLock<HashMap<String, Url>>>,
+    pub space_relays: SpaceRelays,
     pub max_frame_bytes: usize,
 }
 
@@ -72,7 +72,7 @@ impl ConnectionContext {
             recv_bytes: AtomicU64::new(0),
             opened_at_s: params.opened_at_s,
             max_frame_bytes: params.max_frame_bytes,
-            per_space_urls: params.per_space_urls,
+            space_relays: params.space_relays,
         });
 
         // Spawn connection reader to listen for incoming connections on the
@@ -329,8 +329,10 @@ impl ConnectionContext {
                         .unwrap_or("")
                         .to_string();
                     let maybe_local_url = {
-                        let per_space = ctx.per_space_urls.read().expect("poisoned");
-                        per_space.get(&remote_host).cloned()
+                        let relays = ctx.space_relays.read().expect("poisoned");
+                        relays.values()
+                            .find(|(relay_url, _)| relay_url.host_str() == Some(&remote_host))
+                            .and_then(|(_, local_url)| local_url.clone())
                     }.or(global_url);
                     if let Some(local_url) = maybe_local_url {
                         let return_preflight =

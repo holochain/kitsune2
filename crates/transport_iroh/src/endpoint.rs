@@ -50,6 +50,12 @@ pub(crate) trait Endpoint:
         config: Arc<RelayConfig>,
     ) -> BoxFut<'_, ()>;
 
+    /// Remove a relay server from this endpoint.
+    fn remove_relay(
+        &self,
+        url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>>;
+
     /// Returns the public key bytes of this endpoint.
     fn id_bytes(&self) -> [u8; 32];
 }
@@ -131,6 +137,14 @@ impl Endpoint for IrohEndpoint {
         Box::pin(async move {
             self.inner.insert_relay(url, config).await;
         })
+    }
+
+    fn remove_relay(
+        &self,
+        url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        let url = url.clone();
+        Box::pin(async move { self.inner.remove_relay(&url).await })
     }
 
     fn id_bytes(&self) -> [u8; 32] {

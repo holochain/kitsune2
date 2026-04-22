@@ -2,7 +2,6 @@ use crate::url::endpoint_from_url;
 use crate::url::{canonicalize_relay_url, get_url_with_first_relay};
 use iroh::{EndpointAddr, EndpointId, RelayUrl, TransportAddr};
 use kitsune2_api::Url;
-use std::collections::HashMap;
 use std::str::FromStr;
 
 fn test_endpoint_id() -> EndpointId {
@@ -155,7 +154,7 @@ fn endpoint_from_url_valid_https() {
     let endpoint_id = test_endpoint_id();
     let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
         .unwrap();
-    let result = endpoint_from_url(&url, None, &Default::default()).unwrap();
+    let result = endpoint_from_url(&url).unwrap();
     let expected_id = test_endpoint_id();
     let expected_relay =
         RelayUrl::from_str("https://example.com:443/").unwrap();
@@ -176,7 +175,7 @@ fn endpoint_from_url_valid_http() {
     let endpoint_id = test_endpoint_id();
     let url =
         Url::from_str(format!("http://example.com:80/{endpoint_id}")).unwrap();
-    let result = endpoint_from_url(&url, None, &Default::default()).unwrap();
+    let result = endpoint_from_url(&url).unwrap();
     let expected_id = test_endpoint_id();
     let expected_relay = RelayUrl::from_str("http://example.com:80/").unwrap();
     assert_eq!(result.id, expected_id);
@@ -194,38 +193,35 @@ fn endpoint_from_url_valid_http() {
 #[test]
 fn endpoint_from_url_no_peer_id() {
     let url = Url::from_str("https://example.com:443").unwrap();
-    let result = endpoint_from_url(&url, None, &Default::default());
+    let result = endpoint_from_url(&url);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.to_string().contains("url must have peer id"));
 }
 
 #[test]
-fn canonicalize_relay_url_strips_path() {
-    // Relay URLs with paths like /relay/ get stripped to just host:port/endpoint_id
-    // because kitsune2 Url only allows a single path segment.
+fn canonicalize_relay_url_preserves_path() {
+    // Relay URLs with paths like /relay/ are preserved so that
+    // endpoint_from_url can reconstruct the full relay URL.
     let relay_url =
         RelayUrl::from_str("https://example.com:443/relay/").unwrap();
     let endpoint_id = test_endpoint_id();
     let result = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
     let expected =
-        Url::from_str(format!("https://example.com:443/{endpoint_id}"))
+        Url::from_str(format!("https://example.com:443/relay/{endpoint_id}"))
             .unwrap();
     assert_eq!(result, expected);
 }
 
 #[test]
-fn endpoint_from_url_uses_known_relays() {
-    // When a relay host is in the known_relays map, use its full URL (with path)
+fn endpoint_from_url_extracts_relay_with_path() {
+    // When the peer URL includes a relay path, endpoint_from_url
+    // reconstructs the full relay URL (with path) directly.
     let endpoint_id = test_endpoint_id();
-    let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
-        .unwrap();
-    let mut known_relays = HashMap::new();
-    known_relays.insert(
-        "example.com".to_string(),
-        "https://example.com:443/relay/".to_string(),
-    );
-    let result = endpoint_from_url(&url, None, &known_relays).unwrap();
+    let url =
+        Url::from_str(format!("https://example.com:443/relay/{endpoint_id}"))
+            .unwrap();
+    let result = endpoint_from_url(&url).unwrap();
     let expected_relay =
         RelayUrl::from_str("https://example.com:443/relay/").unwrap();
     let actual_transport_addr = result.addrs.iter().next().unwrap();
@@ -239,42 +235,13 @@ fn endpoint_from_url_uses_known_relays() {
 }
 
 #[test]
-fn endpoint_from_url_known_relay_takes_precedence_over_configured() {
-    let endpoint_id = test_endpoint_id();
-    let url = Url::from_str(format!("https://example.com:443/{endpoint_id}"))
-        .unwrap();
-    let mut known_relays = HashMap::new();
-    known_relays.insert(
-        "example.com".to_string(),
-        "https://example.com:443/custom-path/".to_string(),
-    );
-    let result = endpoint_from_url(
-        &url,
-        Some("https://example.com:443/relay/"),
-        &known_relays,
-    )
-    .unwrap();
-    let expected_relay =
-        RelayUrl::from_str("https://example.com:443/custom-path/").unwrap();
-    let actual_transport_addr = result.addrs.iter().next().unwrap();
-    assert!(
-        matches!(
-            actual_transport_addr,
-            TransportAddr::Relay(r) if *r == expected_relay
-        ),
-        "known_relays should take precedence over configured, got {actual_transport_addr:?}"
-    );
-}
-
-#[test]
 fn endpoint_from_url_roundtrip_without_path() {
-    // Relays without a path roundtrip correctly without needing the map
+    // Relays without a path roundtrip correctly
     let relay_url =
         RelayUrl::from_str("https://relay.example.com:443/").unwrap();
     let endpoint_id = test_endpoint_id();
     let peer_url = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
-    let result =
-        endpoint_from_url(&peer_url, None, &Default::default()).unwrap();
+    let result = endpoint_from_url(&peer_url).unwrap();
     let actual_relay = result.addrs.iter().next().unwrap();
     assert!(
         matches!(
@@ -286,18 +253,13 @@ fn endpoint_from_url_roundtrip_without_path() {
 }
 
 #[test]
-fn endpoint_from_url_roundtrip_with_path_via_known_relays() {
-    // Relays with a path need the known_relays map to roundtrip correctly
+fn endpoint_from_url_roundtrip_with_path() {
+    // Relays with a path roundtrip correctly since the path is preserved
     let relay_url =
         RelayUrl::from_str("http://bootstrap.example.com:4433/relay/").unwrap();
     let endpoint_id = test_endpoint_id();
     let peer_url = canonicalize_relay_url(&relay_url, endpoint_id).unwrap();
-    let mut known_relays = HashMap::new();
-    known_relays.insert(
-        "bootstrap.example.com".to_string(),
-        "http://bootstrap.example.com:4433/relay/".to_string(),
-    );
-    let result = endpoint_from_url(&peer_url, None, &known_relays).unwrap();
+    let result = endpoint_from_url(&peer_url).unwrap();
     let actual_relay = result.addrs.iter().next().unwrap();
     assert!(
         matches!(
