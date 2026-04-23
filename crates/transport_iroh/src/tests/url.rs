@@ -1,7 +1,9 @@
+use crate::IrohTransport;
 use crate::url::endpoint_from_url;
 use crate::url::{canonicalize_relay_url, get_url_with_first_relay};
 use iroh::{EndpointAddr, EndpointId, RelayUrl, TransportAddr};
-use kitsune2_api::Url;
+use kitsune2_api::{Id, SpaceId, Url};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 fn test_endpoint_id() -> EndpointId {
@@ -268,4 +270,98 @@ fn endpoint_from_url_roundtrip_with_path() {
         ),
         "roundtrip failed: expected {relay_url:?} but got {actual_relay:?}"
     );
+}
+
+fn space(name: &[u8]) -> SpaceId {
+    SpaceId(Id(bytes::Bytes::copy_from_slice(name)))
+}
+
+#[test]
+fn own_url_for_preflight_matches_space_relay() {
+    let eid = test_endpoint_id();
+    let relay =
+        RelayUrl::from_str("https://space-relay.com:443/relay/").unwrap();
+    let our_space_url =
+        Url::from_str(format!("https://space-relay.com:443/relay/{eid}"))
+            .unwrap();
+    let peer_url = Url::from_str(
+        "https://space-relay.com:443/relay/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let global_url = Some(
+        Url::from_str(format!("https://global-relay.com:443/{eid}")).unwrap(),
+    );
+    let mut space_relays = HashMap::new();
+    space_relays.insert(space(b"s1"), (relay, Some(our_space_url.clone())));
+
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_url,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, Some(our_space_url));
+}
+
+#[test]
+fn own_url_for_preflight_matches_global_relay() {
+    let eid = test_endpoint_id();
+    let global_url = Some(
+        Url::from_str(format!("https://global-relay.com:443/{eid}")).unwrap(),
+    );
+    let peer_url = Url::from_str(
+        "https://global-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let space_relays = HashMap::new();
+
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_url,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, global_url);
+}
+
+#[test]
+fn own_url_for_preflight_unknown_relay_returns_none() {
+    let eid = test_endpoint_id();
+    let global_url = Some(
+        Url::from_str(format!("https://global-relay.com:443/{eid}")).unwrap(),
+    );
+    let peer_url = Url::from_str(
+        "https://unknown-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let space_relays = HashMap::new();
+
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_url,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, None);
+}
+
+#[test]
+fn own_url_for_preflight_space_relay_takes_precedence() {
+    let eid = test_endpoint_id();
+    let relay = RelayUrl::from_str("https://shared-relay.com:443/").unwrap();
+    let our_space_url =
+        Url::from_str(format!("https://shared-relay.com:443/{eid}")).unwrap();
+    let global_url = Some(
+        Url::from_str(format!("https://shared-relay.com:443/{eid}")).unwrap(),
+    );
+    let peer_url = Url::from_str(
+        "https://shared-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let mut space_relays = HashMap::new();
+    space_relays.insert(space(b"s1"), (relay, Some(our_space_url.clone())));
+
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_url,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, Some(our_space_url));
 }
