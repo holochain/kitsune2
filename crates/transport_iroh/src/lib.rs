@@ -883,13 +883,6 @@ impl IrohTransport {
     /// If `auth_material` is provided, the endpoint's public key is
     /// registered with the relay server before connecting.
     ///
-    /// Returns the endpoint's URL on the new relay so that per-space
-    /// agent info can announce the correct relay address.
-    /// Dynamically add a relay server to the shared iroh endpoint.
-    ///
-    /// If `auth_material` is provided, the endpoint's public key is
-    /// registered with the relay server before connecting.
-    ///
     /// Returns the parsed RelayUrl and our kitsune2 peer URL on that relay.
     async fn do_insert_relay(
         endpoint: DynIrohEndpoint,
