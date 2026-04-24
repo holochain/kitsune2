@@ -3,13 +3,16 @@
 use crate::{protocol::*, *};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 
 type SpaceMap = Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>;
 type ModMap = Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>;
 type MessageBlocksMap =
     Arc<Mutex<HashMap<Url, HashMap<SpaceId, MessageBlockCount>>>>;
+
+type PendingSpaceUrls = Arc<Mutex<HashMap<SpaceId, Url>>>;
+type PerSpaceManaged = Arc<Mutex<HashSet<SpaceId>>>;
 
 /// This is the low-level backend transport handler designed to work
 /// with [DefaultTransport].
@@ -21,6 +24,12 @@ pub struct TxImpHnd {
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
+    pending_space_urls: PendingSpaceUrls,
+    /// Spaces whose listening address is managed by the transport
+    /// (e.g., via per-space relay). These are excluded from the
+    /// global [`new_listening_address`](Self::new_listening_address)
+    /// broadcast.
+    per_space_managed: PerSpaceManaged,
 }
 
 impl TxImpHnd {
@@ -33,28 +42,69 @@ impl TxImpHnd {
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
             blocked_message_counts: Arc::new(Mutex::new(HashMap::new())),
+            pending_space_urls: Arc::new(Mutex::new(HashMap::new())),
+            per_space_managed: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
     /// Call this when you receive or bind a new address at which
-    /// this local node can be reached by peers
-    pub fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        let handler = self.handler.clone();
-        let space_map = self
-            .space_map
-            .clone()
-            .lock()
-            .unwrap()
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+    /// this local node can be reached by peers.
+    ///
+    /// When `for_space` is `None`, the URL is broadcast to all space
+    /// handlers that are not per-space managed.
+    ///
+    /// When `for_space` targets a specific space, that space is marked
+    /// as per-space managed (excluded from future global broadcasts)
+    /// and the URL is delivered only to that space's handler. If the
+    /// handler is not yet registered, the URL is stored and delivered
+    /// when the handler registers
+    /// (see [DefaultTransport::register_space_handler]).
+    pub fn new_listening_address(
+        &self,
+        this_url: Url,
+        for_space: Option<&SpaceId>,
+    ) -> BoxFut<'static, ()> {
+        if let Some(space_id) = for_space {
+            self.per_space_managed
+                .lock()
+                .unwrap()
+                .insert(space_id.clone());
 
-        Box::pin(async move {
-            handler.new_listening_address(this_url.clone()).await;
-            for s in space_map {
-                s.new_listening_address(this_url.clone()).await;
+            let handler = self.space_map.lock().unwrap().get(space_id).cloned();
+            if let Some(h) = handler {
+                Box::pin(async move { h.new_listening_address(this_url).await })
+            } else {
+                self.pending_space_urls
+                    .lock()
+                    .unwrap()
+                    .insert(space_id.clone(), this_url);
+                Box::pin(async {})
             }
-        })
+        } else {
+            let handler = self.handler.clone();
+            let managed = self.per_space_managed.lock().unwrap().clone();
+            let space_map: Vec<_> = self
+                .space_map
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(id, _)| !managed.contains(id))
+                .map(|(_, h)| h.clone())
+                .collect();
+
+            Box::pin(async move {
+                handler.new_listening_address(this_url.clone()).await;
+                for s in space_map {
+                    s.new_listening_address(this_url.clone()).await;
+                }
+            })
+        }
+    }
+
+    /// Remove a space from the per-space managed set, so it will
+    /// again receive global address broadcasts.
+    pub fn unmark_per_space_managed(&self, space_id: &SpaceId) {
+        self.per_space_managed.lock().unwrap().remove(space_id);
     }
 
     /// Call this when you establish an outgoing connection and
@@ -449,6 +499,37 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>>;
+
+    /// Apply per-space configuration to this transport.
+    ///
+    /// Called by the space factory when creating a new space. The transport
+    /// reads any per-space settings it understands from the provided config
+    /// (e.g., a per-space relay URL and auth material) and applies them
+    /// internally.
+    ///
+    /// Default implementation is a no-op.
+    fn configure_for_space(
+        &self,
+        _space_id: SpaceId,
+        _config: &config::Config,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Remove per-space configuration previously applied by
+    /// [`configure_for_space`](Self::configure_for_space).
+    ///
+    /// Called when a space is being torn down. Transports should
+    /// release any per-space resources (e.g., remove a relay that
+    /// was added exclusively for this space).
+    ///
+    /// Default implementation is a no-op.
+    fn unconfigure_for_space(
+        &self,
+        _space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Trait-object [TxImp].
@@ -518,6 +599,37 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Dump network stats.
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<ApiTransportStats>>;
+
+    /// Apply per-space configuration to this transport.
+    ///
+    /// Called by the space factory when creating a new space. The transport
+    /// reads any per-space settings it understands from the provided config
+    /// (e.g., a per-space relay URL and auth material) and applies them
+    /// internally.
+    ///
+    /// Default implementation is a no-op.
+    fn configure_for_space(
+        &self,
+        _space_id: SpaceId,
+        _config: &config::Config,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Remove per-space configuration previously applied by
+    /// [`configure_for_space`](Self::configure_for_space).
+    ///
+    /// Called when a space is being torn down. Transports should
+    /// release any per-space resources (e.g., remove a relay that
+    /// was added exclusively for this space).
+    ///
+    /// Default implementation is a no-op.
+    fn unconfigure_for_space(
+        &self,
+        _space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Trait-object [Transport].
@@ -539,6 +651,7 @@ pub struct DefaultTransport {
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
+    pending_space_urls: PendingSpaceUrls,
 }
 
 impl DefaultTransport {
@@ -553,6 +666,7 @@ impl DefaultTransport {
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
             blocked_message_counts: hnd.blocked_message_counts.clone(),
+            pending_space_urls: hnd.pending_space_urls.clone(),
         });
         out
     }
@@ -582,11 +696,18 @@ impl Transport for DefaultTransport {
         space_id: SpaceId,
         handler: DynTxSpaceHandler,
     ) -> Option<Url> {
+        let pending_url =
+            self.pending_space_urls.lock().unwrap().remove(&space_id);
+
         let mut lock = self.space_map.lock().unwrap();
         if lock.insert(space_id.clone(), handler).is_some() {
             panic!("Attempted to register duplicate space handler! {space_id}");
         }
-        // keep the lock locked while we fetch the url for atomicity.
+
+        if pending_url.is_some() {
+            return pending_url;
+        }
+
         self.imp.url()
     }
 
@@ -728,6 +849,21 @@ impl Transport for DefaultTransport {
                 blocked_message_counts: blocked_message_counts.clone(),
             })
         })
+    }
+
+    fn configure_for_space(
+        &self,
+        space_id: SpaceId,
+        config: &config::Config,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.imp.configure_for_space(space_id, config)
+    }
+
+    fn unconfigure_for_space(
+        &self,
+        space_id: SpaceId,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.imp.unconfigure_for_space(space_id)
     }
 }
 
