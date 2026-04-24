@@ -45,12 +45,8 @@ pub(super) fn canonicalize_relay_url(
     let relay_path = relay_url.path().trim_end_matches('/');
 
     let canonical_relay_url = format!(
-        "{}://{}:{}{}/{}",
-        relay_url.scheme(),
-        relay_host,
-        relay_port,
-        relay_path,
-        endpoint_id
+        "{scheme}://{relay_host}:{relay_port}{relay_path}/{endpoint_id}",
+        scheme = relay_url.scheme(),
     );
 
     Url::from_str(canonical_relay_url)
