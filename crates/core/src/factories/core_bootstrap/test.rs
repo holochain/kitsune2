@@ -84,6 +84,7 @@ impl Test {
                     server_url: Some(server.into()),
                     backoff_min_ms: 10,
                     backoff_max_ms: 10,
+                    ..Default::default()
                 },
             })
             .unwrap();

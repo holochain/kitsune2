@@ -1,3 +1,5 @@
+use crate::IrohTransport;
+use crate::SpaceRelays;
 use crate::connection::DynConnection;
 #[cfg(feature = "metrics")]
 use crate::metrics::connection_counter_metric;
@@ -34,6 +36,7 @@ pub(super) struct ConnectionContext {
     recv_bytes: AtomicU64,
     opened_at_s: u64,
     max_frame_bytes: usize,
+    space_relays: SpaceRelays,
 }
 
 impl fmt::Debug for ConnectionContext {
@@ -50,6 +53,7 @@ pub(super) struct ConnectionContextParams {
     pub opened_at_s: u64,
     pub connections: Connections,
     pub local_url: Arc<RwLock<Option<Url>>>,
+    pub space_relays: SpaceRelays,
     pub max_frame_bytes: usize,
 }
 
@@ -69,6 +73,7 @@ impl ConnectionContext {
             recv_bytes: AtomicU64::new(0),
             opened_at_s: params.opened_at_s,
             max_frame_bytes: params.max_frame_bytes,
+            space_relays: params.space_relays,
         });
 
         // Spawn connection reader to listen for incoming connections on the
@@ -315,17 +320,22 @@ impl ConnectionContext {
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
-                    let maybe_local_url =
-                        local_url.read().expect("poisoned").clone();
-                    if let Some(local_url) = maybe_local_url {
+                    let global_url = local_url.read().expect("poisoned").clone();
+                    let space_relays = ctx.space_relays.read().expect("poisoned").clone();
+                    let own_url = IrohTransport::own_url_for_preflight(
+                        &remote_url,
+                        &space_relays,
+                        &global_url,
+                    );
+                    if let Some(own_url) = own_url {
                         let return_preflight =
                             ctx.handler.peer_connect(remote_url.clone()).await?;
                         ctx.send_preflight_frame(
-                            local_url.clone(),
+                            own_url.clone(),
                             return_preflight,
                         )
                             .await?;
-                        info!(peer = ?ctx.connection.remote_id(),?local_url, "Sent preflight to peer from URL");
+                        info!(peer = ?ctx.connection.remote_id(), ?own_url, "Sent preflight to peer");
                         ctx.set_preflight_sent();
                     } else {
                         warn!(peer = ?ctx.connection.remote_id(), "Received preflight, but cannot return preflight because own URL is unknown");
