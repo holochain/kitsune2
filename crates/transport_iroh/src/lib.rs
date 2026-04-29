@@ -183,6 +183,7 @@ use bytes::Bytes;
 use iroh::endpoint::presets::Minimal;
 use iroh::{
     Endpoint, EndpointAddr, RelayConfig, RelayMap, RelayMode, RelayUrl,
+    TransportAddr,
 };
 use kitsune2_api::*;
 use std::{
@@ -969,6 +970,22 @@ impl TxImp for IrohTransport {
                 peer_urls,
                 connections: stat_connections,
             })
+        })
+    }
+
+    fn local_socket_addrs(&self) -> BoxFut<'_, K2Result<Vec<std::net::SocketAddr>>> {
+        let endpoint = self.endpoint.clone();
+        Box::pin(async move {
+            let addr = endpoint.addr();
+            let socket_addrs: Vec<std::net::SocketAddr> = addr
+                .addrs
+                .iter()
+                .filter_map(|t| match t {
+                    TransportAddr::Ip(sa) if !sa.ip().is_unspecified() => Some(*sa),
+                    _ => None,
+                })
+                .collect();
+            Ok(socket_addrs)
         })
     }
 }
