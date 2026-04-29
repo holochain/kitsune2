@@ -18,8 +18,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio::time::timeout;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 use futures::FutureExt;
 use iroh_relay::http::ProtocolVersion;
@@ -92,32 +91,7 @@ pub async fn relay_handler(
         if let Err(e) =
             handle_relay_websocket(socket, state, client_auth_header).await
         {
-            let msg = e.to_string().to_lowercase();
-            // String-matching error classifier. The substrings come from a
-            // few different sources; keep this list in sync if the upstream
-            // crates' error messages change in a future version:
-            //
-            // - "timed out": the `io::Error` we produce ourselves at the
-            //   handshake timeout below in `handle_relay_websocket`.
-            // - "connection reset", "broken pipe": `std::io::ErrorKind`
-            //   Display impls, surfaced via `tungstenite::Error::Io`.
-            // - "connection closed", "websocket protocol error":
-            //   `tokio_tungstenite::tungstenite::Error` Display.
-            // - "not allowed", "denied": rejection messages from the
-            //   `iroh_relay` handshake auth path
-            //   (`handshake::serverside`/`authorize_if`).
-            let is_expected = msg.contains("timed out")
-                || msg.contains("connection reset")
-                || msg.contains("connection closed")
-                || msg.contains("broken pipe")
-                || msg.contains("not allowed")
-                || msg.contains("denied")
-                || msg.contains("websocket protocol error");
-            if is_expected {
-                debug!("Relay WebSocket ended: {msg}");
-            } else {
-                warn!("Error handling relay WebSocket: {msg}");
-            }
+            warn!("Error handling relay WebSocket: {:?}", e);
         }
     })
 }
@@ -160,7 +134,7 @@ impl Stream for AxumWebSocketAdapter {
                 Poll::Ready(Some(Err(e))) => {
                     // Convert axum error to StreamError
                     return Poll::Ready(Some(Err(StreamError::Io(
-                        std::io::Error::other(e.to_string()),
+                        std::io::Error::other(format!("{:?}", e)),
                     ))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
@@ -180,7 +154,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         match self.inner.as_mut().poll_ready(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(e.to_string()),
+                std::io::Error::other(format!("{:?}", e)),
             ))),
             Poll::Pending => Poll::Pending,
         }
@@ -193,7 +167,9 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         self.inner
             .as_mut()
             .start_send(AxumMessage::Binary(item))
-            .map_err(|e| StreamError::Io(std::io::Error::other(e.to_string())))
+            .map_err(|e| {
+                StreamError::Io(std::io::Error::other(format!("{:?}", e)))
+            })
     }
 
     fn poll_flush(
@@ -203,7 +179,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         match self.inner.as_mut().poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(e.to_string()),
+                std::io::Error::other(format!("{:?}", e)),
             ))),
             Poll::Pending => Poll::Pending,
         }
@@ -216,7 +192,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         match self.inner.as_mut().poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(e.to_string()),
+                std::io::Error::other(format!("{:?}", e)),
             ))),
             Poll::Pending => Poll::Pending,
         }
@@ -248,34 +224,19 @@ async fn handle_relay_websocket(
     // Wrap the axum WebSocket to implement Stream/Sink
     let mut adapter = AxumWebSocketAdapter::new(socket);
 
-    // Perform the relay protocol handshake with a timeout to prevent
-    // stalled clients from holding the WebSocket open indefinitely.
-    const HANDSHAKE_TIMEOUT: std::time::Duration =
-        std::time::Duration::from_secs(30);
+    // Perform the relay protocol handshake
+    let authentication =
+        handshake::serverside(&mut adapter, client_auth_header).await?;
 
-    let client_key = timeout(HANDSHAKE_TIMEOUT, async {
-        let authentication =
-            handshake::serverside(&mut adapter, client_auth_header).await?;
+    trace!(?authentication.mechanism, "accept: verified authentication");
 
-        debug!(?authentication.mechanism, "accept: verified authentication");
+    let is_authorized =
+        state.access.is_allowed(authentication.client_key).await;
+    let client_key = authentication
+        .authorize_if(is_authorized, &mut adapter)
+        .await?;
 
-        let is_authorized =
-            state.access.is_allowed(authentication.client_key).await;
-        let client_key = authentication
-            .authorize_if(is_authorized, &mut adapter)
-            .await?;
-
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(client_key)
-    })
-    .await
-    .map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "Relay handshake timed out",
-        )
-    })??;
-
-    debug!(key = %client_key.fmt_short(), "accept: verified authorization");
+    trace!("accept: verified authorization");
 
     // Wrap in RelayedStream for encryption
     let io = RelayedStream::new(adapter, state.key_cache.clone());
@@ -294,8 +255,6 @@ async fn handle_relay_websocket(
     state
         .clients
         .register(client_conn_builder, state.metrics.clone());
-
-    info!(key = %client_key.fmt_short(), "relay client registered");
 
     Ok(())
 }

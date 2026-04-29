@@ -99,6 +99,14 @@ impl SpaceFactory for CoreSpaceFactory {
                 }
                 None => builder,
             };
+
+            // Let the transport handle any per-space configuration it
+            // understands (e.g., a per-space relay URL for iroh).
+            // This is non-blocking; the transport delivers the URL
+            // asynchronously via the space handler's new_listening_address.
+            tx.configure_for_space(space_id.clone(), &builder.config)
+                .await?;
+
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =
                 builder_config.get_module_config()?;
@@ -479,7 +487,9 @@ impl Space for CoreSpace {
                 let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    let url = inner.read().unwrap().current_url.clone();
+                    let url = {
+                        inner.read().unwrap().current_url.clone()
+                    };
 
                     if let Some(url) = url {
                         // sign a new agent info

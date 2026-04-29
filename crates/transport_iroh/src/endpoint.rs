@@ -1,7 +1,7 @@
 //! Abstractions for endpoint operations, enabling unit testing.
 
 use crate::connection::{DynConnection, IrohConnection};
-use iroh::EndpointAddr;
+use iroh::{EndpointAddr, RelayConfig, RelayUrl};
 use kitsune2_api::{BoxFut, K2Error, K2Result};
 use n0_watcher::{Disconnected, Watcher};
 use std::sync::Arc;
@@ -42,6 +42,22 @@ pub(crate) trait Endpoint:
 
     /// Closes the endpoint.
     fn close(&self) -> BoxFut<'_, ()>;
+
+    /// Dynamically add a relay server to this endpoint.
+    fn insert_relay(
+        &self,
+        url: RelayUrl,
+        config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()>;
+
+    /// Remove a relay server from this endpoint.
+    fn remove_relay(
+        &self,
+        url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>>;
+
+    /// Returns the public key bytes of this endpoint.
+    fn id_bytes(&self) -> [u8; 32];
 }
 
 #[derive(Debug)]
@@ -111,6 +127,28 @@ impl Endpoint for IrohEndpoint {
 
     fn close(&self) -> BoxFut<'_, ()> {
         Box::pin(async { self.inner.close().await })
+    }
+
+    fn insert_relay(
+        &self,
+        url: RelayUrl,
+        config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            self.inner.insert_relay(url, config).await;
+        })
+    }
+
+    fn remove_relay(
+        &self,
+        url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        let url = url.clone();
+        Box::pin(async move { self.inner.remove_relay(&url).await })
+    }
+
+    fn id_bytes(&self) -> [u8; 32] {
+        *self.inner.id().as_bytes()
     }
 }
 
