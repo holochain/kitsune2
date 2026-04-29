@@ -322,7 +322,7 @@ impl Tx5Transport {
             ep.listen(config.server_url.as_str().to_sig_url()?).await
         {
             handler
-                .new_listening_address(Url::from_str(local_url.as_ref())?)
+                .new_listening_address(Url::from_str(local_url.as_ref())?, None)
                 .await;
         }
 
@@ -498,7 +498,7 @@ async fn evt_task(
                         continue;
                     }
                 };
-                handler.new_listening_address(local_url).await;
+                handler.new_listening_address(local_url, None).await;
             }
             ListeningAddressClosed { local_url: _ } => {
                 // MAYBE trigger tombstone of our bootstrap entry here

@@ -147,9 +147,9 @@ impl Url {
 
         let path = parsed.path();
 
-        if path.split('/').count() != 2 {
+        if path != "/" && path.split('/').skip(1).any(|s| s.is_empty()) {
             return Err(K2Error::other(
-                "Invalid Kitsune2 Url, path must contain exactly 1 slash",
+                "Invalid Kitsune2 Url, path must not contain empty segments",
             ));
         }
 
@@ -246,6 +246,10 @@ mod test {
             ("ws://a.b:80/foo", Some("foo"), false, "a.b:80"),
             ("wss://a.b:443/foo", Some("foo"), true, "a.b:443"),
             ("ws://a.b:999/foo", Some("foo"), false, "a.b:999"),
+            // Multi-segment paths (relay path + peer id)
+            ("ws://a.b:80/relay/foo", Some("foo"), false, "a.b:80"),
+            ("wss://a.b:443/relay/foo", Some("foo"), true, "a.b:443"),
+            ("ws://a.b:80/a/b/c", Some("c"), false, "a.b:80"),
         ];
 
         for (s, id, tls, addr) in F.iter() {
@@ -264,7 +268,9 @@ mod test {
             "wss://a.b",
             "w://a.b:80",
             "ws://a.b:80/",
-            "ws://a.b:80/foo/bar",
+            "ws://a.b:80/foo/",
+            "ws://a.b:80//foo",
+            "ws://a.b:80/foo//bar",
         ];
 
         for s in F.iter() {
