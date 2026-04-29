@@ -8,7 +8,7 @@ COPY ["Cargo.toml", "Cargo.lock", "./"]
 COPY crates ./crates
 
 # Build the bootstrap server
-RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv
+RUN cargo install --path ./crates/bootstrap_srv --bin kitsune2-bootstrap-srv --locked
 
 FROM debian:trixie-slim
 
