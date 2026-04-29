@@ -8,7 +8,7 @@ ADD ["Cargo.toml", "Cargo.lock", "./"]
 ADD crates ./crates
 
 # Build the bootstrap server
-RUN cargo install --path ./crates/bootstrap_srv --example test-auth-hook-server
+RUN cargo install --path ./crates/bootstrap_srv --example test-auth-hook-server --locked
 
 FROM debian:bookworm-slim
 
