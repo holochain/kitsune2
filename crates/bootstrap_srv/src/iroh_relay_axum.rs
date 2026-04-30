@@ -33,6 +33,21 @@ use iroh_relay::{
         streams::RelayedStream,
     },
 };
+use std::future::Future;
+
+/// Per-connection inbound byte rate limit for the relay WebSocket handler.
+///
+/// The limiter applies to every binary frame received from a single
+/// WebSocket connection. Both fields are `NonZeroU32`, so neither value can
+/// degenerate to "unlimited via zero"; an unset limiter is represented by
+/// `None` on [`RelayState::rate_limit`].
+#[derive(Clone, Copy, Debug)]
+pub struct RelayClientRxRateLimit {
+    /// Sustained refill rate in bytes per second.
+    pub bytes_per_second: std::num::NonZeroU32,
+    /// Maximum bucket capacity (i.e. allowed burst above the sustained rate).
+    pub burst_bytes: std::num::NonZeroU32,
+}
 
 /// State required for the relay handler.
 #[derive(Clone, Debug)]
@@ -47,6 +62,8 @@ pub struct RelayState {
     pub write_timeout: std::time::Duration,
     /// Clients registry
     pub clients: Clients,
+    /// Optional per-connection inbound byte rate limit.
+    pub rate_limit: Option<RelayClientRxRateLimit>,
 }
 
 impl RelayState {
@@ -55,6 +72,7 @@ impl RelayState {
         key_cache: KeyCache,
         access: Arc<AccessConfig>,
         metrics: Arc<Metrics>,
+        rate_limit: Option<RelayClientRxRateLimit>,
     ) -> Self {
         Self {
             key_cache,
@@ -62,6 +80,7 @@ impl RelayState {
             metrics,
             write_timeout: iroh_relay::defaults::timeouts::SERVER_WRITE_TIMEOUT,
             clients: Clients::default(),
+            rate_limit,
         }
     }
 }
@@ -122,15 +141,80 @@ pub async fn relay_handler(
     })
 }
 
+/// Per-connection rate-limit state held inside [`AxumWebSocketAdapter`].
+///
+/// Pairs an [`iroh_relay::Bucket`] with an optional pending sleep that gates
+/// the next read when the bucket has been overrun. The bucket is charged
+/// optimistically: every inbound binary frame's size is subtracted from the
+/// bucket *after* the frame is read but *before* the next frame is polled,
+/// so an overrun delays the *next* read rather than the current one. No
+/// frames are dropped — every frame is delivered, only paced.
+///
+/// Lifetime is tied to a single WebSocket connection. iroh's
+/// `Clients::register` is keyed on `EndpointId` and replaces existing
+/// entries, so per-connection is equivalent to per-endpoint by
+/// construction.
+struct RateLimitState {
+    /// Token bucket reused from `iroh_relay`. Counts inbound bytes.
+    bucket: iroh_relay::Bucket,
+    /// `Some` when the previous charge overran the bucket. Resolves at the
+    /// deadline reported by [`iroh_relay::Bucket::consume`], at which point
+    /// the next read is allowed.
+    sleep: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl RateLimitState {
+    fn new(limit: RelayClientRxRateLimit) -> Self {
+        let bucket = iroh_relay::Bucket::new(
+            limit.burst_bytes.get() as i64,
+            limit.bytes_per_second.get() as i64,
+            std::time::Duration::from_millis(100),
+        )
+        .expect(
+            "RelayClientRxRateLimit fields are NonZeroU32 so Bucket::new \
+             cannot fail with InvalidBucketConfig",
+        );
+        Self {
+            bucket,
+            sleep: None,
+        }
+    }
+
+    /// Returns `Poll::Pending` if the bucket is currently throttled,
+    /// `Poll::Ready(())` otherwise. Always wakes when the throttle clears.
+    fn poll_throttle(&mut self, cx: &mut Context<'_>) -> Poll<()> {
+        if let Some(sleep) = self.sleep.as_mut() {
+            match sleep.as_mut().poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(()) => self.sleep = None,
+            }
+        }
+        Poll::Ready(())
+    }
+
+    /// Charge `bytes` to the bucket. If the charge overruns, schedules a
+    /// sleep until the bucket refills enough.
+    fn charge(&mut self, bytes: usize) {
+        if let Err(deadline) = self.bucket.consume(bytes) {
+            self.sleep = Some(Box::pin(tokio::time::sleep_until(deadline)));
+        }
+    }
+}
+
 /// Adapter that wraps axum's WebSocket to implement the Stream/Sink traits needed by the relay
 struct AxumWebSocketAdapter {
     inner: Pin<Box<WebSocket>>,
+    rate_limit: Option<RateLimitState>,
 }
 
 impl AxumWebSocketAdapter {
-    fn new(socket: WebSocket) -> Self {
+    fn new(
+        socket: WebSocket,
+        rate_limit: Option<RelayClientRxRateLimit>,
+    ) -> Self {
         Self {
             inner: Box::pin(socket),
+            rate_limit: rate_limit.map(RateLimitState::new),
         }
     }
 }
@@ -142,23 +226,27 @@ impl Stream for AxumWebSocketAdapter {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        // Poll the underlying axum WebSocket
+        // If a previous frame overran the bucket, defer the next read
+        // until the bucket has refilled enough.
+        if let Some(rl) = self.rate_limit.as_mut()
+            && rl.poll_throttle(cx).is_pending()
+        {
+            return Poll::Pending;
+        }
+
         loop {
             match self.inner.as_mut().poll_next(cx) {
-                Poll::Ready(Some(Ok(msg))) => {
-                    match msg {
-                        AxumMessage::Binary(data) => {
-                            return Poll::Ready(Some(Ok(data)));
+                Poll::Ready(Some(Ok(msg))) => match msg {
+                    AxumMessage::Binary(data) => {
+                        if let Some(rl) = self.rate_limit.as_mut() {
+                            rl.charge(data.len());
                         }
-                        AxumMessage::Close(_) => return Poll::Ready(None),
-                        _ => {
-                            // Skip non-binary messages and continue polling
-                            continue;
-                        }
+                        return Poll::Ready(Some(Ok(data)));
                     }
-                }
+                    AxumMessage::Close(_) => return Poll::Ready(None),
+                    _ => continue,
+                },
                 Poll::Ready(Some(Err(e))) => {
-                    // Convert axum error to StreamError
                     return Poll::Ready(Some(Err(StreamError::Io(
                         std::io::Error::other(e.to_string()),
                     ))));
@@ -246,7 +334,7 @@ async fn handle_relay_websocket(
     trace!("Relay WebSocket connection established");
 
     // Wrap the axum WebSocket to implement Stream/Sink
-    let mut adapter = AxumWebSocketAdapter::new(socket);
+    let mut adapter = AxumWebSocketAdapter::new(socket, state.rate_limit);
 
     // Perform the relay protocol handshake with a timeout to prevent
     // stalled clients from holding the WebSocket open indefinitely.
@@ -353,11 +441,13 @@ pub async fn captive_portal_handler(
 ///
 /// This creates the state needed for the relay handler which can be mounted
 /// as a standard axum route. All connections are permitted.
-pub fn create_relay_state() -> RelayState {
+pub fn create_relay_state(
+    rate_limit: Option<RelayClientRxRateLimit>,
+) -> RelayState {
     let key_cache = KeyCache::new(1024);
     let access = Arc::new(AccessConfig::Everyone);
     let metrics = Arc::new(Metrics::default());
-    RelayState::new(key_cache, access, metrics)
+    RelayState::new(key_cache, access, metrics, rate_limit)
 }
 
 /// Creates a RelayState that restricts connections to endpoints registered
@@ -368,6 +458,7 @@ pub fn create_relay_state() -> RelayState {
 /// `PUT /relay/register` before their relay connection will be accepted.
 pub fn create_relay_state_with_allowlist(
     allowlist: crate::RelayAllowlist,
+    rate_limit: Option<RelayClientRxRateLimit>,
 ) -> RelayState {
     let key_cache = KeyCache::new(1024);
     let access =
@@ -386,7 +477,7 @@ pub fn create_relay_state_with_allowlist(
             .boxed()
         })));
     let metrics = Arc::new(Metrics::default());
-    RelayState::new(key_cache, access, metrics)
+    RelayState::new(key_cache, access, metrics, rate_limit)
 }
 
 #[cfg(test)]
@@ -413,7 +504,7 @@ mod tests {
     async fn axum_relay_integration() -> Result<(), Box<dyn std::error::Error>>
     {
         // Create relay state
-        let state = create_relay_state();
+        let state = create_relay_state(None);
 
         // Create axum router with relay handler
         let app = Router::new()
@@ -533,5 +624,175 @@ mod tests {
 
         info!("Test completed successfully");
         Ok(())
+    }
+
+    #[tokio::test]
+    #[instrument]
+    async fn axum_relay_rate_limited() -> Result<(), Box<dyn std::error::Error>>
+    {
+        use std::num::NonZeroU32;
+        use std::time::Instant as StdInstant;
+
+        // Tight limit: 8 KiB/s sustained, 8 KiB burst. With 1 KiB
+        // datagrams that is 8 frames per second after the initial burst.
+        let rate_limit = RelayClientRxRateLimit {
+            bytes_per_second: NonZeroU32::new(8 * 1024).unwrap(),
+            burst_bytes: NonZeroU32::new(8 * 1024).unwrap(),
+        };
+
+        let state = create_relay_state(Some(rate_limit));
+
+        let app = Router::new()
+            .route("/relay", get(relay_handler))
+            .with_state(state.clone());
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let addr = listener.local_addr()?;
+        let server_handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("server error");
+        });
+
+        let relay_url = format!("http://{}/relay", addr);
+        let relay_url: RelayUrl = relay_url.parse()?;
+
+        let tls_client_config = CaRootsConfig::default()
+            .client_config(iroh_relay::tls::default_provider())?;
+
+        let a_secret_key = SecretKey::generate();
+        let resolver = DnsResolver::new();
+        let mut client_a = ClientBuilder::new(
+            relay_url.clone(),
+            a_secret_key,
+            resolver.clone(),
+        )
+        .tls_client_config(tls_client_config.clone())
+        .connect()
+        .await?;
+
+        let b_secret_key = SecretKey::generate();
+        let b_key = b_secret_key.public();
+        let mut client_b = ClientBuilder::new(
+            relay_url.clone(),
+            b_secret_key,
+            resolver.clone(),
+        )
+        .tls_client_config(tls_client_config)
+        .connect()
+        .await?;
+
+        // Send 24 KiB total in 24 x 1 KiB datagrams. With an 8 KiB bucket
+        // and 8 KiB/s refill, total wall time on the recv side should be
+        // significantly more than zero (>= ~1.5 s by the time the second
+        // and later batches drain the bucket).
+        let payload = vec![0u8; 1024];
+        let datagrams = Datagrams::from(payload);
+
+        let started = StdInstant::now();
+        for _ in 0..24 {
+            client_a
+                .send(ClientToRelayMsg::Datagrams {
+                    dst_endpoint_id: b_key,
+                    datagrams: datagrams.clone(),
+                })
+                .await?;
+        }
+
+        let mut received = 0usize;
+        while received < 24 {
+            let msg = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                client_b.next(),
+            )
+            .await
+            .expect("timeout waiting for message")
+            .expect("stream ended")?;
+            if matches!(msg, RelayToClientMsg::Datagrams { .. }) {
+                received += 1;
+            }
+        }
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed >= std::time::Duration::from_millis(1500),
+            "rate-limit appears not to be applied: elapsed = {elapsed:?}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(9),
+            "rate-limit appears stuck: elapsed = {elapsed:?}"
+        );
+
+        drop(client_a);
+        drop(client_b);
+        server_handle.abort();
+        Ok(())
+    }
+
+    use std::num::NonZeroU32;
+
+    fn poll_throttle_now(state: &mut RateLimitState) -> Poll<()> {
+        let waker = futures::task::noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        state.poll_throttle(&mut cx)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rate_limit_passes_under_burst() {
+        let limit = RelayClientRxRateLimit {
+            bytes_per_second: NonZeroU32::new(1024).unwrap(),
+            burst_bytes: NonZeroU32::new(1024).unwrap(),
+        };
+        let mut state = RateLimitState::new(limit);
+
+        state.charge(512);
+        assert!(matches!(poll_throttle_now(&mut state), Poll::Ready(())));
+        assert!(state.sleep.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rate_limit_paces_overrun() {
+        let limit = RelayClientRxRateLimit {
+            bytes_per_second: NonZeroU32::new(1024).unwrap(),
+            burst_bytes: NonZeroU32::new(1024).unwrap(),
+        };
+        let mut state = RateLimitState::new(limit);
+
+        // Charge 512 bytes keeps fill > 0, so no throttle.
+        state.charge(512);
+        assert!(matches!(poll_throttle_now(&mut state), Poll::Ready(())));
+        assert!(state.sleep.is_none());
+
+        // Charge another 1024 bytes drains the bucket past zero. iroh's
+        // Bucket triggers throttle when fill is <= 0, so a sleep is
+        // scheduled.
+        state.charge(1024);
+        assert!(state.sleep.is_some());
+        assert!(matches!(poll_throttle_now(&mut state), Poll::Pending));
+
+        // Drive the throttle to completion. With `start_paused = true`,
+        // tokio auto-advances virtual time when the only work pending is
+        // a sleep, so this completes deterministically once the bucket's
+        // refill deadline passes.
+        let started = tokio::time::Instant::now();
+        std::future::poll_fn(|cx| state.poll_throttle(cx)).await;
+        let elapsed = started.elapsed();
+
+        assert!(state.sleep.is_none());
+        // Some real virtual time must have passed.
+        assert!(
+            elapsed >= std::time::Duration::from_millis(100),
+            "throttle cleared too soon: elapsed = {elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_state_construction_safe_for_low_rates() {
+        // bytes_per_second = 100 over a 100ms refill window resolves to
+        // a per-period refill of 10 bytes (>0), so Bucket::new accepts
+        // it. Validates that small-but-nonzero rates do not panic.
+        let limit = RelayClientRxRateLimit {
+            bytes_per_second: NonZeroU32::new(100).unwrap(),
+            burst_bytes: NonZeroU32::new(10).unwrap(),
+        };
+        let _ = RateLimitState::new(limit);
     }
 }

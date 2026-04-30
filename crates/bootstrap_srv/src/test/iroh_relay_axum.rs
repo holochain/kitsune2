@@ -227,7 +227,7 @@ fn assert_authenticated_relay_rejects_unregistered(addr: SocketAddr) {
             ))
             .secret_key(secret_key)
             .alpns(vec![TEST_ALPN.to_vec()])
-            .ca_roots_config(iroh_relay::tls::CaRootsConfig::insecure_skip_verify())
+            .ca_roots_config(iroh::tls::CaRootsConfig::insecure_skip_verify())
         };
 
         let ep_1 = build_endpoint(ep_1_secret).bind().await.unwrap();
@@ -358,7 +358,7 @@ fn create_two_authenticated_endpoints_and_assert_message_is_received(
                 .secret_key(secret_key)
                 .alpns(vec![TEST_ALPN.to_vec()])
                 .ca_roots_config(
-                    iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
+                    iroh::tls::CaRootsConfig::insecure_skip_verify(),
                 )
         };
 
@@ -460,18 +460,14 @@ fn create_two_endpoints_and_assert_message_is_received(
         let ep_1 = iroh::Endpoint::builder(Minimal)
             .relay_mode(iroh::RelayMode::Custom(relay_map.clone()))
             .alpns(vec![TEST_ALPN.to_vec()])
-            .ca_roots_config(
-                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
-            )
+            .ca_roots_config(iroh::tls::CaRootsConfig::insecure_skip_verify())
             .bind()
             .await
             .unwrap();
         let ep_2 = iroh::Endpoint::builder(Minimal)
             .relay_mode(iroh::RelayMode::Custom(relay_map))
             .alpns(vec![TEST_ALPN.to_vec()])
-            .ca_roots_config(
-                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
-            )
+            .ca_roots_config(iroh::tls::CaRootsConfig::insecure_skip_verify())
             .bind()
             .await
             .unwrap();
