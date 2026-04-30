@@ -163,6 +163,9 @@ rand_chacha = "0.9"
 jsonschema = "0.30.0"
 
 [patch.crates-io]
+iroh-base = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079" }
+iroh-dns = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079" }
+iroh-relay = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079" }
 #sbd-server = { path = "../sbd/rust/sbd-server" }
 #sbd-client = { path = "../sbd/rust/sbd-client" }
 #sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
