@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.1...v0.5.0-dev.2)\] - 2026-04-30
+
+### Features
+
+- \[**BREAKING**\] Per-space bootstrap auth and relay configuration by @lucksus in [#479](https://github.com/holochain/kitsune2/pull/479)
+  - Each space can have its own bootstrap server URL + auth material and its own iroh relay server + relay auth material, allowing authed and open spaces to coexist on a single node.
+  - Breaking changes: - Url now supports multiple path segments (wire protocol change) - Transport trait: new configure_for_space() / unconfigure_for_space() - Endpoint trait: new remove_relay(), pub_key_bytes() - TxImpHnd: new_listening_address() gains optional space_id parameter
+  - Key design decisions: - Bootstrap auth: CoreBootstrapConfig.auth_material_base64 in per-space   config takes precedence over builder.auth_material_bootstrap (same   pattern as server_url) - Relay config: IrohTransportConfig carries relay_url and   auth_material_relay_base64, applied via configure_for_space() - Preflight relay matching: exact relay URL match, no fallback to global   relay when peer is on an unknown relay - Three relay maps collapsed into single space_relays map - own_url_for_preflight() shared between IrohTransport and   ConnectionContext
+- Upgrade dependencies, including bumping to latest Iroh by @ThetaSinner
+
+### Bug Fixes
+
+- Stabilize iroh relay in bootstrap_srv (#491) by @veeso in [#524](https://github.com/holochain/kitsune2/pull/524)
+  - Add handshake timeout, fix QAD on authenticated relay path, improve error formatting and tracing, add relay benchmarks and probe test.
+  - Wrap handshake+auth in 30s timeout to prevent stalled clients - Replace Debug formatting with Display in WebSocket adapter errors - Fix QAD disabled on insert_relay auth path (RelayConfig::from) - Upgrade relay tracing: debug for handshake/auth, info for registration - Classify expected errors (timeout, disconnect, denied) as debug - Add Criterion benchmarks for relay throughput (1/8/32 KiB) - Add ignored relay probe test for external relay comparison - Add code comparison analysis vs upstream iroh-relay
+- Always build docker images with locked dependencies to avoid building a release that uses different dependencies than have been tested by @ThetaSinner in [#531](https://github.com/holochain/kitsune2/pull/531)
+
+### Miscellaneous Tasks
+
+- Update the CONTRIBUTING.md with shared content in [#529](https://github.com/holochain/kitsune2/pull/529)
+
+### First-time Contributors
+
+- @holochain-release-automation2 made their first contribution in [#529](https://github.com/holochain/kitsune2/pull/529)
+
 ## \[[0.5.0-dev.1](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.0...v0.5.0-dev.1)\] - 2026-04-20
 
 ### Features
