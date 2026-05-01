@@ -2373,8 +2373,7 @@ dependencies = [
 [[package]]
 name = "iroh-base"
 version = "0.98.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "738865784637830fb14204ebd3047922db83bc1816a59027af29579b9c27bd99"
+source = "git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079#4002ec174335f30a2e012674b960822e33ec3079"
 dependencies = [
  "curve25519-dalek 5.0.0-pre.6",
  "data-encoding",
@@ -2395,8 +2394,7 @@ dependencies = [
 [[package]]
 name = "iroh-dns"
 version = "0.98.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca474630d1e62ddef83149db6babe6a1055d901df9054349d31b22df99811b92"
+source = "git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079#4002ec174335f30a2e012674b960822e33ec3079"
 dependencies = [
  "derive_more",
  "iroh-base",
@@ -2442,8 +2440,7 @@ dependencies = [
 [[package]]
 name = "iroh-relay"
 version = "0.98.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4aa6e9a7277bfbb439739c52b57eb5f9288030983928412022b8e94a43d4d838"
+source = "git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079#4002ec174335f30a2e012674b960822e33ec3079"
 dependencies = [
  "ahash",
  "blake3",

@@ -120,6 +120,26 @@ pub struct Args {
     /// Default port is 7842 (iroh's default for QAD).
     #[arg(long)]
     pub quic_bind_addr: Option<std::net::SocketAddr>,
+
+    /// Sustained inbound byte rate per relay client connection (bytes/s).
+    ///
+    /// When set, the bootstrap server's embedded iroh relay handler will
+    /// pace inbound WebSocket frames per connection. Use together with
+    /// `--relay-client-rx-burst-bytes` to control burst allowance; if
+    /// burst is omitted it defaults to ~one tenth of this value.
+    ///
+    /// Default: unlimited.
+    #[arg(long)]
+    pub relay_client_rx_bytes_per_second: Option<std::num::NonZeroU32>,
+
+    /// Maximum allowed inbound burst per relay client connection (bytes).
+    ///
+    /// Has effect only when `--relay-client-rx-bytes-per-second` is also
+    /// set.
+    ///
+    /// Default: derived as bps/10 when the sustained rate is set.
+    #[arg(long)]
+    pub relay_client_rx_burst_bytes: Option<std::num::NonZeroU32>,
 }
 
 fn main() {
@@ -212,6 +232,12 @@ fn main() {
     {
         if let Some(quic_bind_addr) = args.quic_bind_addr {
             config.quic_bind_addr = Some(quic_bind_addr);
+        }
+        if let Some(bps) = args.relay_client_rx_bytes_per_second {
+            config.relay_client_rx_bytes_per_second = Some(bps);
+        }
+        if let Some(burst) = args.relay_client_rx_burst_bytes {
+            config.relay_client_rx_burst_bytes = Some(burst);
         }
     }
 

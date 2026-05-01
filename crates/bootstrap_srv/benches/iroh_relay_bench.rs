@@ -46,7 +46,7 @@ fn spawn_local_relay() -> RelayUrl {
     std::thread::spawn(move || {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let state = create_relay_state();
+            let state = create_relay_state(None);
             let app = Router::new()
                 .route("/relay", get(relay_handler))
                 .with_state(state);
