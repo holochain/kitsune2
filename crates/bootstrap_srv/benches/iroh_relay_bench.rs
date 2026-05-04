@@ -34,6 +34,7 @@ use iroh_relay::{
     client::ClientBuilder,
     dns::DnsResolver,
     protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},
+    tls::make_dangerous_client_config,
 };
 use kitsune2_bootstrap_srv::iroh_relay_axum::{
     create_relay_state, relay_handler,
@@ -77,6 +78,7 @@ async fn connect_client_pair(relay_url: &RelayUrl) -> ClientPair {
     let a_key = a_secret.public();
     let client_a =
         ClientBuilder::new(relay_url.clone(), a_secret, resolver.clone())
+            .tls_client_config(make_dangerous_client_config())
             .connect()
             .await
             .unwrap();
@@ -84,6 +86,7 @@ async fn connect_client_pair(relay_url: &RelayUrl) -> ClientPair {
     let b_secret = SecretKey::generate();
     let b_key = b_secret.public();
     let client_b = ClientBuilder::new(relay_url.clone(), b_secret, resolver)
+        .tls_client_config(make_dangerous_client_config())
         .connect()
         .await
         .unwrap();
@@ -208,6 +211,7 @@ fn relay_roundtrip(relay_url: &RelayUrl) {
         let a_key = a_secret.public();
         let mut client_a =
             ClientBuilder::new(relay_url.clone(), a_secret, resolver.clone())
+                .tls_client_config(make_dangerous_client_config())
                 .connect()
                 .await
                 .unwrap();
@@ -216,6 +220,7 @@ fn relay_roundtrip(relay_url: &RelayUrl) {
         let b_key = b_secret.public();
         let mut client_b =
             ClientBuilder::new(relay_url.clone(), b_secret, resolver)
+                .tls_client_config(make_dangerous_client_config())
                 .connect()
                 .await
                 .unwrap();
@@ -294,4 +299,5 @@ criterion_group!(
     local_relay_roundtrip,
     external_relay_benchmarks
 );
+
 criterion_main!(benches);

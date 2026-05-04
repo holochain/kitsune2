@@ -60,7 +60,7 @@ rcgen = { workspace = true, optional = true }
 criterion = { workspace = true }
 iroh = { workspace = true, features = ["tls-aws-lc-rs", "test-utils"] }
 iroh-base = { workspace = true }
-iroh-relay = { workspace = true }
+iroh-relay = { workspace = true, features = ["tls-aws-lc-rs", "test-utils"] }
 kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
