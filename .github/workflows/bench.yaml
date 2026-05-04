@@ -1,0 +1,78 @@
+name: Bench
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  deployments: write
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Maximize build space (Linux)
+        uses: AdityaGarg8/remove-unwanted-software@v5
+        with:
+          remove-dotnet: "true"
+          remove-android: "true"
+          remove-codeql: "true"
+          remove-docker-images: "true"
+
+      - uses: Swatinem/rust-cache@v2
+
+      # we cannot use cmake 4 until openssl-src is updated
+      - name: cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.x"
+
+      - name: Run benchmarks and write results to file
+        env:
+          RUST_LOG: info
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > bench-output.txt
+          cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] as $p | $p.targets[] | select(.kind[] == "bench") | [$p.name, .name, ((.["required-features"] // []) | join(","))] | @tsv' \
+            | while IFS=$'\t' read -r pkg bench feats; do
+                echo "::group::bench $pkg::$bench"
+                args=(bench -p "$pkg" --bench "$bench")
+                if [ -n "$feats" ]; then
+                  args+=(--features "$feats")
+                fi
+                cargo "${args[@]}" -- --output-format bencher | tee -a bench-output.txt
+                echo "::endgroup::"
+              done
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Kitsune2 Benchmarks
+          tool: cargo
+          output-file-path: bench-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: true
+          fail-on-alert: true
+          gh-pages-branch: bench-history
+          benchmark-data-dir-path: dev/bench
+
+      - name: Upload raw bench output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-output
+          path: bench-output.txt

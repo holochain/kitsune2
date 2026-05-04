@@ -40,6 +40,11 @@ description = "Build all benchmarks without running them so they don't bit-rot"
 command = "cargo"
 args = ["bench", "--no-run"]
 
+[tasks.bench]
+description = "Run all benchmarks across the workspace"
+command = "cargo"
+args = ["bench"]
+
 #
 # Tasks that modify content and are not run on CI
 #
