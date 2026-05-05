@@ -48,8 +48,12 @@ sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 # iroh relay server-related dependencies
 iroh = { workspace = true, optional = true }
-iroh-base = { workspace = true, optional = true }
-iroh-relay = { workspace = true, features = [
+# iroh-base and iroh-relay are pulled from the holochain/iroh fork to expose
+# the `Bucket` rate-limit primitive required by the embedded relay handler.
+# Scoped to this crate (rather than via a workspace [patch.crates-io]) so that
+# transport_iroh keeps using the vanilla crates.io iroh-base/iroh-relay.
+iroh-base = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079", optional = true }
+iroh-relay = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079", features = [
   "tls-aws-lc-rs",
   "server",
 ], optional = true }
@@ -59,8 +63,8 @@ rcgen = { workspace = true, optional = true }
 [dev-dependencies]
 criterion = { workspace = true }
 iroh = { workspace = true, features = ["tls-aws-lc-rs", "test-utils"] }
-iroh-base = { workspace = true }
-iroh-relay = { workspace = true }
+iroh-base = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079" }
+iroh-relay = { git = "https://github.com/holochain/iroh", rev = "4002ec174335f30a2e012674b960822e33ec3079" }
 kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }

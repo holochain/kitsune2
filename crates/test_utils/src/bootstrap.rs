@@ -101,7 +101,9 @@ impl TestBootstrapSrv {
         #[cfg(feature = "relay")]
         let relay_state = {
             let relay_state =
-                kitsune2_bootstrap_srv::iroh_relay_axum::create_relay_state();
+                kitsune2_bootstrap_srv::iroh_relay_axum::create_relay_state(
+                    None,
+                );
 
             let relay_router = Router::new()
                 .route(

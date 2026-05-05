@@ -2335,10 +2335,10 @@ dependencies = [
  "hickory-resolver",
  "http",
  "ipnet",
- "iroh-base",
- "iroh-dns",
+ "iroh-base 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "iroh-dns 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "iroh-metrics",
- "iroh-relay",
+ "iroh-relay 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "n0-error",
  "n0-future",
  "n0-watcher",
@@ -2393,13 +2393,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroh-base"
+version = "0.98.0"
+source = "git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079#4002ec174335f30a2e012674b960822e33ec3079"
+dependencies = [
+ "curve25519-dalek 5.0.0-pre.6",
+ "data-encoding",
+ "data-encoding-macro",
+ "derive_more",
+ "digest 0.11.2",
+ "ed25519-dalek 3.0.0-pre.6",
+ "getrandom 0.4.2",
+ "n0-error",
+ "rand 0.10.1",
+ "serde",
+ "sha2 0.11.0-rc.5",
+ "url",
+ "zeroize",
+ "zeroize_derive",
+]
+
+[[package]]
 name = "iroh-dns"
 version = "0.98.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca474630d1e62ddef83149db6babe6a1055d901df9054349d31b22df99811b92"
 dependencies = [
  "derive_more",
- "iroh-base",
+ "iroh-base 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "n0-error",
+ "n0-future",
+ "simple-dns",
+ "strum 0.28.0",
+]
+
+[[package]]
+name = "iroh-dns"
+version = "0.98.0"
+source = "git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079#4002ec174335f30a2e012674b960822e33ec3079"
+dependencies = [
+ "derive_more",
+ "iroh-base 0.98.0 (git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079)",
  "n0-error",
  "n0-future",
  "simple-dns",
@@ -2459,8 +2493,67 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "iroh-base",
- "iroh-dns",
+ "iroh-base 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "iroh-dns 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "iroh-metrics",
+ "lru",
+ "n0-error",
+ "n0-future",
+ "noq",
+ "noq-proto",
+ "num_enum",
+ "pin-project",
+ "postcard",
+ "rand 0.10.1",
+ "rcgen 0.14.7",
+ "reloadable-state",
+ "reqwest 0.13.3",
+ "rustls",
+ "rustls-cert-file-reader",
+ "rustls-cert-reloadable-resolver",
+ "rustls-pki-types",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha1 0.11.0-rc.5",
+ "simdutf8",
+ "strum 0.28.0",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-rustls-acme",
+ "tokio-util",
+ "tokio-websockets",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "vergen-gitcl",
+ "webpki-roots",
+ "ws_stream_wasm",
+]
+
+[[package]]
+name = "iroh-relay"
+version = "0.98.0"
+source = "git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079#4002ec174335f30a2e012674b960822e33ec3079"
+dependencies = [
+ "ahash",
+ "blake3",
+ "bytes",
+ "cfg_aliases",
+ "clap",
+ "dashmap",
+ "data-encoding",
+ "derive_more",
+ "getrandom 0.4.2",
+ "hickory-resolver",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "iroh-base 0.98.0 (git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079)",
+ "iroh-dns 0.98.0 (git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079)",
  "iroh-metrics",
  "lru",
  "n0-error",
@@ -2738,8 +2831,8 @@ dependencies = [
  "futures",
  "http",
  "iroh",
- "iroh-base",
- "iroh-relay",
+ "iroh-base 0.98.0 (git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079)",
+ "iroh-relay 0.98.0 (git+https://github.com/holochain/iroh?rev=4002ec174335f30a2e012674b960822e33ec3079)",
  "kitsune2_test_utils",
  "num_cpus",
  "opentelemetry",
@@ -2866,7 +2959,7 @@ dependencies = [
  "base64",
  "bytes",
  "iroh",
- "iroh-relay",
+ "iroh-relay 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "kitsune2_api",
  "kitsune2_bootstrap_client",
  "kitsune2_bootstrap_srv",
