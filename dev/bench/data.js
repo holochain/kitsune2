@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777967987356,
+  "lastUpdate": 1778053530814,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -93,6 +93,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41963491,
             "range": "± 49693",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "517f4a3b64a772e48393bd71ce019c13511b5586",
+          "message": "ci: run cargo bench across the workspace on push to main\n\nAdd a `Bench` workflow that enumerates `[[bench]]` targets via\n`cargo metadata` and runs each one with `--output-format bencher` so the\nresults can be tracked by `benchmark-action/github-action-benchmark`.\nHistory is persisted on the `bench-history` branch and any benchmark\nthat drifts more than 150% versus the previous run fails the workflow.\n\nAlso fix the `iroh_relay_bench` so it actually runs: iroh-relay 0.98\nrequires a TLS client config to be set on `ClientBuilder` even when\ntalking to a local `http://` / `ws://` relay, otherwise the connect\npath panics with `MissingCryptoProvider`. Use the in-tree dangerous\nclient config and enable the `tls-aws-lc-rs` and `test-utils` features\non the `iroh-relay` dev-dependency to make it available.\n\nCloses #530",
+          "timestamp": "2026-05-06T09:36:14+02:00",
+          "tree_id": "f99a331ceb200ab4fe1a1ca0bf67d044d62c3286",
+          "url": "https://github.com/holochain/kitsune2/commit/517f4a3b64a772e48393bd71ce019c13511b5586"
+        },
+        "date": 1778053530073,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 86888,
+            "range": "± 718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 96950,
+            "range": "± 893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 111924,
+            "range": "± 2549",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999861,
+            "range": "± 19515",
             "unit": "ns/iter"
           }
         ]
