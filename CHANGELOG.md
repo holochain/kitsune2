@@ -4,6 +4,173 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.4.1](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.4.1)\] - 2026-05-06
+
+### Features
+
+- \[**BREAKING**\] Per-space bootstrap auth and relay configuration
+  - Each space can have its own bootstrap server URL + auth material and its own iroh relay server + relay auth material, allowing authed and open spaces to coexist on a single node.
+  - Breaking changes: - Url now supports multiple path segments (wire protocol change) - Transport trait: new configure_for_space() / unconfigure_for_space() - Endpoint trait: new remove_relay(), pub_key_bytes() - TxImpHnd: new_listening_address() gains optional space_id parameter
+  - Key design decisions: - Bootstrap auth: CoreBootstrapConfig.auth_material_base64 in per-space   config takes precedence over builder.auth_material_bootstrap (same   pattern as server_url) - Relay config: IrohTransportConfig carries relay_url and   auth_material_relay_base64, applied via configure_for_space() - Preflight relay matching: exact relay URL match, no fallback to global   relay when peer is on an unknown relay - Three relay maps collapsed into single space_relays map - own_url_for_preflight() shared between IrohTransport and   ConnectionContext
+- Increase default for iroh transport max frame bytes to 100 MiB
+- Downgrade Iroh to 0.95 while keeping relay integration
+- Tune QUIC keep alive to be less noisy and more forgiving for timeouts
+- Upgrade to Iroh 0.97 by @ThetaSinner in [#498](https://github.com/holochain/kitsune2/pull/498)
+- Switch default transport to iroh (#442) by @ThetaSinner in [#488](https://github.com/holochain/kitsune2/pull/488)
+  - Switch default transport from tx5 datachannel-vendored to iroh and default bootstrap server backend from sbd to iroh-relay.
+  - Remove tx5 datachannel-vendored and backend-libdatachannel features, keeping only backend-go-pion as the sole tx5 backend option.
+  - Simplify cfg gates, Makefile.toml tasks, and feature definitions across kitsune2, transport_tx5, bootstrap_srv, bootstrap_client, and kitsune2_showcase crates.
+- Periodic relay key re-registration by @ThetaSinner in [#486](https://github.com/holochain/kitsune2/pull/486)
+  - Clients now re-register their relay key every 2 minutes, keeping the allowlist entry alive and recovering from server restarts. Server-side allowlist pruning on token expiry is re-enabled.
+- Handle missing captive portal check by @ThetaSinner
+- Add connection up down counter metric by @jost-s in [#475](https://github.com/holochain/kitsune2/pull/475)
+- Gossip approximate DHT size and expose `dht_op_count` on `PeerMeta` as well as `local_op_count` on `GossipStateSummary` by @lucksus in [#469](https://github.com/holochain/kitsune2/pull/469)
+- Integrate iroh transport with relay authentication by @ThetaSinner in [#470](https://github.com/holochain/kitsune2/pull/470)
+- *(bootstrap_srv)* Integrate iroh relay service directly (#432) by @lucksus
+  - This commit replaces the reverse proxy approach with direct integration of the iroh RelayService into the kitsune2 bootstrap server.
+- Bootstrap server authentication #453 by @lucksus
+- Add transport-iroh support to showcase app by @mattyg in [#457](https://github.com/holochain/kitsune2/pull/457)
+- \[**BREAKING**\] Add configurable connect timeout to iroh transport by @jost-s in [#433](https://github.com/holochain/kitsune2/pull/433)
+- Introduce iroh-relay feature in bootstrap srv by @jost-s in [#419](https://github.com/holochain/kitsune2/pull/419)
+  - For iroh to make direct connections, a relay server is needed. The bootstrap server is extended by a new feature "iroh-relay", which can be set instead of "sbd", needed for the tx5 transport.
+- Make iroh max frame size configurable by @jost-s in [#416](https://github.com/holochain/kitsune2/pull/416)
+- Set peer unresponsive on iroh connection error by @jost-s
+- \[**BREAKING**\] Allow Bootstrap URL to be overridden inside space configuration (#395) by @veeso in [#395](https://github.com/holochain/kitsune2/pull/395)
+  - This change allows to specify config overrides. New and existing keys will be overridden to the default configuration
+  - **Breaking Change**: This change adds the `config_overrides` argument to the space create
+- Implement network stats for iroh transport by @jost-s
+- Add iroh transport by @jost-s in [#382](https://github.com/holochain/kitsune2/pull/382)
+- Implement tracking peer access state as peers are added and removed in the peer store, so that the access check can be sync without needing to use `block_on` by @ThetaSinner
+- Expose webrtc_connect_timeout to Tx5TransportConfig (#361) by @mattyg in [#361](https://github.com/holochain/kitsune2/pull/361)
+
+### Bug Fixes
+
+- Missing unresponsive mark on error path for opening connections
+- Downgrade iroh to 0.95.1 in the transport
+- Address review comments for QAD server integration by @ThetaSinner in [#499](https://github.com/holochain/kitsune2/pull/499)
+  - Update help text for --quic-bind-addr to reflect self-signed fallback - Don't overwrite preset quic_bind_addr with None when CLI flag is omitted - Propagate QAD startup failure instead of silently continuing
+- Explicitly set rustls crypto provider in QAD server by @ThetaSinner
+  - Use builder_with_provider(ring) instead of builder() which panics when no process-level CryptoProvider is installed. Matches the pattern used elsewhere in the codebase for mixed ring/aws-lc deps.
+- Update test workflow for renamed SBD docker image by @ThetaSinner in [#490](https://github.com/holochain/kitsune2/pull/490)
+- Align Docker image naming with new default transport by @ThetaSinner
+  - The default bootstrap_srv feature is now iroh-relay, so the base image (kitsune2_bootstrap_srv) builds with iroh-relay by default.
+  - Replace the kitsune2_bootstrap_srv_iroh_relay image with kitsune2_bootstrap_srv_sbd that explicitly enables the sbd feature.
+- Handle HTTP 202 pending-approval response in bootstrap auth by @ThetaSinner in [#480](https://github.com/holochain/kitsune2/pull/480)
+- Mirror request origin for auth-enabled servers without configured origins by @ThetaSinner
+- Mark peer unresponsive when connection establishment errors (#462) by @mattyg
+- Mark peer unresponsive when you fail to convert their url to an endpoint (#462) by @mattyg
+- Error when trying to send while no local agent is in that space (#451) by @lucksus
+  - Which will result in an empty pre-flight and thus the other agent blocking us.
+- Old Rust version in use for the `test_auth_hook_server` image by @ThetaSinner in [#452](https://github.com/holochain/kitsune2/pull/452)
+- Enforce blocking more strictly (#440) by @veeso in [#440](https://github.com/holochain/kitsune2/pull/440)
+  - Now blocking checks if any agent for a peer is blocked, instead of all of them
+- Install crypto provider for iroh-relay (#435) by @lucksus in [#435](https://github.com/holochain/kitsune2/pull/435)
+- Allow all features to be enabled by @jost-s in [#415](https://github.com/holochain/kitsune2/pull/415)
+  - Temporarily transport-tx5-* and transport-iroh could not be enabled simultaneously. This restriction has been lifted. When both tx5 and iroh transport features are enabled, the default builder will default to the tx5 transport. It can still be overridden by assigning a builder instance's transport an iroh transport factory.
+- Reduce log size of `ArcSet` with custom `Debug` implementation by @ThetaSinner in [#366](https://github.com/holochain/kitsune2/pull/366)
+- Drop locks as soon as possible when sending fetch queue drained notifications by @ThetaSinner
+- Unable to build libdatachannel in nix devShell due to missing clang lib (#363) by @mattyg in [#363](https://github.com/holochain/kitsune2/pull/363)
+  - Fix: unable to build libdatachannel in nix devShell due to missing clang lib
+  - Build: go missing from nix flake
+- Reduce lock hold on `space_map` by @ThetaSinner in [#362](https://github.com/holochain/kitsune2/pull/362)
+
+### Miscellaneous Tasks
+
+- Revert "fix: Downgrade iroh to 0.95.1 in the transport"
+  - This reverts commit 26236973080a0dfe627c96f1ea3b826312195380.
+- Add logs by @ThetaSinner
+- Support skipping semver checks (#464) by @ThetaSinner
+- Update deps by @ThetaSinner in [#455](https://github.com/holochain/kitsune2/pull/455)
+- Upgrade docker images in sbd bootstrap by @jost-s in [#429](https://github.com/holochain/kitsune2/pull/429)
+- Move cargo make tests with different features to member crates by @jost-s in [#420](https://github.com/holochain/kitsune2/pull/420)
+- Temporarily re-allow feature collision for release preparation by @jost-s
+- Prepare release (#398) by @mattyg in [#398](https://github.com/holochain/kitsune2/pull/398)
+- Describe error context when transcoding config by @jost-s
+- Upgrade rust to v1.91.1 by @jost-s in [#385](https://github.com/holochain/kitsune2/pull/385)
+- Stop printing on entry to `wait_ready` by @ThetaSinner in [#374](https://github.com/holochain/kitsune2/pull/374)
+- Bump tx5 to v0.8.1 & sbd to v0.4.0 by @jost-s in [#376](https://github.com/holochain/kitsune2/pull/376)
+
+### Build System
+
+- Bump rust edition to 2024 (#461) by @mattyg
+- Bump to latest stable rust (#461) by @mattyg
+- Bump flake lock (#461) by @mattyg
+- Remove test-go-verify from makefile, which no longer exists by @mattyg in [#456](https://github.com/holochain/kitsune2/pull/456)
+- Remove rustup from nix flake by @mattyg
+- Add definition for bootstrap srv with iroh relay by @jost-s
+- Prepare release (#396) by @mattyg in [#396](https://github.com/holochain/kitsune2/pull/396)
+- \[**BREAKING**\] Prefix tx5 and iroh features with transport by @jost-s in [#393](https://github.com/holochain/kitsune2/pull/393)
+- Add iroh feature by @jost-s
+- Upgrade sbd-server to 0.4.0, adds a cli arg 'otlp_endpoint' to kitsune2-bootstrap-server for configuring an opentelemetry endpoint for the sbd server (#375) by @mattyg in [#375](https://github.com/holochain/kitsune2/pull/375)
+
+### CI
+
+- Update release actions (#464) by @ThetaSinner
+- Use holochain-ci cachix (#462) by @mattyg
+- Remove nix build run on macos-15 by @jost-s in [#445](https://github.com/holochain/kitsune2/pull/445)
+- Revert temporary workaround to allow clashing feature in release workflow by @jost-s
+- Temporary workaround to run prepare release (#413) by @veeso in [#413](https://github.com/holochain/kitsune2/pull/413)
+  - Currently this workflow fails because of features clash. Temporary fix to that is to add this nice flag
+  - Closes no
+- Release from release branches by @ThetaSinner in [#367](https://github.com/holochain/kitsune2/pull/367)
+
+### Testing
+
+- Increase coverage of connection error handling
+- Extract fn encode_frame_header and write unit tests in iroh transport by @jost-s in [#392](https://github.com/holochain/kitsune2/pull/392)
+- Add unit tests for decode_frame in iroh transport by @jost-s
+- Add iroh integration test harness and move tests by @jost-s
+- Improve error messaging in tests by @ThetaSinner
+- Add new `TestTxHandler` that can be used in tests that need a preflight implementation that shares agents by @ThetaSinner
+- Improve flaky gossip tests for sync by @ThetaSinner in [#365](https://github.com/holochain/kitsune2/pull/365)
+
+### Refactor
+
+- \[**BREAKING**\] Split combined auth material into bootstrap and relay by @jost-s in [#485](https://github.com/holochain/kitsune2/pull/485)
+- Rename are_all_agents_at_url_blocked to is_any_agent_at_url_blocked and add comments to tests that need to be fixed once the blocking logic is fixed by @matthme in [#443](https://github.com/holochain/kitsune2/pull/443)
+- Abstract iroh endpoint by @jost-s in [#434](https://github.com/holochain/kitsune2/pull/434)
+- Abstract iroh connection by @jost-s
+- Abstract iroh recv stream and add mock implementation by @jost-s
+- Abstract iroh send stream and add mock implementation by @jost-s
+- Close connection when preflight couldn't be returned with iroh transport by @jost-s
+- Allow plain text urls for iroh relay by @jost-s in [#421](https://github.com/holochain/kitsune2/pull/421)
+- Use persistent streams in iroh connections by @jost-s in [#411](https://github.com/holochain/kitsune2/pull/411)
+  - Previously a uni-directional stream was created and destroyed for each message. That required a fixed delay to be awaited to make a preflight frame possible. Now the preflight is sent as a first frame on a newly opened connection and stream and the stream is kept alive until an error occurs or the connection is closed.
+- Use iroh test utils for test relay server and remove relay_allow_plain_text option by @jost-s in [#409](https://github.com/holochain/kitsune2/pull/409)
+- Combine url and preflight frames in iroh transport by @jost-s in [#402](https://github.com/holochain/kitsune2/pull/402)
+- Move iroh test utils to test-utils folder behind feature by @jost-s in [#405](https://github.com/holochain/kitsune2/pull/405)
+- \[**BREAKING**\] Rename is_webrtc to is_direct by @jost-s in [#394](https://github.com/holochain/kitsune2/pull/394)
+
+### Styling
+
+- Fix any_blocked variable name to match meaning by @matthme
+
+### Documentation
+
+- Add flow diagrams to iroh transport by @jost-s in [#444](https://github.com/holochain/kitsune2/pull/444)
+
+### Automated Changes
+
+- *(deps)* Bump cachix/cachix-action from 16 to 17 by @dependabot[bot] in [#484](https://github.com/holochain/kitsune2/pull/484)
+- *(deps)* Bump docker/metadata-action from 5 to 6 by @dependabot[bot] in [#473](https://github.com/holochain/kitsune2/pull/473)
+- *(deps)* Bump docker/build-push-action from 6 to 7 by @dependabot[bot] in [#472](https://github.com/holochain/kitsune2/pull/472)
+- *(deps)* Bump docker/login-action from 3 to 4 by @dependabot[bot] in [#471](https://github.com/holochain/kitsune2/pull/471)
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#468](https://github.com/holochain/kitsune2/pull/468)
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#448](https://github.com/holochain/kitsune2/pull/448)
+- *(deps)* Bump holochain/actions/.github/workflows/prepare-release.yml by @dependabot[bot] in [#447](https://github.com/holochain/kitsune2/pull/447)
+- *(deps)* Bump holochain/actions/.github/workflows/publish-release.yml by @dependabot[bot] in [#446](https://github.com/holochain/kitsune2/pull/446)
+- *(deps)* Bump actions/checkout from 5 to 6 by @dependabot[bot] in [#383](https://github.com/holochain/kitsune2/pull/383)
+
+### Other Changes
+
+- # This is a combination of 2 commits. by @ThetaSinner
+- --fixup=31047affea8826bb03b4c4e2161da6c26241661d by @jost-s in [#418](https://github.com/holochain/kitsune2/pull/418)
+
+### First-time Contributors
+
+- @mattyg made their first contribution
+- @holochain-release-automation2 made their first contribution in [#414](https://github.com/holochain/kitsune2/pull/414)
+
 ## \[[0.4.0-dev.10](https://github.com/holochain/kitsune2/compare/v0.4.0-dev.9...v0.4.0-dev.10)\] - 2026-04-07
 
 ### Features
