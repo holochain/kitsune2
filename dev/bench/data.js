@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778053530814,
+  "lastUpdate": 1778157880761,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -141,6 +141,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999861,
             "range": "± 19515",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "b39eaad6e29ceb422d7e2c05891281b2b6357686",
+          "message": "build(deps): bump johnwason/vcpkg-action from 7 to 8\n\nBumps [johnwason/vcpkg-action](https://github.com/johnwason/vcpkg-action) from 7 to 8.\n- [Release notes](https://github.com/johnwason/vcpkg-action/releases)\n- [Commits](https://github.com/johnwason/vcpkg-action/compare/v7...v8)\n\n---\nupdated-dependencies:\n- dependency-name: johnwason/vcpkg-action\n  dependency-version: '8'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-05-07T13:35:52+01:00",
+          "tree_id": "4fba322a8d84b0248ab8700201149b598c99276d",
+          "url": "https://github.com/holochain/kitsune2/commit/b39eaad6e29ceb422d7e2c05891281b2b6357686"
+        },
+        "date": 1778157880379,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 65394,
+            "range": "± 479",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 71313,
+            "range": "± 1240",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 85688,
+            "range": "± 1363",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999727,
+            "range": "± 1470",
             "unit": "ns/iter"
           }
         ]
