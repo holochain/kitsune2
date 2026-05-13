@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778157880761,
+  "lastUpdate": 1778683349304,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -189,6 +189,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999727,
             "range": "± 1470",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "1e76f0b810f50ca19b6b94ed71e168771de98780",
+          "message": "feat: export iroh relay metrics via OpenTelemetry\n\nBridge iroh-relay-holochain metrics (bytes_sent, bytes_recv, accepts,\ndisconnects, unique_client_keys, packets dropped, rate limiting) to\nOTEL using observable counters that read the iroh-metrics atomics at\nexport time.\n\nMove OTEL meter provider initialization out of the SBD feature gate\nso metrics export works regardless of which relay backend is active.\n\nAdd integration test that verifies the full chain: relay handles\nclient traffic, iroh-metrics atomics increment, OTEL exporter\ncaptures the values.\n\n# Conflicts:\n#\tCargo.lock\n#\tCargo.toml\n#\tcrates/bootstrap_srv/Cargo.toml",
+          "timestamp": "2026-05-13T15:34:29+01:00",
+          "tree_id": "1a3722cc90586a72848fd9a8f001b214dbb20b71",
+          "url": "https://github.com/holochain/kitsune2/commit/1e76f0b810f50ca19b6b94ed71e168771de98780"
+        },
+        "date": 1778683348893,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 72841,
+            "range": "± 4882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 76882,
+            "range": "± 4179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 92583,
+            "range": "± 4644",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999846,
+            "range": "± 6339",
             "unit": "ns/iter"
           }
         ]
