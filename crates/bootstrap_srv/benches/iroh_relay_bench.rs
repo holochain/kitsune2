@@ -30,9 +30,9 @@ use criterion::{
 };
 use futures::{SinkExt, StreamExt};
 use iroh_base::{RelayUrl, SecretKey};
+use iroh_dns::dns::DnsResolver;
 use iroh_relay::{
     client::ClientBuilder,
-    dns::DnsResolver,
     protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},
     tls::make_dangerous_client_config,
 };

@@ -1124,12 +1124,14 @@ async fn network_stats() {
     );
     // Both peers are on the same machine, so iroh should eventually
     // discover a direct path. Wait for the connection to be upgraded.
+    // iroh 1.0 retries NAT traversal every ~5s, so allow at least three
+    // attempts; the first one is unreliable on Ubuntu CI runners.
     retry_fn_until_timeout(
         || async {
             let stats = ep_1.dump_network_stats().await.unwrap();
             stats.transport_stats.connections[0].is_direct
         },
-        Some(5000),
+        Some(20000),
         Some(100),
     )
     .await

@@ -72,9 +72,10 @@ impl Connection for IrohConnection {
     }
 
     fn is_direct(&self) -> bool {
-        use n0_watcher::Watcher;
-        let paths = self.inner.paths().get();
-        paths.iter().any(|p| p.is_ip() && p.is_selected())
+        self.inner
+            .paths()
+            .iter()
+            .any(|p| p.is_ip() && p.is_selected())
     }
 }
 

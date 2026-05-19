@@ -5,11 +5,11 @@
 
 use axum::{
     extract::{
-        State,
+        FromRequestParts, State,
         ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade},
     },
     http::HeaderMap,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use bytes::Bytes;
 use futures::{Sink, Stream};
@@ -25,12 +25,10 @@ use futures::FutureExt;
 use iroh_relay::http::ProtocolVersion;
 use iroh_relay::{
     ExportKeyingMaterial, KeyCache,
-    protos::{
-        handshake, relay::PER_CLIENT_SEND_QUEUE_DEPTH, streams::StreamError,
-    },
+    protos::{handshake, streams::StreamError},
     server::{
-        Access, AccessConfig, Metrics, client::Config, clients::Clients,
-        streams::RelayedStream,
+        Access, AccessConfig, ClientRequest, Metrics, client::Config,
+        clients::Clients, streams::RelayedStream,
     },
 };
 
@@ -71,15 +69,33 @@ impl RelayState {
 /// Mount this at the `/relay` path in your axum router.
 pub async fn relay_handler(
     State(state): State<RelayState>,
-    ws: WebSocketUpgrade,
-    headers: HeaderMap,
+    request: axum::extract::Request,
 ) -> Response {
+    let (mut parts, _body) = request.into_parts();
+
     // Extract the client auth header if present
-    let client_auth_header =
-        headers.get(iroh_relay::http::CLIENT_AUTH_HEADER).cloned();
+    let client_auth_header = parts
+        .headers
+        .get(iroh_relay::http::CLIENT_AUTH_HEADER)
+        .cloned();
 
     let has_auth = client_auth_header.is_some();
     debug!(?has_auth, "Relay WebSocket upgrade request");
+
+    // Run the WebSocketUpgrade extractor on the request parts so the
+    // upgrade handle is captured. WebSocketUpgrade is a FromRequestParts
+    // extractor; it borrows from `parts` and leaves it usable afterwards.
+    let ws =
+        match WebSocketUpgrade::from_request_parts(&mut parts, &state).await {
+            Ok(ws) => ws,
+            Err(rejection) => return rejection.into_response(),
+        };
+
+    // Snapshot the request bits an `AccessConfig::Restricted` hook might
+    // need (URI, method, headers, version). `http::request::Parts` is not
+    // `Clone` because it carries an `Extensions` bag, so we rebuild a
+    // fresh `Parts` with only the values `ClientRequest` exposes.
+    let client_request_parts = snapshot_request_parts(&parts);
 
     // iroh 0.98+ clients advertise a comma-separated list of supported relay
     // protocol versions via `Sec-Websocket-Protocol` and fail the connection
@@ -89,8 +105,13 @@ pub async fn relay_handler(
     let ws = ws.protocols([ProtocolVersion::V1.to_str()]);
 
     ws.on_upgrade(move |socket| async move {
-        if let Err(e) =
-            handle_relay_websocket(socket, state, client_auth_header).await
+        if let Err(e) = handle_relay_websocket(
+            socket,
+            state,
+            client_auth_header,
+            client_request_parts,
+        )
+        .await
         {
             let msg = e.to_string().to_lowercase();
             // String-matching error classifier. The substrings come from a
@@ -158,10 +179,7 @@ impl Stream for AxumWebSocketAdapter {
                     }
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    // Convert axum error to StreamError
-                    return Poll::Ready(Some(Err(StreamError::Io(
-                        std::io::Error::other(e.to_string()),
-                    ))));
+                    return Poll::Ready(Some(Err(StreamError::from_std(e))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
                 Poll::Pending => return Poll::Pending,
@@ -179,9 +197,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
     ) -> Poll<Result<(), Self::Error>> {
         match self.inner.as_mut().poll_ready(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(e.to_string()),
-            ))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::from_std(e))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -193,7 +209,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
         self.inner
             .as_mut()
             .start_send(AxumMessage::Binary(item))
-            .map_err(|e| StreamError::Io(std::io::Error::other(e.to_string())))
+            .map_err(StreamError::from_std)
     }
 
     fn poll_flush(
@@ -202,9 +218,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
     ) -> Poll<Result<(), Self::Error>> {
         match self.inner.as_mut().poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(e.to_string()),
-            ))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::from_std(e))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -215,9 +229,7 @@ impl Sink<Bytes> for AxumWebSocketAdapter {
     ) -> Poll<Result<(), Self::Error>> {
         match self.inner.as_mut().poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::Io(
-                std::io::Error::other(e.to_string()),
-            ))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(StreamError::from_std(e))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -242,6 +254,7 @@ async fn handle_relay_websocket(
     socket: WebSocket,
     state: RelayState,
     client_auth_header: Option<http::HeaderValue>,
+    request_parts: http::request::Parts,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     trace!("Relay WebSocket connection established");
 
@@ -259,8 +272,9 @@ async fn handle_relay_websocket(
 
         debug!(?authentication.mechanism, "accept: verified authentication");
 
-        let is_authorized =
-            state.access.is_allowed(authentication.client_key).await;
+        let client_request =
+            ClientRequest::new(authentication.client_key, request_parts);
+        let is_authorized = state.access.is_allowed(&client_request).await;
         let client_key = authentication
             .authorize_if(is_authorized, &mut adapter)
             .await?;
@@ -281,14 +295,10 @@ async fn handle_relay_websocket(
     let io = RelayedStream::new(adapter, state.key_cache.clone());
 
     trace!("accept: build client conn");
-    let client_conn_builder = Config {
-        endpoint_id: client_key,
-        stream: io,
-        write_timeout: state.write_timeout,
-        channel_capacity: PER_CLIENT_SEND_QUEUE_DEPTH,
-        // TODO Update in sync with the client and deploy at V2
-        protocol_version: ProtocolVersion::V1,
-    };
+    // TODO Update in sync with the client and deploy at V2
+    let mut client_conn_builder =
+        Config::new(client_key, io, ProtocolVersion::V1);
+    client_conn_builder.write_timeout = state.write_timeout;
 
     // Register the client with the relay server
     state
@@ -298,6 +308,28 @@ async fn handle_relay_websocket(
     info!(key = %client_key.fmt_short(), "relay client registered");
 
     Ok(())
+}
+
+/// Rebuild a fresh `http::request::Parts` with the fields a
+/// `ClientRequest` exposes (URI, method, headers, version).
+///
+/// `Parts` is not `Clone` because of its `Extensions` bag, so we
+/// construct a new one and copy over what's relevant. The
+/// extensions bag is intentionally left empty: nothing in
+/// `AccessConfig` reads from it.
+fn snapshot_request_parts(
+    parts: &http::request::Parts,
+) -> http::request::Parts {
+    let mut new_parts = http::Request::builder()
+        .method(parts.method.clone())
+        .uri(parts.uri.clone())
+        .body(())
+        .expect("building an empty http::Request must succeed")
+        .into_parts()
+        .0;
+    new_parts.headers = parts.headers.clone();
+    new_parts.version = parts.version;
+    new_parts
 }
 
 /// Handler for the relay probe endpoint (`/ping`).
@@ -370,9 +402,10 @@ pub fn create_relay_state_with_allowlist(
     allowlist: crate::RelayAllowlist,
 ) -> RelayState {
     let key_cache = KeyCache::new(1024);
-    let access =
-        Arc::new(AccessConfig::Restricted(Box::new(move |endpoint_id| {
+    let access = Arc::new(AccessConfig::Restricted(Box::new(
+        move |request: &ClientRequest| {
             let allowlist = allowlist.clone();
+            let endpoint_id = request.endpoint_id();
             async move {
                 let allowed = allowlist.is_allowed(&endpoint_id);
                 tracing::debug!(
@@ -384,7 +417,8 @@ pub fn create_relay_state_with_allowlist(
                 if allowed { Access::Allow } else { Access::Deny }
             }
             .boxed()
-        })));
+        },
+    )));
     let metrics = Arc::new(Metrics::default());
     RelayState::new(key_cache, access, metrics)
 }
@@ -400,9 +434,9 @@ mod tests {
     use tokio::net::TcpListener;
     use tracing::{info, instrument};
 
+    use iroh_dns::dns::DnsResolver;
     use iroh_relay::{
         client::ClientBuilder,
-        dns::DnsResolver,
         protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},
         tls::CaRootsConfig,
     };

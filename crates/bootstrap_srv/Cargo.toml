@@ -67,6 +67,7 @@ iroh-relay = { workspace = true, features = [
   "tls-aws-lc-rs",
   "test-utils",
 ] }
+iroh-dns = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
