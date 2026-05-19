@@ -34,7 +34,7 @@ pub async fn spawn_qad_server_self_signed(
     let cert_der = cert.cert.der().clone();
     let key_der = rustls::pki_types::PrivateKeyDer::from(
         rustls::pki_types::PrivatePkcs8KeyDer::from(
-            cert.key_pair.serialize_der(),
+            cert.signing_key.serialize_der(),
         ),
     );
 
@@ -54,16 +54,11 @@ async fn spawn_with_config(
     server_config: rustls::ServerConfig,
 ) -> Result<iroh_relay::server::Server, Box<dyn std::error::Error + Send + Sync>>
 {
-    let quic_config = iroh_relay::server::QuicConfig {
-        bind_addr,
-        server_config,
-    };
+    let mut quic_config = iroh_relay::server::QuicConfig::new(bind_addr);
+    quic_config.server_config = Some(server_config);
 
-    let config = iroh_relay::server::ServerConfig::<(), ()> {
-        relay: None,
-        quic: Some(quic_config),
-        metrics_addr: None,
-    };
+    let mut config = iroh_relay::server::ServerConfig::default();
+    config.quic = Some(quic_config);
 
     let server = iroh_relay::server::Server::spawn(config).await?;
 

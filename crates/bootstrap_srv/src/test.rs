@@ -921,7 +921,7 @@ fn start_with_tls() {
     let key_path = cert_dir.path().join("test_key.pem");
     File::create_new(&key_path)
         .unwrap()
-        .write_all(cert.key_pair.serialize_pem().as_bytes())
+        .write_all(cert.signing_key.serialize_pem().as_bytes())
         .unwrap();
 
     let mut config = Config::testing();

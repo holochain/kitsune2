@@ -69,11 +69,11 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
 # alternative transport implementation using iroh
-iroh = "0.98.2"
+iroh = "1.0.0-rc.0"
 # automock traits for tests
 mockall = "0.14"
 # watchable stream of values used in iroh transport
-n0-watcher = "0.6.1"
+n0-watcher = "1.0.0-rc.0"
 # bootstrap_srv uses this to determine worker thread count.
 num_cpus = "1.16.0"
 # api uses this for the kitsune2 wire protocol.
@@ -122,9 +122,9 @@ tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
 schemars = { version = "0.9", features = ["preserve_order"] }
 # Used in the showcase CLI
-rustyline = { version = "17.0" }
+rustyline = { version = "18.0" }
 # Used in showcase app for the commands
-strum = { version = "0.27.1", features = ["derive", "strum_macros"] }
+strum = { version = "0.28", features = ["derive", "strum_macros"] }
 # Used for telemetry in sbd server and bootstrap relay metrics
 opentelemetry = "0.30"
 opentelemetry_sdk = "0.30"
@@ -142,7 +142,7 @@ prost-build = "0.14"
 # above this section.
 # --- dev-dependencies ---
 # Criterion benchmarks
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
 kitsune2_bootstrap_srv = { version = "0.5.0-dev.0", path = "crates/bootstrap_srv" }
 kitsune2_core = { version = "0.5.0-dev.0", path = "crates/core" }
 kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }
@@ -150,17 +150,20 @@ kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }
 # used to test the bootstrap server with SBD enabled
 sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
-iroh-relay = "0.98"
-iroh-base = "0.98"
+iroh-relay = "1.0.0-rc.0"
+iroh-base = "1.0.0-rc.0"
+# DNS resolver split out of iroh-relay in the 1.0 release; used in tests
+# that drive a relay client.
+iroh-dns = "1.0.0-rc.0"
 
 # used to hash op data
-sha2 = "0.10.8"
+sha2 = "0.11"
 # Generating test certificates in the bootstrap_srv
-rcgen = "0.13"
+rcgen = "0.14"
 # Deterministic RNG for reproducible tests
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 # Used in the schema example
-jsonschema = "0.30.0"
+jsonschema = "0.46"
 
 [patch.crates-io]
 #sbd-server = { path = "../sbd/rust/sbd-server" }
