@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.2...v0.5.0-dev.3)\] - 2026-05-20
+
+### Features
+
+- Export iroh relay metrics via OpenTelemetry by @ThetaSinner in [#489](https://github.com/holochain/kitsune2/pull/489)
+  - Bridge iroh-relay-holochain metrics (bytes_sent, bytes_recv, accepts, disconnects, unique_client_keys, packets dropped, rate limiting) to OTEL using observable counters that read the iroh-metrics atomics at export time.
+  - Move OTEL meter provider initialization out of the SBD feature gate so metrics export works regardless of which relay backend is active.
+  - Add integration test that verifies the full chain: relay handles client traffic, iroh-metrics atomics increment, OTEL exporter captures the values.
+  - # Conflicts: #	Cargo.lock #	Cargo.toml #	crates/bootstrap_srv/Cargo.toml
+
+### Miscellaneous Tasks
+
+- Bump iroh to 1.0.0-rc.0 and refresh workspace dependencies by @ThetaSinner in [#543](https://github.com/holochain/kitsune2/pull/543)
+  - Bumps to the iroh 1.0 release-candidate line and rolls a batch of other workspace deps. Adapts the bootstrap_srv relay integration and the transport_iroh connection layer to the new iroh / iroh-relay APIs.
+  - Notable holds: opentelemetry stays at 0.30 (sbd-server 0.4.0 pins it transitively) and schemars stays at 0.9 (tx5-connection 0.8.1 pins it). Bump those once upstreams publish compatible releases.
+  - API adaptations: - iroh-relay 1.0: StreamError is now an alias for AnyError; switch to   from_std. ServerConfig / QuicConfig / client::Config are   non-exhaustive; use the new() / Default constructors. - AccessConfig::Restricted callback now takes &ClientRequest; rework   the axum handler to extract Request, run WebSocketUpgrade via   FromRequestParts, snapshot a fresh Parts, and thread it into the   handshake so the access-check call sees a real ClientRequest. - iroh-relay 1.0: dns module moved out into the iroh-dns crate; add it   as a workspace dev-dep and update imports. - iroh 1.0: Connection::paths() returns PathList<'_> directly (no   Watcher); drop the .get() and the n0_watcher::Watcher import. - rcgen 0.14: CertifiedKey::key_pair renamed to signing_key.
+
+### CI
+
+- Run cargo bench across the workspace on push to main by @veeso in [#535](https://github.com/holochain/kitsune2/pull/535)
+  - Add a `Bench` workflow that enumerates `[[bench]]` targets via `cargo metadata` and runs each one with `--output-format bencher` so the results can be tracked by `benchmark-action/github-action-benchmark`. History is persisted on the `bench-history` branch and any benchmark that drifts more than 150% versus the previous run fails the workflow.
+  - Also fix the `iroh_relay_bench` so it actually runs: iroh-relay 0.98 requires a TLS client config to be set on `ClientBuilder` even when talking to a local `http://` / `ws://` relay, otherwise the connect path panics with `MissingCryptoProvider`. Use the in-tree dangerous client config and enable the `tls-aws-lc-rs` and `test-utils` features on the `iroh-relay` dev-dependency to make it available.
+
+### Automated Changes
+
+- *(deps)* Bump johnwason/vcpkg-action from 7 to 8 by @dependabot[bot] in [#536](https://github.com/holochain/kitsune2/pull/536)
+
 ## \[[0.5.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.1...v0.5.0-dev.2)\] - 2026-04-30
 
 ### Features
