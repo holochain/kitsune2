@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778683349304,
+  "lastUpdate": 1779311781976,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -237,6 +237,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999846,
             "range": "± 6339",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "7f6986c0b062f695a158571cd71822e04297d585",
+          "message": "chore: bump iroh to 1.0.0-rc.0 and refresh workspace dependencies\n\nBumps to the iroh 1.0 release-candidate line and rolls a batch of other\nworkspace deps. Adapts the bootstrap_srv relay integration and the\ntransport_iroh connection layer to the new iroh / iroh-relay APIs.\n\nNotable holds: opentelemetry stays at 0.30 (sbd-server 0.4.0 pins it\ntransitively) and schemars stays at 0.9 (tx5-connection 0.8.1 pins it).\nBump those once upstreams publish compatible releases.\n\nAPI adaptations:\n- iroh-relay 1.0: StreamError is now an alias for AnyError; switch to\n  from_std. ServerConfig / QuicConfig / client::Config are\n  non-exhaustive; use the new() / Default constructors.\n- AccessConfig::Restricted callback now takes &ClientRequest; rework\n  the axum handler to extract Request, run WebSocketUpgrade via\n  FromRequestParts, snapshot a fresh Parts, and thread it into the\n  handshake so the access-check call sees a real ClientRequest.\n- iroh-relay 1.0: dns module moved out into the iroh-dns crate; add it\n  as a workspace dev-dep and update imports.\n- iroh 1.0: Connection::paths() returns PathList<'_> directly (no\n  Watcher); drop the .get() and the n0_watcher::Watcher import.\n- rcgen 0.14: CertifiedKey::key_pair renamed to signing_key.",
+          "timestamp": "2026-05-20T22:06:14+01:00",
+          "tree_id": "a164c5d5cb2f1ef35184eb61edd3b3a5e8d94030",
+          "url": "https://github.com/holochain/kitsune2/commit/7f6986c0b062f695a158571cd71822e04297d585"
+        },
+        "date": 1779311781032,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 81364,
+            "range": "± 5935",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 85597,
+            "range": "± 4639",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 106829,
+            "range": "± 4231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41965065,
+            "range": "± 82428",
             "unit": "ns/iter"
           }
         ]
