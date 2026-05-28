@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779318014165,
+  "lastUpdate": 1779972567078,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -333,6 +333,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999986,
             "range": "± 14183",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "cdunster@users.noreply.github.com",
+            "name": "Callum Dunster",
+            "username": "cdunster"
+          },
+          "committer": {
+            "email": "cdunster@users.noreply.github.com",
+            "name": "Callum Dunster",
+            "username": "cdunster"
+          },
+          "distinct": true,
+          "id": "62344701e2a4e8eb292551fc15789ce038b42a97",
+          "message": "test: fix the string comparision in metrics integration tests",
+          "timestamp": "2026-05-28T14:46:13+02:00",
+          "tree_id": "2f908b59e3b1632a406848ef17d4056cec5f6349",
+          "url": "https://github.com/holochain/kitsune2/commit/62344701e2a4e8eb292551fc15789ce038b42a97"
+        },
+        "date": 1779972566183,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 70572,
+            "range": "± 5012",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 77173,
+            "range": "± 3963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 91687,
+            "range": "± 5401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41753561,
+            "range": "± 101275",
             "unit": "ns/iter"
           }
         ]
