@@ -96,7 +96,7 @@ async fn connection_counter() {
             assert_eq!(metrics[0].name(), "kitsune2.transport.connections");
             assert_eq!(
                 metrics[0].description(),
-                "The number of active connections"
+                "The number of open connections"
             );
             if let AggregatedMetrics::I64(MetricData::Sum(sum)) =
                 metrics[0].data()
@@ -143,7 +143,7 @@ async fn connection_counter() {
             assert_eq!(metrics[0].name(), "kitsune2.transport.connections");
             assert_eq!(
                 metrics[0].description(),
-                "The number of active connections"
+                "The number of open connections"
             );
             if let AggregatedMetrics::I64(MetricData::Sum(sum)) =
                 metrics[0].data()
