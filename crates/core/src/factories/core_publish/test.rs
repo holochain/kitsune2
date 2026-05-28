@@ -6,8 +6,8 @@ use crate::{
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
     DynPeerMetaStore, DynPeerStore, DynTransport, DynVerifier, K2Result,
-    MockTransport, Publish, Signer, SpaceHandler, SpaceId, Timestamp,
-    TxBaseHandler, TxHandler, TxSpaceHandler, Url,
+    MockTransport, Publish, PublishOp, Signer, SpaceHandler, SpaceId,
+    Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler, Url,
 };
 use kitsune2_test_utils::{
     agent::{TestLocalAgent, TestVerifier},
@@ -46,7 +46,16 @@ async fn published_ops_can_be_retrieved() {
 
     core_publish_1
         .publish_ops(
-            vec![incoming_op_id_1.clone(), incoming_op_id_2.clone()],
+            vec![
+                PublishOp {
+                    op_id: incoming_op_id_1.clone(),
+                    metadata: None,
+                },
+                PublishOp {
+                    op_id: incoming_op_id_2.clone(),
+                    metadata: None,
+                },
+            ],
             url_2,
         )
         .await
@@ -97,12 +106,21 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
         .await
         .unwrap();
 
-    let op_ids = vec![incoming_op_id_1.clone(), incoming_op_id_2.clone()];
+    let publish_ops = vec![
+        PublishOp {
+            op_id: incoming_op_id_1.clone(),
+            metadata: None,
+        },
+        PublishOp {
+            op_id: incoming_op_id_2.clone(),
+            metadata: None,
+        },
+    ];
 
     // Publish to a non-existing Url
     core_publish_1
         .publish_ops(
-            op_ids.clone(),
+            publish_ops.clone(),
             Url::from_str("ws://notanexistingurl:80").unwrap(),
         )
         .await
@@ -111,7 +129,10 @@ async fn publish_to_invalid_url_does_not_impede_subsequent_publishes() {
     // Publish to an existing Url to verify that the prior publishing
     // to a non-existing Url did not cause an error that would
     // break the publishing flow
-    core_publish_1.publish_ops(op_ids, url_2).await.unwrap();
+    core_publish_1
+        .publish_ops(publish_ops, url_2)
+        .await
+        .unwrap();
 
     let ops = iter_check!(1000, {
         let ops = op_store_2
@@ -332,14 +353,26 @@ async fn no_publish_to_unresponsive_url() {
 
     // Publish to the unresponsive URL, which should be omitted.
     publish
-        .publish_ops(vec![op_id.clone()], unresponsive_url)
+        .publish_ops(
+            vec![PublishOp {
+                op_id: op_id.clone(),
+                metadata: None,
+            }],
+            unresponsive_url,
+        )
         .await
         .unwrap();
     // Publish to another URL which is not unresponsive, so that this send
     // can be awaited to have happened, which implies that the previous
     // publish to the unresponsive URL has been omitted.
     publish
-        .publish_ops(vec![op_id], responsive_url)
+        .publish_ops(
+            vec![PublishOp {
+                op_id,
+                metadata: None,
+            }],
+            responsive_url,
+        )
         .await
         .unwrap();
 

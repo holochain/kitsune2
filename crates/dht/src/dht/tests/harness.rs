@@ -3,7 +3,8 @@ use crate::dht::snapshot::DhtSnapshot;
 use crate::test::test_store;
 use crate::{Dht, DhtApi, DhtSnapshotNextAction};
 use kitsune2_api::{
-    AgentId, DhtArc, DynOpStore, K2Result, OpId, StoredOp, Timestamp,
+    AgentId, DhtArc, DynOpStore, IncomingOp, K2Result, OpId, StoredOp,
+    Timestamp,
 };
 use kitsune2_core::factories::MemoryOp;
 use rand::RngCore;
@@ -406,17 +407,21 @@ async fn transfer_ops(
     target_dht: &mut Dht,
     requested_ops: Vec<OpId>,
 ) -> K2Result<()> {
-    let selected = source
-        .retrieve_ops(requested_ops)
-        .await?
-        .into_iter()
-        .map(|op| op.op_data)
-        .collect::<Vec<_>>();
-    target.process_incoming_ops(selected.clone()).await?;
+    let retrieved = source.retrieve_ops(requested_ops).await?;
 
-    let stored_ops = selected
+    let incoming_ops: Vec<IncomingOp> = retrieved
+        .iter()
+        .map(|op| IncomingOp {
+            op_id: op.op_id.clone(),
+            op_data: op.op_data.clone(),
+            metadata: None,
+        })
+        .collect();
+    target.process_incoming_ops(incoming_ops).await?;
+
+    let stored_ops = retrieved
         .into_iter()
-        .map(|op| MemoryOp::from(op).into())
+        .map(|op| MemoryOp::from(op.op_data).into())
         .collect::<Vec<StoredOp>>();
     target_dht.inform_ops_stored(stored_ops).await?;
 

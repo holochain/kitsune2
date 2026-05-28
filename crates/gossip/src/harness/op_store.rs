@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use kitsune2_api::{
-    BoxFut, Builder, Config, DhtArc, DynOpStore, K2Error, K2Result, MetaOp,
-    OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
+    BoxFut, Builder, Config, DhtArc, DynOpStore, IncomingOp, K2Error, K2Result,
+    MetaOp, OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -60,11 +60,11 @@ pub struct MemoryOpRecord {
     pub processed: bool,
 }
 
-impl From<Bytes> for MemoryOpRecord {
-    fn from(value: Bytes) -> Self {
-        let inner: kitsune2_core::factories::MemoryOp = value.into();
+impl From<IncomingOp> for MemoryOpRecord {
+    fn from(value: IncomingOp) -> Self {
+        let inner: kitsune2_core::factories::MemoryOp = value.op_data.into();
         Self {
-            op_id: inner.compute_op_id(),
+            op_id: value.op_id,
             created_at: inner.created_at,
             stored_at: Timestamp::now(),
             op_data: inner.op_data,
@@ -98,18 +98,16 @@ pub struct Kitsune2MemoryOpStoreInner {
 impl OpStore for K2GossipMemoryOpStore {
     fn process_incoming_ops(
         &self,
-        op_list: Vec<Bytes>,
+        op_list: Vec<IncomingOp>,
     ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
         Box::pin(async move {
-            let ops_to_add = op_list
-                .iter()
-                .map(|op| -> serde_json::Result<(OpId, MemoryOpRecord)> {
-                    let op = MemoryOpRecord::from(op.clone());
-                    Ok((op.op_id.clone(), op))
+            let ops_to_add: Vec<(OpId, MemoryOpRecord)> = op_list
+                .into_iter()
+                .map(|op| {
+                    let record = MemoryOpRecord::from(op);
+                    (record.op_id.clone(), record)
                 })
-                .collect::<Result<Vec<_>, _>>().map_err(|e| {
-                K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
-            })?;
+                .collect();
 
             let mut op_ids = Vec::with_capacity(ops_to_add.len());
             let mut lock = self.write().await;

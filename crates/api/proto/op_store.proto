@@ -4,6 +4,8 @@ package kitsune2.op_store;
 
 // An op.
 message Op {
+    // Op id.
+    bytes op_id = 1;
     // Op data.
-    bytes data = 1;
+    bytes data = 2;
 }

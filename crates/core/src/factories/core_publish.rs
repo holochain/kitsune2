@@ -61,10 +61,36 @@ pub const PUBLISH_MOD_NAME: &str = "Publish";
 /// CorePublish configuration types.
 mod config {
     /// Configuration parameters for [CorePublishFactory](super::CorePublishFactory).
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
     #[serde(rename_all = "camelCase")]
-    pub struct CorePublishConfig {}
+    pub struct CorePublishConfig {
+        /// Maximum size in bytes of the metadata that can be attached to a published op.
+        ///
+        /// On outgoing publishes, [`Publish::publish_ops`](kitsune2_api::Publish::publish_ops)
+        /// returns a [`K2Error`](kitsune2_api::K2Error) if any op exceeds this limit.
+        /// On incoming publishes, entries that exceed this limit are dropped with a warning and the
+        /// rest of the batch is kept.
+        ///
+        /// Default: 1024.
+        #[serde(default = "CorePublishConfig::default_max_metadata_bytes")]
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub max_metadata_bytes: u32,
+    }
+
+    impl CorePublishConfig {
+        fn default_max_metadata_bytes() -> u32 {
+            1024
+        }
+    }
+
+    impl Default for CorePublishConfig {
+        fn default() -> Self {
+            Self {
+                max_metadata_bytes: Self::default_max_metadata_bytes(),
+            }
+        }
+    }
 
     /// Module-level configuration for CorePublish.
     #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
@@ -83,7 +109,7 @@ pub use config::*;
 pub struct CorePublishFactory {}
 
 impl CorePublishFactory {
-    /// Construct a new CorePublishFactory.
+    /// Construct a new [`CorePublishFactory`].
     pub fn create() -> DynPublishFactory {
         Arc::new(Self {})
     }
@@ -124,20 +150,21 @@ impl PublishFactory for CorePublishFactory {
     }
 }
 
-type OutgoingPublishOps = (Vec<OpId>, Url);
-type IncomingPublishOps = (Vec<OpId>, Url);
+type OutgoingPublishOps = (Vec<PublishOp>, Url);
+type IncomingPublishOps = (Vec<PublishOp>, Url);
 type OutgoingAgentInfo = (Arc<AgentInfoSigned>, Url);
 type IncomingAgentInfoEncoded = String;
 
 #[derive(Debug)]
-struct CorePublish {
+pub(crate) struct CorePublish {
+    max_metadata_bytes: u32,
     outgoing_publish_ops_tx: Sender<OutgoingPublishOps>,
     outgoing_publish_agent_tx: Sender<OutgoingAgentInfo>,
     tasks: Vec<AbortHandle>,
 }
 
 impl CorePublish {
-    fn new(
+    pub(crate) fn new(
         config: CorePublishConfig,
         space_id: SpaceId,
         builder: Arc<Builder>,
@@ -161,14 +188,28 @@ impl CorePublish {
 impl Publish for CorePublish {
     fn publish_ops(
         &self,
-        op_ids: Vec<OpId>,
+        ops: Vec<PublishOp>,
         target: Url,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            // Validate metadata sizes before queuing.
+            for op in &ops {
+                if let Some(meta) = &op.metadata
+                    && meta.len() as u32 > self.max_metadata_bytes
+                {
+                    return Err(K2Error::other(format!(
+                        "op {} metadata size {} bytes exceeds maximum {} bytes",
+                        op.op_id,
+                        meta.len(),
+                        self.max_metadata_bytes
+                    )));
+                }
+            }
+
             // Insert requests into publish queue.
             if let Err(err) = self
                 .outgoing_publish_ops_tx
-                .send((op_ids, target.clone()))
+                .send((ops, target.clone()))
                 .await
             {
                 tracing::warn!(
@@ -204,7 +245,7 @@ impl Publish for CorePublish {
 
 impl CorePublish {
     pub fn spawn_tasks(
-        _config: CorePublishConfig,
+        config: CorePublishConfig,
         space_id: SpaceId,
         builder: Arc<Builder>,
         fetch: DynFetch,
@@ -275,6 +316,7 @@ impl CorePublish {
         let message_handler = Arc::new(PublishMessageHandler {
             incoming_publish_ops_tx,
             incoming_publish_agent_tx,
+            max_metadata_bytes: config.max_metadata_bytes,
         });
 
         transport.register_module_handler(
@@ -284,6 +326,7 @@ impl CorePublish {
         );
 
         Self {
+            max_metadata_bytes: config.max_metadata_bytes,
             outgoing_publish_ops_tx,
             outgoing_publish_agent_tx,
             tasks,
@@ -296,9 +339,7 @@ impl CorePublish {
         peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
     ) {
-        while let Some((op_ids, peer_url)) =
-            outgoing_publish_ops_rx.recv().await
-        {
+        while let Some((ops, peer_url)) = outgoing_publish_ops_rx.recv().await {
             let Some(transport) = transport.upgrade() else {
                 tracing::warn!("Transport dropped, stopping publish ops task");
                 return;
@@ -321,7 +362,7 @@ impl CorePublish {
             }
 
             // Send ops publish message to peer.
-            let data = serialize_publish_ops_message(op_ids.clone());
+            let data = serialize_publish_ops_message(ops.clone());
             if let Err(err) = transport
                 .send_module(
                     peer_url.clone(),
@@ -332,7 +373,7 @@ impl CorePublish {
                 .await
             {
                 tracing::warn!(
-                    ?op_ids,
+                    ?ops,
                     ?peer_url,
                     "could not send publish ops: {err}"
                 );
@@ -344,11 +385,12 @@ impl CorePublish {
         mut response_rx: Receiver<IncomingPublishOps>,
         fetch: DynFetch,
     ) {
-        while let Some((op_ids, peer)) = response_rx.recv().await {
-            tracing::debug!(?peer, ?op_ids, "incoming publish ops");
+        while let Some((publish_ops, peer)) = response_rx.recv().await {
+            tracing::debug!(?peer, ?publish_ops, "incoming publish ops");
 
-            // Add incoming op ids to the fetch queue to let that retrieve the op data
-            if let Err(err) = fetch.request_ops(op_ids.clone(), peer).await {
+            // Add incoming ops to the fetch queue to let that retrieve the op data
+            if let Err(err) = fetch.request_ops(publish_ops.clone(), peer).await
+            {
                 tracing::warn!(
                     "could not insert publish ops request into fetch queue: {err}"
                 );

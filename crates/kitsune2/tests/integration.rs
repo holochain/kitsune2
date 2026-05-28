@@ -2,8 +2,8 @@ use bytes::Bytes;
 use kitsune2::default_builder;
 use kitsune2_api::{
     BoxFut, Builder, Config, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, Id,
-    K2Result, KitsuneHandler, LocalAgent, OpId, SpaceHandler, SpaceId,
-    Timestamp,
+    IncomingOp, K2Result, KitsuneHandler, LocalAgent, OpId, SpaceHandler,
+    SpaceId, Timestamp,
 };
 use kitsune2_core::{
     Ed25519LocalAgent,
@@ -35,7 +35,7 @@ use {
     sbd_server::SbdServer,
 };
 
-fn create_op_list(num_ops: u16) -> (Vec<Bytes>, Vec<OpId>) {
+fn create_op_list(num_ops: u16) -> (Vec<IncomingOp>, Vec<OpId>) {
     let mut ops = Vec::new();
     let mut op_ids = Vec::new();
     for _ in 0..num_ops {

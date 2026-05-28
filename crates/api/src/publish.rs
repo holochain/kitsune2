@@ -15,36 +15,60 @@ pub(crate) mod proto {
 }
 
 pub use proto::{
-    K2PublishMessage, PublishAgent, PublishOps, k2_publish_message::*,
+    K2PublishMessage, PublishAgent, PublishOpEntry, PublishOps,
+    k2_publish_message::*,
 };
 
-impl From<Vec<OpId>> for PublishOps {
-    fn from(value: Vec<OpId>) -> Self {
+/// A single op to be published, with optional host-supplied metadata.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PublishOp {
+    /// The ID of the op.
+    pub op_id: OpId,
+
+    /// Optional metadata to carry alongside the op through the fetch queue to the op store.
+    pub metadata: Option<Bytes>,
+}
+
+impl From<Vec<PublishOp>> for PublishOps {
+    fn from(value: Vec<PublishOp>) -> Self {
         Self {
-            op_ids: value.into_iter().map(Into::into).collect(),
+            entries: value
+                .into_iter()
+                .map(|op| PublishOpEntry {
+                    op_id: op.op_id.into(),
+                    metadata: op.metadata,
+                })
+                .collect(),
         }
     }
 }
 
-impl From<PublishOps> for Vec<OpId> {
+impl From<PublishOps> for Vec<PublishOp> {
     fn from(value: PublishOps) -> Self {
-        value.op_ids.into_iter().map(Into::into).collect()
+        value
+            .entries
+            .into_iter()
+            .map(|entry| PublishOp {
+                op_id: OpId::from(entry.op_id),
+                metadata: entry.metadata,
+            })
+            .collect()
     }
 }
 
-/// Serialize list of op ids to request.
-fn serialize_publish_ops(value: Vec<OpId>) -> Bytes {
+/// Serialize a list of publish ops.
+fn serialize_publish_ops(ops: Vec<PublishOp>) -> Bytes {
     let mut out = BytesMut::new();
-    PublishOps::from(value)
+    PublishOps::from(ops)
         .encode(&mut out)
         .expect("failed to encode publish ops request");
     out.freeze()
 }
 
-/// Serialize list of op ids to fetch request message.
-pub fn serialize_publish_ops_message(value: Vec<OpId>) -> Bytes {
+/// Serialize a list of publish ops into a publish ops wire message.
+pub fn serialize_publish_ops_message(ops: Vec<PublishOp>) -> Bytes {
     let mut out = BytesMut::new();
-    let data = serialize_publish_ops(value);
+    let data = serialize_publish_ops(ops);
     let publish_message = K2PublishMessage {
         publish_message_type: PublishMessageType::Ops.into(),
         data,
@@ -95,10 +119,12 @@ pub fn serialize_publish_agent_message(
 
 /// Trait for implementing a publish module to publish ops to other peers.
 pub trait Publish: 'static + Send + Sync + std::fmt::Debug {
-    /// Add op ids to be published to a peer.
+    /// Add ops to be published to a peer.
+    ///
+    /// Returns an error if any op's metadata exceeds the configured limit.
     fn publish_ops(
         &self,
-        op_ids: Vec<OpId>,
+        ops: Vec<PublishOp>,
         target: Url,
     ) -> BoxFut<'_, K2Result<()>>;
 
@@ -140,43 +166,44 @@ pub type DynPublishFactory = Arc<dyn PublishFactory>;
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::id::Id;
     use prost::Message;
 
     #[test]
     fn happy_publish_ops_encode_decode() {
-        let op_id_1 = OpId::from(Bytes::from_static(b"some_op_id"));
-        let op_id_2 = OpId::from(Bytes::from_static(b"another_op_id"));
-        let op_id_vec = vec![op_id_1, op_id_2];
-        let op_ids = PublishOps::from(op_id_vec.clone());
+        let op_1 = PublishOp {
+            op_id: OpId::from(Bytes::from_static(b"some_op_id")),
+            metadata: Some(Bytes::from_static(b"meta1")),
+        };
+        let op_2 = PublishOp {
+            op_id: OpId::from(Bytes::from_static(b"another_op_id")),
+            metadata: None,
+        };
+        let ops = vec![op_1, op_2];
+        let publish_ops = PublishOps::from(ops.clone());
 
-        let op_ids_enc = op_ids.encode_to_vec();
-        let op_ids_dec = PublishOps::decode(op_ids_enc.as_slice()).unwrap();
-        let op_ids_dec_vec = Vec::from(op_ids_dec.clone());
+        let enc = publish_ops.encode_to_vec();
+        let dec = PublishOps::decode(enc.as_slice()).unwrap();
+        let dec_ops = Vec::<PublishOp>::from(dec);
 
-        assert_eq!(op_ids, op_ids_dec);
-        assert_eq!(op_id_vec, op_ids_dec_vec);
+        assert_eq!(ops, dec_ops);
     }
 
     #[test]
     fn happy_publish_ops_message_encode_decode() {
-        let op_id = OpId(Id(bytes::Bytes::from_static(b"id_1")));
-        let op_ids = vec![op_id];
-        let publish_ops = serialize_publish_ops_message(op_ids.clone());
+        let op = PublishOp {
+            op_id: OpId::from(Bytes::from_static(b"id_1")),
+            metadata: Some(Bytes::from_static(b"host_meta")),
+        };
+        let ops = vec![op.clone()];
+        let message = serialize_publish_ops_message(ops);
 
-        let publish_ops_message_dec =
-            K2PublishMessage::decode(publish_ops).unwrap();
+        let decoded = K2PublishMessage::decode(message).unwrap();
         assert_eq!(
-            publish_ops_message_dec.publish_message_type,
+            decoded.publish_message_type,
             i32::from(PublishMessageType::Ops)
         );
-        let request_dec =
-            PublishOps::decode(publish_ops_message_dec.data).unwrap();
-        let op_ids_dec = request_dec
-            .op_ids
-            .into_iter()
-            .map(Into::<OpId>::into)
-            .collect::<Vec<_>>();
-        assert_eq!(op_ids, op_ids_dec);
+        let pub_ops = PublishOps::decode(decoded.data).unwrap();
+        let decoded_ops = Vec::<PublishOp>::from(pub_ops);
+        assert_eq!(vec![op], decoded_ops);
     }
 }

@@ -214,9 +214,8 @@ mod test {
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
 
         let op = make_op(vec![0]);
-        let expected_ops_data = vec![op.into()];
-        let request_message =
-            serialize_response_message(expected_ops_data.clone());
+        let op_data: bytes::Bytes = op.clone().into();
+        let request_message = serialize_response_message(vec![op.into()]);
 
         let task_handle = tokio::task::spawn(async move {
             let ops = incoming_response_rx
@@ -225,9 +224,9 @@ mod test {
                 .unwrap()
                 .0
                 .into_iter()
-                .map(|op| op.data)
+                .map(|proto_op| proto_op.data)
                 .collect::<Vec<_>>();
-            assert_eq!(ops, expected_ops_data);
+            assert_eq!(ops, vec![op_data]);
         });
 
         message_handler

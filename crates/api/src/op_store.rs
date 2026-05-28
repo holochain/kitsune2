@@ -26,10 +26,20 @@ pub struct MetaOp {
     pub op_data: Bytes,
 }
 
-impl From<Bytes> for Op {
-    fn from(value: Bytes) -> Self {
-        Self { data: value }
-    }
+/// An op received from a remote peer, ready to be stored by the host.
+///
+/// The `op_id` is supplied by the sender on the wire; the host should validate it against the
+/// `op_data` if necessary.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IncomingOp {
+    /// The ID of the op, as supplied by the sender on the wire.
+    pub op_id: OpId,
+
+    /// The raw op data.
+    pub op_data: Bytes,
+
+    /// Optional host-supplied metadata that was attached at publish time.
+    pub metadata: Option<Bytes>,
 }
 
 /// An op that has been stored by the Kitsune host.
@@ -72,7 +82,7 @@ pub trait OpStore: 'static + Send + Sync + std::fmt::Debug {
     /// if it is able to process them.
     fn process_incoming_ops(
         &self,
-        op_list: Vec<Bytes>,
+        op_list: Vec<IncomingOp>,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>>;
 
     /// Retrieve a batch of ops from the host by time range.
@@ -211,8 +221,11 @@ mod test {
     use prost::Message;
 
     #[test]
-    fn happy_meta_op_encode_decode() {
-        let op = Op::from(Bytes::from(vec![1; 128]));
+    fn happy_op_encode_decode() {
+        let op = Op {
+            op_id: Bytes::from_static(b"test_op_id"),
+            data: Bytes::from(vec![1; 128]),
+        };
         let op_enc = op.encode_to_vec();
         let op_dec = Op::decode(op_enc.as_slice()).unwrap();
 

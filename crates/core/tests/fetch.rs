@@ -187,12 +187,32 @@ async fn two_peer_fetch() {
 
     // Alice requests the ops from Bob.
     fetch_alice
-        .request_ops(requested_op_ids_bob.clone(), peer_url_bob)
+        .request_ops(
+            requested_op_ids_bob
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_bob,
+        )
         .await
         .unwrap();
     // Bob requests the ops from Alice.
     fetch_bob
-        .request_ops(requested_op_ids_alice.clone(), peer_url_alice)
+        .request_ops(
+            requested_op_ids_alice
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_alice,
+        )
         .await
         .unwrap();
 
@@ -249,7 +269,17 @@ async fn bob_comes_online_after_being_unresponsive() {
 
     // Alice requests the ops from Bob.
     fetch_alice
-        .request_ops(requested_op_ids_bob.clone(), peer_url_bob.clone())
+        .request_ops(
+            requested_op_ids_bob
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_bob.clone(),
+        )
         .await
         .unwrap();
 
@@ -294,7 +324,17 @@ async fn bob_comes_online_after_being_unresponsive() {
 
     // Alice needs to request the ops from Bob again.
     fetch_alice
-        .request_ops(requested_op_ids_bob.clone(), peer_url_bob)
+        .request_ops(
+            requested_op_ids_bob
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_bob,
+        )
         .await
         .unwrap();
 

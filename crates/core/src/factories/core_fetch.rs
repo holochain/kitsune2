@@ -1,11 +1,9 @@
+use bytes::Bytes;
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
 use std::collections::HashMap;
 use std::sync::MutexGuard;
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 use tokio::{
     sync::mpsc::{Receiver, Sender, channel},
     task::JoinHandle,
@@ -108,14 +106,14 @@ type IncomingResponse = (Vec<Op>, Url);
 struct State {
     space_id: SpaceId,
     report: DynReport,
-    requests: HashSet<OutgoingRequest>,
+    requests: HashMap<OutgoingRequest, Option<Bytes>>,
     notify_when_drained_senders: Vec<futures::channel::oneshot::Sender<()>>,
 }
 
 impl State {
     fn summary(&self) -> FetchStateSummary {
         FetchStateSummary {
-            pending_requests: self.requests.iter().fold(
+            pending_requests: self.requests.keys().fold(
                 HashMap::new(),
                 |mut acc, (op_id, peer_url)| {
                     acc.entry(op_id.clone())
@@ -161,11 +159,15 @@ impl CoreFetch {
 impl Fetch for CoreFetch {
     fn request_ops(
         &self,
-        op_ids: Vec<OpId>,
+        ops: Vec<PublishOp>,
         source: Url,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            let mut metadata_map: HashMap<OpId, Option<Bytes>> =
+                ops.into_iter().map(|op| (op.op_id, op.metadata)).collect();
+
             // Filter out requests for ops that are already in the op store.
+            let op_ids: Vec<OpId> = metadata_map.keys().cloned().collect();
             let new_op_ids =
                 self.op_store.filter_out_existing_ops(op_ids).await?;
 
@@ -173,12 +175,22 @@ impl Fetch for CoreFetch {
             // These need to be added up front, before sending them to the outgoing
             // request queue, otherwise the queue processes them faster than they're
             // being added to state and the request logic fails.
-            self.state.lock().expect("poisoned").requests.extend(
-                new_op_ids
-                    .clone()
-                    .into_iter()
-                    .map(|op_id| (op_id.clone(), source.clone())),
-            );
+            // Add metadata if there isn't any but never overwrite existing metadata.
+            {
+                let mut lock = self.state.lock().expect("poisoned");
+                for op_id in &new_op_ids {
+                    let meta = metadata_map.remove(op_id).flatten();
+                    let key = (op_id.clone(), source.clone());
+                    lock.requests
+                        .entry(key)
+                        .and_modify(|existing| {
+                            if existing.is_none() {
+                                *existing = meta.clone();
+                            }
+                        })
+                        .or_insert(meta);
+                }
+            }
 
             // Insert requests into fetch queue.
             for op_id in new_op_ids {
@@ -247,7 +259,7 @@ impl CoreFetch {
         let state = Arc::new(Mutex::new(State {
             space_id: space_id.clone(),
             report,
-            requests: HashSet::new(),
+            requests: HashMap::new(),
             notify_when_drained_senders: vec![],
         }));
 
@@ -349,7 +361,10 @@ impl CoreFetch {
             // from state and no request will be sent.
             {
                 let lock = state.lock().expect("poisoned");
-                if !lock.requests.contains(&(op_id.clone(), peer_url.clone())) {
+                if !lock
+                    .requests
+                    .contains_key(&(op_id.clone(), peer_url.clone()))
+                {
                     // Check if the fetch queue is drained and notify listeners.
                     Self::notify_listeners_if_queue_drained(lock);
 
@@ -382,7 +397,7 @@ impl CoreFetch {
                 );
                 // Remove all requests to that peer and notify if drained.
                 let mut lock = state.lock().expect("poisoned");
-                lock.requests.retain(|(_, a)| *a != peer_url);
+                lock.requests.retain(|(_, a), _| *a != peer_url);
                 Self::notify_listeners_if_queue_drained(lock);
             }
         }
@@ -425,9 +440,7 @@ impl CoreFetch {
                     tracing::error!("could not read ops from store: {err}");
                     continue;
                 }
-                Ok(ops) => {
-                    ops.into_iter().map(|op| op.op_data).collect::<Vec<_>>()
-                }
+                Ok(ops) => ops,
             };
 
             if ops.is_empty() {
@@ -465,8 +478,27 @@ impl CoreFetch {
         while let Some((ops, peer)) = incoming_response_rx.recv().await {
             let op_count = ops.len();
             tracing::debug!(?op_count, "incoming op response");
-            let ops_data = ops.clone().into_iter().map(|op| op.data).collect();
-            match op_store.process_incoming_ops(ops_data).await {
+
+            let incoming_ops: Vec<IncomingOp> = {
+                let lock = state.lock().unwrap();
+                ops.iter()
+                    .map(|op| {
+                        let op_id = OpId::from(op.op_id.clone());
+                        let metadata = lock
+                            .requests
+                            .get(&(op_id.clone(), peer.clone()))
+                            .cloned()
+                            .flatten();
+                        IncomingOp {
+                            op_id,
+                            op_data: op.data.clone(),
+                            metadata,
+                        }
+                    })
+                    .collect()
+            };
+
+            match op_store.process_incoming_ops(incoming_ops).await {
                 Err(err) => {
                     tracing::error!("could not process incoming ops: {err}");
                     // Ops could not be written to the op store. Their ids remain in the set of ops
@@ -480,9 +512,8 @@ impl CoreFetch {
                     // Ops were processed successfully by op store. Op ids are returned.
                     // The op ids are removed from the set of ops to fetch.
                     let mut lock = state.lock().unwrap();
-                    for (op_id, op) in processed_op_ids.iter().zip(ops) {
-                        // report that we received valid op data
-                        // from the remote peer.
+                    for (op_id, op) in processed_op_ids.iter().zip(&ops) {
+                        // Report that we received valid op data from the remote peer.
                         lock.report.fetched_op(
                             lock.space_id.clone(),
                             peer.clone(),
@@ -490,8 +521,9 @@ impl CoreFetch {
                             op.data.len() as u64,
                         );
                     }
-                    lock.requests
-                        .retain(|(op_id, _)| !processed_op_ids.contains(op_id));
+                    lock.requests.retain(|(op_id, _), _| {
+                        !processed_op_ids.contains(op_id)
+                    });
                 }
             }
         }

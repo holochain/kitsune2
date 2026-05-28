@@ -7,8 +7,7 @@ use crate::protocol::{
 use crate::state::{
     GossipRoundState, RoundStage, RoundStageDiscSectorDetailsDiff,
 };
-use kitsune2_api::decode_ids;
-use kitsune2_api::{K2Error, Url};
+use kitsune2_api::{K2Error, PublishOp, Url, decode_ids};
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
 
@@ -26,7 +25,16 @@ impl K2Gossip {
             .await?;
 
         self.fetch
-            .request_ops(decode_ids(response.missing_ids), from_peer.clone())
+            .request_ops(
+                decode_ids(response.missing_ids)
+                    .into_iter()
+                    .map(|op_id| PublishOp {
+                        op_id,
+                        metadata: None,
+                    })
+                    .collect(),
+                from_peer.clone(),
+            )
             .await?;
 
         let their_snapshot = response

@@ -14,7 +14,7 @@ use kitsune2_test_utils::{
 };
 use prost::Message;
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -118,14 +118,19 @@ async fn request_op_failures_are_purged_from_state() {
     let successful_peer_url = random_peer_url();
     fetch
         .request_ops(
-            vec![successful_op_id.clone()],
+            vec![PublishOp {
+                op_id: successful_op_id.clone(),
+                metadata: None,
+            }],
             successful_peer_url.clone(),
         )
         .await
         .unwrap();
 
-    let mut expected_state = HashSet::new();
-    expected_state.insert((successful_op_id, successful_peer_url));
+    let expected_state: HashMap<(OpId, Url), Option<bytes::Bytes>> =
+        [((successful_op_id, successful_peer_url), None)]
+            .into_iter()
+            .collect();
     assert_eq!(fetch.state.lock().unwrap().requests, expected_state);
 
     // Drop the channel receiver, which makes sending to the channel fail.
@@ -139,7 +144,16 @@ async fn request_op_failures_are_purged_from_state() {
 
     // Request an op that will get added to state.
     fetch
-        .request_ops(create_op_id_list(1), random_peer_url())
+        .request_ops(
+            create_op_id_list(1)
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            random_peer_url(),
+        )
         .await
         .unwrap();
 
@@ -196,9 +210,39 @@ async fn happy_op_fetch_from_multiple_agents() {
         .for_each(|op_id| expected_ops.push((op_id, peer_url_3.clone())));
 
     futures::future::join_all([
-        fetch.request_ops(op_list_1.clone(), peer_url_1.clone()),
-        fetch.request_ops(op_list_2.clone(), peer_url_2.clone()),
-        fetch.request_ops(op_list_3.clone(), peer_url_3.clone()),
+        fetch.request_ops(
+            op_list_1
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_1.clone(),
+        ),
+        fetch.request_ops(
+            op_list_2
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_2.clone(),
+        ),
+        fetch.request_ops(
+            op_list_3
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url_3.clone(),
+        ),
     ])
     .await;
 
@@ -216,7 +260,7 @@ async fn happy_op_fetch_from_multiple_agents() {
 
     // Check that op ids are still part of ops to fetch.
     let lock = fetch.state.lock().unwrap();
-    assert!(expected_ops.iter().all(|v| lock.requests.contains(v)));
+    assert!(expected_ops.iter().all(|v| lock.requests.contains_key(v)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -243,9 +287,18 @@ async fn filter_requests_for_held_ops() {
     let new_op = make_op(vec![3; 64]);
     let new_op_id = new_op.compute_op_id();
     let op_list = vec![
-        held_op_id_1.clone(),
-        held_op_id_2.clone(),
-        new_op_id.clone(),
+        PublishOp {
+            op_id: held_op_id_1.clone(),
+            metadata: None,
+        },
+        PublishOp {
+            op_id: held_op_id_2.clone(),
+            metadata: None,
+        },
+        PublishOp {
+            op_id: new_op_id.clone(),
+            metadata: None,
+        },
     ];
 
     fetch.request_ops(op_list, peer_url.clone()).await.unwrap();
@@ -326,14 +379,32 @@ async fn unresponsive_urls_are_filtered() {
 
     // Request ops from unresponsive URL, which should be omitted.
     fetch
-        .request_ops(op_list_1, responsive_url.clone())
+        .request_ops(
+            op_list_1
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            responsive_url.clone(),
+        )
         .await
         .unwrap();
     // Request ops from another URL which is not unresponsive, so that this request
     // can be awaited to have happened, which implies that the previous
     // publish to the unresponsive URL has been omitted.
     fetch
-        .request_ops(op_list_2, unresponsive_url.clone())
+        .request_ops(
+            op_list_2
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            unresponsive_url.clone(),
+        )
         .await
         .unwrap();
 
@@ -373,13 +444,32 @@ async fn requests_are_dropped_when_peer_url_unresponsive() {
         .unwrap();
 
     fetch
-        .request_ops(op_list_1.clone(), unresponsive_url.clone())
+        .request_ops(
+            op_list_1
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            unresponsive_url.clone(),
+        )
         .await
         .unwrap();
 
     // Add control agent's ops to set.
     fetch
-        .request_ops(op_list_2, responsive_url.clone())
+        .request_ops(
+            op_list_2
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            responsive_url.clone(),
+        )
         .await
         .unwrap();
 
@@ -391,7 +481,7 @@ async fn requests_are_dropped_when_peer_url_unresponsive() {
             .lock()
             .unwrap()
             .requests
-            .iter()
+            .keys()
             .all(|(_, peer_url)| *peer_url == responsive_url)
         {
             break;
@@ -437,7 +527,17 @@ async fn fetch_queue_notify_on_last_op_fetched() {
         .for_each(|op_id| expected_ops.push((op_id, peer_url.clone())));
 
     fetch
-        .request_ops(op_list.clone(), peer_url.clone())
+        .request_ops(
+            op_list
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url.clone(),
+        )
         .await
         .unwrap();
 
@@ -513,7 +613,17 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
         .for_each(|op_id| expected_ops.push((op_id, peer_url.clone())));
 
     fetch
-        .request_ops(op_list.clone(), peer_url.clone())
+        .request_ops(
+            op_list
+                .clone()
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url.clone(),
+        )
         .await
         .unwrap();
 
