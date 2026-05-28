@@ -1,1 +1,10 @@
 extend = "../../Makefile.toml"
+
+[tasks.test]
+workspace = false
+dependencies = ["test-metrics-feature"]
+
+[tasks.test-metrics-feature]
+workspace = false
+command = "cargo"
+args = ["test", "--features", "metrics"]
