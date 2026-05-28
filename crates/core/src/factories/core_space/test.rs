@@ -338,7 +338,7 @@ async fn broadcast_new_agent_info_on_resign() {
     impl Publish for PublishStub {
         fn publish_ops(
             &self,
-            _op_ids: Vec<OpId>,
+            _ops: Vec<PublishOp>,
             _target: Url,
         ) -> BoxFut<'_, K2Result<()>> {
             unimplemented!()

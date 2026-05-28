@@ -168,11 +168,26 @@ async fn requests_for_received_ops_are_removed_from_state() {
 
     futures::future::join_all([
         fetch.request_ops(
-            vec![incoming_op_id.clone(), another_op_id.clone()],
+            vec![
+                PublishOp {
+                    op_id: incoming_op_id.clone(),
+                    metadata: None,
+                },
+                PublishOp {
+                    op_id: another_op_id.clone(),
+                    metadata: None,
+                },
+            ],
             peer_url.clone(),
         ),
         // Add the same op twice with different agent ids.
-        fetch.request_ops(vec![incoming_op_id.clone()], another_peer_url),
+        fetch.request_ops(
+            vec![PublishOp {
+                op_id: incoming_op_id.clone(),
+                metadata: None,
+            }],
+            another_peer_url,
+        ),
     ])
     .await;
 
@@ -203,11 +218,15 @@ async fn requests_for_received_ops_are_removed_from_state() {
         let fetch_state = fetch.state.lock().unwrap();
         if !fetch_state
             .requests
-            .contains(&(incoming_op_id.clone(), peer_url.clone()))
+            .contains_key(&(incoming_op_id.clone(), peer_url.clone()))
         {
             // Only 1 request of another op should remain.
             assert_eq!(fetch_state.requests.len(), 1);
-            assert!(fetch_state.requests.contains(&(another_op_id, peer_url)));
+            assert!(
+                fetch_state
+                    .requests
+                    .contains_key(&(another_op_id, peer_url))
+            );
             break;
         }
     });
@@ -250,7 +269,13 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     let incoming_op_id = incoming_op.compute_op_id();
 
     fetch
-        .request_ops(vec![incoming_op_id.clone()], peer_url.clone())
+        .request_ops(
+            vec![PublishOp {
+                op_id: incoming_op_id.clone(),
+                metadata: None,
+            }],
+            peer_url.clone(),
+        )
         .await
         .unwrap();
 

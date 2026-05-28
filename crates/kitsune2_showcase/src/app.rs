@@ -322,7 +322,17 @@ impl App {
             let op_id = op_id.clone();
             if let Some(url) = peer.url.clone() {
                 tokio::task::spawn(async move {
-                    match space.publish().publish_ops(vec![op_id], url).await {
+                    match space
+                        .publish()
+                        .publish_ops(
+                            vec![PublishOp {
+                                op_id,
+                                metadata: None,
+                            }],
+                            url,
+                        )
+                        .await
+                    {
                         Ok(_) => printer_tx
                             .send(format!("Published to {}", &peer.agent))
                             .await

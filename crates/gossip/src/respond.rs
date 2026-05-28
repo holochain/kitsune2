@@ -175,7 +175,16 @@ impl K2Gossip {
         .await?;
 
         self.fetch
-            .request_ops(decode_ids(accept_response.new_ops), from_peer.clone())
+            .request_ops(
+                decode_ids(accept_response.new_ops)
+                    .into_iter()
+                    .map(|op_id| PublishOp {
+                        op_id,
+                        metadata: None,
+                    })
+                    .collect(),
+                from_peer.clone(),
+            )
             .await?;
 
         if accept_response.missing_agents.is_empty() {

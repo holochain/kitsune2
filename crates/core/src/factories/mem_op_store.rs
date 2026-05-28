@@ -5,8 +5,8 @@ use bytes::Bytes;
 use futures::future::BoxFuture;
 use kitsune2_api::*;
 use kitsune2_api::{
-    BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, K2Error, K2Result, MetaOp,
-    Op, OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
+    BoxFut, DhtArc, DynOpStore, DynOpStoreFactory, IncomingOp, K2Result,
+    MetaOp, Op, OpId, OpStore, OpStoreFactory, SpaceId, StoredOp, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -99,6 +99,18 @@ impl From<MemoryOp> for Bytes {
     }
 }
 
+/// Convert a [`MemoryOp`] into an [`IncomingOp`] for use in tests.
+impl From<MemoryOp> for IncomingOp {
+    fn from(value: MemoryOp) -> Self {
+        let op_id = value.compute_op_id();
+        IncomingOp {
+            op_id,
+            op_data: value.into(),
+            metadata: None,
+        }
+    }
+}
+
 /// This is the storage record for an op with computed fields.
 ///
 /// Test data should create [MemoryOp]s and not be aware of this type.
@@ -114,14 +126,24 @@ pub struct MemoryOpRecord {
     pub op_data: Vec<u8>,
 }
 
-impl From<Bytes> for MemoryOpRecord {
-    fn from(value: Bytes) -> Self {
-        let inner: MemoryOp = value.into();
+impl From<IncomingOp> for MemoryOpRecord {
+    fn from(value: IncomingOp) -> Self {
+        let inner: MemoryOp = value.op_data.into();
         Self {
-            op_id: inner.compute_op_id(),
+            op_id: value.op_id,
             created_at: inner.created_at,
             stored_at: Timestamp::now(),
             op_data: inner.op_data,
+        }
+    }
+}
+
+impl From<MemoryOp> for MetaOp {
+    fn from(value: MemoryOp) -> Self {
+        let op_id = value.compute_op_id();
+        MetaOp {
+            op_id,
+            op_data: value.into(),
         }
     }
 }
@@ -180,18 +202,16 @@ struct Kitsune2MemoryOpStoreInner {
 impl OpStore for Kitsune2MemoryOpStore {
     fn process_incoming_ops(
         &self,
-        op_list: Vec<Bytes>,
+        op_list: Vec<IncomingOp>,
     ) -> BoxFuture<'_, K2Result<Vec<OpId>>> {
         Box::pin(async move {
-            let ops_to_add = op_list
-                .iter()
-                .map(|op| -> serde_json::Result<(OpId, MemoryOpRecord)> {
-                    let op = MemoryOpRecord::from(op.clone());
-                    Ok((op.op_id.clone(), op))
+            let ops_to_add: Vec<(OpId, MemoryOpRecord)> = op_list
+                .into_iter()
+                .map(|op| {
+                    let record = MemoryOpRecord::from(op);
+                    (record.op_id.clone(), record)
                 })
-                .collect::<Result<Vec<_>, _>>().map_err(|e| {
-                K2Error::other_src("Failed to deserialize op data, are you using `Kitsune2MemoryOp`s?", e)
-            })?;
+                .collect();
 
             let mut op_ids = Vec::with_capacity(ops_to_add.len());
             let mut lock = self.write().await;

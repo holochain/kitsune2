@@ -2,10 +2,18 @@ syntax = "proto3";
 
 package kitsune2.publish;
 
+// A single op entry in a publish ops message.
+message PublishOpEntry {
+  // Op id.
+  bytes op_id = 1;
+  // Optional host-supplied metadata.
+  optional bytes metadata = 2;
+}
+
 // A publish ops message.
 message PublishOps {
-  // Op ids.
-  repeated bytes op_ids = 1;
+  // Op entries.
+  repeated PublishOpEntry entries = 1;
 }
 
 // A publish agent message.

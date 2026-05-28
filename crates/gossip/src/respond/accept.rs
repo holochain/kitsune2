@@ -48,7 +48,16 @@ impl K2Gossip {
 
         // Send discovered ops to the fetch queue
         self.fetch
-            .request_ops(decode_ids(accept.new_ops), from_peer.clone())
+            .request_ops(
+                decode_ids(accept.new_ops)
+                    .into_iter()
+                    .map(|op_id| PublishOp {
+                        op_id,
+                        metadata: None,
+                    })
+                    .collect(),
+                from_peer.clone(),
+            )
             .await?;
 
         let (send_new_ops, used_bytes, send_new_bookmark) = self

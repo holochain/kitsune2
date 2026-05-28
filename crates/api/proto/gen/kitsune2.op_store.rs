@@ -2,7 +2,10 @@
 /// An op.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Op {
-    /// Op data.
+    /// Op id.
     #[prost(bytes = "bytes", tag = "1")]
+    pub op_id: ::prost::bytes::Bytes,
+    /// Op data.
+    #[prost(bytes = "bytes", tag = "2")]
     pub data: ::prost::bytes::Bytes,
 }

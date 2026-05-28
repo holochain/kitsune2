@@ -1,8 +1,9 @@
 use super::file_data::FileData;
 use bytes::Bytes;
 use kitsune2_api::{
-    BoxFut, Builder, Config, DhtArc, DynOpStore, DynOpStoreFactory, K2Error,
-    K2Result, MetaOp, OpId, OpStore, OpStoreFactory, SpaceId, Timestamp,
+    BoxFut, Builder, Config, DhtArc, DynOpStore, DynOpStoreFactory, IncomingOp,
+    K2Error, K2Result, MetaOp, OpId, OpStore, OpStoreFactory, SpaceId,
+    Timestamp,
 };
 use kitsune2_core::factories::{MemOpStoreFactory, MemoryOpRecord};
 use std::{
@@ -65,7 +66,7 @@ struct FileOpStore {
 impl OpStore for FileOpStore {
     fn process_incoming_ops(
         &self,
-        op_list: Vec<Bytes>,
+        op_list: Vec<IncomingOp>,
     ) -> BoxFut<'_, K2Result<Vec<OpId>>> {
         Box::pin(async move {
             // Get a list of file names from the provided ops
@@ -73,12 +74,16 @@ impl OpStore for FileOpStore {
                 .iter()
                 .map(|op| {
                     let mem_op = MemoryOpRecord::from(op.clone());
-                     serde_json::from_slice::<FileData>(&mem_op.op_data)
+                    serde_json::from_slice::<FileData>(&mem_op.op_data)
                         .map(|f| f.name)
                 })
-                .collect::<Result<Vec<_>, _>>().map_err(|e| {
-                K2Error::other_src("Failed to deserialize op data, are you using Kitsune2's `MemoryOp`?", e)
-            })?;
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| {
+                    K2Error::other_src(
+                        "Failed to deserialize op data, are you using Kitsune2's `MemoryOp`?",
+                        e,
+                    )
+                })?;
 
             // Process the ops and add them the to in-memory op store,
             // returning the computed IDs of the passed ops
