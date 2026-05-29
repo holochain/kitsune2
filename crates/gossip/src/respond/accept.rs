@@ -1,3 +1,4 @@
+use super::op_ids_to_publish_ops;
 use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{
@@ -49,13 +50,7 @@ impl K2Gossip {
         // Send discovered ops to the fetch queue
         self.fetch
             .request_ops(
-                decode_ids(accept.new_ops)
-                    .into_iter()
-                    .map(|op_id| PublishOp {
-                        op_id,
-                        metadata: None,
-                    })
-                    .collect(),
+                op_ids_to_publish_ops(decode_ids(accept.new_ops)),
                 from_peer.clone(),
             )
             .await?;
