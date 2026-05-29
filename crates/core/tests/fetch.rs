@@ -4,7 +4,10 @@ use kitsune2_core::{default_test_builder, factories::MemoryOp};
 use kitsune2_test_utils::{
     enable_tracing, iter_check, random_bytes, space::TEST_SPACE_ID,
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 #[derive(Debug)]
 struct MockTxHandler {
@@ -340,4 +343,110 @@ async fn bob_comes_online_after_being_unresponsive() {
 
     // Wait until Alice has fetched Bob's ops.
     assert_ops_arrived_in_store(op_store_alice, requested_op_ids_bob).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn metadata_round_trip_through_fetch() {
+    enable_tracing();
+
+    // Alice: standard peer that holds the op.
+    let Peer {
+        fetch: fetch_alice,
+        op_store: op_store_alice,
+        peer_url: alice_url,
+        transport: _transport_alice,
+        ..
+    } = make_peer(None, true).await;
+    let _fetch_alice = fetch_alice.unwrap();
+
+    // Bob: manually constructed so we can supply a MockOpStore.
+    let bob_builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let bob_peer_meta_store = bob_builder
+        .peer_meta_store
+        .create(bob_builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let bob_tx_handler = Arc::new(MockTxHandler {
+        peer_url: std::sync::Mutex::new(
+            Url::from_str("ws://127.0.0.1:80").unwrap(),
+        ),
+    });
+    let bob_transport = bob_builder
+        .transport
+        .create(bob_builder.clone(), bob_tx_handler.clone())
+        .await
+        .unwrap();
+    let bob_report = bob_builder
+        .report
+        .create(bob_builder.clone(), bob_transport.clone())
+        .await
+        .unwrap();
+    bob_transport
+        .register_space_handler(TEST_SPACE_ID, bob_tx_handler.clone())
+        .unwrap();
+
+    let received: Arc<Mutex<Vec<IncomingOp>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let received_clone = received.clone();
+    let mut mock_store = MockOpStore::new();
+    mock_store
+        .expect_filter_out_existing_ops()
+        .returning(|ids| Box::pin(async { Ok(ids) }));
+    mock_store
+        .expect_process_incoming_ops()
+        .returning(move |ops| {
+            let r = received_clone.clone();
+            let ids: Vec<OpId> =
+                ops.iter().map(|op| op.op_id.clone()).collect();
+            Box::pin(async move {
+                r.lock().unwrap().extend(ops);
+                Ok(ids)
+            })
+        });
+    let bob_op_store: DynOpStore = Arc::new(mock_store);
+
+    let _fetch_bob = bob_builder
+        .fetch
+        .create(
+            bob_builder.clone(),
+            TEST_SPACE_ID,
+            bob_report,
+            bob_op_store,
+            bob_peer_meta_store,
+            bob_transport.clone(),
+        )
+        .await
+        .unwrap();
+
+    // Store the op in Alice's store so she can serve it.
+    let op = MemoryOp::new(Timestamp::now(), random_bytes(32));
+    let op_id = op.compute_op_id();
+    let meta = bytes::Bytes::from_static(b"host-metadata");
+    op_store_alice
+        .process_incoming_ops(vec![op.into()])
+        .await
+        .unwrap();
+
+    // Bob requests the op from Alice, carrying the host-supplied metadata.
+    _fetch_bob
+        .request_ops(
+            vec![PublishOp {
+                op_id: op_id.clone(),
+                metadata: Some(meta.clone()),
+            }],
+            alice_url,
+        )
+        .await
+        .unwrap();
+
+    // Wait for the op to arrive in Bob's mock store with the metadata intact.
+    iter_check!({
+        let ops = received.lock().unwrap();
+        if ops.iter().any(|op| op.op_id == op_id) {
+            let received_op = ops.iter().find(|op| op.op_id == op_id).unwrap();
+            assert_eq!(received_op.metadata, Some(meta.clone()));
+            break;
+        }
+    });
 }
