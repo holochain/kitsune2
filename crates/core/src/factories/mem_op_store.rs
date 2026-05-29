@@ -130,6 +130,8 @@ impl From<IncomingOp> for MemoryOpRecord {
     fn from(value: IncomingOp) -> Self {
         let inner: MemoryOp = value.op_data.into();
         Self {
+            // `op_id` is taken from the wire without validation
+            // Note: real hosts should verify against op_data.
             op_id: value.op_id,
             created_at: inner.created_at,
             stored_at: Timestamp::now(),
