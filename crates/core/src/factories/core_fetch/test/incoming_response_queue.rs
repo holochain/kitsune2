@@ -233,6 +233,92 @@ async fn requests_for_received_ops_are_removed_from_state() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn metadata_is_delivered_to_op_store() {
+    let requests_sent = Arc::new(Mutex::new(Vec::new()));
+    let mock_transport = create_mock_transport(requests_sent.clone());
+
+    let received_ops: Arc<Mutex<Vec<IncomingOp>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let received_ops_clone = received_ops.clone();
+
+    let mut op_store = MockOpStore::new();
+    op_store
+        .expect_filter_out_existing_ops()
+        .returning(|op_ids| Box::pin(async { Ok(op_ids) }));
+    op_store
+        .expect_process_incoming_ops()
+        .returning(move |ops| {
+            let received = received_ops_clone.clone();
+            Box::pin(async move {
+                let op_ids = ops.iter().map(|op| op.op_id.clone()).collect();
+                received.lock().unwrap().extend(ops);
+                Ok(op_ids)
+            })
+        });
+    let op_store = Arc::new(op_store);
+    let peer_meta_store = MemPeerMetaStore::create();
+
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
+
+    let fetch = CoreFetch::new(
+        CoreFetchConfig::default(),
+        TEST_SPACE_ID.clone(),
+        report,
+        op_store,
+        peer_meta_store,
+        mock_transport.clone(),
+    );
+
+    let peer_url = random_peer_url();
+    let op = MemoryOp::new(Timestamp::now(), vec![1; 32]);
+    let op_id = op.compute_op_id();
+    let meta = bytes::Bytes::from_static(b"host-metadata");
+
+    fetch
+        .request_ops(
+            vec![PublishOp {
+                op_id: op_id.clone(),
+                metadata: Some(meta.clone()),
+            }],
+            peer_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    iter_check!({
+        if !requests_sent.lock().unwrap().is_empty() {
+            break;
+        }
+    });
+
+    let fetch_message = serialize_response_message(vec![op.clone().into()]);
+    fetch
+        .message_handler
+        .recv_module_msg(
+            peer_url,
+            TEST_SPACE_ID,
+            crate::factories::core_fetch::MOD_NAME.to_string(),
+            fetch_message,
+        )
+        .unwrap();
+
+    iter_check!({
+        let received = received_ops.lock().unwrap();
+        if !received.is_empty() {
+            assert_eq!(received[0].op_id, op_id);
+            assert_eq!(received[0].metadata, Some(meta.clone()));
+            break;
+        }
+    });
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn op_ids_are_not_removed_when_storing_op_failed() {
     let requests_sent = Arc::new(Mutex::new(Vec::new()));
     let mock_transport = create_mock_transport(requests_sent.clone());
