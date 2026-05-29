@@ -337,7 +337,7 @@ async fn no_publish_to_unresponsive_url() {
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
     let (publish, _, _, peer_meta_store) =
-        create_publish(builder, transport).await;
+        create_publish(CorePublishConfig::default(), builder, transport).await;
 
     let op = MemoryOp::new(Timestamp::now(), vec![1]);
     let op_id = op.compute_op_id();
@@ -385,6 +385,38 @@ async fn no_publish_to_unresponsive_url() {
     };
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn publish_ops_rejects_oversized_metadata() {
+    let mut transport = MockTransport::new();
+    transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| {});
+    let transport = Arc::new(transport);
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let (publish, _, _, _) = create_publish(
+        CorePublishConfig {
+            max_metadata_bytes: 10,
+        },
+        builder,
+        transport,
+    )
+    .await;
+
+    let op = MemoryOp::new(Timestamp::now(), vec![1; 32]);
+    let result = publish
+        .publish_ops(
+            vec![PublishOp {
+                op_id: op.compute_op_id(),
+                metadata: Some(bytes::Bytes::from(vec![0u8; 11])),
+            }],
+            Url::from_str("ws://127.0.0.1:1").unwrap(),
+        )
+        .await;
+
+    assert!(result.is_err());
+}
+
 const INVALID_SIG: &[u8] = b"invalid-signature";
 
 #[derive(Debug)]
@@ -401,6 +433,7 @@ impl Signer for InvalidSigner {
 }
 
 async fn create_publish(
+    config: CorePublishConfig,
     builder: Arc<Builder>,
     transport: DynTransport,
 ) -> (CorePublish, DynOpStore, DynPeerStore, DynPeerMetaStore) {
@@ -447,7 +480,7 @@ async fn create_publish(
         .await
         .unwrap();
     let publish = CorePublish::new(
-        CorePublishConfig::default(),
+        config,
         TEST_SPACE_ID,
         builder,
         fetch,
@@ -503,8 +536,12 @@ impl Test {
             .register_space_handler(TEST_SPACE_ID, Arc::new(NoopHandler))
             .unwrap();
 
-        let (publish, op_store, peer_store, _) =
-            create_publish(builder, transport.clone()).await;
+        let (publish, op_store, peer_store, _) = create_publish(
+            CorePublishConfig::default(),
+            builder,
+            transport.clone(),
+        )
+        .await;
 
         Self {
             publish,
