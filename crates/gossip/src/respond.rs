@@ -29,6 +29,16 @@ mod harness;
 #[cfg(test)]
 mod tests;
 
+fn op_ids_to_publish_ops(op_ids: Vec<OpId>) -> Vec<PublishOp> {
+    op_ids
+        .into_iter()
+        .map(|op_id| PublishOp {
+            op_id,
+            metadata: None,
+        })
+        .collect()
+}
+
 impl K2Gossip {
     pub(super) async fn respond_to_msg(
         &self,
@@ -176,13 +186,7 @@ impl K2Gossip {
 
         self.fetch
             .request_ops(
-                decode_ids(accept_response.new_ops)
-                    .into_iter()
-                    .map(|op_id| PublishOp {
-                        op_id,
-                        metadata: None,
-                    })
-                    .collect(),
+                op_ids_to_publish_ops(decode_ids(accept_response.new_ops)),
                 from_peer.clone(),
             )
             .await?;
