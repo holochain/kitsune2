@@ -390,8 +390,7 @@ impl CorePublish {
             tracing::debug!(?peer, ?publish_ops, "incoming publish ops");
 
             // Add incoming ops to the fetch queue to let that retrieve the op data
-            if let Err(err) = fetch.request_ops(publish_ops.clone(), peer).await
-            {
+            if let Err(err) = fetch.request_ops(publish_ops, peer).await {
                 tracing::warn!(
                     "could not insert publish ops request into fetch queue: {err}"
                 );
