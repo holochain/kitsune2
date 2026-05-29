@@ -555,6 +555,69 @@ async fn fetch_queue_notify_on_last_op_fetched() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn metadata_upgrade_and_no_overwrite() {
+    let config = CoreFetchConfig::default();
+    let TestCase {
+        fetch, _transport, ..
+    } = setup_test(&config).await;
+
+    let op_id = random_op_id();
+    let peer_url = random_peer_url();
+    let meta = bytes::Bytes::from_static(b"host-meta");
+    let other_meta = bytes::Bytes::from_static(b"other-meta");
+
+    fetch
+        .request_ops(
+            vec![PublishOp {
+                op_id: op_id.clone(),
+                metadata: None,
+            }],
+            peer_url.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.state.lock().unwrap().requests
+            [&(op_id.clone(), peer_url.clone())],
+        None
+    );
+
+    // `None` upgrades to `Some` when metadata arrives.
+    fetch
+        .request_ops(
+            vec![PublishOp {
+                op_id: op_id.clone(),
+                metadata: Some(meta.clone()),
+            }],
+            peer_url.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.state.lock().unwrap().requests
+            [&(op_id.clone(), peer_url.clone())],
+        Some(meta.clone())
+    );
+
+    // Existing `Some` is not overwritten.
+    fetch
+        .request_ops(
+            vec![PublishOp {
+                op_id: op_id.clone(),
+                metadata: Some(other_meta),
+            }],
+            peer_url.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.state.lock().unwrap().requests
+            [&(op_id.clone(), peer_url.clone())],
+        Some(meta)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn fetch_queue_notify_when_all_peers_unresponsive() {
     enable_tracing();
     let config = CoreFetchConfig::default();
