@@ -372,8 +372,9 @@ impl CorePublish {
                 )
                 .await
             {
+                let op_ids: Vec<_> = ops.iter().map(|o| &o.op_id).collect();
                 tracing::warn!(
-                    ?ops,
+                    ?op_ids,
                     ?peer_url,
                     "could not send publish ops: {err}"
                 );
