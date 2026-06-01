@@ -5,8 +5,8 @@ use crate::{
 };
 use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
-    DynPeerMetaStore, DynPeerStore, DynTransport, DynVerifier, K2Result,
-    MockTransport, Publish, PublishOp, Signer, SpaceHandler, SpaceId,
+    DynPeerMetaStore, DynPeerStore, DynTransport, DynVerifier, K2Error,
+    K2Result, MockTransport, Publish, PublishOp, Signer, SpaceHandler, SpaceId,
     Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler, Url,
 };
 use kitsune2_test_utils::{
@@ -394,7 +394,7 @@ async fn publish_ops_rejects_oversized_metadata() {
     let transport = Arc::new(transport);
     let builder =
         Arc::new(default_test_builder().with_default_config().unwrap());
-    let (publish, _, _, _) = create_publish(
+    let (publish, op_store, _, _) = create_publish(
         CorePublishConfig {
             max_metadata_bytes: 10,
         },
@@ -404,6 +404,11 @@ async fn publish_ops_rejects_oversized_metadata() {
     .await;
 
     let op = MemoryOp::new(Timestamp::now(), vec![1; 32]);
+    op_store
+        .process_incoming_ops(vec![op.clone().into()])
+        .await
+        .unwrap();
+
     let result = publish
         .publish_ops(
             vec![PublishOp {
@@ -414,7 +419,10 @@ async fn publish_ops_rejects_oversized_metadata() {
         )
         .await;
 
-    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        matches!(&err, K2Error::Other { ctx, .. } if ctx.contains("metadata size") && ctx.contains("exceeds maximum"))
+    );
 }
 
 const INVALID_SIG: &[u8] = b"invalid-signature";
