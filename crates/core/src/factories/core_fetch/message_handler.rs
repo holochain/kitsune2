@@ -214,19 +214,18 @@ mod test {
         let peer = Url::from_str("wss://127.0.0.1:1").unwrap();
 
         let op = make_op(vec![0]);
+        let op_id = op.compute_op_id();
         let op_data: bytes::Bytes = op.clone().into();
         let request_message = serialize_response_message(vec![op.into()]);
 
         let task_handle = tokio::task::spawn(async move {
-            let ops = incoming_response_rx
-                .recv()
-                .await
-                .unwrap()
-                .0
-                .into_iter()
-                .map(|proto_op| proto_op.data)
-                .collect::<Vec<_>>();
-            assert_eq!(ops, vec![op_data]);
+            let proto_ops = incoming_response_rx.recv().await.unwrap().0;
+            let op_ids: Vec<_> =
+                proto_ops.iter().map(|o| o.op_id.clone()).collect();
+            let op_datas: Vec<_> =
+                proto_ops.into_iter().map(|o| o.data).collect();
+            assert_eq!(op_datas, vec![op_data]);
+            assert_eq!(op_ids, vec![Bytes::from(op_id)]);
         });
 
         message_handler
