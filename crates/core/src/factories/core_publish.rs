@@ -387,7 +387,8 @@ impl CorePublish {
         fetch: DynFetch,
     ) {
         while let Some((publish_ops, peer)) = response_rx.recv().await {
-            tracing::debug!(?peer, ?publish_ops, "incoming publish ops");
+            let op_ids: Vec<_> = publish_ops.iter().map(|o| &o.op_id).collect();
+            tracing::debug!(?peer, ?op_ids, "incoming publish ops");
 
             // Add incoming ops to the fetch queue to let that retrieve the op data
             if let Err(err) = fetch.request_ops(publish_ops, peer).await {
