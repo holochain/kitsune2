@@ -181,14 +181,10 @@ impl Fetch for CoreFetch {
                 for op_id in &new_op_ids {
                     let meta = metadata_map.remove(op_id).flatten();
                     let key = (op_id.clone(), source.clone());
-                    lock.requests
-                        .entry(key)
-                        .and_modify(|existing| {
-                            if existing.is_none() {
-                                *existing = meta.clone();
-                            }
-                        })
-                        .or_insert(meta);
+                    let entry = lock.requests.entry(key).or_default();
+                    if entry.is_none() {
+                        *entry = meta;
+                    }
                 }
             }
 
