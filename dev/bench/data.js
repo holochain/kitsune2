@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779972567078,
+  "lastUpdate": 1780405599823,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -381,6 +381,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41753561,
             "range": "± 101275",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "cdunster@users.noreply.github.com",
+            "name": "Callum Dunster",
+            "username": "cdunster"
+          },
+          "committer": {
+            "email": "cdunster@users.noreply.github.com",
+            "name": "Callum Dunster",
+            "username": "cdunster"
+          },
+          "distinct": true,
+          "id": "432b4845d44bb4a123641b1d89d32e74b7b5af2f",
+          "message": "refactor: simplify logic to override metadata",
+          "timestamp": "2026-06-02T15:03:21+02:00",
+          "tree_id": "f37b3fadd4f28f359f0f192b634eac272f8dcd12",
+          "url": "https://github.com/holochain/kitsune2/commit/432b4845d44bb4a123641b1d89d32e74b7b5af2f"
+        },
+        "date": 1780405598883,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 79562,
+            "range": "± 3162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 82305,
+            "range": "± 4688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 105484,
+            "range": "± 5633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41893193,
+            "range": "± 185157",
             "unit": "ns/iter"
           }
         ]
