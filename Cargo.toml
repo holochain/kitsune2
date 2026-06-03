@@ -69,7 +69,7 @@ ctrlc = { version = "3.4.5", features = ["termination"] }
 # bootstrap_srv for signature verification.
 ed25519-dalek = "2.1.1"
 # alternative transport implementation using iroh
-iroh = "1.0.0-rc.0"
+iroh = "1.0.0-rc.1"
 # automock traits for tests
 mockall = "0.14"
 # watchable stream of values used in iroh transport
@@ -150,11 +150,11 @@ kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }
 # used to test the bootstrap server with SBD enabled
 sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
-iroh-relay = "1.0.0-rc.0"
-iroh-base = "1.0.0-rc.0"
+iroh-relay = "1.0.0-rc.1"
+iroh-base = "1.0.0-rc.1"
 # DNS resolver split out of iroh-relay in the 1.0 release; used in tests
 # that drive a relay client.
-iroh-dns = "1.0.0-rc.0"
+iroh-dns = "1.0.0-rc.1"
 
 # used to hash op data
 sha2 = "0.11"
