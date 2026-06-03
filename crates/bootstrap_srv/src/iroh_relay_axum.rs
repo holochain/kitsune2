@@ -21,16 +21,17 @@ use std::{
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
-use futures::FutureExt;
 use iroh_relay::http::ProtocolVersion;
 use iroh_relay::{
     ExportKeyingMaterial, KeyCache,
     protos::{handshake, streams::StreamError},
     server::{
-        Access, AccessConfig, ClientRequest, Metrics, client::Config,
-        clients::Clients, streams::RelayedStream,
+        Access, AccessControl, AllowAll, ClientRequest, DynAccessControl,
+        Metrics, client::Config, clients::Clients, streams::RelayedStream,
     },
 };
+
+use crate::RelayAllowlist;
 
 /// State required for the relay handler.
 #[derive(Clone, Debug)]
@@ -38,7 +39,7 @@ pub struct RelayState {
     /// Key cache for the relay
     pub key_cache: KeyCache,
     /// Access control configuration
-    pub access: Arc<AccessConfig>,
+    pub access: Arc<dyn DynAccessControl>,
     /// Metrics for the relay server
     pub metrics: Arc<Metrics>,
     /// Write timeout for client connections
@@ -51,7 +52,7 @@ impl RelayState {
     /// Create a new RelayState with default write timeout
     pub fn new(
         key_cache: KeyCache,
-        access: Arc<AccessConfig>,
+        access: Arc<dyn DynAccessControl>,
         metrics: Arc<Metrics>,
     ) -> Self {
         Self {
@@ -266,20 +267,23 @@ async fn handle_relay_websocket(
     const HANDSHAKE_TIMEOUT: std::time::Duration =
         std::time::Duration::from_secs(30);
 
-    let client_key = timeout(HANDSHAKE_TIMEOUT, async {
+    let (endpoint_id, guard) = timeout(HANDSHAKE_TIMEOUT, async {
         let authentication =
             handshake::serverside(&mut adapter, client_auth_header).await?;
 
         debug!(?authentication.mechanism, "accept: verified authentication");
 
-        let client_request =
-            ClientRequest::new(authentication.client_key, request_parts);
-        let is_authorized = state.access.is_allowed(&client_request).await;
-        let client_key = authentication
-            .authorize_if(is_authorized, &mut adapter)
+        let client_request = ClientRequest::new(
+            authentication.client_key,
+            ProtocolVersion::V1,
+            request_parts,
+        );
+        let guard = authentication
+            .authorize_with(&client_request, &state.access, &mut adapter)
             .await?;
+        let endpoint_id = guard.endpoint_id();
 
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(client_key)
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>((endpoint_id, guard))
     })
     .await
     .map_err(|_| {
@@ -289,15 +293,14 @@ async fn handle_relay_websocket(
         )
     })??;
 
-    debug!(key = %client_key.fmt_short(), "accept: verified authorization");
+    debug!(key = %endpoint_id.fmt_short(), "accept: verified authorization");
 
     // Wrap in RelayedStream for encryption
     let io = RelayedStream::new(adapter, state.key_cache.clone());
 
     trace!("accept: build client conn");
     // TODO Update in sync with the client and deploy at V2
-    let mut client_conn_builder =
-        Config::new(client_key, io, ProtocolVersion::V1);
+    let mut client_conn_builder = Config::new(guard, io, ProtocolVersion::V1);
     client_conn_builder.write_timeout = state.write_timeout;
 
     // Register the client with the relay server
@@ -305,7 +308,7 @@ async fn handle_relay_websocket(
         .clients
         .register(client_conn_builder, state.metrics.clone());
 
-    info!(key = %client_key.fmt_short(), "relay client registered");
+    info!(key = %endpoint_id.fmt_short(), "relay client registered");
 
     Ok(())
 }
@@ -387,9 +390,43 @@ pub async fn captive_portal_handler(
 /// as a standard axum route. All connections are permitted.
 pub fn create_relay_state() -> RelayState {
     let key_cache = KeyCache::new(1024);
-    let access = Arc::new(AccessConfig::Everyone);
+    let access = Arc::new(AllowAll);
     let metrics = Arc::new(Metrics::default());
     RelayState::new(key_cache, access, metrics)
+}
+
+struct AllowlistAccess {
+    allowlist: RelayAllowlist,
+}
+
+impl AllowlistAccess {
+    fn new(allowlist: RelayAllowlist) -> Self {
+        Self { allowlist }
+    }
+}
+
+impl std::fmt::Debug for AllowlistAccess {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AllowlistAccess").finish()
+    }
+}
+
+impl AccessControl for AllowlistAccess {
+    async fn on_connect(&self, request: &ClientRequest) -> Access {
+        let endpoint_id = request.endpoint_id();
+        let allowed = self.allowlist.is_allowed(&endpoint_id);
+        tracing::debug!(
+            key = %endpoint_id.fmt_short(),
+            allowed,
+            allowlist_size = self.allowlist.len(),
+            "Relay access check"
+        );
+        if allowed {
+            Access::Allow
+        } else {
+            Access::Deny { reason: None }
+        }
+    }
 }
 
 /// Creates a RelayState that restricts connections to endpoints registered
@@ -399,26 +436,10 @@ pub fn create_relay_state() -> RelayState {
 /// hook server. Clients must call `PUT /authenticate` and then
 /// `PUT /relay/register` before their relay connection will be accepted.
 pub fn create_relay_state_with_allowlist(
-    allowlist: crate::RelayAllowlist,
+    allowlist: RelayAllowlist,
 ) -> RelayState {
     let key_cache = KeyCache::new(1024);
-    let access = Arc::new(AccessConfig::Restricted(Box::new(
-        move |request: &ClientRequest| {
-            let allowlist = allowlist.clone();
-            let endpoint_id = request.endpoint_id();
-            async move {
-                let allowed = allowlist.is_allowed(&endpoint_id);
-                tracing::debug!(
-                    key = %endpoint_id.fmt_short(),
-                    allowed,
-                    allowlist_size = allowlist.len(),
-                    "Relay access check"
-                );
-                if allowed { Access::Allow } else { Access::Deny }
-            }
-            .boxed()
-        },
-    )));
+    let access = Arc::new(AllowlistAccess::new(allowlist));
     let metrics = Arc::new(Metrics::default());
     RelayState::new(key_cache, access, metrics)
 }
