@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 /// iroh relay endpoints at `/relay` and `/ping`.
 pub struct TestBootstrapSrv {
     kill: Option<tokio::sync::oneshot::Sender<()>>,
-    task: tokio::task::JoinHandle<std::io::Result<()>>,
     halt: Arc<std::sync::atomic::AtomicBool>,
     addr: String,
     #[cfg(feature = "relay")]
@@ -19,10 +18,13 @@ pub struct TestBootstrapSrv {
 
 impl Drop for TestBootstrapSrv {
     fn drop(&mut self) {
+        // Sending the kill signal causes the server task to call
+        // clients.shutdown(), which closes all relay WebSocket connections.
+        // This lets connected iroh endpoints detect relay loss immediately
+        // rather than waiting for the QUIC idle timeout.
         if let Some(kill) = self.kill.take() {
             let _ = kill.send(());
         }
-        self.task.abort();
     }
 }
 
@@ -122,13 +124,30 @@ impl TestBootstrapSrv {
             Some(relay_state)
         };
 
-        let task = tokio::task::spawn(std::future::IntoFuture::into_future(
-            serve(l, app).with_graceful_shutdown(kill_r),
-        ));
+        // Clone the relay clients handle so the task can shut down connections
+        // on drop.  Closing the connections lets connected iroh endpoints
+        // detect relay loss promptly (rather than waiting for QUIC idle
+        // timeout), which is essential for tests that simulate relay outages.
+        #[cfg(feature = "relay")]
+        let relay_clients = relay_state.as_ref().map(|s| s.clients.clone());
+
+        tokio::task::spawn(async move {
+            // Stop accepting when the kill signal fires.
+            tokio::select! {
+                _ = kill_r => {},
+                result = serve(l, app) => { let _ = result; }
+            }
+
+            // Gracefully close all relay WebSocket connections so iroh
+            // endpoints see the relay as disconnected immediately.
+            #[cfg(feature = "relay")]
+            if let Some(clients) = relay_clients {
+                clients.shutdown().await;
+            }
+        });
 
         Self {
             kill,
-            task,
             halt,
             addr,
             #[cfg(feature = "relay")]
