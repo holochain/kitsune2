@@ -75,6 +75,10 @@ impl Endpoint for FakeEndpoint {
     fn id_bytes(&self) -> [u8; 32] {
         [0u8; 32]
     }
+
+    fn is_home_relay_known_down(&self) -> bool {
+        false
+    }
 }
 
 /// An `EndpointAddrWatcher` whose `updated()` future never resolves.
@@ -283,6 +287,10 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
         }
         fn id_bytes(&self) -> [u8; 32] {
             [0u8; 32]
+        }
+
+        fn is_home_relay_known_down(&self) -> bool {
+            false
         }
     }
 

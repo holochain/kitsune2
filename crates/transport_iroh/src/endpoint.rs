@@ -58,6 +58,16 @@ pub(crate) trait Endpoint:
 
     /// Returns the public key bytes of this endpoint.
     fn id_bytes(&self) -> [u8; 32];
+
+    /// Returns `true` if a home relay is in a confirmed failed state
+    /// (`RelayConnectionState::Disconnected` with a recorded error).
+    ///
+    /// Returns `false` when no relay has been selected yet, when the relay is
+    /// in the initial `Connecting` phase, or when the relay is `Connected`.
+    /// The distinction matters: `Connecting` means iroh is still dialling and
+    /// a connection attempt might succeed; `Disconnected` means the relay has
+    /// explicitly failed and iroh is waiting to retry.
+    fn is_home_relay_known_down(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -149,6 +159,14 @@ impl Endpoint for IrohEndpoint {
 
     fn id_bytes(&self) -> [u8; 32] {
         *self.inner.id().as_bytes()
+    }
+
+    fn is_home_relay_known_down(&self) -> bool {
+        self.inner
+            .home_relay_status()
+            .get()
+            .iter()
+            .any(|s| !s.is_connected() && s.last_error().is_some())
     }
 }
 

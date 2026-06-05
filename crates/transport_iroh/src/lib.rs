@@ -238,6 +238,15 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
+/// Error message returned when a connection attempt is skipped because the
+/// home relay is not connected.  Exported so integration tests can match it
+/// without depending on a free-form string literal.
+#[cfg(any(test, feature = "test-utils"))]
+pub const RELAY_NOT_CONNECTED_ERR: &str =
+    "relay not connected, skipping to avoid false unresponsive mark";
+#[cfg(not(any(test, feature = "test-utils")))]
+pub(crate) const RELAY_NOT_CONNECTED_ERR: &str =
+    "relay not connected, skipping to avoid false unresponsive mark";
 
 /// IrohTransport configuration types
 pub mod config {
@@ -812,6 +821,24 @@ impl IrohTransport {
         target: EndpointAddr,
         remote_url: Url,
     ) -> K2Result<Arc<ConnectionContext>> {
+        // Guard: if the relay has explicitly failed (Disconnected state), skip
+        // the attempt entirely. A 60-second QUIC timeout while the relay is
+        // recovering would falsely mark the peer as unresponsive (e.g. after
+        // Android doze mode kills the network).
+        //
+        // We check for Disconnected specifically — not Connecting — because
+        // Connecting at startup is normal and we must not block those attempts.
+        // Disconnected means iroh detected an actual failure and has recorded
+        // a last_error; Connecting means iroh is still dialling.
+        if self.endpoint.is_home_relay_known_down() {
+            debug!(
+                ?remote_url,
+                "skipping outbound connection: relay known down, \
+                 peer will not be marked unresponsive"
+            );
+            return Err(K2Error::other(RELAY_NOT_CONNECTED_ERR));
+        }
+
         // Establish connection
         debug!(?target, connect_timeout_s = self.config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
         let start = Instant::now();
