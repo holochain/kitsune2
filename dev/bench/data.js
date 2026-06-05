@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780405599823,
+  "lastUpdate": 1780663552597,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -429,6 +429,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41893193,
             "range": "± 185157",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "synchwire@users.noreply.github.com",
+            "name": "synchwire",
+            "username": "synchwire"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "63af6d4ae5260b9d72ed3bd9bca34089c582cbcb",
+          "message": "test(transport_iroh): add integration test for no false-unresponsive on relay drop\n\nTestBootstrapSrv now calls `Clients::shutdown()` after the kill signal\nfires, which gracefully closes all relay WebSocket connections. This lets\nconnected iroh endpoints detect relay loss immediately (via\n`RelayConnectionState::Disconnected` with `last_error`) rather than\nwaiting for the 60-second QUIC idle timeout.\n\nThe new integration test `no_unresponsive_when_relay_drops` uses this:\nit drops the bootstrap server, polls until the `is_home_relay_known_down`\nguard fires (outbound send returns `RELAY_NOT_CONNECTED_ERR` near-\ninstantly), then asserts that `set_unresponsive` was never called.",
+          "timestamp": "2026-06-05T13:36:17+01:00",
+          "tree_id": "0b3052120e5fdeacb2a79e910d3c04cecb1d2d16",
+          "url": "https://github.com/holochain/kitsune2/commit/63af6d4ae5260b9d72ed3bd9bca34089c582cbcb"
+        },
+        "date": 1780663552259,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 57038,
+            "range": "± 2931",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 63291,
+            "range": "± 2456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 80058,
+            "range": "± 1753",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41997734,
+            "range": "± 52812",
             "unit": "ns/iter"
           }
         ]
