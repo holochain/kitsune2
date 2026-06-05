@@ -3,8 +3,9 @@ use kitsune2_api::{K2Proto, K2WireType, Timestamp, Url};
 use kitsune2_test_utils::{
     enable_tracing, retry_fn_until_timeout, space::TEST_SPACE_ID,
 };
-use kitsune2_transport_iroh::test_utils::{
-    IrohTransportTestHarness, MockTxHandler, dummy_url,
+use kitsune2_transport_iroh::{
+    RELAY_NOT_CONNECTED_ERR,
+    test_utils::{IrohTransportTestHarness, MockTxHandler, dummy_url},
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
@@ -1224,5 +1225,92 @@ async fn no_local_agents_should_not_mark_peer_unresponsive() {
         "BUG: set_unresponsive was called when connection failed due to 'no local agents' error. \
          This is incorrect - 'no local agents' is a temporary state, not a network failure, \
          and should not cause the peer to be marked as unresponsive."
+    );
+}
+
+/// When the relay server goes down (e.g. Android doze mode kills network),
+/// outbound connection attempts must NOT mark peers as unresponsive.
+///
+/// The peer may be perfectly reachable once the relay reconnects. The
+/// `is_home_relay_connected()` guard in `create_connection_and_context`
+/// detects the `RelayConnectionState::Disconnected` state (set directly by
+/// the iroh relay actor on TCP drop) and returns an error immediately without
+/// touching `set_unresponsive`.
+#[tokio::test]
+async fn no_unresponsive_when_relay_drops() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+
+    let (set_unresponsive_sender, mut set_unresponsive_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler = Arc::new(MockTxHandler {
+        set_unresponsive: Arc::new(move |peer, ts| {
+            set_unresponsive_sender.send((peer, ts)).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep = harness.build_transport(handler.clone()).await;
+    ep.register_space_handler(TEST_SPACE_ID, handler.clone());
+
+    // Wait for relay to connect and assign a listening address.
+    retry_fn_until_timeout(
+        || async { handler.current_url.lock().unwrap().clone() != dummy_url() },
+        Some(10_000),
+        Some(100),
+    )
+    .await
+    .expect("transport did not come online within 10s");
+
+    // A fake peer URL — syntactically valid, would trigger
+    // create_connection_and_context.
+    let fake_peer_url = Url::from_str(
+        "https://relay.example.com:443/\
+         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+
+    // Drop the relay server.  The OS sends TCP RST to iroh's relay actor,
+    // which transitions to RelayConnectionState::Disconnected near-instantly.
+    let IrohTransportTestHarness {
+        _bootstrap_server, ..
+    } = harness;
+    drop(_bootstrap_server);
+
+    // Poll until the is_home_relay_connected() guard activates: a send to the
+    // fake peer must return near-instantly with the relay-not-connected error
+    // rather than hanging for connect_timeout_s (60 s).
+    //
+    // Each loop iteration uses a 500 ms inner timeout.  While iroh has not yet
+    // detected the relay drop the inner future is cancelled (no set_unresponsive),
+    // once the guard fires the future returns in < 1 ms.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let result = tokio::time::timeout(
+                Duration::from_millis(500),
+                ep.send_space_notify(
+                    fake_peer_url.clone(),
+                    TEST_SPACE_ID,
+                    Bytes::from_static(b"probe"),
+                ),
+            )
+            .await;
+            if let Ok(Err(ref e)) = result
+                && e.to_string().contains(RELAY_NOT_CONNECTED_ERR)
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect(
+        "is_home_relay_connected guard did not fire within 10s of relay drop",
+    );
+
+    // Key assertion: no peer was marked unresponsive during the relay outage.
+    assert!(
+        set_unresponsive_receiver.try_recv().is_err(),
+        "set_unresponsive must not be called when the relay is disconnected"
     );
 }
