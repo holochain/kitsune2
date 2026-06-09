@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.4](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.3...v0.5.0-dev.4)\] - 2026-06-09
+
+### Features
+
+- Only log op IDs of incoming ops instead of all data by @cdunster
+- Only log op IDs that fail to send instead of raw bytes by @cdunster
+- Add optional arbitrary metadata to published ops by @cdunster
+
+### Bug Fixes
+
+- *(transport_iroh)* Skip connection attempt when home relay is disconnected by @synchwire
+  - When our relay TCP connection drops (e.g. Android doze mode kills the network), iroh transitions its home relay to `RelayConnectionState::Disconnected`. During this window gossip may fire and attempt to reach peers via the broken relay. Each 60-second QUIC timeout would previously call `set_unresponsive`, blacklisting healthy peers for up to 15 minutes after the relay reconnects.
+  - Add `Endpoint::is_home_relay_known_down()`, backed by iroh 1.0.0-rc.0's `Endpoint::home_relay_status()` which is driven directly by the relay actor's state machine (not net-report hysteresis). In `create_connection_and_context`, check this flag before touching the network: if the relay is in a confirmed `Disconnected` state (i.e. has a recorded error), return immediately without calling `set_unresponsive`.
+  - The guard is deliberately narrow: `Connecting` (startup) is allowed through; only confirmed `Disconnected` (iroh has `last_error`) is blocked. This avoids false unresponsive marks when we are the party that has temporarily lost connectivity, rather than the peer being unreachable.
+  - Also extracts `RELAY_NOT_CONNECTED_ERR` as a named constant (public under `test-utils` feature) so tests match on the constant rather than a free-form substring.
+
+### Miscellaneous Tasks
+
+- Update iroh dependency to latest rc.1 release by @cdunster in [#548](https://github.com/holochain/kitsune2/pull/548)
+- Test the metrics feature in transport_iroh crate by @cdunster
+
+### Testing
+
+- *(transport_iroh)* Add integration test for no false-unresponsive on relay drop by @synchwire in [#545](https://github.com/holochain/kitsune2/pull/545)
+  - TestBootstrapSrv now calls `Clients::shutdown()` after the kill signal fires, which gracefully closes all relay WebSocket connections. This lets connected iroh endpoints detect relay loss immediately (via `RelayConnectionState::Disconnected` with `last_error`) rather than waiting for the 60-second QUIC idle timeout.
+  - The new integration test `no_unresponsive_when_relay_drops` uses this: it drops the bootstrap server, polls until the `is_home_relay_known_down` guard fires (outbound send returns `RELAY_NOT_CONNECTED_ERR` near- instantly), then asserts that `set_unresponsive` was never called.
+- Assert op ID as well as data in fetch response test by @cdunster
+- Assert on error message in oversized metadata test by @cdunster
+- Add test for metadata round trip through fetch by @cdunster
+- Add test that metadata is added but not overwritten by @cdunster
+- Add test in core crate that metadata is added to store by @cdunster
+- Add oversized metadata test in core crate by @cdunster
+- Fix the string comparision in metrics integration tests by @cdunster in [#546](https://github.com/holochain/kitsune2/pull/546)
+
+### Refactor
+
+- Simplify logic to override metadata by @cdunster in [#547](https://github.com/holochain/kitsune2/pull/547)
+- Remove unnecessary clone by @cdunster
+- Add helper function to wrap OpId's in PublishOp's for gossip by @cdunster
+  - Convert `Vec<OpId>` to `Vec<PublishOp>`, setting the metadata to `None`.
+
+### Documentation
+
+- Add comment about how real hosts should verify the op_id by @cdunster
+
 ## \[[0.5.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.2...v0.5.0-dev.3)\] - 2026-05-20
 
 ### Features
