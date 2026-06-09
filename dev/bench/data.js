@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780663552597,
+  "lastUpdate": 1781007222896,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -477,6 +477,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41997734,
             "range": "± 52812",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "cdunster@users.noreply.github.com",
+            "name": "Callum Dunster",
+            "username": "cdunster"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "9b6d2397bbce83afade0ab30a69438dc88cfdf9a",
+          "message": "chore: update iroh dependency to latest rc.1 release",
+          "timestamp": "2026-06-09T13:03:49+01:00",
+          "tree_id": "fd657be59bd07935ffaa1518d7b2654269bc2454",
+          "url": "https://github.com/holochain/kitsune2/commit/9b6d2397bbce83afade0ab30a69438dc88cfdf9a"
+        },
+        "date": 1781007222580,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 72394,
+            "range": "± 3191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 74076,
+            "range": "± 3652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 90960,
+            "range": "± 4805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41996414,
+            "range": "± 60195",
             "unit": "ns/iter"
           }
         ]
