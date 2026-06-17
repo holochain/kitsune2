@@ -490,8 +490,8 @@ impl IrohTransport {
         // Test relay server uses self-signed certificate, so skip certificate verification.
         #[cfg(feature = "test-utils")]
         {
-            builder = builder.ca_roots_config(
-                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
+            builder = builder.ca_tls_config(
+                iroh_relay::tls::CaTlsConfig::insecure_skip_verify(),
             );
         }
 
