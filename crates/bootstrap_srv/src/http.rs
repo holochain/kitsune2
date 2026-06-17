@@ -320,11 +320,22 @@ fn tokio_thread(
                         routing::put(handle_relay_register),
                     );
 
+                    let relay_rate_limit = config
+                        .resolve_relay_rate_limit()
+                        .expect(
+                            "Config rate-limit invariants validated by \
+                             BootstrapSrv::new",
+                        );
                     let relay_state =
                         if let Some(allowlist) = relay_allowlist.clone() {
-                            crate::iroh_relay_axum::create_relay_state_with_allowlist(allowlist)
+                            crate::iroh_relay_axum::create_relay_state_with_allowlist(
+                                allowlist,
+                                relay_rate_limit,
+                            )
                         } else {
-                            crate::iroh_relay_axum::create_relay_state()
+                            crate::iroh_relay_axum::create_relay_state(
+                                relay_rate_limit,
+                            )
                         };
 
                     _relay_otel_metrics = Some({

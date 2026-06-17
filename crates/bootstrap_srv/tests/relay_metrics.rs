@@ -61,9 +61,7 @@ fn relay_metrics_exported_via_otel() {
             .relay_mode(iroh::RelayMode::Custom(relay_map.clone()))
             .secret_key(SecretKey::generate())
             .alpns(vec![TEST_ALPN.to_vec()])
-            .ca_roots_config(
-                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
-            )
+            .ca_tls_config(iroh_relay::tls::CaTlsConfig::insecure_skip_verify())
             .bind()
             .await
             .unwrap();
@@ -72,9 +70,7 @@ fn relay_metrics_exported_via_otel() {
             .relay_mode(iroh::RelayMode::Custom(relay_map))
             .secret_key(SecretKey::generate())
             .alpns(vec![TEST_ALPN.to_vec()])
-            .ca_roots_config(
-                iroh_relay::tls::CaRootsConfig::insecure_skip_verify(),
-            )
+            .ca_tls_config(iroh_relay::tls::CaTlsConfig::insecure_skip_verify())
             .bind()
             .await
             .unwrap();

@@ -49,6 +49,14 @@ impl Drop for BootstrapSrv {
 impl BootstrapSrv {
     /// Construct a new BootstrapSrv instance.
     pub fn new(config: Config) -> std::io::Result<Self> {
+        #[cfg(feature = "iroh-relay")]
+        config.resolve_relay_rate_limit().map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid relay rate-limit config: {err}"),
+            )
+        })?;
+
         let config = Arc::new(config);
 
         // atomic flag for telling worker threads to shutdown
