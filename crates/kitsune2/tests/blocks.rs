@@ -15,10 +15,7 @@ use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::iter_check;
 use kitsune2_test_utils::noop_bootstrap::NoopBootstrapFactory;
 use kitsune2_test_utils::{enable_tracing, space::TEST_SPACE_ID};
-#[cfg(all(
-    not(feature = "transport-tx5-backend-go-pion"),
-    feature = "transport-iroh"
-))]
+#[cfg(feature = "transport-iroh")]
 use kitsune2_transport_iroh::{
     IrohTransportFactory,
     config::{IrohTransportConfig, IrohTransportModConfig},
@@ -26,8 +23,6 @@ use kitsune2_transport_iroh::{
 
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::sync::OnceCell;
-#[cfg(feature = "transport-tx5-backend-go-pion")]
-use {kitsune2_transport_tx5::Tx5TransportFactory, sbd_server::SbdServer};
 
 /// A default test space handler that just drops received messages.
 #[derive(Debug)]
@@ -165,46 +160,7 @@ impl TxHandler for TestTxHandler {
     }
 }
 
-#[cfg(feature = "transport-tx5-backend-go-pion")]
-async fn builder_with_tx5() -> (Arc<Builder>, SbdServer) {
-    let sbd_server = SbdServer::new(Arc::new(sbd_server::Config {
-        bind: vec!["127.0.0.1:0".to_string()],
-        ..Default::default()
-    }))
-    .await
-    .unwrap();
-    let signal_server_url = format!("ws://{}", sbd_server.bind_addrs()[0]);
-
-    let builder = Builder {
-        transport: Tx5TransportFactory::create(),
-        gossip: CoreGossipStubFactory::create(),
-        bootstrap: Arc::new(NoopBootstrapFactory {}),
-        ..kitsune2_core::default_test_builder()
-    }
-    .with_default_config()
-    .unwrap();
-
-    builder
-        .config
-        .set_module_config(
-            &kitsune2_transport_tx5::config::Tx5TransportModConfig {
-                tx5_transport:
-                    kitsune2_transport_tx5::config::Tx5TransportConfig {
-                        signal_allow_plain_text: true,
-                        server_url: signal_server_url,
-                        ..Default::default()
-                    },
-            },
-        )
-        .unwrap();
-
-    (Arc::new(builder), sbd_server)
-}
-
-#[cfg(all(
-    not(feature = "transport-tx5-backend-go-pion"),
-    feature = "transport-iroh"
-))]
+#[cfg(feature = "transport-iroh")]
 async fn builder_with_iroh() -> (
     Arc<Builder>,
     kitsune2_test_utils::bootstrap::TestBootstrapSrv,
@@ -238,15 +194,7 @@ async fn builder_with_iroh() -> (
 
 macro_rules! builder_with_relay {
     () => {{
-        #[cfg(feature = "transport-tx5-backend-go-pion")]
-        {
-            builder_with_tx5().await
-        }
-
-        #[cfg(all(
-            not(feature = "transport-tx5-backend-go-pion"),
-            feature = "transport-iroh"
-        ))]
+        #[cfg(feature = "transport-iroh")]
         {
             builder_with_iroh().await
         }
@@ -987,11 +935,6 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     // a connection with Bob
     let payload = Bytes::from("Hello world");
 
-    // This send here fails relatively often in CI, presumably due to a race
-    // condition in tx5: https://github.com/holochain/tx5/issues/193
-    // The working hypothesis is that agent info gossip which starts in the background
-    // after the local agent join may lead to an incoming connection being established
-    // more or less simultaneously, thereby evoking the race condition.
     iter_check!(2_000, 500, {
         if transport_alice
             .send_space_notify(
@@ -1146,11 +1089,6 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     // a connection with Bob
     let payload_module = Bytes::from("Hello module world");
 
-    // This send here fails relatively often in CI, presumably due to a race
-    // condition in tx5: https://github.com/holochain/tx5/issues/193
-    // The working hypothesis is that agent info gossip which starts in the background
-    // after the local agent join may lead to an incoming connection being established
-    // more or less simultaneously, thereby evoking the race condition.
     iter_check!(2_000, 500, {
         if transport_alice
             .send_module(
@@ -1305,11 +1243,6 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
     // Alice sends a space message that should go through normally
     let payload = Bytes::from("Hello world");
 
-    // This send here fails relatively often in CI, presumably due to a race
-    // condition in tx5: https://github.com/holochain/tx5/issues/193
-    // The working hypothesis is that agent info gossip which starts in the background
-    // after the local agent join may lead to an incoming connection being established
-    // more or less simultaneously, thereby evoking the race condition.
     iter_check!(2_000, 500, {
         if transport_alice
             .send_space_notify(
@@ -1460,11 +1393,6 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
     // Alice sends a module message that should go through normally
     let payload = Bytes::from("Hello module world");
 
-    // This send here fails relatively often in CI, presumably due to a race
-    // condition in tx5: https://github.com/holochain/tx5/issues/193
-    // The working hypothesis is that agent info gossip which starts in the background
-    // after the local agent join may lead to an incoming connection being established
-    // more or less simultaneously, thereby evoking the race condition.
     iter_check!(2_000, 500, {
         if transport_alice
             .send_module(

@@ -219,9 +219,6 @@ pub use auth::*;
 
 pub mod metrics;
 
-#[cfg(feature = "sbd")]
-mod sbd;
-
 #[cfg(feature = "iroh-relay")]
 mod relay_allowlist;
 #[cfg(feature = "iroh-relay")]

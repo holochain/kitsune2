@@ -11,7 +11,6 @@ members = [
   "crates/test_utils",
   "crates/tool_proto_build",
   "crates/transport_iroh",
-  "crates/transport_tx5",
 ]
 
 resolver = "2"
@@ -39,7 +38,6 @@ kitsune2 = { version = "0.5.0-dev.0", path = "crates/kitsune2", default-features
 kitsune2_api = { version = "0.5.0-dev.0", path = "crates/api" }
 kitsune2_dht = { version = "0.5.0-dev.0", path = "crates/dht" }
 kitsune2_gossip = { version = "0.5.0-dev.0", path = "crates/gossip" }
-kitsune2_transport_tx5 = { version = "0.5.0-dev.0", path = "crates/transport_tx5", default-features = false }
 kitsune2_transport_iroh = { version = "0.5.0-dev.0", path = "crates/transport_iroh" }
 kitsune2_bootstrap_client = { version = "0.5.0-dev.0", path = "crates/bootstrap_client" }
 
@@ -106,17 +104,11 @@ tracing = "0.1"
 tracing-appender = "0.2.3"
 # Used in testing and the showcase app to output tracing
 tracing-subscriber = "0.3"
-# for init config
-tx5-core = "0.8"
-# for the transport_tx5 crate
-tx5 = { version = "0.8", default-features = false }
 # TLS support for the bootstrap server
 axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
 rustls-pemfile = "2.2"
-# embedded in the bootstrap server and to test the tx5 integration
-sbd-server = { version = "0.4.0" }
 # axum-server integration with the SBD server
 tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
@@ -125,7 +117,7 @@ schemars = { version = "0.9", features = ["preserve_order"] }
 rustyline = { version = "18.0" }
 # Used in showcase app for the commands
 strum = { version = "0.28", features = ["derive", "strum_macros"] }
-# Used for telemetry in sbd server and bootstrap relay metrics
+# Used for telemetry in relay server and bootstrap relay metrics
 opentelemetry = "0.30"
 opentelemetry_sdk = "0.30"
 opentelemetry-otlp = { version = "0.30", features = ["http-proto"] }
@@ -147,8 +139,6 @@ kitsune2_bootstrap_srv = { version = "0.5.0-dev.0", path = "crates/bootstrap_srv
 kitsune2_core = { version = "0.5.0-dev.0", path = "crates/core" }
 kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }
 
-# used to test the bootstrap server with SBD enabled
-sbd-client = "0.3.2"
 # iroh relay for testing iroh transport
 iroh-relay = "1.0.0"
 iroh-base = "1.0.0"
@@ -164,10 +154,3 @@ rcgen = "0.14"
 rand_chacha = "0.10"
 # Used in the schema example
 jsonschema = "0.46"
-
-[patch.crates-io]
-#sbd-server = { path = "../sbd/rust/sbd-server" }
-#sbd-client = { path = "../sbd/rust/sbd-client" }
-#sbd-e2e-crypto-client = { path = "../sbd/rust/sbd-e2e-crypto-client" }
-#tx5-core = { path = "../tx5/crates/tx5-core" }
-#tx5 = { path = "../tx5/crates/tx5" }

@@ -17,23 +17,12 @@ use kitsune2_test_utils::{
     bootstrap::TestBootstrapSrv, enable_tracing, iter_check, random_bytes,
     space::TEST_SPACE_ID,
 };
-#[cfg(all(
-    not(feature = "transport-tx5-backend-go-pion"),
-    feature = "transport-iroh"
-))]
+#[cfg(feature = "transport-iroh")]
 use kitsune2_transport_iroh::{
     IrohTransportFactory,
     config::{IrohTransportConfig, IrohTransportModConfig},
 };
 use std::sync::Arc;
-#[cfg(feature = "transport-tx5-backend-go-pion")]
-use {
-    kitsune2_transport_tx5::{
-        Tx5TransportFactory,
-        config::{Tx5TransportConfig, Tx5TransportModConfig},
-    },
-    sbd_server::SbdServer,
-};
 
 fn create_op_list(num_ops: u16) -> (Vec<IncomingOp>, Vec<OpId>) {
     let mut ops = Vec::new();
@@ -71,12 +60,7 @@ async fn make_kitsune_node(
     bootstrap_server_url: &str,
 ) -> DynKitsune {
     let kitsune_builder = Builder {
-        #[cfg(feature = "transport-tx5-backend-go-pion")]
-        transport: Tx5TransportFactory::create(),
-        #[cfg(all(
-            not(feature = "transport-tx5-backend-go-pion"),
-            feature = "transport-iroh"
-        ))]
+        #[cfg(feature = "transport-iroh")]
         transport: IrohTransportFactory::create(),
         ..default_builder()
     }
@@ -94,23 +78,7 @@ async fn make_kitsune_node(
         })
         .unwrap();
 
-    #[cfg(feature = "transport-tx5-backend-go-pion")]
-    kitsune_builder
-        .config
-        .set_module_config(&Tx5TransportModConfig {
-            tx5_transport: Tx5TransportConfig {
-                server_url: relay_server_url.to_owned(),
-                signal_allow_plain_text: true,
-                timeout_s: 5,
-                webrtc_connect_timeout_s: 3,
-                ..Default::default()
-            },
-        })
-        .unwrap();
-    #[cfg(all(
-        not(feature = "transport-tx5-backend-go-pion"),
-        feature = "transport-iroh"
-    ))]
+    #[cfg(feature = "transport-iroh")]
     kitsune_builder
         .config
         .set_module_config(&IrohTransportModConfig {
@@ -145,25 +113,10 @@ async fn make_kitsune_node(
     kitsune
 }
 
-#[cfg(feature = "transport-tx5-backend-go-pion")]
-async fn sbd_signal_server() -> (String, SbdServer) {
-    let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
-        bind: vec!["127.0.0.1:0".to_string()],
-        ..Default::default()
-    }))
-    .await
-    .unwrap();
-    let relay_server_url = format!("ws://{}", signal_server.bind_addrs()[0]);
-    (relay_server_url, signal_server)
-}
-
 /// For iroh transport, the relay functionality is integrated into the bootstrap server.
 /// This function returns the relay URL (bootstrap server URL + /relay/).
 /// Note: The trailing slash is important for proper URL construction.
-#[cfg(all(
-    not(feature = "transport-tx5-backend-go-pion"),
-    feature = "transport-iroh"
-))]
+#[cfg(feature = "transport-iroh")]
 async fn iroh_relay_from_bootstrap(bootstrap: &TestBootstrapSrv) -> String {
     format!("{}/relay", bootstrap.addr())
 }
@@ -212,13 +165,7 @@ async fn two_node_gossip() {
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
 
-    #[cfg(feature = "transport-tx5-backend-go-pion")]
-    let (relay_server_url, _relay_server) = sbd_signal_server().await;
-
-    #[cfg(all(
-        not(feature = "transport-tx5-backend-go-pion"),
-        feature = "transport-iroh"
-    ))]
+    #[cfg(feature = "transport-iroh")]
     let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances...
@@ -290,21 +237,24 @@ async fn two_node_gossip() {
 ///
 /// This isn't a perfect check for shutdown, but it's a reasonable expectation that if all the
 /// Tokio tasks for a space are gone, then it's not actively doing work in the background.
-#[cfg(feature = "transport-tx5-backend-go-pion")]
 #[tokio::test]
 async fn shutdown_space() {
     enable_tracing();
 
+    // Capture the task baseline before anything is started, in particular
+    // before the relay. The iroh transport keeps per-peer connection state
+    // alive for as long as its endpoint and the relay are up, with no API to
+    // release it per-peer. So to verify that Kitsune2 itself doesn't hold onto
+    // any connection tasks it shouldn't, we tear the whole stack back down at
+    // the end (nodes and relay) and require the task count to return to this
+    // pre-relay baseline.
+    let metrics = tokio::runtime::Handle::current().metrics();
+    let initial_tasks = metrics.num_alive_tasks();
+
     let bootstrap_server = TestBootstrapSrv::new(false).await;
     let bootstrap_server_url = bootstrap_server.addr().to_string();
 
-    #[cfg(feature = "transport-tx5-backend-go-pion")]
-    let (relay_server_url, _relay_server) = sbd_signal_server().await;
-
-    #[cfg(all(
-        not(feature = "transport-tx5-backend-go-pion"),
-        feature = "transport-iroh"
-    ))]
+    #[cfg(feature = "transport-iroh")]
     let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances..
@@ -312,9 +262,6 @@ async fn shutdown_space() {
         make_kitsune_node(&relay_server_url, &bootstrap_server_url).await;
     let kitsune_2 =
         make_kitsune_node(&relay_server_url, &bootstrap_server_url).await;
-
-    let metrics = tokio::runtime::Handle::current().metrics();
-    let initial_tasks = metrics.num_alive_tasks();
 
     // and 1 space with 1 joined agent each.
     let space_1 = start_space(&kitsune_1).await;
@@ -417,9 +364,19 @@ async fn shutdown_space() {
     kitsune_1.remove_space(TEST_SPACE_ID).await.unwrap();
     kitsune_2.remove_space(TEST_SPACE_ID).await.unwrap();
 
-    // Wait for the space's tasks to be cleaned up.
-    // This includes connection tasks, otherwise the task count would stay higher than the initial
-    // count.
+    // The spaces should be gone.
+    assert!(kitsune_1.space_if_exists(TEST_SPACE_ID).await.is_none());
+    assert!(kitsune_2.space_if_exists(TEST_SPACE_ID).await.is_none());
+
+    // Tear the whole stack down: dropping the nodes closes their transport
+    // endpoints, and dropping the bootstrap server shuts down the relay. Once
+    // everything is closed, all tasks Kitsune2 spawned — including every
+    // connection task — must be gone, returning to the pre-relay baseline. If
+    // any connection task were leaked, the count would stay higher.
+    drop(kitsune_1);
+    drop(kitsune_2);
+    drop(bootstrap_server);
+
     iter_check!(30000, 100, {
         let current_tasks = metrics.num_alive_tasks();
         if current_tasks == initial_tasks {
@@ -430,10 +387,6 @@ async fn shutdown_space() {
             );
         }
     });
-
-    // The spaces should be gone.
-    assert!(kitsune_1.space_if_exists(TEST_SPACE_ID).await.is_none());
-    assert!(kitsune_2.space_if_exists(TEST_SPACE_ID).await.is_none());
 }
 
 #[tokio::test]
@@ -443,29 +396,6 @@ async fn test_space_should_not_start_without_bootstrap_url_configured() {
     // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
     let kitsune_builder = default_builder().with_default_config().unwrap();
 
-    #[cfg(feature = "transport-tx5-backend-go-pion")]
-    {
-        let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
-            bind: vec!["127.0.0.1:0".to_string()],
-            ..Default::default()
-        }))
-        .await
-        .unwrap();
-        let signal_server_url =
-            format!("ws://{}", signal_server.bind_addrs()[0]);
-        kitsune_builder
-            .config
-            .set_module_config(&Tx5TransportModConfig {
-                tx5_transport: Tx5TransportConfig {
-                    server_url: signal_server_url.to_owned(),
-                    signal_allow_plain_text: true,
-                    timeout_s: 5,
-                    webrtc_connect_timeout_s: 3,
-                    ..Default::default()
-                },
-            })
-            .unwrap();
-    }
     kitsune_builder
         .config
         .set_module_config(&K2GossipModConfig {
@@ -511,29 +441,6 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
     // Build Kitsune2 normally, but DO NOT set any bootstrap module config.
     let kitsune_builder = default_builder().with_default_config().unwrap();
 
-    #[cfg(feature = "transport-tx5-backend-go-pion")]
-    {
-        let signal_server = SbdServer::new(Arc::new(sbd_server::Config {
-            bind: vec!["127.0.0.1:0".to_string()],
-            ..Default::default()
-        }))
-        .await
-        .unwrap();
-        let signal_server_url =
-            format!("ws://{}", signal_server.bind_addrs()[0]);
-        kitsune_builder
-            .config
-            .set_module_config(&Tx5TransportModConfig {
-                tx5_transport: Tx5TransportConfig {
-                    server_url: signal_server_url.to_owned(),
-                    signal_allow_plain_text: true,
-                    timeout_s: 5,
-                    webrtc_connect_timeout_s: 3,
-                    ..Default::default()
-                },
-            })
-            .unwrap();
-    }
     kitsune_builder
         .config
         .set_module_config(&K2GossipModConfig {
@@ -628,10 +535,7 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
 /// Test that two spaces on the same Kitsune instance can use different
 /// iroh relays. Each space gets its own bootstrap server and relay via
 /// per-space config overrides.
-#[cfg(all(
-    not(feature = "transport-tx5-backend-go-pion"),
-    feature = "transport-iroh"
-))]
+#[cfg(feature = "transport-iroh")]
 #[tokio::test]
 async fn two_spaces_different_relays() {
     enable_tracing();

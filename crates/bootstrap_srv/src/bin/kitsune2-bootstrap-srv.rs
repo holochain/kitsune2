@@ -208,29 +208,6 @@ fn main() {
         metrics::enable_otlp_metrics(args.otlp_endpoint.as_deref())
             .expect("Failed to initialize OTLP metrics");
 
-    #[cfg(feature = "sbd")]
-    {
-        // Apply SBD command line arguments
-        if let Some(header) = args.sbd_trusted_ip_header {
-            config.sbd.trusted_ip_header = Some(header);
-        }
-        if let Some(limit) = args.sbd_limit_clients {
-            config.sbd.limit_clients = limit;
-        }
-        if args.sbd_disable_rate_limiting {
-            config.sbd.disable_rate_limiting = true;
-        }
-        if let Some(kbps) = args.sbd_limit_ip_kbps {
-            config.sbd.limit_ip_kbps = kbps;
-        }
-        if let Some(byte_burst) = args.sbd_limit_ip_byte_burst {
-            config.sbd.limit_ip_byte_burst = byte_burst;
-        }
-        config.sbd.otlp_endpoint = args.otlp_endpoint.clone();
-        config.sbd.authentication_hook_server =
-            args.authentication_hook_server.clone();
-    }
-
     #[cfg(feature = "iroh-relay")]
     {
         if let Some(quic_bind_addr) = args.quic_bind_addr {

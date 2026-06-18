@@ -430,25 +430,6 @@ mod test {
 
     #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
     #[serde(rename_all = "camelCase")]
-    pub struct Tx5TransportConfig {
-        pub signal_allow_plain_text: bool,
-        pub server_url: String,
-        pub timeout_s: u32,
-        pub webrtc_connect_timeout_s: u32,
-        pub tracing_enabled: bool,
-        pub ephemeral_udp_port_min: Option<u16>,
-        pub ephemeral_udp_port_max: Option<u16>,
-        pub danger_force_signal_relay: bool,
-    }
-
-    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct Tx5TransportModConfig {
-        pub tx5_transport: Tx5TransportConfig,
-    }
-
-    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
     struct CoreBootstrapConfig {
         pub server_url: Option<String>,
         pub backoff_min_ms: u32,
@@ -500,23 +481,9 @@ mod test {
         config
             .set_module_config(&src_bootstrap)
             .expect("failed to set source config");
-        let tx5 = Tx5TransportModConfig {
-            tx5_transport: Tx5TransportConfig {
-                signal_allow_plain_text: true,
-                server_url: "wss://signal.example.com".to_string(),
-                timeout_s: 30,
-                webrtc_connect_timeout_s: 10,
-                tracing_enabled: false,
-                ephemeral_udp_port_min: Some(10000),
-                ephemeral_udp_port_max: Some(20000),
-                danger_force_signal_relay: false,
-            },
-        };
+
         overrides
             .set_module_config(&override_bootstrap)
-            .expect("failed to set override config");
-        overrides
-            .set_module_config(&tx5)
             .expect("failed to set override config");
 
         let merged = config
@@ -533,11 +500,5 @@ mod test {
         );
         assert_eq!(new_bootstrap.core_bootstrap.backoff_min_ms, 2000);
         assert_eq!(new_bootstrap.core_bootstrap.backoff_max_ms, 120000);
-
-        // verify tx5 transport config (previously unset)
-        let new_tx5: Tx5TransportModConfig = merged
-            .get_module_config()
-            .expect("failed to get merged config");
-        assert_eq!(new_tx5, tx5);
     }
 }

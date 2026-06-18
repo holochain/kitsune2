@@ -5,8 +5,6 @@ use file_data::FileData;
 use file_op_store::{FileOpStoreFactory, FileStoreLookup};
 use kitsune2_api::*;
 use kitsune2_core::{factories::MemoryOp, get_all_remote_agents};
-#[cfg(feature = "transport-tx5")]
-use kitsune2_transport_tx5::{IceServers, WebRtcConfig};
 use std::{ffi::OsStr, fmt::Debug, path::Path, sync::Arc, time::SystemTime};
 use tokio::{
     fs::{self, File},
@@ -110,30 +108,6 @@ impl App {
             &kitsune2_core::factories::CoreBootstrapModConfig {
                 core_bootstrap: kitsune2_core::factories::CoreBootstrapConfig {
                     server_url: Some(args.bootstrap_url),
-                    ..Default::default()
-                },
-            },
-        )?;
-
-        #[cfg(feature = "transport-tx5")]
-        builder.config.set_module_config(
-            &kitsune2_transport_tx5::Tx5TransportModConfig {
-                tx5_transport: kitsune2_transport_tx5::Tx5TransportConfig {
-                    signal_allow_plain_text: true,
-                    server_url: args.signal_url,
-                    timeout_s: 30,
-                    webrtc_config: WebRtcConfig {
-                        ice_servers: vec![IceServers {
-                            urls: vec![
-                                "stun://stun.l.google.com:19302".to_string(),
-                            ],
-                            username: None,
-                            credential: None,
-                            credential_type: None,
-                        }],
-                        ice_transport_policy: Default::default(),
-                    },
-                    webrtc_connect_timeout_s: 15,
                     ..Default::default()
                 },
             },

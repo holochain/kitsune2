@@ -143,10 +143,6 @@ async fn auth_with_real_token_provider() {
     let auth_hook_url = format!("http://{hook_addr:?}");
     config.auth.authentication_hook_server = Some(auth_hook_url.clone());
 
-    // Note: sbd config still expects full URL with /authenticate path
-    config.sbd.authentication_hook_server =
-        Some(format!("{auth_hook_url}/authenticate"));
-
     config.allowed_origins = Some(vec!["http://localhost".into()]);
 
     let s =

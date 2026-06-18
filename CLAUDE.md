@@ -43,7 +43,6 @@ The workspace is intentionally split so that the API surface, the production imp
 - **`crates/kitsune2`** — the top-level integration crate exposing a default `Builder` wired together from `core`, `dht`, `gossip`, and a transport. This is the entry point for applications embedding Kitsune2.
 - **`crates/dht`**, published as `kitsune2_dht` — the DHT data model, organised as sector, ring, and disc structures. It is used by the gossip crate to drive diff exchange and has no networking of its own.
 - **`crates/gossip`**, published as `kitsune2_gossip` — gossip protocol implementation that uses the `dht` model to compare state between peers and exchange missing ops and agents. The state machine is documented as a mermaid diagram in `crates/gossip/README.md`, flowing from init → accept → diff exchange → hashes/agents → terminate. Read it before changing protocol flow.
-- **`crates/transport_tx5`** — `Transport` implementation built on the `tx5` WebRTC stack, which is the historical default.
 - **`crates/transport_iroh`** — alternative `Transport` implementation built on `iroh`. The two transports are interchangeable behind the API trait.
 - **`crates/bootstrap_srv`** — standalone HTTP server, built on axum, that helps nodes discover each other on a WAN. It uses tempfiles instead of RAM for storage and embeds either an SBD signal server for the tx5 transport or a relay service for the Iroh transport. It ships with its own CLI.
 - **`crates/bootstrap_client`** — client used by nodes to talk to a `bootstrap_srv`.
