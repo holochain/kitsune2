@@ -44,7 +44,6 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
-sbd-server = { workspace = true, features = ["tungstenite"], optional = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
@@ -71,7 +70,6 @@ iroh-dns = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
-sbd-client = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 [[bench]]
@@ -84,9 +82,6 @@ default = ["iroh-relay"]
 
 # enable axum http2 support
 http2 = ["axum/http2"]
-
-# use sbd as signaling and relay server
-sbd = ["dep:sbd-server", "dep:rcgen"]
 
 # use iroh relay server
 iroh-relay = [

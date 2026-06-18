@@ -20,7 +20,6 @@ bytes = { workspace = true }
 kitsune2_api = { workspace = true }
 kitsune2_core = { workspace = true }
 kitsune2_gossip = { workspace = true }
-kitsune2_transport_tx5 = { workspace = true, default-features = false, optional = true }
 kitsune2_transport_iroh = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 
@@ -32,7 +31,6 @@ serde_json = { workspace = true, optional = true }
 kitsune2_gossip = { workspace = true }
 kitsune2_test_utils = { workspace = true }
 kitsune2_transport_iroh = { workspace = true, features = ["test-utils"] }
-sbd-server = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 jsonschema = { workspace = true }
@@ -40,12 +38,6 @@ tracing = { workspace = true }
 
 [features]
 default = ["transport-iroh"]
-
-# Use the go-pion backend for the tx5 transport.
-transport-tx5-backend-go-pion = [
-  "dep:kitsune2_transport_tx5",
-  "kitsune2_transport_tx5/backend-go-pion",
-]
 
 # Use the iroh transport
 transport-iroh = ["dep:kitsune2_transport_iroh"]
@@ -55,6 +47,5 @@ schema = [
   "dep:serde_json",
   "kitsune2_core/schema",
   "kitsune2_gossip/schema",
-  "kitsune2_transport_tx5?/schema",
   "kitsune2_transport_iroh?/schema",
 ]

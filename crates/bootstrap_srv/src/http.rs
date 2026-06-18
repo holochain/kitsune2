@@ -165,10 +165,6 @@ pub struct AppState {
     pub auth_config: Arc<crate::auth::AuthConfig>,
     pub auth_failures: opentelemetry::metrics::Counter<u64>,
 
-    // SBD-specific (keep for SBD websockets)
-    #[cfg(feature = "sbd")]
-    pub sbd_state: Option<crate::sbd::SbdState>,
-
     // Iroh relay allowlist: Some when authentication hook server is configured
     #[cfg(feature = "iroh-relay")]
     pub relay_allowlist: Option<crate::RelayAllowlist>,
@@ -238,22 +234,6 @@ fn tokio_thread(
             let (h_send, h_recv) =
                 async_channel::bounded(server_config.worker_thread_count);
 
-            #[cfg(feature = "sbd")]
-            let sbd_config = Arc::new(config.sbd.clone());
-
-            #[cfg(feature = "sbd")]
-            let ip_rate = Arc::new(sbd_server::IpRate::new(sbd_config.clone()));
-
-            #[cfg(feature = "sbd")]
-            let sbd_server_meter = opentelemetry::global::meter("sbd-server");
-
-            #[cfg(feature = "sbd")]
-            let c_slot = if config.no_relay_server {
-                None
-            } else {
-                Some(sbd_server::CSlot::new(sbd_config.clone(), ip_rate.clone(), sbd_server_meter.clone()))
-            };
-
             let (rustls_config, tls_reload_handle) = if let Some(tls_config) = server_config.tls_config {
                 let rustls_config = tls_config
                     .create_tls_config()
@@ -309,10 +289,6 @@ fn tokio_thread(
             let mut _relay_otel_metrics = None;
 
             if !config.no_relay_server {
-                #[cfg(feature = "sbd")]
-                {
-                    app = app.route("/{pub_key}", routing::get(crate::sbd::handle_sbd));
-                }
                 #[cfg(feature = "iroh-relay")]
                 {
                     app = app.route(
@@ -366,18 +342,6 @@ fn tokio_thread(
                     auth_tracker,
                     auth_config,
                     auth_failures,
-                    #[cfg(feature = "sbd")]
-                    sbd_state: if config.no_relay_server {
-                        None
-                    } else {
-                        {
-                            Some(crate::sbd::SbdState {
-                                config: sbd_config.clone(),
-                                ip_rate: ip_rate.clone(),
-                                c_slot: c_slot.as_ref().expect("Missing c_slot with SBD enabled").weak(),
-                            })
-                        }
-                    },
                     #[cfg(feature = "iroh-relay")]
                     relay_allowlist,
                 });
@@ -422,14 +386,6 @@ fn tokio_thread(
                 if let Some(tls_config) = &rustls_config {
                     let acceptor = RustlsAcceptor::new(tls_config.clone());
 
-                    #[cfg(feature = "sbd")]
-                    let acceptor = {
-                        acceptor.acceptor(crate::sbd::SbdAcceptor::new(
-                                sbd_config.clone(),
-                                ip_rate.clone(),
-                            ))
-                    };
-
                     let s = axum_server::Server::from_tcp(listener)
                         .acceptor(acceptor)
                         .handle(shutdown_handle)
@@ -438,14 +394,6 @@ fn tokio_thread(
                     servers.push(Box::pin(s));
                 } else {
                     let server = axum_server::Server::from_tcp(listener);
-
-                    #[cfg(feature = "sbd")]
-                    let server = {
-                        server.acceptor(crate::sbd::SbdAcceptor::new(
-                            sbd_config.clone(),
-                            ip_rate.clone(),
-                        ))
-                    };
 
                     let s = std::future::IntoFuture::into_future(
                         server

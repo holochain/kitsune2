@@ -739,6 +739,8 @@ impl IrohTransport {
                             ConnectionContextParams{
                             handler: handler.clone(),
                             connection,
+                            local_id: endpoint.id_bytes(),
+                            dialed_by_us: false,
                             remote_url: None,
                             preflight_sent: false,
                             opened_at_s: conn_opened_at_s,
@@ -896,6 +898,8 @@ impl IrohTransport {
             let ctx = ConnectionContext::new(ConnectionContextParams {
                 handler: self.handler.clone(),
                 connection: conn,
+                local_id: self.endpoint.id_bytes(),
+                dialed_by_us: true,
                 remote_url: Some(remote_url.clone()),
                 preflight_sent: true,
                 opened_at_s: conn_opened_at_s,
@@ -1088,15 +1092,24 @@ impl TxImp for IrohTransport {
                         )
                         .await?;
 
-                    // Now that preflight has been sent successfully, add context to
-                    // connections map.
-                    connections
-                        .write()
-                        .expect("poisoned")
-                        .insert(remote_url, ctx.clone());
-
-                    // Lock is released after connection is established and preflight is done.
-                    ctx
+                    // Now that the preflight has been sent successfully, register
+                    // the connection. This resolves any simultaneous-open race
+                    // with an inbound connection from the same peer: if our dial
+                    // lost the deterministic tie-break, close it and send over the
+                    // connection that won instead.
+                    if ctx.register_as_active(&connections, &remote_url) {
+                        ctx
+                    } else {
+                        // Our dial lost the tie-break; discard it (its reader
+                        // then exits quietly) and use the connection that won.
+                        ctx.close_quietly();
+                        connections
+                            .read()
+                            .expect("poisoned")
+                            .get(&remote_url)
+                            .cloned()
+                            .unwrap_or(ctx)
+                    }
                 }
             };
 

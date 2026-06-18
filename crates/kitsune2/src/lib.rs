@@ -18,13 +18,8 @@ use kitsune2_core::{
     factories::{self, MemOpStoreFactory},
 };
 use kitsune2_gossip::K2GossipFactory;
-#[cfg(all(
-    not(feature = "transport-tx5-backend-go-pion"),
-    feature = "transport-iroh"
-))]
+#[cfg(feature = "transport-iroh")]
 use kitsune2_transport_iroh::IrohTransportFactory;
-#[cfg(feature = "transport-tx5-backend-go-pion")]
-use kitsune2_transport_tx5::Tx5TransportFactory;
 
 /// Construct a default production builder for Kitsune2.
 ///
@@ -57,12 +52,7 @@ pub fn default_builder() -> Builder {
         bootstrap: factories::CoreBootstrapFactory::create(),
         fetch: factories::CoreFetchFactory::create(),
         report: factories::CoreReportFactory::create(),
-        #[cfg(feature = "transport-tx5-backend-go-pion")]
-        transport: Tx5TransportFactory::create(),
-        #[cfg(all(
-            not(feature = "transport-tx5-backend-go-pion"),
-            feature = "transport-iroh"
-        ))]
+        #[cfg(feature = "transport-iroh")]
         transport: IrohTransportFactory::create(),
         op_store: MemOpStoreFactory::create(),
         peer_meta_store: factories::MemPeerMetaStoreFactory::create(),

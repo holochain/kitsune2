@@ -4,8 +4,6 @@ use std::io::Write;
 
 #[cfg(feature = "iroh-relay")]
 mod iroh_relay_axum;
-#[cfg(feature = "sbd")]
-mod sbd;
 
 const S1: &str = "2o79pTXHaK1FTPZeBiJo2lCgXW_P0ULjX_5Div_2qxU";
 

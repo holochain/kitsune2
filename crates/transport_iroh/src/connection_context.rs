@@ -25,6 +25,13 @@ use tracing::{debug, error, info, trace, warn};
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: DynConnection,
+    /// Our own endpoint id. Compared against the remote id to resolve
+    /// simultaneous-open races deterministically (see
+    /// [`ConnectionContext::is_preferred_connection`]).
+    local_id: [u8; 32],
+    /// Whether we dialed this connection (`true`) or accepted it (`false`).
+    /// Part of the simultaneous-open tie-break.
+    dialed_by_us: bool,
     connection_reader_abort_handle: Mutex<Option<AbortHandle>>,
     send_stream: tokio::sync::Mutex<Option<DynIrohSendStream>>,
     remote_url: RwLock<Option<Url>>,
@@ -48,6 +55,8 @@ impl fmt::Debug for ConnectionContext {
 pub(super) struct ConnectionContextParams {
     pub handler: Arc<TxImpHnd>,
     pub connection: DynConnection,
+    pub local_id: [u8; 32],
+    pub dialed_by_us: bool,
     pub remote_url: Option<Url>,
     pub preflight_sent: bool,
     pub opened_at_s: u64,
@@ -62,6 +71,8 @@ impl ConnectionContext {
         let ctx = Arc::new(Self {
             handler: params.handler,
             connection: params.connection,
+            local_id: params.local_id,
+            dialed_by_us: params.dialed_by_us,
             connection_reader_abort_handle: Mutex::new(None),
             send_stream: tokio::sync::Mutex::new(None),
             remote_url: RwLock::new(params.remote_url),
@@ -165,6 +176,66 @@ impl ConnectionContext {
         self.connection.is_direct()
     }
 
+    /// Whether this connection is the one both peers should converge on when a
+    /// simultaneous dial has produced two connections between the same pair.
+    ///
+    /// The tie-break is deterministic: keep the connection dialed by the
+    /// endpoint with the larger id. Both peers evaluate this with the same two
+    /// ids and the same notion of who dialed, so they always agree on the same
+    /// physical connection — the loser can then be closed without tearing down
+    /// the survivor.
+    fn is_preferred_connection(&self) -> bool {
+        let remote_id = *self.connection.remote_id().as_bytes();
+        let larger_endpoint_dialed = self.local_id > remote_id;
+        self.dialed_by_us == larger_endpoint_dialed
+    }
+
+    /// Register `self` as the active connection for `remote_url`, resolving any
+    /// simultaneous-open race deterministically.
+    ///
+    /// - If the slot is free, `self` takes it.
+    /// - If `self` is already the active connection, this is a no-op.
+    /// - If a *different* connection to the same peer already exists, the
+    ///   [`is_preferred_connection`](Self::is_preferred_connection) tie-break
+    ///   decides which survives. When `self` wins, the displaced connection is
+    ///   closed (not aborted) so its reader observes the close and exits
+    ///   quietly through the identity-aware cleanup path. When `self` loses,
+    ///   the existing connection is left in place.
+    ///
+    /// Returns `true` if `self` is the active connection afterwards, `false` if
+    /// it lost the tie-break and should be torn down.
+    pub(super) fn register_as_active(
+        self: &Arc<Self>,
+        connections: &Connections,
+        remote_url: &Url,
+    ) -> bool {
+        let displaced = {
+            let mut map = connections.write().expect("poisoned");
+            match map.get(remote_url) {
+                Some(existing) if Arc::ptr_eq(existing, self) => return true,
+                Some(_) if !self.is_preferred_connection() => return false,
+                // Slot is free, or we win the tie-break against the existing
+                // connection: take the slot.
+                _ => map.insert(remote_url.clone(), self.clone()),
+            }
+        };
+
+        // We are now the active connection.
+        #[cfg(feature = "metrics")]
+        connection_counter_metric().add(1, &[]);
+
+        if let Some(displaced) = displaced {
+            // The displaced connection was previously counted as active.
+            #[cfg(feature = "metrics")]
+            connection_counter_metric().add(-1, &[]);
+            displaced
+                .connection
+                .close(0u8, b"superseded by preferred connection");
+        }
+
+        true
+    }
+
     pub fn abort_tasks(&self) {
         if let Some(abort_handle) = self
             .connection_reader_abort_handle
@@ -174,6 +245,17 @@ impl ConnectionContext {
         {
             abort_handle.abort();
         }
+    }
+
+    /// Close the underlying connection without notifying the handler.
+    ///
+    /// Used to discard a redundant connection that lost simultaneous-open
+    /// resolution. The connection's reader then observes the close and exits
+    /// through the identity-aware cleanup path, which sees that this is not the
+    /// active connection and so does not fire `peer_disconnect`.
+    pub(super) fn close_quietly(&self) {
+        self.connection
+            .close(0u8, b"superseded by preferred connection");
     }
 
     pub fn disconnect(&self, reason: String) {
@@ -219,16 +301,20 @@ impl ConnectionContext {
                         info!(remote_id = ?ctx.connection.remote_id(), "Accepted incoming stream");
                         let connections = connections.clone();
                         let local_url = local_url.clone();
-                        // Read frames from the stream. If an error is returned, it means the
-                        // preflight couldn't be received. The connection must be closed in that
-                        // case, because a successful preflight is the prerequisite for establishing
-                        // a connection.
+                        // Read frames from the stream.
                         //
-                        // Errors while receiving data frames from the stream indicate a problem
-                        // with the stream and lead to closing it. An `Ok` value is returned, so
-                        // that the connection is kept open and the next incoming stream is
-                        // awaited.
-                        if let Err(err) = Self::handle_incoming_stream(
+                        // `Ok(true)` keeps the connection open and awaits the next
+                        // incoming stream — returned both after a successful preflight
+                        // and after a data stream ends normally.
+                        //
+                        // `Ok(false)` means this connection lost simultaneous-open
+                        // resolution: a preferred connection to the same peer is already
+                        // active, so this reader stops quietly.
+                        //
+                        // `Err` means the preflight could not be received. The connection
+                        // must be closed, because a successful preflight is the
+                        // prerequisite for establishing a connection.
+                        match Self::handle_incoming_stream(
                             ctx.clone(),
                             stream,
                             connections.clone(),
@@ -236,14 +322,20 @@ impl ConnectionContext {
                         )
                             .await
                         {
-                            error!(?err, "Stream closed by remote");
-                            // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
-                            // errors - this is a temporary state that will resolve once an
-                            // agent joins.
-                            if matches!(err, K2Error::NoLocalAgentsDuringPreflight) {
-                                skip_unresponsive = true;
+                            Ok(true) => {}
+                            Ok(false) => {
+                                break "superseded by preferred connection".to_string();
                             }
-                            break err.to_string();
+                            Err(err) => {
+                                error!(?err, "Stream closed by remote");
+                                // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
+                                // errors - this is a temporary state that will resolve once an
+                                // agent joins.
+                                if matches!(err, K2Error::NoLocalAgentsDuringPreflight) {
+                                    skip_unresponsive = true;
+                                }
+                                break err.to_string();
+                            }
                         }
                     }
                     Err(err) => {
@@ -253,27 +345,46 @@ impl ConnectionContext {
                 }
             };
 
-            // An error has occurred, either while accepting incoming streams
-            // (most likely connection closed) or while reading the preflight
-            // from a stream. The protocol can not recover from this error
-            // and the connection must be closed. The remote is marked as
-            // unresponsive unless this was a temporary error like
-            // NoLocalAgentsDuringPreflight.
+            // The reader loop has ended. Only the connection that is *still the
+            // active connection* for this peer performs the "peer is gone"
+            // cleanup — marking the peer unresponsive and firing
+            // `peer_disconnect`.
+            //
+            // A connection that was superseded during simultaneous-open
+            // resolution, or already replaced by a newer connection, is no
+            // longer the map entry for this peer. It closes quietly so that
+            // tearing it down does not tear down the surviving connection.
             if let Some(remote_url) = ctx.remote_url() {
-                connections
-                    .write()
-                    .expect("poisoned")
-                    .remove(&remote_url);
-                if !skip_unresponsive {
-                    info!(?remote_url, "Setting peer unresponsive");
-                    if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await {
-                        warn!(?err, ?remote_url, "Failed to set peer unresponsive");
+                let was_active = {
+                    let mut map = connections.write().expect("poisoned");
+                    match map.get(&remote_url) {
+                        Some(active) if Arc::ptr_eq(active, &ctx) => {
+                            map.remove(&remote_url);
+                            true
+                        }
+                        _ => false,
                     }
+                };
+
+                if was_active {
+                    if !skip_unresponsive {
+                        info!(?remote_url, "Setting peer unresponsive");
+                        if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await {
+                            warn!(?err, ?remote_url, "Failed to set peer unresponsive");
+                        }
+                    } else {
+                        info!(?remote_url, "Skipping set_unresponsive due to temporary error (no local agents)");
+                    }
+                    ctx.disconnect(err);
                 } else {
-                    info!(?remote_url, "Skipping set_unresponsive due to temporary error (no local agents)");
+                    debug!(?remote_url, reason = %err, "Connection reader stopped; not the active connection, closing quietly");
+                    ctx.connection.close(0u8, b"superseded connection");
                 }
+            } else {
+                // Preflight never completed, so no peer URL was learned and the
+                // peer was never surfaced to the handler.
+                ctx.connection.close(0u8, err.as_bytes());
             }
-            ctx.disconnect(err);
         }).abort_handle()
     }
 
@@ -300,12 +411,15 @@ impl ConnectionContext {
     // kind occurs. Errors during data frame header or data reception
     // or decoding will close the stream, but not the connection.
     // The connection reader will await the next incoming stream.
+    // Returns `Ok(true)` to keep the connection open and await the next stream,
+    // `Ok(false)` if this connection lost simultaneous-open resolution and the
+    // reader should stop, or `Err` if the preflight could not be received.
     async fn handle_incoming_stream(
         ctx: Arc<Self>,
         recv_stream: DynIrohRecvStream,
         connections: Connections,
         local_url: Arc<RwLock<Option<Url>>>,
-    ) -> K2Result<()> {
+    ) -> K2Result<bool> {
         if !ctx.preflight_received() {
             let result = tokio::time::timeout(Duration::from_secs(10), async {
                 let (remote_url, preflight_bytes) = read_preflight_frame_from_stream(&recv_stream, ctx.max_frame_bytes).await?;
@@ -351,13 +465,17 @@ impl ConnectionContext {
                 });
             match result {
                 Ok(Ok(remote_url)) => {
-                    connections
-                        .write()
-                        .expect("poisoned")
-                        .insert(remote_url, ctx.clone());
-                    // Record connection counter metric.
-                    #[cfg(feature = "metrics")]
-                    connection_counter_metric().add(1, &[]);
+                    // Register as the active connection, resolving any
+                    // simultaneous-open race with another connection to the
+                    // same peer. If this connection lost the tie-break, stop
+                    // reading it; the preferred connection is already active.
+                    if !ctx.register_as_active(&connections, &remote_url) {
+                        debug!(
+                            remote = ?remote_url.peer_id(),
+                            "Connection superseded by preferred connection to same peer"
+                        );
+                        return Ok(false);
+                    }
                 }
                 Ok(Err(err)) | Err(err) => {
                     error!(?err, "failed to receive preflight frame");
@@ -400,7 +518,8 @@ impl ConnectionContext {
             ctx.increment_recv_bytes(data_len as u64);
         }
 
-        Ok(())
+        // The stream ended; keep the connection open for the next stream.
+        Ok(true)
     }
 
     async fn ensure_send_stream(

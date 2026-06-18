@@ -115,10 +115,6 @@ pub struct Config {
     ///
     /// This is independent of the relay implementation (SBD or Iroh).
     pub auth: crate::auth::AuthConfig,
-
-    /// The SBD server configuration.
-    #[cfg(feature = "sbd")]
-    pub sbd: sbd_server::Config,
 }
 
 impl Config {
@@ -143,8 +139,6 @@ impl Config {
             no_relay_server: false,
             allowed_origins: None,
             auth: crate::auth::AuthConfig::default(),
-            #[cfg(feature = "sbd")]
-            sbd: sbd_server::Config::default(),
         }
     }
 
@@ -172,8 +166,6 @@ impl Config {
             no_relay_server: false,
             allowed_origins: None,
             auth: crate::auth::AuthConfig::default(),
-            #[cfg(feature = "sbd")]
-            sbd: sbd_server::Config::default(),
         }
     }
 }
