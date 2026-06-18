@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781017108929,
+  "lastUpdate": 1781796061780,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -573,6 +573,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999213,
             "range": "± 27863",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "veeso",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "514a6592066c81d14283093eb734de548cf704cb",
+          "message": "feat(bootstrap_srv): rate-limit inbound bytes on embedded iroh relay\n\nAdds per-connection inbound byte rate limiting at the axum WebSocket\nframe layer of the embedded iroh relay handler, using iroh 1.0.0's\nnow-public iroh_relay::server::streams::Bucket primitive. No fork: the\nBucket primitive that previously required pinning the holochain/iroh\nfork is public as of iroh 1.0.0 on crates.io.\n\nConfigurable via two Config fields and matching CLI flags\n(--relay-client-rx-bytes-per-second, --relay-client-rx-burst-bytes).\nOff by default. When the sustained rate is set without an explicit\nburst, the burst defaults to one tenth of bps to match iroh's own\nRateLimited::from_cfg behaviour.\n\nBumps the workspace iroh stack from 1.0.0-rc.1 to 1.0.0 and migrates\nthe rc-era CaRootsConfig/ca_roots_config to the renamed\nCaTlsConfig/ca_tls_config across bootstrap_srv and transport_iroh.\n\nCloses #501.",
+          "timestamp": "2026-06-18T16:11:47+01:00",
+          "tree_id": "e9267330477e8ab84dd3015cd4c8e54ce5be6cd0",
+          "url": "https://github.com/holochain/kitsune2/commit/514a6592066c81d14283093eb734de548cf704cb"
+        },
+        "date": 1781796061389,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 57092,
+            "range": "± 2093",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 62797,
+            "range": "± 2391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 80653,
+            "range": "± 1692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999828,
+            "range": "± 1453",
             "unit": "ns/iter"
           }
         ]
