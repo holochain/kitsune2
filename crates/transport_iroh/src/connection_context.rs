@@ -327,12 +327,15 @@ impl ConnectionContext {
                                 break "superseded by preferred connection".to_string();
                             }
                             Err(err) => {
-                                error!(?err, "Stream closed by remote");
                                 // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
                                 // errors - this is a temporary state that will resolve once an
-                                // agent joins.
+                                // agent joins. It is not a real failure, so log it quietly and
+                                // reserve `error!` for genuine preflight failures.
                                 if matches!(err, K2Error::NoLocalAgentsDuringPreflight) {
                                     skip_unresponsive = true;
+                                    debug!(?err, "Stream closed during preflight; no local agents yet");
+                                } else {
+                                    error!(?err, "Stream closed by remote");
                                 }
                                 break err.to_string();
                             }

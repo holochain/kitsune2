@@ -935,19 +935,10 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
     // a connection with Bob
     let payload = Bytes::from("Hello world");
 
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_space_notify(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                payload.clone(),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
+    transport_alice
+        .send_space_notify(peer_url_bob.clone(), TEST_SPACE_ID, payload.clone())
+        .await
+        .unwrap();
 
     // Verify that the space message has been handled by Bob's recv_space_notify hook
     let payload_received = recv_notify_recv_bob
@@ -1019,19 +1010,14 @@ async fn incoming_notify_messages_from_blocked_peers_are_dropped() {
         .unwrap();
 
     // Send another message from Alice — it should still be blocked by Bob.
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_space_notify(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                Bytes::from("Should still be blocked"),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
+    transport_alice
+        .send_space_notify(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            Bytes::from("Should still be blocked"),
+        )
+        .await
+        .unwrap();
 
     // Verify that Bob blocked this message too (incoming count increased).
     iter_check!(500, {
@@ -1089,20 +1075,15 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
     // a connection with Bob
     let payload_module = Bytes::from("Hello module world");
 
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_module(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                "test".into(),
-                payload_module.clone(),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
+    transport_alice
+        .send_module(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            "test".into(),
+            payload_module.clone(),
+        )
+        .await
+        .unwrap();
 
     let payload_module_received = recv_module_msg_recv_bob
         .recv_timeout(Duration::from_secs(2))
@@ -1174,20 +1155,15 @@ async fn incoming_module_messages_from_blocked_peers_are_dropped() {
         .unwrap();
 
     // Send another module message from Alice — it should still be blocked.
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_module(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                "test".into(),
-                Bytes::from("Should still be blocked"),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
+    transport_alice
+        .send_module(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            "test".into(),
+            Bytes::from("Should still be blocked"),
+        )
+        .await
+        .unwrap();
 
     // Verify that Bob blocked this message too (incoming count increased).
     iter_check!(500, {
@@ -1243,19 +1219,10 @@ async fn outgoing_notify_messages_to_blocked_peers_are_dropped() {
     // Alice sends a space message that should go through normally
     let payload = Bytes::from("Hello world");
 
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_space_notify(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                payload.clone(),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
+    transport_alice
+        .send_space_notify(peer_url_bob.clone(), TEST_SPACE_ID, payload.clone())
+        .await
+        .unwrap();
 
     // Verify that the space message has been handled by Bob's recv_module_msg hook
     let payload_received = recv_notify_recv_bob
@@ -1393,20 +1360,15 @@ async fn outgoing_module_messages_to_blocked_peers_are_dropped() {
     // Alice sends a module message that should go through normally
     let payload = Bytes::from("Hello module world");
 
-    iter_check!(2_000, 500, {
-        if transport_alice
-            .send_module(
-                peer_url_bob.clone(),
-                TEST_SPACE_ID,
-                "test".into(),
-                payload.clone(),
-            )
-            .await
-            .is_ok()
-        {
-            break;
-        }
-    });
+    transport_alice
+        .send_module(
+            peer_url_bob.clone(),
+            TEST_SPACE_ID,
+            "test".into(),
+            payload.clone(),
+        )
+        .await
+        .unwrap();
 
     // Verify that the module message has been handled by Bob's recv_module_msg hook
     let payload_received = recv_module_msg_recv_bob
@@ -1585,13 +1547,13 @@ async fn send_before_local_agent_join_returns_error() {
         .await;
 
     // Verify that we get an error. The underlying cause is NoLocalAgentsDuringPreflight
-    // but the tx5 transport wraps it in a generic "Peer connection failed" error.
+    // but the transport wraps it in a generic "Peer connection failed" error.
     assert!(
         result.is_err(),
         "Expected error when sending before local agent joins, but send succeeded"
     );
 
-    // The following code is flaky on macos and windows if run with the tx5 transport.
+    // The following code needs the iroh transport to establish a connection.
     #[cfg(feature = "transport-iroh")]
     {
         // Now have Alice join with a local agent
@@ -1613,19 +1575,14 @@ async fn send_before_local_agent_join_returns_error() {
 
         // Try to send again - should succeed now that we have a local agent.
         // We use iter_check to handle any transient connection issues.
-        iter_check!(10_000, 500, {
-            if transport_alice
-                .send_space_notify(
-                    bob.peer_url.clone(),
-                    TEST_SPACE_ID,
-                    Bytes::from("Hello after join"),
-                )
-                .await
-                .is_ok()
-            {
-                break;
-            }
-        });
+        transport_alice
+            .send_space_notify(
+                bob.peer_url.clone(),
+                TEST_SPACE_ID,
+                Bytes::from("Hello after join"),
+            )
+            .await
+            .unwrap();
     }
 }
 
@@ -1703,13 +1660,13 @@ async fn send_module_before_local_agent_join_returns_error() {
         .await;
 
     // Verify that we get an error. The underlying cause is NoLocalAgentsDuringPreflight
-    // but the tx5 transport wraps it in a generic "Peer connection failed" error.
+    // but the transport wraps it in a generic "Peer connection failed" error.
     assert!(
         result.is_err(),
         "Expected error when sending module message before local agent joins, but send succeeded"
     );
 
-    // The following code is flaky on macos and windows if run with the tx5 transport.
+    // The following code needs the iroh transport to establish a connection.
     #[cfg(feature = "transport-iroh")]
     {
         // Now have Alice join with a local agent
@@ -1731,19 +1688,14 @@ async fn send_module_before_local_agent_join_returns_error() {
 
         // Try to send again - should succeed now that we have a local agent.
         // We use iter_check to handle any transient connection issues.
-        iter_check!(10_000, 500, {
-            if transport_alice
-                .send_module(
-                    bob.peer_url.clone(),
-                    TEST_SPACE_ID,
-                    "test".into(),
-                    Bytes::from("Hello module after join"),
-                )
-                .await
-                .is_ok()
-            {
-                break;
-            }
-        });
+        transport_alice
+            .send_module(
+                bob.peer_url.clone(),
+                TEST_SPACE_ID,
+                "test".into(),
+                Bytes::from("Hello module after join"),
+            )
+            .await
+            .unwrap();
     }
 }

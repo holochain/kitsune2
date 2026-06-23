@@ -175,9 +175,9 @@ async fn auth_with_real_token_provider() {
     auth_hook_server_task.abort();
 }
 
-/// Test that authentication works using only the feature-independent auth module.
+/// Test that authentication works using only the relay-independent auth module.
 /// This test disables the relay server entirely to ensure we're testing only
-/// the new auth code path, not relying on SBD authentication.
+/// the HTTP bootstrap auth code path.
 #[tokio::test(flavor = "multi_thread")]
 async fn auth_feature_independent() {
     enable_tracing();
@@ -214,8 +214,7 @@ async fn auth_feature_independent() {
     println!("hook_addr: {hook_addr:?}");
 
     let mut config = Config::testing();
-    // ONLY set auth on config.auth - NOT on config.sbd
-    // This ensures we're testing the feature-independent auth module
+    // Configure the relay-independent auth module via config.auth.
     config.auth.authentication_hook_server =
         Some(format!("http://{hook_addr:?}"));
     // Disable the relay server entirely - we're only testing HTTP bootstrap endpoints

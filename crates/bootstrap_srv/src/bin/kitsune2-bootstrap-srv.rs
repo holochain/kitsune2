@@ -68,39 +68,6 @@ pub struct Args {
     #[arg(long)]
     pub allowed_origins: Option<Vec<String>>,
 
-    /// If specified, this server will only handle bootstrap requests,
-    /// dropping websocket upgrade requests from sbd clients.
-    #[arg(long)]
-    pub no_sbd: bool,
-
-    /// Use this http header to determine IP address instead of the raw
-    /// TCP connection details.
-    #[arg(long)]
-    pub sbd_trusted_ip_header: Option<String>,
-
-    /// Limit client connections.
-    #[arg(long)]
-    pub sbd_limit_clients: Option<i32>,
-
-    /// If set, rate-limiting will be disabled on the server,
-    /// and clients will be informed they have an 8 gbps rate limit.
-    ///
-    /// Note that this is an SBD option, but when SBD is enabled, this applies to all connections.
-    #[arg(long)]
-    pub sbd_disable_rate_limiting: bool,
-
-    /// Rate limit connections to this number of kilobits per second.
-    ///
-    /// If not set, the default is decided by the SBD code.
-    #[arg(long)]
-    pub sbd_limit_ip_kbps: Option<i32>,
-
-    /// Allow IPs to burst by this byte count.
-    ///
-    /// If not set, the default is decided by the SBD code.
-    #[arg(long)]
-    pub sbd_limit_ip_byte_burst: Option<i32>,
-
     /// If specified, this will enable exporting metrics to an OpenTelemetry endpoint.
     #[arg(long)]
     pub otlp_endpoint: Option<String>,

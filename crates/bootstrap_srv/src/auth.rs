@@ -1,8 +1,7 @@
 //! Authentication module for the bootstrap server.
 //!
-//! This module provides authentication functionality that's independent
-//! of the relay implementation (SBD or Iroh). It implements the
-//! authentication hook server specification from:
+//! This module provides authentication functionality that's independent of the relay
+//! implementation. It implements the authentication hook server specification from:
 //! <https://github.com/holochain/sbd/blob/main/spec-auth.md>
 //!
 //! ## Authentication Specification

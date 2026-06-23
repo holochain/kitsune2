@@ -109,7 +109,7 @@ axum-server = { version = "0.7.1", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
 rustls-pemfile = "2.2"
-# axum-server integration with the SBD server
+# axum-server integration with rustls for TLS
 tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
 schemars = { version = "0.9", features = ["preserve_order"] }

@@ -113,7 +113,7 @@ pub struct Config {
 
     /// Authentication configuration.
     ///
-    /// This is independent of the relay implementation (SBD or Iroh).
+    /// This is independent of the relay implementation.
     pub auth: crate::auth::AuthConfig,
 }
 

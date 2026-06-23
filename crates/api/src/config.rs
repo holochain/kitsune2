@@ -442,6 +442,19 @@ mod test {
         pub core_bootstrap: CoreBootstrapConfig,
     }
 
+    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    struct OtherModuleConfig {
+        pub enabled: bool,
+        pub threshold: u32,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    struct OtherModuleModConfig {
+        pub other_module: OtherModuleConfig,
+    }
+
     #[test]
     fn test_should_clone_config() {
         let mod_config = CoreBootstrapModConfig {
@@ -482,6 +495,19 @@ mod test {
             .set_module_config(&src_bootstrap)
             .expect("failed to set source config");
 
+        // A second module present only on the source. The overrides below do
+        // not touch it, so the merge must preserve it unchanged rather than
+        // dropping any module the overrides don't mention.
+        let src_other = OtherModuleModConfig {
+            other_module: OtherModuleConfig {
+                enabled: true,
+                threshold: 7,
+            },
+        };
+        config
+            .set_module_config(&src_other)
+            .expect("failed to set source other-module config");
+
         overrides
             .set_module_config(&override_bootstrap)
             .expect("failed to set override config");
@@ -500,5 +526,11 @@ mod test {
         );
         assert_eq!(new_bootstrap.core_bootstrap.backoff_min_ms, 2000);
         assert_eq!(new_bootstrap.core_bootstrap.backoff_max_ms, 120000);
+
+        // verify the source-only module was not dropped by the merge
+        let new_other: OtherModuleModConfig = merged
+            .get_module_config()
+            .expect("failed to get merged other-module config");
+        assert_eq!(new_other, src_other);
     }
 }
