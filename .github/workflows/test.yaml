@@ -144,16 +144,6 @@ jobs:
       - name: Build
         run: docker buildx build -f docker/kitsune2_bootstrap_srv/Dockerfile .
 
-  docker-build-bootstrap-sbd:
-    needs: static
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Build
-        run: docker buildx build -f docker/kitsune2_bootstrap_srv_sbd/Dockerfile .
-
   docker-build-bootstrap-auth-test:
     needs: static
     runs-on: ubuntu-latest

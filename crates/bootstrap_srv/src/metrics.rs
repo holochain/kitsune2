@@ -1,8 +1,7 @@
 //! OpenTelemetry metrics initialization for the bootstrap server.
 //!
 //! Sets up the OTLP metric exporter and installs it as the global meter
-//! provider. This is feature-independent — both the SBD and iroh-relay
-//! backends use the same provider.
+//! provider.
 
 use opentelemetry::global;
 use opentelemetry_otlp::WithExportConfig;
