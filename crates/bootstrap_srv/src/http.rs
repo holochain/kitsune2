@@ -6,6 +6,180 @@ use http::{HeaderName, HeaderValue, Method};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
+
+/// Maximum time a client may take to get from an accepted TCP connection to a
+/// fully-read HTTP request head (including the TLS handshake on TLS listeners).
+///
+/// This bounds the connection-establishment phase so a stalled or malicious
+/// client cannot hold a half-open connection open indefinitely without ever
+/// completing the WebSocket upgrade on the `/relay` route. It mirrors
+/// `iroh-relay`'s own 30s relay establish timeout, which Kitsune2 bypasses by
+/// serving the relay through its own axum route instead of iroh's
+/// `RelayService`. Once the request head is read the timeout no longer applies,
+/// so it does not interfere with long-lived relay connections; those are bound
+/// by the relay protocol handshake timeout and per-client write timeout.
+const ESTABLISH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// An [`axum_server`] acceptor that bounds the connection-establishment phase
+/// with a single wall-clock deadline, mirroring `iroh-relay`'s own relay
+/// establish timeout.
+///
+/// One absolute deadline (`now + timeout`, computed when the connection is
+/// accepted) covers both phases of establishment:
+///
+/// 1. The wrapped acceptor's handshake — e.g. the TLS handshake performed by
+///    [`RustlsAcceptor`]. A peer cannot stall mid-handshake past the deadline.
+/// 2. Reading the request head, via [`EstablishTimeoutStream`], which carries
+///    the *same* deadline forward. This bounds both a silent peer that never
+///    sends a first byte (hyper's auto HTTP-version detection blocks on that
+///    byte) and a peer that trickles the head without ever finishing it.
+///
+/// Once the server writes its first response byte — which only happens after
+/// the request head has been read and routed — the deadline is disarmed and
+/// the wrapper is transparent for the rest of the connection's life, so
+/// long-lived relay connections are unaffected.
+#[derive(Clone)]
+struct EstablishTimeoutAcceptor<A> {
+    inner: A,
+    timeout: Duration,
+}
+
+impl<A> EstablishTimeoutAcceptor<A> {
+    fn new(inner: A, timeout: Duration) -> Self {
+        Self { inner, timeout }
+    }
+}
+
+impl<A, I, S> axum_server::accept::Accept<I, S> for EstablishTimeoutAcceptor<A>
+where
+    A: axum_server::accept::Accept<I, S>,
+    A::Future: Send + 'static,
+    A::Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+    A::Service: Send,
+{
+    type Stream = EstablishTimeoutStream<A::Stream>;
+    type Service = A::Service;
+    type Future = std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = std::io::Result<(Self::Stream, Self::Service)>,
+                > + Send,
+        >,
+    >;
+
+    fn accept(&self, stream: I, service: S) -> Self::Future {
+        let fut = self.inner.accept(stream, service);
+        // One absolute deadline for the whole establishment phase, carried
+        // through the handshake and then into the request-head read.
+        let deadline = tokio::time::Instant::now() + self.timeout;
+        Box::pin(async move {
+            match tokio::time::timeout_at(deadline, fut).await {
+                Ok(Ok((stream, service))) => {
+                    Ok((EstablishTimeoutStream::new(stream, deadline), service))
+                }
+                Ok(Err(e)) => Err(e),
+                Err(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "connection establish (handshake) timed out",
+                )),
+            }
+        })
+    }
+}
+
+/// Wraps an accepted byte stream so reading the request head is bounded by an
+/// absolute deadline. The deadline stays armed across every read until the
+/// server writes its first response byte — which only happens once the request
+/// head has been read and routed — after which the wrapper is fully transparent
+/// for the rest of the connection's life. See [`EstablishTimeoutAcceptor`].
+struct EstablishTimeoutStream<S> {
+    inner: S,
+    /// `Some` until the connection is established (first server write); `None`
+    /// afterwards.
+    deadline: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl<S> EstablishTimeoutStream<S> {
+    fn new(inner: S, deadline: tokio::time::Instant) -> Self {
+        Self {
+            inner,
+            deadline: Some(Box::pin(tokio::time::sleep_until(deadline))),
+        }
+    }
+
+    /// Disarm the establish deadline: the connection is established.
+    fn established(&mut self) {
+        self.deadline = None;
+    }
+}
+
+impl<S: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead
+    for EstablishTimeoutStream<S>
+{
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        use std::future::Future;
+        use std::task::Poll;
+
+        if let Some(deadline) = self.deadline.as_mut()
+            && deadline.as_mut().poll(cx).is_ready()
+        {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "connection establish timed out before request head was read",
+            )));
+        }
+
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite
+    for EstablishTimeoutStream<S>
+{
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        // The server only writes after it has read and routed the request
+        // head, so the first write marks the connection as established.
+        self.established();
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        // See `poll_write`: the first write establishes the connection.
+        self.established();
+        std::pin::Pin::new(&mut self.inner).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+}
 
 pub struct HttpResponse {
     pub status: u16,
@@ -384,22 +558,40 @@ fn tokio_thread(
                 let app = app.clone();
                 let shutdown_handle = shutdown_handle.clone();
                 if let Some(tls_config) = &rustls_config {
-                    let acceptor = RustlsAcceptor::new(tls_config.clone());
+                    // Wrap the TLS acceptor so a stalled client cannot hold a
+                    // half-open TCP/TLS connection without ever completing the
+                    // handshake. See `ESTABLISH_TIMEOUT`.
+                    let acceptor = EstablishTimeoutAcceptor::new(
+                        RustlsAcceptor::new(tls_config.clone()),
+                        ESTABLISH_TIMEOUT,
+                    );
 
-                    let s = axum_server::Server::from_tcp(listener)
+                    let server = axum_server::Server::from_tcp(listener)
                         .acceptor(acceptor)
-                        .handle(shutdown_handle)
-                        .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+                        .handle(shutdown_handle);
+
+                    let s = server.serve(
+                        app.into_make_service_with_connect_info::<SocketAddr>(),
+                    );
 
                     servers.push(Box::pin(s));
                 } else {
-                    let server = axum_server::Server::from_tcp(listener);
-
-                    let s = std::future::IntoFuture::into_future(
-                        server
-                            .handle(shutdown_handle)
-                            .serve(app.into_make_service_with_connect_info::<SocketAddr>()),
+                    // No TLS handshake to bound, but still wrap the acceptor so
+                    // a connected client that never finishes sending its
+                    // request head is dropped once the establish deadline
+                    // elapses. See `ESTABLISH_TIMEOUT`.
+                    let acceptor = EstablishTimeoutAcceptor::new(
+                        axum_server::accept::DefaultAcceptor::new(),
+                        ESTABLISH_TIMEOUT,
                     );
+
+                    let server = axum_server::Server::from_tcp(listener)
+                        .acceptor(acceptor)
+                        .handle(shutdown_handle);
+
+                    let s = std::future::IntoFuture::into_future(server.serve(
+                        app.into_make_service_with_connect_info::<SocketAddr>(),
+                    ));
                     servers.push(Box::pin(s));
                 };
             }
@@ -697,4 +889,194 @@ fn b64_to_bytes(
             }
         },
     ))
+}
+
+#[cfg(test)]
+mod establish_timeout_tests {
+    use super::*;
+    use axum_server::accept::Accept;
+    use std::io;
+    use std::net::Ipv4Addr;
+    use std::pin::Pin;
+    use std::time::Duration;
+    use tokio::io::AsyncReadExt;
+
+    /// A stand-in acceptor whose handshake takes `delay` before succeeding.
+    #[derive(Clone)]
+    struct SlowAcceptor {
+        delay: Duration,
+    }
+
+    impl<I, S> Accept<I, S> for SlowAcceptor
+    where
+        I: Send + 'static,
+        S: Send + 'static,
+    {
+        type Stream = I;
+        type Service = S;
+        type Future = Pin<
+            Box<dyn std::future::Future<Output = io::Result<(I, S)>> + Send>,
+        >;
+
+        fn accept(&self, stream: I, service: S) -> Self::Future {
+            let delay = self.delay;
+            Box::pin(async move {
+                tokio::time::sleep(delay).await;
+                Ok((stream, service))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn establish_acceptor_times_out_slow_handshake() {
+        let acceptor = EstablishTimeoutAcceptor::new(
+            SlowAcceptor {
+                delay: Duration::from_secs(30),
+            },
+            Duration::from_millis(50),
+        );
+
+        let (stream, _peer) = tokio::io::duplex(64);
+        let err = match Accept::accept(&acceptor, stream, ()).await {
+            Ok(_) => panic!("slow handshake should time out"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn establish_acceptor_passes_fast_handshake() {
+        let acceptor = EstablishTimeoutAcceptor::new(
+            SlowAcceptor {
+                delay: Duration::from_millis(0),
+            },
+            Duration::from_secs(30),
+        );
+
+        let (stream, _peer) = tokio::io::duplex(64);
+        let res = Accept::accept(&acceptor, stream, ()).await;
+
+        assert!(res.is_ok(), "fast handshake should pass through");
+    }
+
+    /// A connection that completes TCP but never sends a request head must be
+    /// dropped once the establish deadline elapses.
+    #[tokio::test]
+    async fn establish_deadline_closes_idle_connection() {
+        let listener =
+            std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let app = Router::new()
+            .route("/", routing::get(|| async { "ok" }))
+            .into_make_service();
+
+        let acceptor = EstablishTimeoutAcceptor::new(
+            axum_server::accept::DefaultAcceptor::new(),
+            Duration::from_millis(200),
+        );
+        let server = axum_server::Server::from_tcp(listener).acceptor(acceptor);
+        let server_handle = tokio::spawn(async move {
+            let _ = server.serve(app).await;
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+        // Send nothing. The server should close the connection (read => EOF)
+        // shortly after the header-read timeout elapses.
+        let mut buf = [0u8; 1];
+        let n =
+            tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+                .await
+                .expect("server did not close the idle connection in time")
+                .expect("read failed");
+
+        assert_eq!(n, 0, "expected EOF once header-read timeout elapsed");
+
+        server_handle.abort();
+    }
+
+    /// A client that sends part of a request head and then stalls must be
+    /// dropped once the establish deadline elapses: the deadline stays armed
+    /// across reads until the head is fully read and the server responds.
+    #[tokio::test]
+    async fn establish_deadline_closes_partial_head() {
+        use tokio::io::AsyncWriteExt;
+
+        let listener =
+            std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let app = Router::new()
+            .route("/", routing::get(|| async { "ok" }))
+            .into_make_service();
+
+        let acceptor = EstablishTimeoutAcceptor::new(
+            axum_server::accept::DefaultAcceptor::new(),
+            Duration::from_millis(200),
+        );
+        let server = axum_server::Server::from_tcp(listener).acceptor(acceptor);
+        let server_handle = tokio::spawn(async move {
+            let _ = server.serve(app).await;
+        });
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        // Start a request head but never terminate it.
+        stream.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        stream.flush().await.unwrap();
+
+        // Server should close (EOF) or return a timeout response and close.
+        let mut buf = Vec::new();
+        let read_to_close = tokio::time::timeout(
+            Duration::from_secs(5),
+            stream.read_to_end(&mut buf),
+        )
+        .await
+        .expect("server did not drop the partial-head connection in time");
+        read_to_close.expect("read failed");
+
+        server_handle.abort();
+    }
+
+    /// Once a full request head arrives the wrapper must be transparent: the
+    /// request is served normally and the establish timeouts do not fire.
+    #[tokio::test]
+    async fn established_request_served_normally() {
+        let listener =
+            std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let app = Router::new()
+            .route("/", routing::get(|| async { "ok" }))
+            .into_make_service();
+
+        let acceptor = EstablishTimeoutAcceptor::new(
+            axum_server::accept::DefaultAcceptor::new(),
+            Duration::from_millis(200),
+        );
+        let server = axum_server::Server::from_tcp(listener).acceptor(acceptor);
+        let server_handle = tokio::spawn(async move {
+            let _ = server.serve(app).await;
+        });
+
+        // Give the listener a moment, then issue a normal request and read the
+        // body. Sleeping past the (short) establish timeout before connecting
+        // proves the timeout is per-connection, not a global clock.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let url = format!("http://{addr}/");
+        let body = tokio::task::spawn_blocking(move || {
+            ureq::get(&url)
+                .call()
+                .unwrap()
+                .body_mut()
+                .read_to_string()
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        assert_eq!(body, "ok");
+
+        server_handle.abort();
+    }
 }
