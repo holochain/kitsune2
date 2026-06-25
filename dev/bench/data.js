@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781796061780,
+  "lastUpdate": 1782387809322,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -621,6 +621,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999828,
             "range": "± 1453",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "68f36ec6a9554e2c0ad1619d8f4686bac9ebb640",
+          "message": "refactor: remove leftover tx5/sbd references\n\nThe tx5 removal deleted the sbd module and Cargo feature but left\ndead references to them behind:\n\n- bootstrap_srv: drop the broken sbd-feature clippy/test tasks from\n  Makefile.toml and the unused no-sbd / sbd-* CLI args\n- delete the unbuildable kitsune2_bootstrap_srv_sbd Docker image and\n  its CI build jobs in docker-build.yaml and test.yaml\n- refresh stale doc comments and CLAUDE.md that still named tx5/sbd\n\nThe holochain/sbd spec-auth.md links are kept; they point to the\nexternal auth protocol the code still implements.",
+          "timestamp": "2026-06-25T12:33:34+01:00",
+          "tree_id": "3dc2314bd42685eaf41d99b9e018cb6301225588",
+          "url": "https://github.com/holochain/kitsune2/commit/68f36ec6a9554e2c0ad1619d8f4686bac9ebb640"
+        },
+        "date": 1782387808852,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 77756,
+            "range": "± 6350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 84881,
+            "range": "± 4861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 99275,
+            "range": "± 3489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41907101,
+            "range": "± 58966",
             "unit": "ns/iter"
           }
         ]
