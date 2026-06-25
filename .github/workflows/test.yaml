@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: taiki-e/install-action@v2
         with:
@@ -35,7 +35,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Maximize build space (Linux)
         if: runner.os == 'Linux'
@@ -81,7 +81,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Go Toolchain
         uses: actions/setup-go@v6
@@ -123,7 +123,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: cachix/install-nix-action@v31
 
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build
         run: docker buildx build -f docker/kitsune2_bootstrap_srv/Dockerfile .
@@ -149,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Build
         run: docker buildx build -f docker/kitsune2_test_auth_hook_server/Dockerfile .
