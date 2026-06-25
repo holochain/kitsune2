@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.5](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.4...v0.5.0-dev.5)\] - 2026-06-25
+
+### Features
+
+- *(bootstrap_srv)* Rate-limit inbound bytes on embedded iroh relay by @veeso in [#533](https://github.com/holochain/kitsune2/pull/533)
+  - Adds per-connection inbound byte rate limiting at the axum WebSocket frame layer of the embedded iroh relay handler, using iroh 1.0.0's now-public iroh_relay::server::streams::Bucket primitive. No fork: the Bucket primitive that previously required pinning the holochain/iroh fork is public as of iroh 1.0.0 on crates.io.
+  - Configurable via two Config fields and matching CLI flags (--relay-client-rx-bytes-per-second, --relay-client-rx-burst-bytes). Off by default. When the sustained rate is set without an explicit burst, the burst defaults to one tenth of bps to match iroh's own RateLimited::from_cfg behaviour.
+  - Bumps the workspace iroh stack from 1.0.0-rc.1 to 1.0.0 and migrates the rc-era CaRootsConfig/ca_roots_config to the renamed CaTlsConfig/ca_tls_config across bootstrap_srv and transport_iroh.
+
+### Refactor
+
+- Remove leftover tx5/sbd references by @ThetaSinner in [#560](https://github.com/holochain/kitsune2/pull/560)
+  - The tx5 removal deleted the sbd module and Cargo feature but left dead references to them behind:
+  - Bootstrap_srv: drop the broken sbd-feature clippy/test tasks from   Makefile.toml and the unused no-sbd / sbd-* CLI args - delete the unbuildable kitsune2_bootstrap_srv_sbd Docker image and   its CI build jobs in docker-build.yaml and test.yaml - refresh stale doc comments and CLAUDE.md that still named tx5/sbd
+  - The holochain/sbd spec-auth.md links are kept; they point to the external auth protocol the code still implements.
+- Remove tx5 by @ThetaSinner
+
+### Automated Changes
+
+- *(deps)* Bump holochain/actions/.github/workflows/publish-release.yml by @dependabot[bot] in [#559](https://github.com/holochain/kitsune2/pull/559)
+- *(deps)* Bump holochain/actions/.github/workflows/prepare-release.yml by @dependabot[bot] in [#558](https://github.com/holochain/kitsune2/pull/558)
+- *(deps)* Bump actions/checkout from 6 to 7 by @dependabot[bot] in [#557](https://github.com/holochain/kitsune2/pull/557)
+- *(deps)* Bump holochain/actions/.github/workflows/changelog-preview-comment.yml by @dependabot[bot] in [#556](https://github.com/holochain/kitsune2/pull/556)
+
 ## \[[0.5.0-dev.4](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.3...v0.5.0-dev.4)\] - 2026-06-09
 
 ### Features
