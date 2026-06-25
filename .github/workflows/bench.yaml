@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Maximize build space (Linux)
         uses: AdityaGarg8/remove-unwanted-software@v5
