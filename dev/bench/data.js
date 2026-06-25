@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782399539118,
+  "lastUpdate": 1782403455775,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -813,6 +813,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42000714,
             "range": "± 3329",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "1fe9a48660a606067d9bc84d2d14e262f78a9150",
+          "message": "build(deps): bump holochain/actions/.github/workflows/publish-release.yml\n\nBumps [holochain/actions/.github/workflows/publish-release.yml](https://github.com/holochain/actions) from 1.8.0 to 1.14.0.\n- [Release notes](https://github.com/holochain/actions/releases)\n- [Commits](https://github.com/holochain/actions/compare/v1.8.0...v1.14.0)\n\n---\nupdated-dependencies:\n- dependency-name: holochain/actions/.github/workflows/publish-release.yml\n  dependency-version: 1.14.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-06-25T17:01:01+01:00",
+          "tree_id": "da08f8c3d05d0479420d8848ddf7a66ee580f7df",
+          "url": "https://github.com/holochain/kitsune2/commit/1fe9a48660a606067d9bc84d2d14e262f78a9150"
+        },
+        "date": 1782403454867,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 79554,
+            "range": "± 3753",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 83123,
+            "range": "± 4137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 105131,
+            "range": "± 5309",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42000650,
+            "range": "± 2117",
             "unit": "ns/iter"
           }
         ]
