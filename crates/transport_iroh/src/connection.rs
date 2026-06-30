@@ -3,6 +3,7 @@
 use crate::stream::{
     DynIrohRecvStream, DynIrohSendStream, IrohRecvStream, IrohSendStream,
 };
+use bytes::Bytes;
 use iroh::EndpointId;
 use kitsune2_api::{BoxFut, K2Error, K2Result};
 use std::sync::Arc;
@@ -27,6 +28,17 @@ pub(crate) trait Connection: 'static + Send + Sync {
 
     /// Check if the connection has a direct (non-relay) path.
     fn is_direct(&self) -> bool;
+
+    /// If the connection has been closed *by the remote* with an application
+    /// close, return the reason bytes the remote sent.
+    ///
+    /// Returns `None` while the connection is still open, when it was closed
+    /// locally, or when it was torn down by a transport-level error (timeout,
+    /// reset, ...) rather than a graceful application close. This lets the
+    /// reader distinguish a deliberate, signalled teardown (such as a
+    /// connection superseded during simultaneous-open resolution) from a
+    /// genuine peer disconnect.
+    fn remote_close_reason(&self) -> Option<Bytes>;
 }
 
 /// Production implementation wrapping iroh's Connection.
@@ -76,6 +88,15 @@ impl Connection for IrohConnection {
             .paths()
             .iter()
             .any(|p| p.is_ip() && p.is_selected())
+    }
+
+    fn remote_close_reason(&self) -> Option<Bytes> {
+        match self.inner.close_reason() {
+            Some(iroh::endpoint::ConnectionError::ApplicationClosed(
+                application_close,
+            )) => Some(application_close.reason),
+            _ => None,
+        }
     }
 }
 

@@ -4,6 +4,7 @@ use super::*;
 
 mod connect_failure;
 mod frame;
+mod simultaneous_open;
 mod stream;
 mod url;
 
