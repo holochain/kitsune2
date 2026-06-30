@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.0-dev.6](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.5...v0.5.0-dev.6)\] - 2026-06-30
+
+### Features
+
+- *(bootstrap_srv)* Bound relay connection establishment with a timeout by @synchwire in [#563](https://github.com/holochain/kitsune2/pull/563)
+  - The bootstrap server serves the iroh relay through its own axum route instead of iroh's `RelayService`, so it did not inherit iroh-relay's 30s connection establish timeout (iroh PR #4083, still present in iroh-relay 1.0). A stalled or malicious client could hold a half-open TCP/TLS connection to `/relay` without ever completing the WebSocket upgrade, tying up server resources indefinitely.
+  - Add an equivalent establish timeout at the connection level (the only place that can see the pre-upgrade window; a Tower/route layer runs only after hyper has parsed the request head):
+  - `EstablishTimeoutAcceptor` bounds the inner acceptor's TLS handshake   and wraps the byte stream in `EstablishTimeoutStream`. - `EstablishTimeoutStream` enforces a deadline on the wait for the first   request byte, then becomes transparent. This is required because   hyper's auto builder blocks in HTTP-version detection on that first   byte before its header-read timeout engages, so a fully-silent client   would otherwise never be dropped. - `configure_establish_timeout` arms hyper's http1 `header_read_timeout`   (and the `TokioTimer` it requires) for the slow-trickle-headers case.
+  - A single 30s `ESTABLISH_TIMEOUT` mirrors upstream. Once the request head is read, neither timeout applies, so long-lived relay connections are unaffected; they remain bound by the existing relay handshake and per-client write timeouts.
+
+### Bug Fixes
+
+- *(transport_iroh)* Don't mark peer unresponsive on superseded simultaneous-open close by @ThetaSinner in [#564](https://github.com/holochain/kitsune2/pull/564)
+  - During simultaneous open the losing connection is closed by the remote peer's tie-break resolution. On the node whose losing connection is still its active map entry — because the winning connection hasn't finished its preflight and registered yet — that remote close was mistaken for a genuine peer disconnect, spuriously marking the peer unresponsive (which lasts until the agent info expires) and stalling gossip.
+  - The reader exit now honours the remote's application close reason: a close with the superseded marker frees the map slot quietly instead of marking the peer unresponsive or firing peer_disconnect. Genuine deaths are unchanged.
+
 ## \[[0.5.0-dev.5](https://github.com/holochain/kitsune2/compare/v0.5.0-dev.4...v0.5.0-dev.5)\] - 2026-06-25
 
 ### Features
