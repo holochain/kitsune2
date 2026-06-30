@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782812252693,
+  "lastUpdate": 1782840835006,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -957,6 +957,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999699,
             "range": "± 13260",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "6267702+ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "9a497178f0c86ce8ee9d351b07f4eb378892e424",
+          "message": "chore: Prepare next release",
+          "timestamp": "2026-06-30T18:30:48+01:00",
+          "tree_id": "f4381aab2f065f3746b266d8a3f030ac9d7aa707",
+          "url": "https://github.com/holochain/kitsune2/commit/9a497178f0c86ce8ee9d351b07f4eb378892e424"
+        },
+        "date": 1782840834442,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 82178,
+            "range": "± 5075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 87063,
+            "range": "± 5798",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 111564,
+            "range": "± 5216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42001497,
+            "range": "± 36566",
             "unit": "ns/iter"
           }
         ]
