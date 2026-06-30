@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782411857516,
+  "lastUpdate": 1782812252693,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -909,6 +909,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41780005,
             "range": "± 87166",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "synchwire@users.noreply.github.com",
+            "name": "synchwire",
+            "username": "synchwire"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "caa0b02bfbb9ba3d3a80be4e21bbd9ddd4b2d95a",
+          "message": "feat(bootstrap_srv): bound relay connection establishment with a timeout\n\nThe bootstrap server serves the iroh relay through its own axum route\ninstead of iroh's `RelayService`, so it did not inherit iroh-relay's 30s\nconnection establish timeout (iroh PR #4083, still present in iroh-relay\n1.0). A stalled or malicious client could hold a half-open TCP/TLS\nconnection to `/relay` without ever completing the WebSocket upgrade,\ntying up server resources indefinitely.\n\nAdd an equivalent establish timeout at the connection level (the only\nplace that can see the pre-upgrade window; a Tower/route layer runs only\nafter hyper has parsed the request head):\n\n- `EstablishTimeoutAcceptor` bounds the inner acceptor's TLS handshake\n  and wraps the byte stream in `EstablishTimeoutStream`.\n- `EstablishTimeoutStream` enforces a deadline on the wait for the first\n  request byte, then becomes transparent. This is required because\n  hyper's auto builder blocks in HTTP-version detection on that first\n  byte before its header-read timeout engages, so a fully-silent client\n  would otherwise never be dropped.\n- `configure_establish_timeout` arms hyper's http1 `header_read_timeout`\n  (and the `TokioTimer` it requires) for the slow-trickle-headers case.\n\nA single 30s `ESTABLISH_TIMEOUT` mirrors upstream. Once the request head\nis read, neither timeout applies, so long-lived relay connections are\nunaffected; they remain bound by the existing relay handshake and\nper-client write timeouts.\n\nCloses #526",
+          "timestamp": "2026-06-30T10:26:46+01:00",
+          "tree_id": "0831e76923afd69ae89a27b72f544a5b8d215c71",
+          "url": "https://github.com/holochain/kitsune2/commit/caa0b02bfbb9ba3d3a80be4e21bbd9ddd4b2d95a"
+        },
+        "date": 1782812251759,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 78349,
+            "range": "± 5205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 82775,
+            "range": "± 5576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 102799,
+            "range": "± 5538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999699,
+            "range": "± 13260",
             "unit": "ns/iter"
           }
         ]
