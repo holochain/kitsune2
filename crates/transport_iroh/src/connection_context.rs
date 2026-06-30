@@ -22,6 +22,18 @@ use std::{
 use tokio::{sync::MutexGuard, task::AbortHandle};
 use tracing::{debug, error, info, trace, warn};
 
+/// Application close reason sent when a connection is intentionally torn down
+/// because a different, preferred connection to the same peer won
+/// simultaneous-open resolution.
+///
+/// The remote end recognises this reason (via
+/// [`Connection::remote_close_reason`](crate::connection::Connection::remote_close_reason))
+/// and treats the close as a deliberate supersession rather than a peer
+/// disconnect, so it does not mark the peer unresponsive or fire
+/// `peer_disconnect`.
+pub(super) const SUPERSEDED_CLOSE_REASON: &[u8] =
+    b"superseded by preferred connection";
+
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
     connection: DynConnection,
@@ -228,9 +240,7 @@ impl ConnectionContext {
             // The displaced connection was previously counted as active.
             #[cfg(feature = "metrics")]
             connection_counter_metric().add(-1, &[]);
-            displaced
-                .connection
-                .close(0u8, b"superseded by preferred connection");
+            displaced.connection.close(0u8, SUPERSEDED_CLOSE_REASON);
         }
 
         true
@@ -254,8 +264,7 @@ impl ConnectionContext {
     /// through the identity-aware cleanup path, which sees that this is not the
     /// active connection and so does not fire `peer_disconnect`.
     pub(super) fn close_quietly(&self) {
-        self.connection
-            .close(0u8, b"superseded by preferred connection");
+        self.connection.close(0u8, SUPERSEDED_CLOSE_REASON);
     }
 
     pub fn disconnect(&self, reason: String) {
@@ -349,15 +358,33 @@ impl ConnectionContext {
             };
 
             // The reader loop has ended. Only the connection that is *still the
-            // active connection* for this peer performs the "peer is gone"
-            // cleanup — marking the peer unresponsive and firing
-            // `peer_disconnect`.
+            // active connection* for this peer and that died for a genuine
+            // reason performs the "peer is gone" cleanup — marking the peer
+            // unresponsive and firing `peer_disconnect`.
             //
             // A connection that was superseded during simultaneous-open
-            // resolution, or already replaced by a newer connection, is no
-            // longer the map entry for this peer. It closes quietly so that
-            // tearing it down does not tear down the surviving connection.
+            // resolution, or already replaced by a newer connection, is torn
+            // down deliberately, not because the peer is gone. It closes
+            // quietly so that tearing it down does not mark the peer
+            // unresponsive or tear down the surviving connection. There are two
+            // such cases:
+            //
+            // - It is no longer the map entry for this peer (a preferred or
+            //   newer connection already replaced it locally).
+            // - The *remote* closed it with [`SUPERSEDED_CLOSE_REASON`] because
+            //   it preferred a different connection. This can arrive while this
+            //   connection is still our active map entry, because the winning
+            //   connection has not finished its preflight and registered yet.
+            //   Without honouring that reason we would wrongly mark the peer
+            //   unresponsive (which lasts until the agent info expires) and
+            //   stall gossip, even though a usable connection is moments away.
             if let Some(remote_url) = ctx.remote_url() {
+                let superseded_by_remote = ctx
+                    .connection
+                    .remote_close_reason()
+                    .as_deref()
+                    == Some(SUPERSEDED_CLOSE_REASON);
+
                 let was_active = {
                     let mut map = connections.write().expect("poisoned");
                     match map.get(&remote_url) {
@@ -369,7 +396,7 @@ impl ConnectionContext {
                     }
                 };
 
-                if was_active {
+                if was_active && !superseded_by_remote {
                     if !skip_unresponsive {
                         info!(?remote_url, "Setting peer unresponsive");
                         if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await {
@@ -380,8 +407,8 @@ impl ConnectionContext {
                     }
                     ctx.disconnect(err);
                 } else {
-                    debug!(?remote_url, reason = %err, "Connection reader stopped; not the active connection, closing quietly");
-                    ctx.connection.close(0u8, b"superseded connection");
+                    debug!(?remote_url, reason = %err, superseded_by_remote, "Connection reader stopped without marking peer unresponsive (superseded or not the active connection)");
+                    ctx.connection.close(0u8, SUPERSEDED_CLOSE_REASON);
                 }
             } else {
                 // Preflight never completed, so no peer URL was learned and the
