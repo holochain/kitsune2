@@ -941,3 +941,79 @@ fn start_with_tls() {
     .call()
     .unwrap();
 }
+
+#[test]
+fn security_headers_present_with_tls() {
+    // We have mixed features between ring and aws_lc so the "lookup by crate features" doesn't
+    // return a default.
+    // If this is called twice due to parallel tests, ignore result, because it'll fail.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let cert =
+        rcgen::generate_simple_self_signed(vec!["bootstrap.test".to_string()])
+            .unwrap();
+
+    let cert_dir = tempfile::tempdir().unwrap();
+
+    let cert_path = cert_dir.path().join("test_cert.pem");
+    File::create_new(&cert_path)
+        .unwrap()
+        .write_all(cert.cert.pem().as_bytes())
+        .unwrap();
+
+    let key_path = cert_dir.path().join("test_key.pem");
+    File::create_new(&key_path)
+        .unwrap()
+        .write_all(cert.signing_key.serialize_pem().as_bytes())
+        .unwrap();
+
+    let mut config = Config::testing();
+    config.tls_cert = Some(cert_path);
+    config.tls_key = Some(key_path);
+
+    let s = BootstrapSrv::new(config).unwrap();
+
+    let agent = ureq::Agent::config_builder()
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .disable_verification(true)
+                .build(),
+        )
+        .build()
+        .new_agent();
+
+    let res = agent
+        .get(format!("https://{}/health", s.listen_addrs()[0]))
+        .call()
+        .unwrap();
+
+    assert_eq!(
+        "max-age=63072000; includeSubDomains",
+        res.headers()
+            .get("strict-transport-security")
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
+        "default-src 'none'; frame-ancestors 'none'; form-action 'none'; \
+         base-uri 'self'; block-all-mixed-content; plugin-types 'none'",
+        res.headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
+}
+
+#[test]
+fn security_headers_absent_without_tls() {
+    let s = BootstrapSrv::new(Config::testing()).unwrap();
+
+    let res = ureq::get(format!("http://{}/health", s.listen_addrs()[0]))
+        .call()
+        .unwrap();
+
+    assert!(!res.headers().contains_key("strict-transport-security"));
+    assert!(!res.headers().contains_key("content-security-policy"));
+}

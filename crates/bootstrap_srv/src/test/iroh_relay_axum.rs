@@ -103,6 +103,29 @@ fn use_bootstrap_and_iroh_relay_with_tls() {
     let res: Vec<DecodeAgent> = serde_json::from_str(&res).unwrap();
     assert_eq!(1, res.len());
 
+    // Security headers must reach relay routes too, not just the bootstrap
+    // routes: they are added last so they wrap every route, including the
+    // ones merged in from the relay router.
+    let ping_res = ureq::get(format!("https://{addr}/ping"))
+        .config()
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .disable_verification(true)
+                .build(),
+        )
+        .build()
+        .call()
+        .unwrap();
+    assert_eq!(
+        "max-age=63072000; includeSubDomains",
+        ping_res
+            .headers()
+            .get("strict-transport-security")
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
+
     create_two_endpoints_and_assert_message_is_received(true, addr);
 }
 

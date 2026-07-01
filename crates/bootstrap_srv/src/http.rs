@@ -509,6 +509,29 @@ fn tokio_thread(
             #[cfg(feature = "iroh-relay")]
             let relay_allowlist_for_ready = relay_allowlist.clone();
 
+            // Only advertise TLS-related security headers when TLS is
+            // actually terminated here; they would be misleading on a plain
+            // HTTP listener. Values are kept in sync with the headers
+            // upstream `iroh-relay` sets on its own HTTP(S) server. This is
+            // applied last, after every route (including the relay routes
+            // merged in above) has been added, since `Router::layer` only
+            // wraps routes that already exist at the time it's called.
+            if rustls_config.is_some() {
+                app = app
+                    .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+                        http::header::STRICT_TRANSPORT_SECURITY,
+                        HeaderValue::from_static(
+                            "max-age=63072000; includeSubDomains",
+                        ),
+                    ))
+                    .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+                        http::header::CONTENT_SECURITY_POLICY,
+                        HeaderValue::from_static(
+                            "default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'self'; block-all-mixed-content; plugin-types 'none'",
+                        ),
+                    ));
+            }
+
             let app: Router = app
                 .layer(extract::DefaultBodyLimit::max(1024))
                 .with_state(AppState {
