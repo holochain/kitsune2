@@ -20,7 +20,7 @@ axum = { workspace = true, default-features = false, features = [
   "ws",
 ] }
 axum-server = { workspace = true, features = ["tls-rustls-no-provider"] }
-tower-http = { workspace = true, features = ["cors"] }
+tower-http = { workspace = true, features = ["cors", "set-header"] }
 http = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 base64 = { workspace = true }
