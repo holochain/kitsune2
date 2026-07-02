@@ -122,10 +122,11 @@ pub async fn relay_handler(
 
     // iroh 0.98+ clients advertise a comma-separated list of supported relay
     // protocol versions via `Sec-Websocket-Protocol` and fail the connection
-    // unless the server echoes back one it recognises. Our handshake/framing
-    // here is still V1-only (see `protocol_version` below), so restrict the
-    // negotiation to V1.
-    let ws = ws.protocols([ProtocolVersion::V1.to_str()]);
+    // unless the server echoes back one it recognises. Pick the newest
+    // version both sides support and echo exactly that one, falling back to
+    // V1 for clients that don't advertise a recognised version.
+    let protocol_version = negotiate_protocol_version(&parts.headers);
+    let ws = ws.protocols([protocol_version.to_str()]);
 
     ws.on_upgrade(move |socket| async move {
         if let Err(e) = handle_relay_websocket(
@@ -133,6 +134,7 @@ pub async fn relay_handler(
             state,
             client_auth_header,
             client_request_parts,
+            protocol_version,
         )
         .await
         {
@@ -164,6 +166,25 @@ pub async fn relay_handler(
             }
         }
     })
+}
+
+/// Pick the relay protocol version for a connection from the client's
+/// `Sec-Websocket-Protocol` header.
+///
+/// Clients advertise a comma-separated list of supported versions; the
+/// newest one we also support wins. Falls back to [`ProtocolVersion::V1`]
+/// when the header is missing or contains no recognised version, matching
+/// the server's historical V1-only behaviour for old clients.
+fn negotiate_protocol_version(headers: &HeaderMap) -> ProtocolVersion {
+    headers
+        .get_all(axum::http::header::SEC_WEBSOCKET_PROTOCOL)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|subprotocols| subprotocols.split(','))
+        .map(str::trim)
+        .filter_map(ProtocolVersion::match_from_str)
+        .max()
+        .unwrap_or(ProtocolVersion::V1)
 }
 
 /// Per-connection rate-limit state held inside [`AxumWebSocketAdapter`].
@@ -348,6 +369,7 @@ async fn handle_relay_websocket(
     state: RelayState,
     client_auth_header: Option<http::HeaderValue>,
     request_parts: http::request::Parts,
+    protocol_version: ProtocolVersion,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     trace!("Relay WebSocket connection established");
 
@@ -367,7 +389,7 @@ async fn handle_relay_websocket(
 
         let client_request = ClientRequest::new(
             authentication.client_key,
-            ProtocolVersion::V1,
+            protocol_version,
             request_parts,
         );
         let guard = authentication
@@ -391,8 +413,7 @@ async fn handle_relay_websocket(
     let io = RelayedStream::new(adapter, state.key_cache.clone());
 
     trace!("accept: build client conn");
-    // TODO Update in sync with the client and deploy at V2
-    let mut client_conn_builder = Config::new(guard, io, ProtocolVersion::V1);
+    let mut client_conn_builder = Config::new(guard, io, protocol_version);
     client_conn_builder.write_timeout = state.write_timeout;
 
     // Register the client with the relay server
@@ -556,6 +577,145 @@ mod tests {
         protos::relay::{ClientToRelayMsg, Datagrams, RelayToClientMsg},
         tls::CaTlsConfig,
     };
+
+    fn header_map(subprotocols: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(value) = subprotocols {
+            headers.insert(
+                axum::http::header::SEC_WEBSOCKET_PROTOCOL,
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn negotiation_picks_newest_shared_version() {
+        assert_eq!(
+            negotiate_protocol_version(&header_map(Some(
+                "iroh-relay-v2, iroh-relay-v1"
+            ))),
+            ProtocolVersion::V2
+        );
+        // Order in the client's list must not matter.
+        assert_eq!(
+            negotiate_protocol_version(&header_map(Some(
+                "iroh-relay-v1,iroh-relay-v2"
+            ))),
+            ProtocolVersion::V2
+        );
+    }
+
+    #[test]
+    fn negotiation_considers_repeated_header_lines() {
+        // HTTP allows list-valued headers to be split across multiple
+        // header lines; a version offered on a later line must still win.
+        let mut headers = HeaderMap::new();
+        headers.append(
+            axum::http::header::SEC_WEBSOCKET_PROTOCOL,
+            "iroh-relay-v1".parse().unwrap(),
+        );
+        headers.append(
+            axum::http::header::SEC_WEBSOCKET_PROTOCOL,
+            "iroh-relay-v2".parse().unwrap(),
+        );
+        assert_eq!(negotiate_protocol_version(&headers), ProtocolVersion::V2);
+    }
+
+    #[test]
+    fn negotiation_accepts_v1_only_client() {
+        assert_eq!(
+            negotiate_protocol_version(&header_map(Some("iroh-relay-v1"))),
+            ProtocolVersion::V1
+        );
+    }
+
+    #[test]
+    fn negotiation_falls_back_to_v1() {
+        // Missing header.
+        assert_eq!(
+            negotiate_protocol_version(&header_map(None)),
+            ProtocolVersion::V1
+        );
+        // Unrecognised versions only.
+        assert_eq!(
+            negotiate_protocol_version(&header_map(Some(
+                "iroh-relay-v99, bogus"
+            ))),
+            ProtocolVersion::V1
+        );
+    }
+
+    /// Perform a raw WebSocket upgrade against `addr` offering
+    /// `subprotocols`, returning the `Sec-Websocket-Protocol` value the
+    /// server echoed back (if any). Asserts the upgrade itself succeeds.
+    async fn raw_ws_upgrade_echoed_protocol(
+        addr: std::net::SocketAddr,
+        subprotocols: &str,
+    ) -> Option<String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let request = format!(
+            "GET /relay HTTP/1.1\r\n\
+             Host: {addr}\r\n\
+             Connection: Upgrade\r\n\
+             Upgrade: websocket\r\n\
+             Sec-WebSocket-Version: 13\r\n\
+             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+             Sec-WebSocket-Protocol: {subprotocols}\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).await.unwrap();
+
+        // Read until the end of the response headers.
+        let mut response = Vec::new();
+        let mut buf = [0u8; 1024];
+        while !response.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stream.read(&mut buf),
+            )
+            .await
+            .expect("timed out reading upgrade response")
+            .unwrap();
+            assert!(n > 0, "connection closed before upgrade completed");
+            response.extend_from_slice(&buf[..n]);
+        }
+        let response = String::from_utf8_lossy(&response);
+        assert!(
+            response.starts_with("HTTP/1.1 101"),
+            "expected 101 Switching Protocols, got: {response}"
+        );
+
+        response.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("sec-websocket-protocol")
+                .then(|| value.trim().to_string())
+        })
+    }
+
+    /// A V1-only client (pre-0.98 iroh) must still be offered V1 rather
+    /// than being forced onto V2. The full V1 relay datapath is covered by
+    /// upstream `iroh-relay` tests; here we only verify the negotiation.
+    #[tokio::test]
+    async fn v1_only_client_negotiates_v1() {
+        let state = create_relay_state(None);
+        let app = Router::new()
+            .route("/relay", get(relay_handler))
+            .with_state(state);
+        let listener =
+            TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server_handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("server error");
+        });
+
+        let echoed =
+            raw_ws_upgrade_echoed_protocol(addr, "iroh-relay-v1").await;
+        assert_eq!(echoed.as_deref(), Some("iroh-relay-v1"));
+
+        server_handle.abort();
+    }
 
     /// Integration test: Start an axum server with the relay handler and connect clients
     #[tokio::test]
