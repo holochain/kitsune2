@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782840835006,
+  "lastUpdate": 1782982457161,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1005,6 +1005,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42001497,
             "range": "± 36566",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "synchwire@users.noreply.github.com",
+            "name": "synchwire",
+            "username": "synchwire"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "768b01b11dbe50c15fb36f554bbb77dcf7a5a351",
+          "message": "feat(bootstrap_srv): add TLS security headers to relay HTTP responses\n\nUpstream iroh-relay adds Strict-Transport-Security and\nContent-Security-Policy headers to all responses when TLS is enabled;\nthe bootstrap_srv axum integration did not, since it serves the relay\nthrough its own axum routes rather than iroh's RelayService.\n\nAdd a tower_http::set_header::SetResponseHeaderLayer for each header,\ngated on the server's rustls config, so plain-HTTP listeners are\nunaffected. Header values are copied verbatim from iroh-relay 1.0.0's\nTLS_HEADERS constant to stay in sync.\n\nThe layer is applied last, after every route (including the relay\nroutes merged in from iroh_relay_axum) has been added to the router,\nsince axum's Router::layer only wraps routes that already exist at the\ntime it's called — applying it earlier would have silently excluded\n/relay, /ping, /generate_204, and /relay/register from the headers.\n\nCloses #503",
+          "timestamp": "2026-07-02T09:49:11+01:00",
+          "tree_id": "56d15a12d9746c5a3165ec66ad639922eded88e2",
+          "url": "https://github.com/holochain/kitsune2/commit/768b01b11dbe50c15fb36f554bbb77dcf7a5a351"
+        },
+        "date": 1782982456884,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 71425,
+            "range": "± 4189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 75978,
+            "range": "± 4150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 95746,
+            "range": "± 3873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999836,
+            "range": "± 25492",
             "unit": "ns/iter"
           }
         ]
