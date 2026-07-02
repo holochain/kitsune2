@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782982457161,
+  "lastUpdate": 1783004109435,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1053,6 +1053,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999836,
             "range": "± 25492",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "synchwire@users.noreply.github.com",
+            "name": "synchwire",
+            "username": "synchwire"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "03d21103cb8df66d7573dfe22f2636558b7cb0cf",
+          "message": "feat(bootstrap_srv): negotiate relay protocol version, enabling V2\n\nThe embedded relay handler previously pinned the iroh relay protocol\nto V1 at every point (subprotocol echo, access-control request, and\nclient conn config). Now the newest version shared with the client is\nnegotiated from the Sec-Websocket-Protocol header and threaded through,\nso iroh 0.98+ clients get V2 while V1-only clients keep working.",
+          "timestamp": "2026-07-02T15:51:12+01:00",
+          "tree_id": "c0f02a7ea45610a9911203128762c9e633fc02a2",
+          "url": "https://github.com/holochain/kitsune2/commit/03d21103cb8df66d7573dfe22f2636558b7cb0cf"
+        },
+        "date": 1783004108646,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 73147,
+            "range": "± 5182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 75683,
+            "range": "± 3252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 93602,
+            "range": "± 4263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41997513,
+            "range": "± 55340",
             "unit": "ns/iter"
           }
         ]
