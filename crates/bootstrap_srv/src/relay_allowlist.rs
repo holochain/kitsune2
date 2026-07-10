@@ -6,10 +6,12 @@ use std::sync::{Arc, Mutex};
 /// that was used to register them.
 ///
 /// When the bootstrap server is configured with an authentication hook
-/// server, the relay endpoint uses this allowlist (via `AccessConfig::Restricted`)
-/// to gate relay connections. A client must first call `PUT /authenticate`
-/// to obtain a bearer token and then `PUT /relay/register` to register
-/// its iroh public key before it will be permitted to connect to the relay.
+/// server, the relay validates the bearer token presented on the WebSocket
+/// upgrade, and falls back to this allowlist for recovery: iroh cannot
+/// refresh the token on a live relay connection actor, so an actor whose
+/// token went stale is re-admitted by its handshake-proven public key.
+/// Clients keep their entry alive by periodically calling
+/// `PUT /relay/keepalive` with a valid bearer token.
 #[derive(Clone, Default)]
 pub struct RelayAllowlist {
     entries: Arc<Mutex<HashMap<PublicKey, Arc<str>>>>,

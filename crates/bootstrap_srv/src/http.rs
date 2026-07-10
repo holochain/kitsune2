@@ -240,6 +240,8 @@ pub struct Server {
     auth_tracker: crate::auth::AuthTokenTracker,
     #[cfg(feature = "iroh-relay")]
     relay_allowlist: Option<crate::RelayAllowlist>,
+    #[cfg(feature = "iroh-relay")]
+    relay_conn_tracker: Option<crate::RelayConnTracker>,
     /// Held to keep the QAD server task alive; dropped on shutdown.
     #[cfg(feature = "iroh-relay")]
     _qad_server: Option<iroh_relay::server::Server>,
@@ -280,6 +282,8 @@ impl Server {
                 #[cfg(feature = "iroh-relay")]
                 relay_allowlist,
                 #[cfg(feature = "iroh-relay")]
+                relay_conn_tracker,
+                #[cfg(feature = "iroh-relay")]
                 qad_server,
             })) => Ok(Self {
                 t_join: Some(t_join),
@@ -291,6 +295,8 @@ impl Server {
                 auth_tracker,
                 #[cfg(feature = "iroh-relay")]
                 relay_allowlist,
+                #[cfg(feature = "iroh-relay")]
+                relay_conn_tracker,
                 #[cfg(feature = "iroh-relay")]
                 _qad_server: qad_server,
             }),
@@ -315,6 +321,11 @@ impl Server {
     pub fn relay_allowlist(&self) -> Option<&crate::RelayAllowlist> {
         self.relay_allowlist.as_ref()
     }
+
+    #[cfg(feature = "iroh-relay")]
+    pub fn relay_conn_tracker(&self) -> Option<&crate::RelayConnTracker> {
+        self.relay_conn_tracker.as_ref()
+    }
 }
 
 struct Ready {
@@ -326,6 +337,8 @@ struct Ready {
     auth_tracker: crate::auth::AuthTokenTracker,
     #[cfg(feature = "iroh-relay")]
     relay_allowlist: Option<crate::RelayAllowlist>,
+    #[cfg(feature = "iroh-relay")]
+    relay_conn_tracker: Option<crate::RelayConnTracker>,
     #[cfg(feature = "iroh-relay")]
     qad_server: Option<iroh_relay::server::Server>,
 }
@@ -456,6 +469,14 @@ fn tokio_thread(
                     None
                 };
 
+            // Tracks which auth token backs each live relay connection so
+            // the prune worker can keep those tokens from idle-expiring.
+            #[cfg(feature = "iroh-relay")]
+            let relay_conn_tracker: Option<crate::RelayConnTracker> =
+                relay_allowlist
+                    .as_ref()
+                    .map(|_| crate::RelayConnTracker::default());
+
             // Declare outside the `if` block so the guard lives until the
             // server futures complete.  Dropping it earlier would
             // unregister the OTEL observable-counter callbacks.
@@ -466,8 +487,8 @@ fn tokio_thread(
                 #[cfg(feature = "iroh-relay")]
                 {
                     app = app.route(
-                        "/relay/register",
-                        routing::put(handle_relay_register),
+                        "/relay/keepalive",
+                        routing::put(handle_relay_keepalive),
                     );
 
                     let relay_rate_limit = config
@@ -478,7 +499,13 @@ fn tokio_thread(
                         );
                     let relay_state =
                         if let Some(allowlist) = relay_allowlist.clone() {
-                            crate::iroh_relay_axum::create_relay_state_with_allowlist(
+                            let conn_tracker = relay_conn_tracker
+                                .clone()
+                                .expect("created together with the allowlist");
+                            crate::iroh_relay_axum::create_relay_state_with_auth(
+                                config.auth.clone(),
+                                auth_tracker.clone(),
+                                conn_tracker,
                                 allowlist,
                                 relay_rate_limit,
                             )
@@ -660,6 +687,8 @@ fn tokio_thread(
                     #[cfg(feature = "iroh-relay")]
                     relay_allowlist: relay_allowlist_for_ready,
                     #[cfg(feature = "iroh-relay")]
+                    relay_conn_tracker,
+                    #[cfg(feature = "iroh-relay")]
                     qad_server,
                 }))
                 .is_err()
@@ -819,12 +848,12 @@ async fn handle_boot_put(
 }
 
 #[cfg(feature = "iroh-relay")]
-async fn handle_relay_register(
+async fn handle_relay_keepalive(
     extract::State(state): extract::State<AppState>,
     headers: axum::http::HeaderMap,
     body: bytes::Bytes,
 ) -> response::Response {
-    tracing::debug!(body_len = body.len(), "Relay register request received");
+    tracing::debug!(body_len = body.len(), "Relay keepalive request received");
 
     // Validate bearer token
     let token: Option<Arc<str>> = headers
@@ -834,7 +863,7 @@ async fn handle_relay_register(
         .map(<Arc<str>>::from);
 
     if !state.auth_tracker.is_valid(&token, &state.auth_config) {
-        tracing::warn!("Relay register: bearer token invalid or missing");
+        tracing::warn!("Relay keepalive: bearer token invalid or missing");
         return axum::response::IntoResponse::into_response((
             axum::http::StatusCode::UNAUTHORIZED,
             "Unauthorized",
@@ -847,7 +876,7 @@ async fn handle_relay_register(
         Err(_) => {
             tracing::warn!(
                 body_len = body.len(),
-                "Relay register: expected 32 bytes"
+                "Relay keepalive: expected 32 bytes"
             );
             return axum::response::IntoResponse::into_response((
                 axum::http::StatusCode::BAD_REQUEST,
@@ -859,7 +888,7 @@ async fn handle_relay_register(
     let key = match iroh_base::PublicKey::from_bytes(key_bytes) {
         Ok(k) => k,
         Err(_) => {
-            tracing::warn!("Relay register: invalid public key bytes");
+            tracing::warn!("Relay keepalive: invalid public key bytes");
             return axum::response::IntoResponse::into_response((
                 axum::http::StatusCode::BAD_REQUEST,
                 "Invalid public key bytes",
@@ -881,11 +910,11 @@ async fn handle_relay_register(
         allowlist.register(key, token);
         tracing::info!(
             key = %key.fmt_short(),
-            "Relay register: key added to allowlist"
+            "Relay keepalive: key added to allowlist"
         );
     } else {
         tracing::warn!(
-            "Relay register: no allowlist configured, registration has no effect"
+            "Relay keepalive: no allowlist configured, registration has no effect"
         );
     }
 

@@ -16,6 +16,8 @@ const EXPIRES_AT_DURATION_MAX_ALLOWED_MICROS: i64 =
 
 type OnTokensPruned = Option<Box<dyn Fn(&[Arc<str>]) + Send>>;
 
+type LiveRelayTokens = Option<Box<dyn Fn() -> Vec<Arc<str>> + Send>>;
+
 /// Print out a message if this thread dies.
 struct ThreadGuard(&'static str);
 
@@ -121,6 +123,18 @@ impl BootstrapSrv {
         #[cfg(not(feature = "iroh-relay"))]
         let on_tokens_pruned: OnTokensPruned = None;
 
+        // Tokens backing live relay connections are in active use even when
+        // no HTTP request has touched them: report them so the prune worker
+        // can refresh them before pruning.
+        #[cfg(feature = "iroh-relay")]
+        let live_relay_tokens: LiveRelayTokens =
+            server.relay_conn_tracker().cloned().map(|tracker| {
+                Box::new(move || tracker.live_tokens())
+                    as Box<dyn Fn() -> Vec<Arc<str>> + Send>
+            });
+        #[cfg(not(feature = "iroh-relay"))]
+        let live_relay_tokens: LiveRelayTokens = None;
+
         workers.push(std::thread::spawn(move || {
             prune_worker(
                 config,
@@ -128,6 +142,7 @@ impl BootstrapSrv {
                 prune_space_map,
                 prune_auth_tracker,
                 on_tokens_pruned,
+                live_relay_tokens,
             )
         }));
 
@@ -183,6 +198,7 @@ fn prune_worker(
     space_map: crate::SpaceMap,
     auth_tracker: crate::auth::AuthTokenTracker,
     on_tokens_pruned: OnTokensPruned,
+    live_relay_tokens: LiveRelayTokens,
 ) -> std::io::Result<()> {
     let _g = ThreadGuard("prune_worker thread has ended");
 
@@ -196,6 +212,15 @@ fn prune_worker(
 
             // Prune expired space infos
             space_map.update_all(config.max_entries_per_space);
+
+            // Tokens backing live relay connections are in active use even
+            // when no HTTP request has touched them: refresh so they don't
+            // idle-expire underneath an open relay connection.
+            if let Some(live_tokens) = &live_relay_tokens {
+                for token in live_tokens() {
+                    auth_tracker.register_token(token);
+                }
+            }
 
             // Prune expired auth tokens, collecting the list of expired tokens
             // so dependent subsystems (e.g. the relay allowlist) can clean up too.

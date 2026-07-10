@@ -225,6 +225,11 @@ mod relay_allowlist;
 pub use relay_allowlist::*;
 
 #[cfg(feature = "iroh-relay")]
+mod relay_access;
+#[cfg(feature = "iroh-relay")]
+pub use relay_access::*;
+
+#[cfg(feature = "iroh-relay")]
 pub mod iroh_relay_axum;
 
 #[cfg(feature = "iroh-relay")]
