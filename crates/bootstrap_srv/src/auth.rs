@@ -120,6 +120,12 @@ impl AuthTokenTracker {
         });
         expired
     }
+
+    /// Returns a token's last-used timestamp for unit-test assertions.
+    #[cfg(test)]
+    pub(crate) fn last_used(&self, token: &str) -> Option<Instant> {
+        self.tokens.lock().unwrap().get(token).copied()
+    }
 }
 
 /// Errors that can occur during authentication.

@@ -26,8 +26,7 @@ use iroh_relay::{
     ExportKeyingMaterial, KeyCache,
     protos::{handshake, streams::StreamError},
     server::{
-        Access, AccessControl, AllowAll, ClientRequest, DynAccessControl,
-        Metrics,
+        AllowAll, ClientRequest, DynAccessControl, Metrics,
         client::Config,
         clients::Clients,
         streams::{Bucket, RelayedStream},
@@ -510,52 +509,27 @@ pub fn create_relay_state(
     RelayState::new(key_cache, access, metrics, rate_limit)
 }
 
-struct AllowlistAccess {
-    allowlist: RelayAllowlist,
-}
-
-impl AllowlistAccess {
-    fn new(allowlist: RelayAllowlist) -> Self {
-        Self { allowlist }
-    }
-}
-
-impl std::fmt::Debug for AllowlistAccess {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AllowlistAccess").finish()
-    }
-}
-
-impl AccessControl for AllowlistAccess {
-    async fn on_connect(&self, request: &ClientRequest) -> Access {
-        let endpoint_id = request.endpoint_id();
-        let allowed = self.allowlist.is_allowed(&endpoint_id);
-        tracing::debug!(
-            key = %endpoint_id.fmt_short(),
-            allowed,
-            allowlist_size = self.allowlist.len(),
-            "Relay access check"
-        );
-        if allowed {
-            Access::Allow
-        } else {
-            Access::Deny { reason: None }
-        }
-    }
-}
-
-/// Creates a RelayState that restricts connections to endpoints registered
-/// in the provided allowlist.
+/// Creates a RelayState that restricts connections to clients presenting a
+/// valid bearer token on the WebSocket upgrade (`Authorization: Bearer`),
+/// with a recovery fallback to the `PUT /relay/keepalive` allowlist for
+/// clients whose token went stale.
 ///
 /// Use this when the bootstrap server is configured with an authentication
-/// hook server. Clients must call `PUT /authenticate` and then
-/// `PUT /relay/register` before their relay connection will be accepted.
-pub fn create_relay_state_with_allowlist(
+/// hook server.
+pub fn create_relay_state_with_auth(
+    auth_config: crate::AuthConfig,
+    auth_tracker: crate::AuthTokenTracker,
+    conn_tracker: crate::RelayConnTracker,
     allowlist: RelayAllowlist,
     rate_limit: Option<RelayClientRxRateLimit>,
 ) -> RelayState {
     let key_cache = KeyCache::new(1024);
-    let access = Arc::new(AllowlistAccess::new(allowlist));
+    let access = Arc::new(crate::TokenAccess::new(
+        auth_config,
+        auth_tracker,
+        conn_tracker,
+        allowlist,
+    ));
     let metrics = Arc::new(Metrics::default());
     RelayState::new(key_cache, access, metrics, rate_limit)
 }

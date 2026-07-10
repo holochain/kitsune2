@@ -4,7 +4,7 @@
 
 use base64::Engine;
 use kitsune2_api::{AgentInfoSigned, DynVerifier, K2Error, K2Result, SpaceId};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use url::Url;
 
 /// Determine how we should handle an internal request for authorization
@@ -43,13 +43,25 @@ impl AuthMaterial {
         &self.auth_token
     }
 
+    /// Returns the currently cached auth token, if any.
+    pub fn token(&self) -> Option<String> {
+        self.auth_token
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     fn priv_authenticate(
         &self,
         auth_url: &str,
         auth_type: AuthType,
     ) -> K2Result<()> {
         if matches!(auth_type, AuthType::IfUninit)
-            && self.auth_token.lock().unwrap().is_some()
+            && self
+                .auth_token
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_some()
         {
             return Ok(());
         }
@@ -83,7 +95,11 @@ impl AuthMaterial {
         let auth_token: AuthToken = serde_json::from_str(&token)
             .map_err(|err| K2Error::other_src("Authenticate Failed", err))?;
 
-        *self.auth_token.lock().unwrap() = Some(auth_token.auth_token);
+        *self
+            .auth_token
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            Some(auth_token.auth_token);
 
         tracing::debug!("Authentication successful, token acquired");
         Ok(())
@@ -188,8 +204,12 @@ pub fn blocking_put_auth(
         let mut req = ureq::put(put_url);
 
         if let Some(auth_material) = auth_material {
-            let token =
-                auth_material.auth_token.lock().unwrap().clone().unwrap();
+            let token = auth_material
+                .auth_token
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+                .expect("authenticated token must be cached");
             req = req.header("Authorization", &format!("Bearer {token}"));
         }
 
@@ -216,20 +236,57 @@ pub fn blocking_put_auth(
     res.into()
 }
 
-/// Register an iroh endpoint public key with the relay on the bootstrap server.
+/// Fetch the bearer token for the relay on the bootstrap server.
 ///
-/// After authenticating (which yields a bearer token), this function registers
-/// the 32-byte iroh public key with the server's relay allowlist so that the
-/// endpoint is permitted to connect to the relay.
+/// The returned token should be presented on the relay WebSocket upgrade via
+/// `RelayConfig::with_auth_token`, which sends it as an
+/// `Authorization: Bearer` header that the relay validates at connect time.
 ///
-/// This function should only be called when the server is configured with an
-/// auth hook server. Open relays do not expose the `relay/register` endpoint,
-/// and registration is not required when the relay has no access restrictions.
+/// A cached token is reused without contacting the server. Operations that
+/// receive a 401 response refresh the token internally before retrying.
 ///
 /// Note the `blocking_` prefix. This is a hint to the caller that if the
 /// function is used in an async context, it should be treated as a blocking
 /// operation.
-pub fn blocking_register_relay_key(
+///
+/// # Errors
+/// Returns an error if the authentication request fails, if the key is
+/// pending approval on the hook server, or if the response is malformed.
+pub fn blocking_fetch_relay_token(
+    mut server_url: Url,
+    auth_material: &AuthMaterial,
+) -> K2Result<String> {
+    server_url.set_path("authenticate");
+    auth_material.priv_authenticate(server_url.as_str(), AuthType::IfUninit)?;
+    auth_material.token().ok_or_else(|| {
+        K2Error::other("authentication succeeded but no token was cached")
+    })
+}
+
+/// Keep an iroh endpoint public key registered with the relay on the
+/// bootstrap server.
+///
+/// After authenticating (which yields a bearer token), this function
+/// registers the 32-byte iroh public key with the server's relay allowlist
+/// so that the endpoint stays permitted to connect to the relay.
+///
+/// The allowlist complements the bearer token presented on the relay
+/// WebSocket upgrade (see [`blocking_fetch_relay_token`]): iroh captures
+/// that token once per relay connection actor and cannot refresh it while
+/// the actor lives, so the allowlist — keyed on the handshake-proven public
+/// key — is what re-admits an actor whose token has gone stale. After a
+/// bootstrap server restart, this call first obtains a fresh token and then
+/// repopulates the allowlist. Call it periodically to keep the entry alive.
+///
+/// This function should only be called when the server is configured with an
+/// auth hook server. Open relays do not expose the `relay/keepalive`
+/// endpoint, and the keepalive is not required when the relay has no access
+/// restrictions.
+///
+/// Note the `blocking_` prefix. This is a hint to the caller that if the
+/// function is used in an async context, it should be treated as a blocking
+/// operation.
+pub fn blocking_relay_keepalive(
     mut server_url: Url,
     auth_material: &AuthMaterial,
     key_bytes: &[u8; 32],
@@ -237,23 +294,28 @@ pub fn blocking_register_relay_key(
     tracing::info!(
         server_url = %server_url,
         iroh_key = %base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(key_bytes),
-        "Registering iroh endpoint key with relay service",
+        "Keeping iroh endpoint key registered with relay service",
     );
 
     server_url.set_path("authenticate");
     let auth_url = server_url.as_str().to_string();
     auth_material.priv_authenticate(&auth_url, AuthType::IfUninit)?;
 
-    server_url.set_path("relay/register");
-    let register_url = server_url.as_str().to_string();
+    server_url.set_path("relay/keepalive");
+    let keepalive_url = server_url.as_str().to_string();
 
-    fn priv_register(
-        register_url: &str,
+    fn priv_keepalive(
+        keepalive_url: &str,
         key_bytes: &[u8; 32],
         auth_material: &AuthMaterial,
     ) -> Res<()> {
-        let token = auth_material.auth_token.lock().unwrap().clone().unwrap();
-        ureq::put(register_url)
+        let token = auth_material
+            .auth_token
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .expect("authenticated token must be cached");
+        ureq::put(keepalive_url)
             .header("Content-Type", "application/octet-stream")
             .header("Authorization", &format!("Bearer {token}"))
             .send(key_bytes.as_ref())
@@ -261,22 +323,20 @@ pub fn blocking_register_relay_key(
             .into()
     }
 
-    let mut res = priv_register(&register_url, key_bytes, auth_material);
+    let mut res = priv_keepalive(&keepalive_url, key_bytes, auth_material);
 
     if res.needs_auth() {
-        tracing::debug!(
-            "Relay key registration returned 401, re-authenticating"
-        );
+        tracing::debug!("Relay keepalive returned 401, re-authenticating");
         server_url.set_path("authenticate");
         let auth_url = server_url.as_str().to_string();
         auth_material.priv_authenticate(&auth_url, AuthType::Force)?;
-        res = priv_register(&register_url, key_bytes, auth_material);
+        res = priv_keepalive(&keepalive_url, key_bytes, auth_material);
     }
 
     let result: K2Result<()> = res.into();
     match &result {
-        Ok(()) => tracing::info!("Iroh relay key registration succeeded"),
-        Err(e) => tracing::warn!(?e, "Iroh relay key registration failed"),
+        Ok(()) => tracing::info!("Iroh relay keepalive succeeded"),
+        Err(e) => tracing::warn!(?e, "Iroh relay keepalive failed"),
     }
     result
 }
@@ -330,8 +390,12 @@ pub fn blocking_get_auth(
         let mut req = ureq::get(get_url);
 
         if let Some(auth_material) = auth_material {
-            let token =
-                auth_material.auth_token.lock().unwrap().clone().unwrap();
+            let token = auth_material
+                .auth_token
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+                .expect("authenticated token must be cached");
             req = req.header("Authorization", &format!("Bearer {token}"));
         }
 

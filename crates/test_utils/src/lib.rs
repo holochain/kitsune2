@@ -5,6 +5,7 @@ use rand::RngCore;
 use tokio::time::error::Elapsed;
 
 pub mod agent;
+pub mod auth;
 pub mod bootstrap;
 pub mod id;
 pub mod noop_bootstrap;

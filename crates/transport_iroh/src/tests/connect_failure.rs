@@ -176,7 +176,8 @@ fn build_transport(
         connection_locks: Arc::new(Mutex::new(HashMap::new())),
         watch_addr_task: noop_handle(),
         accept_task: noop_handle(),
-        relay_re_registration_task: None,
+        relay_keepalive_task: None,
+        space_relay_keepalives: Arc::new(Mutex::new(HashMap::new())),
         config,
         space_relays: Arc::new(RwLock::new(HashMap::new())),
     }

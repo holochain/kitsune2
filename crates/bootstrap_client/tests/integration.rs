@@ -1,6 +1,6 @@
 use kitsune2_bootstrap_srv::{BootstrapSrv, Config};
 use kitsune2_core::{Ed25519LocalAgent, Ed25519Verifier};
-use kitsune2_test_utils::enable_tracing;
+use kitsune2_test_utils::{auth::AuthHookServer, enable_tracing};
 use std::sync::Arc;
 use url::Url;
 
@@ -108,40 +108,10 @@ fn connect_with_bad_auth_retries() {
 async fn auth_with_real_token_provider() {
     enable_tracing();
 
-    async fn handle_auth(body: bytes::Bytes) -> axum::response::Response {
-        if &body[..] != b"hello" {
-            return axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ));
-        }
-        axum::response::IntoResponse::into_response(axum::Json(
-            serde_json::json!({
-                "authToken": "bob",
-            }),
-        ))
-    }
-
-    let app: axum::Router<()> = axum::Router::new()
-        .route("/authenticate", axum::routing::put(handle_auth));
-
-    let h = axum_server::Handle::default();
-    let h2 = h.clone();
-
-    let auth_hook_server_task = tokio::task::spawn(async move {
-        axum_server::bind(([127, 0, 0, 1], 0).into())
-            .handle(h2)
-            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .await
-            .unwrap();
-    });
-
-    let hook_addr = h.listening().await.unwrap();
-    println!("hook_addr: {hook_addr:?}");
+    let auth_hook = AuthHookServer::spawn(Some(b"hello".to_vec()));
 
     let mut config = Config::testing();
-    let auth_hook_url = format!("http://{hook_addr:?}");
-    config.auth.authentication_hook_server = Some(auth_hook_url.clone());
+    config.auth.authentication_hook_server = Some(auth_hook.url());
 
     config.allowed_origins = Some(vec!["http://localhost".into()]);
 
@@ -171,8 +141,6 @@ async fn auth_with_real_token_provider() {
     tokio::task::block_in_place(|| {
         blocking_put_auth(server_url.clone(), &info, Some(&auth2)).unwrap_err();
     });
-
-    auth_hook_server_task.abort();
 }
 
 /// Test that authentication works using only the relay-independent auth module.
@@ -182,41 +150,11 @@ async fn auth_with_real_token_provider() {
 async fn auth_feature_independent() {
     enable_tracing();
 
-    async fn handle_auth(body: bytes::Bytes) -> axum::response::Response {
-        if &body[..] != b"secret" {
-            return axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ));
-        }
-        axum::response::IntoResponse::into_response(axum::Json(
-            serde_json::json!({
-                "authToken": "valid-token-123",
-            }),
-        ))
-    }
-
-    let app: axum::Router<()> = axum::Router::new()
-        .route("/authenticate", axum::routing::put(handle_auth));
-
-    let h = axum_server::Handle::default();
-    let h2 = h.clone();
-
-    let auth_hook_server_task = tokio::task::spawn(async move {
-        axum_server::bind(([127, 0, 0, 1], 0).into())
-            .handle(h2)
-            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .await
-            .unwrap();
-    });
-
-    let hook_addr = h.listening().await.unwrap();
-    println!("hook_addr: {hook_addr:?}");
+    let auth_hook = AuthHookServer::spawn(Some(b"secret".to_vec()));
 
     let mut config = Config::testing();
     // Configure the relay-independent auth module via config.auth.
-    config.auth.authentication_hook_server =
-        Some(format!("http://{hook_addr:?}"));
+    config.auth.authentication_hook_server = Some(auth_hook.url());
     // Disable the relay server entirely - we're only testing HTTP bootstrap endpoints
     config.no_relay_server = true;
     config.allowed_origins = Some(vec!["http://localhost".into()]);
@@ -283,8 +221,6 @@ async fn auth_feature_independent() {
         )
         .unwrap_err();
     });
-
-    auth_hook_server_task.abort();
 }
 
 /// Test that the client re-authenticates when the server returns 401
@@ -293,39 +229,10 @@ async fn auth_feature_independent() {
 async fn reauth_on_token_expiration() {
     enable_tracing();
 
-    async fn handle_auth(body: bytes::Bytes) -> axum::response::Response {
-        if &body[..] != b"secret" {
-            return axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-            ));
-        }
-        axum::response::IntoResponse::into_response(axum::Json(
-            serde_json::json!({
-                "authToken": "valid-token",
-            }),
-        ))
-    }
-
-    let app: axum::Router<()> = axum::Router::new()
-        .route("/authenticate", axum::routing::put(handle_auth));
-
-    let h = axum_server::Handle::default();
-    let h2 = h.clone();
-
-    let auth_hook_server_task = tokio::task::spawn(async move {
-        axum_server::bind(([127, 0, 0, 1], 0).into())
-            .handle(h2)
-            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .await
-            .unwrap();
-    });
-
-    let hook_addr = h.listening().await.unwrap();
+    let auth_hook = AuthHookServer::spawn(Some(b"secret".to_vec()));
 
     let mut config = Config::testing();
-    config.auth.authentication_hook_server =
-        Some(format!("http://{hook_addr:?}"));
+    config.auth.authentication_hook_server = Some(auth_hook.url());
     // Set a very short token timeout so we can test expiration
     config.auth.auth_token_idle_timeout = std::time::Duration::from_millis(200);
     config.no_relay_server = true;
@@ -366,6 +273,31 @@ async fn reauth_on_token_expiration() {
         assert_eq!(1, infos.len());
         assert_eq!(info, infos[0]);
     });
+}
 
-    auth_hook_server_task.abort();
+#[test]
+fn fetch_relay_token_authenticates_and_caches() {
+    enable_tracing();
+
+    let auth_hook = AuthHookServer::spawn(Some(b"material".to_vec()));
+    let mut config = Config::testing();
+    config.auth.authentication_hook_server = Some(auth_hook.url());
+    config.no_relay_server = true;
+    let server =
+        BootstrapSrv::new(config).expect("bootstrap server should start");
+    let server_url =
+        Url::parse(&format!("http://{}", server.listen_addrs()[0]))
+            .expect("bootstrap server URL should parse");
+
+    let auth = AuthMaterial::new(b"material".to_vec());
+
+    let tok1 = blocking_fetch_relay_token(server_url.clone(), &auth)
+        .expect("first fetch should succeed");
+    assert_eq!(tok1, "test-auth-token-1");
+    assert_eq!(auth.token().as_deref(), Some("test-auth-token-1"));
+
+    let tok2 = blocking_fetch_relay_token(server_url, &auth)
+        .expect("cached fetch should succeed");
+    assert_eq!(tok2, "test-auth-token-1");
+    assert_eq!(auth_hook.request_count(), 1);
 }

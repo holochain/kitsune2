@@ -50,6 +50,31 @@ fn validate_allowed_plain_text_relay_url() {
     assert!(result.is_ok());
 }
 
+#[test]
+fn validate_zero_relay_keepalive_interval() {
+    let builder = Builder {
+        transport: IrohTransportFactory::create(),
+        ..kitsune2_core::default_test_builder()
+    };
+
+    builder
+        .config
+        .set_module_config(&IrohTransportModConfig {
+            iroh_transport: IrohTransportConfig {
+                relay_keepalive_interval_s: 0,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+
+    let result = builder.validate_config();
+    assert!(result.is_err());
+    assert!(
+        format!("{result:?}")
+            .contains("Relay keepalive interval must be greater than zero")
+    );
+}
+
 /// Test that `configure_for_space` reads the per-space iroh transport
 /// config and dynamically adds a relay to the transport.
 #[cfg(feature = "test-utils")]
