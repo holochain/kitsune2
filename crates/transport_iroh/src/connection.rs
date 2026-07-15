@@ -1,5 +1,6 @@
 //! Abstractions for connection operations, enabling unit testing.
 
+use crate::close_code::CloseCode;
 use crate::stream::{
     DynIrohRecvStream, DynIrohSendStream, IrohRecvStream, IrohSendStream,
 };
@@ -23,22 +24,22 @@ pub(crate) trait Connection: 'static + Send + Sync {
     /// Get the remote node ID.
     fn remote_id(&self) -> EndpointId;
 
-    /// Close the connection with a code and reason.
-    fn close(&self, code: u8, reason: &[u8]);
+    /// Close the connection with a close code and reason.
+    fn close(&self, code: CloseCode, reason: &[u8]);
 
     /// Check if the connection has a direct (non-relay) path.
     fn is_direct(&self) -> bool;
 
     /// If the connection has been closed *by the remote* with an application
-    /// close, return the reason bytes the remote sent.
+    /// close, return the close code and reason bytes the remote sent.
     ///
     /// Returns `None` while the connection is still open, when it was closed
     /// locally, or when it was torn down by a transport-level error (timeout,
     /// reset, ...) rather than a graceful application close. This lets the
-    /// reader distinguish a deliberate, signalled teardown (such as a
-    /// connection superseded during simultaneous-open resolution) from a
-    /// genuine peer disconnect.
-    fn remote_close_reason(&self) -> Option<Bytes>;
+    /// reader distinguish a deliberate, signalled teardown (a graceful
+    /// disconnect or a connection superseded during simultaneous-open
+    /// resolution) from a genuine peer disconnect.
+    fn remote_close_reason(&self) -> Option<(CloseCode, Bytes)>;
 }
 
 /// Production implementation wrapping iroh's Connection.
@@ -79,8 +80,8 @@ impl Connection for IrohConnection {
         self.inner.remote_id()
     }
 
-    fn close(&self, code: u8, reason: &[u8]) {
-        self.inner.close(code.into(), reason);
+    fn close(&self, code: CloseCode, reason: &[u8]) {
+        self.inner.close(code.as_u8().into(), reason);
     }
 
     fn is_direct(&self) -> bool {
@@ -90,11 +91,14 @@ impl Connection for IrohConnection {
             .any(|p| p.is_ip() && p.is_selected())
     }
 
-    fn remote_close_reason(&self) -> Option<Bytes> {
+    fn remote_close_reason(&self) -> Option<(CloseCode, Bytes)> {
         match self.inner.close_reason() {
             Some(iroh::endpoint::ConnectionError::ApplicationClosed(
                 application_close,
-            )) => Some(application_close.reason),
+            )) => Some((
+                CloseCode::from_wire(u64::from(application_close.error_code)),
+                application_close.reason,
+            )),
             _ => None,
         }
     }

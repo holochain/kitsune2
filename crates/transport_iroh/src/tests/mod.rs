@@ -2,10 +2,12 @@
 
 use super::*;
 
+mod close;
 mod connect_failure;
 mod frame;
 mod simultaneous_open;
 mod stream;
+mod support;
 mod url;
 
 #[test]
