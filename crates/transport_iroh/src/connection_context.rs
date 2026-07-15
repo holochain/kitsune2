@@ -1,5 +1,6 @@
 use crate::IrohTransport;
 use crate::SpaceRelays;
+use crate::close_code::CloseCode;
 use crate::connection::DynConnection;
 #[cfg(feature = "metrics")]
 use crate::metrics::connection_counter_metric;
@@ -22,17 +23,56 @@ use std::{
 use tokio::{sync::MutexGuard, task::AbortHandle};
 use tracing::{debug, error, info, trace, warn};
 
-/// Application close reason sent when a connection is intentionally torn down
-/// because a different, preferred connection to the same peer won
-/// simultaneous-open resolution.
-///
-/// The remote end recognises this reason (via
-/// [`Connection::remote_close_reason`](crate::connection::Connection::remote_close_reason))
-/// and treats the close as a deliberate supersession rather than a peer
-/// disconnect, so it does not mark the peer unresponsive or fire
-/// `peer_disconnect`.
+/// Reason sent when a preferred connection wins simultaneous-open resolution.
 pub(super) const SUPERSEDED_CLOSE_REASON: &[u8] =
     b"superseded by preferred connection";
+
+/// Outcome of the connection reader's accept loop.
+struct ReaderExit {
+    /// Human-readable description of why the loop ended.
+    err: String,
+    /// Whether the reader failure should mark the peer unresponsive.
+    mark_unresponsive: bool,
+}
+
+/// Cleanup action for a stopped connection reader.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum ReaderCleanup {
+    /// Reports that the active peer connection failed.
+    PeerGone {
+        /// Whether to mark the peer unresponsive.
+        mark_unresponsive: bool,
+    },
+    /// Reports an intentional remote close to local handlers.
+    Graceful {
+        /// The remote's close reason.
+        reason: String,
+    },
+    /// Closes a superseded or inactive connection without notifying handlers.
+    Quiet,
+}
+
+/// Selects the cleanup action for a stopped reader.
+pub(super) fn classify_exit(
+    was_active: bool,
+    remote_close: Option<(CloseCode, Bytes)>,
+    mark_unresponsive: bool,
+) -> ReaderCleanup {
+    let superseded_by_remote =
+        matches!(remote_close, Some((CloseCode::Superseded, _)));
+
+    if !was_active || superseded_by_remote {
+        return ReaderCleanup::Quiet;
+    }
+
+    if let Some((CloseCode::Graceful, reason)) = remote_close {
+        return ReaderCleanup::Graceful {
+            reason: String::from_utf8_lossy(&reason).to_string(),
+        };
+    }
+
+    ReaderCleanup::PeerGone { mark_unresponsive }
+}
 
 pub(super) struct ConnectionContext {
     handler: Arc<TxImpHnd>,
@@ -240,12 +280,18 @@ impl ConnectionContext {
             // The displaced connection was previously counted as active.
             #[cfg(feature = "metrics")]
             connection_counter_metric().add(-1, &[]);
-            displaced.connection.close(0u8, SUPERSEDED_CLOSE_REASON);
+            displaced
+                .connection
+                .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
         }
 
         true
     }
 
+    /// Abort the connection reader task, if it is still running.
+    ///
+    /// Used during transport shutdown, where the reader must stop
+    /// immediately without running its exit cleanup.
     pub fn abort_tasks(&self) {
         if let Some(abort_handle) = self
             .connection_reader_abort_handle
@@ -264,12 +310,20 @@ impl ConnectionContext {
     /// through the identity-aware cleanup path, which sees that this is not the
     /// active connection and so does not fire `peer_disconnect`.
     pub(super) fn close_quietly(&self) {
-        self.connection.close(0u8, SUPERSEDED_CLOSE_REASON);
+        self.connection
+            .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
     }
 
-    pub fn disconnect(&self, reason: String) {
+    /// Close the connection and inform the local handlers.
+    ///
+    /// The close `code` and `reason` are sent to the remote in the QUIC
+    /// application close frame; use [`CloseCode::Graceful`] for an
+    /// intentional disconnect so the remote releases the connection
+    /// quietly instead of marking this peer unresponsive. Local handlers
+    /// are informed via `peer_disconnect` with the same reason.
+    pub fn disconnect(&self, code: CloseCode, reason: String) {
         info!(reason, remote_url = ?self.remote_url(), "Disconnecting from remote");
-        self.connection.close(0u8, reason.as_bytes());
+        self.connection.close(code, reason.as_bytes());
         if let Some(peer) = self.remote_url() {
             self.handler.peer_disconnect(peer, Some(reason));
             // Record connection counter metric.
@@ -278,14 +332,9 @@ impl ConnectionContext {
         }
     }
 
-    // Spawns an asynchronous task to continuously read and handle incoming uni-directional
-    // streams from an iroh connection. There is only one stream at a time incoming from a
-    // remote. It's read from until the connection is closed or an error occurs.
-    //
-    // Errors when receiving the preflight frame lead to a break of the loop accepting
-    // incoming streams. The preflight must succeed for data frames to be accepted. The
-    // connection cannot recover from a failed preflight, and a new connection must be
-    // established.
+    // Spawns an asynchronous task that reads incoming uni-directional
+    // streams from an iroh connection until it dies, and then runs the
+    // cleanup matching why it died.
     //
     // # Parameters
     // - `ctx`: The connection context containing handler and remote URL state.
@@ -298,124 +347,169 @@ impl ConnectionContext {
         local_url: Arc<RwLock<Option<Url>>>,
     ) -> AbortHandle {
         tokio::spawn(async move {
-            // Track whether to skip marking peer as unresponsive.
-            // This is set to true for temporary errors like NoLocalAgentsDuringPreflight,
-            // which indicate a timing issue rather than a network problem.
-            let mut skip_unresponsive = false;
+            let exit =
+                Self::run_reader_loop(&ctx, &connections, &local_url).await;
+            Self::cleanup_after_exit(ctx, &connections, exit).await;
+        })
+        .abort_handle()
+    }
 
-            let err = loop {
-                // Main loop to accept incoming unidirectional streams from the remote peer.
-                match ctx.connection.accept_uni().await {
-                    Ok(stream) => {
-                        info!(remote_id = ?ctx.connection.remote_id(), "Accepted incoming stream");
-                        let connections = connections.clone();
-                        let local_url = local_url.clone();
-                        // Read frames from the stream.
-                        //
-                        // `Ok(true)` keeps the connection open and awaits the next
-                        // incoming stream — returned both after a successful preflight
-                        // and after a data stream ends normally.
-                        //
-                        // `Ok(false)` means this connection lost simultaneous-open
-                        // resolution: a preferred connection to the same peer is already
-                        // active, so this reader stops quietly.
-                        //
-                        // `Err` means the preflight could not be received. The connection
-                        // must be closed, because a successful preflight is the
-                        // prerequisite for establishing a connection.
-                        match Self::handle_incoming_stream(
-                            ctx.clone(),
-                            stream,
-                            connections.clone(),
-                            local_url,
-                        )
-                            .await
-                        {
-                            Ok(true) => {}
-                            Ok(false) => {
-                                break "superseded by preferred connection".to_string();
-                            }
-                            Err(err) => {
-                                // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
-                                // errors - this is a temporary state that will resolve once an
-                                // agent joins. It is not a real failure, so log it quietly and
-                                // reserve `error!` for genuine preflight failures.
-                                if matches!(err, K2Error::NoLocalAgentsDuringPreflight) {
-                                    skip_unresponsive = true;
-                                    debug!(?err, "Stream closed during preflight; no local agents yet");
-                                } else {
-                                    error!(?err, "Stream closed by remote");
-                                }
-                                break err.to_string();
-                            }
+    // Continuously read and handle incoming uni-directional streams from
+    // the iroh connection. There is only one stream at a time incoming from
+    // a remote. It's read from until the connection is closed or an error
+    // occurs.
+    //
+    // Errors when receiving the preflight frame lead to a break of the loop
+    // accepting incoming streams. The preflight must succeed for data frames
+    // to be accepted. The connection cannot recover from a failed preflight,
+    // and a new connection must be established.
+    async fn run_reader_loop(
+        ctx: &Arc<Self>,
+        connections: &Connections,
+        local_url: &Arc<RwLock<Option<Url>>>,
+    ) -> ReaderExit {
+        // Temporary preflight errors do not mark the peer unresponsive.
+        let mut mark_unresponsive = true;
+
+        let err = loop {
+            // Main loop to accept incoming unidirectional streams from the remote peer.
+            match ctx.connection.accept_uni().await {
+                Ok(stream) => {
+                    info!(remote_id = ?ctx.connection.remote_id(), "Accepted incoming stream");
+                    // Read frames from the stream.
+                    //
+                    // `Ok(true)` keeps the connection open and awaits the next
+                    // incoming stream — returned both after a successful preflight
+                    // and after a data stream ends normally.
+                    //
+                    // `Ok(false)` means this connection lost simultaneous-open
+                    // resolution: a preferred connection to the same peer is already
+                    // active, so this reader stops quietly.
+                    //
+                    // `Err` means the preflight could not be received. The connection
+                    // must be closed, because a successful preflight is the
+                    // prerequisite for establishing a connection.
+                    match Self::handle_incoming_stream(
+                        ctx.clone(),
+                        stream,
+                        connections.clone(),
+                        local_url.clone(),
+                    )
+                    .await
+                    {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            break "superseded by preferred connection"
+                                .to_string();
                         }
-                    }
-                    Err(err) => {
-                        error!(?err, "Connection closed by remote");
-                        break err.to_string();
+                        Err(err) => {
+                            // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
+                            // errors - this is a temporary state that will resolve once an
+                            // agent joins. It is not a real failure, so log it quietly and
+                            // reserve `error!` for genuine preflight failures.
+                            if matches!(
+                                err,
+                                K2Error::NoLocalAgentsDuringPreflight
+                            ) {
+                                mark_unresponsive = false;
+                                debug!(
+                                    ?err,
+                                    "Stream closed during preflight; no local agents yet"
+                                );
+                            } else {
+                                error!(?err, "Stream closed by remote");
+                            }
+                            break err.to_string();
+                        }
                     }
                 }
-            };
-
-            // The reader loop has ended. Only the connection that is *still the
-            // active connection* for this peer and that died for a genuine
-            // reason performs the "peer is gone" cleanup — marking the peer
-            // unresponsive and firing `peer_disconnect`.
-            //
-            // A connection that was superseded during simultaneous-open
-            // resolution, or already replaced by a newer connection, is torn
-            // down deliberately, not because the peer is gone. It closes
-            // quietly so that tearing it down does not mark the peer
-            // unresponsive or tear down the surviving connection. There are two
-            // such cases:
-            //
-            // - It is no longer the map entry for this peer (a preferred or
-            //   newer connection already replaced it locally).
-            // - The *remote* closed it with [`SUPERSEDED_CLOSE_REASON`] because
-            //   it preferred a different connection. This can arrive while this
-            //   connection is still our active map entry, because the winning
-            //   connection has not finished its preflight and registered yet.
-            //   Without honouring that reason we would wrongly mark the peer
-            //   unresponsive (which lasts until the agent info expires) and
-            //   stall gossip, even though a usable connection is moments away.
-            if let Some(remote_url) = ctx.remote_url() {
-                let superseded_by_remote = ctx
-                    .connection
-                    .remote_close_reason()
-                    .as_deref()
-                    == Some(SUPERSEDED_CLOSE_REASON);
-
-                let was_active = {
-                    let mut map = connections.write().expect("poisoned");
-                    match map.get(&remote_url) {
-                        Some(active) if Arc::ptr_eq(active, &ctx) => {
-                            map.remove(&remote_url);
-                            true
-                        }
-                        _ => false,
-                    }
-                };
-
-                if was_active && !superseded_by_remote {
-                    if !skip_unresponsive {
-                        info!(?remote_url, "Setting peer unresponsive");
-                        if let Err(err) = ctx.handler.set_unresponsive(remote_url.clone(), Timestamp::now()).await {
-                            warn!(?err, ?remote_url, "Failed to set peer unresponsive");
-                        }
-                    } else {
-                        info!(?remote_url, "Skipping set_unresponsive due to temporary error (no local agents)");
-                    }
-                    ctx.disconnect(err);
-                } else {
-                    debug!(?remote_url, reason = %err, superseded_by_remote, "Connection reader stopped without marking peer unresponsive (superseded or not the active connection)");
-                    ctx.connection.close(0u8, SUPERSEDED_CLOSE_REASON);
+                Err(err) => {
+                    error!(?err, "Connection closed by remote");
+                    break err.to_string();
                 }
-            } else {
-                // Preflight never completed, so no peer URL was learned and the
-                // peer was never surfaced to the handler.
-                ctx.connection.close(0u8, err.as_bytes());
             }
-        }).abort_handle()
+        };
+
+        ReaderExit {
+            err,
+            mark_unresponsive,
+        }
+    }
+
+    /// Remove `self` from the active-connections map if it is still the
+    /// entry for `remote_url`.
+    ///
+    /// Returns `true` if `self` was the active connection.
+    fn remove_if_active(
+        self: &Arc<Self>,
+        connections: &Connections,
+        remote_url: &Url,
+    ) -> bool {
+        let mut map = connections.write().expect("poisoned");
+        match map.get(remote_url) {
+            Some(active) if Arc::ptr_eq(active, self) => {
+                map.remove(remote_url);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    // The reader loop has ended: run the cleanup matching why it ended.
+    // See [`ReaderCleanup`] for the possible verdicts and their rationale.
+    async fn cleanup_after_exit(
+        ctx: Arc<Self>,
+        connections: &Connections,
+        exit: ReaderExit,
+    ) {
+        let Some(remote_url) = ctx.remote_url() else {
+            // Preflight never completed, so no peer URL was learned and the
+            // peer was never surfaced to the handler.
+            ctx.connection
+                .close(CloseCode::Unspecified, exit.err.as_bytes());
+            return;
+        };
+
+        let was_active = ctx.remove_if_active(connections, &remote_url);
+        let verdict = classify_exit(
+            was_active,
+            ctx.connection.remote_close_reason(),
+            exit.mark_unresponsive,
+        );
+
+        match verdict {
+            ReaderCleanup::Graceful { reason } => {
+                info!(?remote_url, %reason, "Peer disconnected gracefully");
+                ctx.disconnect(CloseCode::Graceful, reason);
+            }
+            ReaderCleanup::PeerGone { mark_unresponsive } => {
+                if mark_unresponsive {
+                    info!(?remote_url, "Setting peer unresponsive");
+                    if let Err(err) = ctx
+                        .handler
+                        .set_unresponsive(remote_url.clone(), Timestamp::now())
+                        .await
+                    {
+                        warn!(
+                            ?err,
+                            ?remote_url,
+                            "Failed to set peer unresponsive"
+                        );
+                    }
+                } else {
+                    info!(
+                        ?remote_url,
+                        "Skipping set_unresponsive due to temporary error (no local agents)"
+                    );
+                }
+                ctx.disconnect(CloseCode::Unspecified, exit.err);
+            }
+            ReaderCleanup::Quiet => {
+                debug!(?remote_url, reason = %exit.err, "Connection reader stopped without marking peer unresponsive (superseded or not the active connection)");
+                ctx.connection
+                    .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+            }
+        }
     }
 
     // Handle frames from an incoming stream.

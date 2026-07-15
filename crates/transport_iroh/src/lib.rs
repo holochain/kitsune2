@@ -219,6 +219,7 @@ use std::{
 use tokio::task::AbortHandle;
 use tracing::{debug, error, info, warn};
 
+mod close_code;
 mod frame;
 use frame::*;
 mod url;
@@ -1081,12 +1082,18 @@ impl TxImp for IrohTransport {
     fn disconnect(
         &self,
         peer: Url,
-        _payload: Option<(String, Bytes)>,
+        payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
         if let Some(ctx) =
             self.connections.write().expect("poisoned").remove(&peer)
         {
-            ctx.disconnect("Disconnecting from remote".to_string());
+            // The reason string travels in the QUIC application close frame
+            // itself, so the encoded payload message is intentionally not
+            // sent as a data frame first.
+            let reason = payload
+                .map(|(reason, _)| reason)
+                .unwrap_or_else(|| "Disconnecting from remote".to_string());
+            ctx.disconnect(close_code::CloseCode::Graceful, reason);
         }
         Box::pin(async {})
     }
