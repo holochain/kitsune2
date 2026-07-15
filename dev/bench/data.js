@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784128995064,
+  "lastUpdate": 1784132150330,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1244,6 +1244,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41668364,
             "range": "± 178196",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "9d1b3378a325244a4f77b3072dc8a5a54643fb0a",
+          "message": "chore(transport-iroh): downgrade url conversion log level to trace",
+          "timestamp": "2026-07-15T10:06:49-06:00",
+          "tree_id": "5bd3c388f9a357e1e04a062b0e56dfd8db4d4777",
+          "url": "https://github.com/holochain/kitsune2/commit/9d1b3378a325244a4f77b3072dc8a5a54643fb0a"
+        },
+        "date": 1784132149538,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 47072,
+            "range": "± 2330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 50393,
+            "range": "± 1879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 63913,
+            "range": "± 1657",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41850530,
+            "range": "± 240122",
             "unit": "ns/iter"
           }
         ]
