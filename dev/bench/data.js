@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783004109435,
+  "lastUpdate": 1784116069130,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1101,6 +1101,53 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41997513,
             "range": "± 55340",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hra@holochain.org",
+            "name": "holochain-release-automation2"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "e4ee0ba609a720db571316ef7f1eb75fcca47f79",
+          "message": "chore: update CODEOWNERS with shared content",
+          "timestamp": "2026-07-15T12:37:41+01:00",
+          "tree_id": "3970c588b2e0c7f1c2417d818388330a98492c31",
+          "url": "https://github.com/holochain/kitsune2/commit/e4ee0ba609a720db571316ef7f1eb75fcca47f79"
+        },
+        "date": 1784116068218,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 83155,
+            "range": "± 6048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 85949,
+            "range": "± 8254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 104913,
+            "range": "± 7170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999713,
+            "range": "± 32698",
             "unit": "ns/iter"
           }
         ]
