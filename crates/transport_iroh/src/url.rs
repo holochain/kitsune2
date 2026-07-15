@@ -80,7 +80,7 @@ pub(super) fn endpoint_from_url(url: &Url) -> K2Result<EndpointAddr> {
 
     let relay_url = relay_url_from_peer_url(url)?;
 
-    tracing::info!(
+    tracing::trace!(
         peer_url = %url,
         resolved_relay_url = %relay_url,
         %endpoint_id,
