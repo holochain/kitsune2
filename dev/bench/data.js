@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784119886315,
+  "lastUpdate": 1784128995064,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1196,6 +1196,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41997414,
             "range": "± 36203",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "9dda957592552d0e94f5d396f092961f554b629d",
+          "message": "build(deps): bump rust-overlay from `25d75be` to `a788763`\n\nBumps [rust-overlay](https://github.com/oxalica/rust-overlay) from `25d75be` to `a788763`.\n- [Commits](https://github.com/oxalica/rust-overlay/compare/25d75be8139815a53560745fa060909777495105...a7887636a3959168bd1ba7ef24a8a70b168dcb56)\n\n---\nupdated-dependencies:\n- dependency-name: rust-overlay\n  dependency-version: a7887636a3959168bd1ba7ef24a8a70b168dcb56\n  dependency-type: direct:production\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-15T16:07:57+01:00",
+          "tree_id": "6d127973f1e11912bcc3b0eea74203c6ff776900",
+          "url": "https://github.com/holochain/kitsune2/commit/9dda957592552d0e94f5d396f092961f554b629d"
+        },
+        "date": 1784128994493,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 39287,
+            "range": "± 2742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 42103,
+            "range": "± 2584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 52980,
+            "range": "± 2875",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41668364,
+            "range": "± 178196",
             "unit": "ns/iter"
           }
         ]
