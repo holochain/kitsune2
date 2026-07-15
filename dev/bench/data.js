@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784116069130,
+  "lastUpdate": 1784119886315,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1148,6 +1148,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999713,
             "range": "± 32698",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "9021cfe5a3064d3a924d61c444559fd5ae853777",
+          "message": "ci: Add more package ecosystems to dependabot.yml",
+          "timestamp": "2026-07-15T13:48:09+01:00",
+          "tree_id": "f2ef70ed70e889bcc7f866d02156e6870dc39171",
+          "url": "https://github.com/holochain/kitsune2/commit/9021cfe5a3064d3a924d61c444559fd5ae853777"
+        },
+        "date": 1784119885717,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 81942,
+            "range": "± 5225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 81670,
+            "range": "± 3879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 100413,
+            "range": "± 6378",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41997414,
+            "range": "± 36203",
             "unit": "ns/iter"
           }
         ]
