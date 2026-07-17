@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784132150330,
+  "lastUpdate": 1784308618427,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1292,6 +1292,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41850530,
             "range": "± 240122",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "62cf3446e829eaed7f3948ed29eff6dfb712413c",
+          "message": "build(deps): bump actions/setup-go from 6 to 7\n\nBumps [actions/setup-go](https://github.com/actions/setup-go) from 6 to 7.\n- [Release notes](https://github.com/actions/setup-go/releases)\n- [Commits](https://github.com/actions/setup-go/compare/v6...v7)\n\n---\nupdated-dependencies:\n- dependency-name: actions/setup-go\n  dependency-version: '7'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-17T18:06:56+01:00",
+          "tree_id": "fe163485312d3c01823db95aeb55bac6ef75e704",
+          "url": "https://github.com/holochain/kitsune2/commit/62cf3446e829eaed7f3948ed29eff6dfb712413c"
+        },
+        "date": 1784308617681,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 79509,
+            "range": "± 5022",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 82510,
+            "range": "± 4612",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 100970,
+            "range": "± 6454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42001402,
+            "range": "± 38468",
             "unit": "ns/iter"
           }
         ]
