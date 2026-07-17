@@ -595,22 +595,17 @@ impl TransportInstances {
             return Some(open_connection.ready_data_send.clone());
         }
 
-        let to_peer_id: u64 = match to_peer.peer_id() {
-            None => return None,
-            Some(id) => match id.parse() {
-                Err(_) => return None,
-                Ok(id) => id,
-            },
-        };
+        let to_peer_id: u64 =
+            to_peer.peer_id().and_then(|id| id.parse().ok())?;
 
         // Get the sender side of the connection establishment channel for the
         // MemTransport associated with the to_peer Url, if an associated
         // MemTransport instance is found.
-        let connection_send =
-            match self.instances_map.lock().unwrap().get(&to_peer_id) {
-                None => return None,
-                Some(send) => send.clone(),
-            };
+        let connection_send = {
+            let lock = self.instances_map.lock().expect("poisoned");
+            let send = lock.get(&to_peer_id)?;
+            send.clone()
+        };
 
         // Create an unbounded "data" channel "B -> A" to send data from
         // peer B's MemTransport instance to peer A's MemTransport instance
