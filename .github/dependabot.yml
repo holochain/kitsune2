@@ -4,10 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      background:
+        applies-to: version-updates
+        patterns:
+          - "*"
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+    groups:
+      background:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:
@@ -16,3 +29,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      background:
+        applies-to: version-updates
+        patterns:
+          - "*"
