@@ -105,7 +105,7 @@ tracing-appender = "0.2.3"
 # Used in testing and the showcase app to output tracing
 tracing-subscriber = "0.3"
 # TLS support for the bootstrap server
-axum-server = { version = "0.7.1", default-features = false }
+axum-server = { version = "0.8.0", default-features = false }
 # TLS support for the bootstrap server
 rustls = { version = "0.23", default-features = false }
 rustls-pemfile = "2.2"
