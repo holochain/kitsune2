@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784308618427,
+  "lastUpdate": 1784571290986,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1340,6 +1340,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42001402,
             "range": "± 38468",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "766245b51a9e229f22e97c5cf6d887265ba76936",
+          "message": "build(deps): bump bytes from 1.11.1 to 1.12.1\n\nBumps [bytes](https://github.com/tokio-rs/bytes) from 1.11.1 to 1.12.1.\n- [Release notes](https://github.com/tokio-rs/bytes/releases)\n- [Changelog](https://github.com/tokio-rs/bytes/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/tokio-rs/bytes/compare/v1.11.1...v1.12.1)\n\n---\nupdated-dependencies:\n- dependency-name: bytes\n  dependency-version: 1.12.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-20T19:03:49+01:00",
+          "tree_id": "c36f64581a31fc974cec2b17f45a37d08e27f40e",
+          "url": "https://github.com/holochain/kitsune2/commit/766245b51a9e229f22e97c5cf6d887265ba76936"
+        },
+        "date": 1784571290215,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 78022,
+            "range": "± 4397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 80952,
+            "range": "± 5528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 95208,
+            "range": "± 4582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41864891,
+            "range": "± 107961",
             "unit": "ns/iter"
           }
         ]
