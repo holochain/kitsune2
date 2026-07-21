@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784571899942,
+  "lastUpdate": 1784593047817,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1484,6 +1484,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42000432,
             "range": "± 28941",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "6ebe76f180486760391c9bc27f47d4d67d497b73",
+          "message": "build(deps): bump iroh-base from 1.0.0 to 1.0.2\n\nBumps [iroh-base](https://github.com/n0-computer/iroh) from 1.0.0 to 1.0.2.\n- [Release notes](https://github.com/n0-computer/iroh/releases)\n- [Changelog](https://github.com/n0-computer/iroh/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/n0-computer/iroh/compare/v1.0.0...v1.0.2)\n\n---\nupdated-dependencies:\n- dependency-name: iroh-base\n  dependency-version: 1.0.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-21T01:05:36+01:00",
+          "tree_id": "f455ad9d356c120223755f521948394234aabd6a",
+          "url": "https://github.com/holochain/kitsune2/commit/6ebe76f180486760391c9bc27f47d4d67d497b73"
+        },
+        "date": 1784593046980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 51833,
+            "range": "± 2032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 54429,
+            "range": "± 2212",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 68383,
+            "range": "± 3655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41994517,
+            "range": "± 23639",
             "unit": "ns/iter"
           }
         ]
