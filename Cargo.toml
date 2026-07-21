@@ -119,7 +119,7 @@ rustyline = { version = "18.0" }
 strum = { version = "0.28", features = ["derive", "strum_macros"] }
 # Used for telemetry in relay server and bootstrap relay metrics
 opentelemetry = "0.30"
-opentelemetry_sdk = "0.30"
+opentelemetry_sdk = "0.32"
 opentelemetry-otlp = { version = "0.30", features = ["http-proto"] }
 # --- tool-dependencies ---
 # The following workspace dependencies are thus-far only used in unpublished
