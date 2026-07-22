@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784593047817,
+  "lastUpdate": 1784719902460,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1532,6 +1532,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41994517,
             "range": "± 23639",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "9bc792024b8143aa77940b44ff12cca40179107f",
+          "message": "chore: Update Nix packages to 26.05",
+          "timestamp": "2026-07-22T12:21:44+01:00",
+          "tree_id": "c1d7781d93b9afa02b25318a90435f3a3cba3ca7",
+          "url": "https://github.com/holochain/kitsune2/commit/9bc792024b8143aa77940b44ff12cca40179107f"
+        },
+        "date": 1784719901570,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 75806,
+            "range": "± 3441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 78225,
+            "range": "± 3291",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 107033,
+            "range": "± 4194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41879455,
+            "range": "± 89749",
             "unit": "ns/iter"
           }
         ]
