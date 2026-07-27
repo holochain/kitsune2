@@ -4,7 +4,21 @@ on:
   pull_request: {}
 
 jobs:
-  static:
+  fmt:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make@0.37.24,taplo@0.9.3
+
+      - name: Format
+        run: cargo make static-fmt
+
+  clippy:
+    needs: fmt
     runs-on: ubuntu-latest
 
     steps:
@@ -22,11 +36,33 @@ jobs:
         with:
           cmake-version: '3.31.x'
 
-      - name: Static
-        run: cargo make static
+      - name: Clippy
+        run: cargo make clippy
+
+  doc-check:
+    needs: fmt
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make@0.37.24
+
+      - uses: Swatinem/rust-cache@v2
+
+      # we cannot use cmake 4 until openssl-src is updated
+      - name: cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.31.x'
+
+      - name: Doc check
+        run: cargo make doc-check
 
   test:
-    needs: static
+    needs: fmt
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -72,7 +108,7 @@ jobs:
         run: cargo run --example schema --features schema
 
   test-windows:
-    needs: static
+    needs: fmt
     strategy:
       matrix:
         os: [windows-latest]
@@ -114,7 +150,7 @@ jobs:
           cargo make test
 
   nix-build:
-    needs: static
+    needs: fmt
     strategy:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
@@ -135,7 +171,7 @@ jobs:
       - run: nix build --verbose -L .#bootstrap-srv
 
   docker-build-bootstrap:
-    needs: static
+    needs: fmt
     runs-on: ubuntu-latest
 
     steps:
@@ -145,7 +181,7 @@ jobs:
         run: docker buildx build -f docker/kitsune2_bootstrap_srv/Dockerfile .
 
   docker-build-bootstrap-auth-test:
-    needs: static
+    needs: fmt
     runs-on: ubuntu-latest
 
     steps:
@@ -162,7 +198,9 @@ jobs:
     if: ${{ always() }}
     runs-on: "ubuntu-latest"
     needs:
-      - static
+      - fmt
+      - clippy
+      - doc-check
       - test
       - test-windows
       - nix-build
