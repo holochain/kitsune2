@@ -68,6 +68,14 @@ Pick the level based on whether the event is a real problem and whether anyone c
 - **`debug`** — information that would be too noisy for `info` but is still useful when actively debugging.
 - **`trace`** — permitted, but rarely enabled in practice.
 
+### Code conventions
+
+- **Mutex poisoning** — always handle a poisoned mutex with `.expect("poison")`, never with `.unwrap()` or any other message:
+
+  ```rust
+  let guard = mutex.lock().expect("poison");
+  ```
+
 ## Testing strategy
 
 Tests are layered, and you should reach for the fastest, most reliable layer that can meaningfully cover the change. Usually, that means we follow the "testing triangle" with more unit tests than functional test, and more functional tests than integration tests. Almost all code should be unit tested, but it's acceptable for a few integration tests to cover a lot of functionality in one test.
