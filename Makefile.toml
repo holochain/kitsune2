@@ -70,6 +70,11 @@ args = ["format"]
 # Helper tasks
 #
 
+[tasks.static-fmt]
+description = "Formatting checks only, with no compilation. Used as a fast CI gate"
+workspace = false
+dependencies = ["format-toml-check", "format-check"]
+
 [tasks.static]
 description = "Run all static checks"
 dependencies = [
