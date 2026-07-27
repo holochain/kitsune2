@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784719902460,
+  "lastUpdate": 1785154970231,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1580,6 +1580,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41879455,
             "range": "± 89749",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "6aeabbd146bbde079f2c1e3bfe9e0c0da609950a",
+          "message": "chore: tell Claude to always use `expect(\"poison\")` for mutex poison handling",
+          "timestamp": "2026-07-27T14:13:00+02:00",
+          "tree_id": "2cabdebdc394f9722b27ac722475e55af901288b",
+          "url": "https://github.com/holochain/kitsune2/commit/6aeabbd146bbde079f2c1e3bfe9e0c0da609950a"
+        },
+        "date": 1785154969919,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 74129,
+            "range": "± 3843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 76326,
+            "range": "± 3776",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 91170,
+            "range": "± 2864",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41772165,
+            "range": "± 130653",
             "unit": "ns/iter"
           }
         ]
