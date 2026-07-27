@@ -71,7 +71,7 @@ args = ["format"]
 #
 
 [tasks.static-fmt]
-description = "Formatting checks only, with no compilation. Used as a fast CI gate"
+description = "Formatting checks only, with no compilation"
 workspace = false
 dependencies = ["format-toml-check", "format-check"]
 
