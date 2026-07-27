@@ -2,6 +2,13 @@ name: Test
 
 on:
   pull_request: {}
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   fmt:
@@ -29,6 +36,8 @@ jobs:
           tool: cargo-make@0.37.24
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # we cannot use cmake 4 until openssl-src is updated
       - name: cmake
@@ -51,6 +60,8 @@ jobs:
           tool: cargo-make@0.37.24
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # we cannot use cmake 4 until openssl-src is updated
       - name: cmake
@@ -92,6 +103,8 @@ jobs:
           tool: cargo-make@0.37.24
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # we cannot use cmake 4 until openssl-src is updated
       - name: cmake
@@ -129,6 +142,8 @@ jobs:
           tool: cargo-make@0.37.24
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # we cannot use cmake 4 until openssl-src is updated
       - name: cmake
@@ -192,6 +207,7 @@ jobs:
 
   changelog-preview-comment:
       name: Add comment of changelog preview
+      if: github.event_name == 'pull_request'
       uses: holochain/actions/.github/workflows/changelog-preview-comment.yml@v1.16.0
 
   ci_pass:
