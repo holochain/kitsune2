@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785154970231,
+  "lastUpdate": 1785160336584,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1628,6 +1628,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41772165,
             "range": "± 130653",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "c3870c5dba9de219ff8304cb8aaa8dc5fbbac2df",
+          "message": "feat(transport_iroh): close connections gracefully with close codes\n\nAn intentional disconnect previously closed the QUIC connection with a\nhardcoded code 0 and dropped the caller's reason, so the remote peer\ntreated it as a network failure and marked the closer unresponsive\nuntil its agent info expired.\n\nIntroduce a CloseCode enum (Unspecified, Graceful, Superseded) carried\nas the QUIC application close code. Transport::disconnect now sends the\ncaller's reason in the close frame with the Graceful code, and the\nremote reader releases the connection quietly, informing handlers via\npeer_disconnect with the reason instead of marking the peer\nunresponsive. Supersession is signalled by code as well, keeping the\nlegacy reason-string match for peers running older code.\n\nCloses #496",
+          "timestamp": "2026-07-27T15:49:01+02:00",
+          "tree_id": "9612c007f2d87d7e41c22379adfe5d3c91e84394",
+          "url": "https://github.com/holochain/kitsune2/commit/c3870c5dba9de219ff8304cb8aaa8dc5fbbac2df"
+        },
+        "date": 1785160336233,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 73447,
+            "range": "± 3381",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 75935,
+            "range": "± 3681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 92055,
+            "range": "± 3700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41879698,
+            "range": "± 124395",
             "unit": "ns/iter"
           }
         ]
