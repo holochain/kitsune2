@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785236860912,
+  "lastUpdate": 1785240074734,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1772,6 +1772,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41997807,
             "range": "± 50314",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "e85e4a3df044e8ee861ac74541298fc23d1c9e4f",
+          "message": "fix: clippy issues raised by upgraded clippy",
+          "timestamp": "2026-07-28T12:51:34+01:00",
+          "tree_id": "977ec93bdb37e1990f754e32e5100157416c4ffd",
+          "url": "https://github.com/holochain/kitsune2/commit/e85e4a3df044e8ee861ac74541298fc23d1c9e4f"
+        },
+        "date": 1785240074373,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 57751,
+            "range": "± 2853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 64017,
+            "range": "± 2658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 82076,
+            "range": "± 1501",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999909,
+            "range": "± 1671",
             "unit": "ns/iter"
           }
         ]
