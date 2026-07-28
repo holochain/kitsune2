@@ -16,7 +16,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0-dev.0"
 authors = ["Holochain Core Dev Team <devcore@holochain.org>"]
 homepage = "https://www.holochain.org/"
 repository = "https://github.com/holochain/kitsune2"
@@ -34,12 +34,12 @@ panic = "abort"
 [workspace.dependencies]
 # Self dependencies for workspace crates to depend on each other.
 # For example, most crates will depend on the api crate.
-kitsune2 = { version = "0.5.0-dev.0", path = "crates/kitsune2", default-features = false }
-kitsune2_api = { version = "0.5.0-dev.0", path = "crates/api" }
-kitsune2_dht = { version = "0.5.0-dev.0", path = "crates/dht" }
-kitsune2_gossip = { version = "0.5.0-dev.0", path = "crates/gossip" }
-kitsune2_transport_iroh = { version = "0.5.0-dev.0", path = "crates/transport_iroh" }
-kitsune2_bootstrap_client = { version = "0.5.0-dev.0", path = "crates/bootstrap_client" }
+kitsune2 = { version = "0.6.0-dev.0", path = "crates/kitsune2", default-features = false }
+kitsune2_api = { version = "0.6.0-dev.0", path = "crates/api" }
+kitsune2_dht = { version = "0.6.0-dev.0", path = "crates/dht" }
+kitsune2_gossip = { version = "0.6.0-dev.0", path = "crates/gossip" }
+kitsune2_transport_iroh = { version = "0.6.0-dev.0", path = "crates/transport_iroh" }
+kitsune2_bootstrap_client = { version = "0.6.0-dev.0", path = "crates/bootstrap_client" }
 
 # used by bootstrap_srv for mpmc worker queue pattern.
 async-channel = "2.3.1"
@@ -135,9 +135,9 @@ prost-build = "0.14"
 # --- dev-dependencies ---
 # Criterion benchmarks
 criterion = { version = "0.8", features = ["async_tokio"] }
-kitsune2_bootstrap_srv = { version = "0.5.0-dev.0", path = "crates/bootstrap_srv" }
-kitsune2_core = { version = "0.5.0-dev.0", path = "crates/core" }
-kitsune2_test_utils = { version = "0.5.0-dev.0", path = "crates/test_utils" }
+kitsune2_bootstrap_srv = { version = "0.6.0-dev.0", path = "crates/bootstrap_srv" }
+kitsune2_core = { version = "0.6.0-dev.0", path = "crates/core" }
+kitsune2_test_utils = { version = "0.6.0-dev.0", path = "crates/test_utils" }
 
 # iroh relay for testing iroh transport
 iroh-relay = "1.0.0"

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.6.0-dev.0](https://github.com/holochain/kitsune2/compare/v0.5.0...v0.6.0-dev.0)\] - 2026-07-28
+
+### Bug Fixes
+
+- Update `ed25519-dalek` to be compatible with the `rand` upgrade and update the code to use the new `rand` API by @ThetaSinner in [#597](https://github.com/holochain/kitsune2/pull/597)
+  - # Conflicts: #	Cargo.lock
+- Clippy issues raised by upgraded clippy by @ThetaSinner in [#591](https://github.com/holochain/kitsune2/pull/591)
+
+### Build System
+
+- *(deps)* Update `opentelemetry_sdk` and `opentelemetry-otlp` to 0.32 by @ThetaSinner in [#596](https://github.com/holochain/kitsune2/pull/596)
+
+### Automated Changes
+
+- *(deps)* Bump schemars from 0.9.0 to 1.2.2 by @dependabot[bot] in [#599](https://github.com/holochain/kitsune2/pull/599)
+- *(deps)* Bump tower-http from 0.6.10 to 0.7.0 by @dependabot[bot] in [#598](https://github.com/holochain/kitsune2/pull/598)
+- *(deps)* Bump opentelemetry from 0.30.0 to 0.32.0 by @dependabot[bot]
+- *(deps)* Bump rand from 0.8.6 to 0.10.1 by @dependabot[bot]
+- *(deps)* Bump the background group across 1 directory with 12 updates by @dependabot[bot] in [#595](https://github.com/holochain/kitsune2/pull/595)
+- *(deps)* Bump the background group across 1 directory with 3 updates by @dependabot[bot] in [#594](https://github.com/holochain/kitsune2/pull/594)
+- *(deps)* Bump rust-toolchain from 1.95.0 to 1.97.1 by @dependabot[bot]
+
 ## \[[0.5.0](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.5.0)\] - 2026-07-27
 
 ### Features
