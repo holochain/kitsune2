@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785241427664,
+  "lastUpdate": 1785243391948,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1868,6 +1868,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41967103,
             "range": "± 53780",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "39d970bdb699c45b0b32ad2a7b8261973d29f373",
+          "message": "build(deps): bump the background group across 1 directory with 12 updates\n\nBumps the background group with 12 updates in the / directory:\n\n| Package | From | To |\n| --- | --- | --- |\n| [http](https://github.com/hyperium/http) | `1.4.0` | `1.4.2` |\n| [chrono](https://github.com/chronotope/chrono) | `0.4.44` | `0.4.45` |\n| [clap](https://github.com/clap-rs/clap) | `4.6.1` | `4.6.4` |\n| [prost](https://github.com/tokio-rs/prost) | `0.14.3` | `0.14.4` |\n| [serde](https://github.com/serde-rs/serde) | `1.0.228` | `1.0.229` |\n| [serde_json](https://github.com/serde-rs/json) | `1.0.149` | `1.0.151` |\n| [tokio](https://github.com/tokio-rs/tokio) | `1.52.3` | `1.53.1` |\n| [thiserror](https://github.com/dtolnay/thiserror) | `2.0.18` | `2.0.19` |\n| [rustls](https://github.com/rustls/rustls) | `0.23.40` | `0.23.42` |\n| [rustyline](https://github.com/kkawakam/rustyline) | `18.0.0` | `18.0.1` |\n| [prost-build](https://github.com/tokio-rs/prost) | `0.14.3` | `0.14.4` |\n| [iroh-base](https://github.com/n0-computer/iroh) | `1.0.2` | `1.0.3` |\n\n\n\nUpdates `http` from 1.4.0 to 1.4.2\n- [Release notes](https://github.com/hyperium/http/releases)\n- [Changelog](https://github.com/hyperium/http/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/hyperium/http/compare/v1.4.0...v1.4.2)\n\nUpdates `chrono` from 0.4.44 to 0.4.45\n- [Release notes](https://github.com/chronotope/chrono/releases)\n- [Changelog](https://github.com/chronotope/chrono/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/chronotope/chrono/compare/v0.4.44...v0.4.45)\n\nUpdates `clap` from 4.6.1 to 4.6.4\n- [Release notes](https://github.com/clap-rs/clap/releases)\n- [Changelog](https://github.com/clap-rs/clap/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.1...clap_complete-v4.6.4)\n\nUpdates `prost` from 0.14.3 to 0.14.4\n- [Release notes](https://github.com/tokio-rs/prost/releases)\n- [Changelog](https://github.com/tokio-rs/prost/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/tokio-rs/prost/compare/v0.14.3...v0.14.4)\n\nUpdates `serde` from 1.0.228 to 1.0.229\n- [Release notes](https://github.com/serde-rs/serde/releases)\n- [Commits](https://github.com/serde-rs/serde/compare/v1.0.228...v1.0.229)\n\nUpdates `serde_json` from 1.0.149 to 1.0.151\n- [Release notes](https://github.com/serde-rs/json/releases)\n- [Commits](https://github.com/serde-rs/json/compare/v1.0.149...v1.0.151)\n\nUpdates `tokio` from 1.52.3 to 1.53.1\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.52.3...tokio-1.53.1)\n\nUpdates `thiserror` from 2.0.18 to 2.0.19\n- [Release notes](https://github.com/dtolnay/thiserror/releases)\n- [Commits](https://github.com/dtolnay/thiserror/compare/2.0.18...2.0.19)\n\nUpdates `rustls` from 0.23.40 to 0.23.42\n- [Release notes](https://github.com/rustls/rustls/releases)\n- [Changelog](https://github.com/rustls/rustls/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/rustls/rustls/compare/v/0.23.40...v/0.23.42)\n\nUpdates `rustyline` from 18.0.0 to 18.0.1\n- [Release notes](https://github.com/kkawakam/rustyline/releases)\n- [Changelog](https://github.com/kkawakam/rustyline/blob/master/History.md)\n- [Commits](https://github.com/kkawakam/rustyline/compare/v18.0.0...v18.0.1)\n\nUpdates `prost-build` from 0.14.3 to 0.14.4\n- [Release notes](https://github.com/tokio-rs/prost/releases)\n- [Changelog](https://github.com/tokio-rs/prost/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/tokio-rs/prost/compare/v0.14.3...v0.14.4)\n\nUpdates `iroh-base` from 1.0.2 to 1.0.3\n- [Release notes](https://github.com/n0-computer/iroh/releases)\n- [Changelog](https://github.com/n0-computer/iroh/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/n0-computer/iroh/compare/v1.0.2...v1.0.3)\n\n---\nupdated-dependencies:\n- dependency-name: chrono\n  dependency-version: 0.4.45\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: clap\n  dependency-version: 4.6.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: http\n  dependency-version: 1.4.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: iroh-base\n  dependency-version: 1.0.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: prost\n  dependency-version: 0.14.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: prost-build\n  dependency-version: 0.14.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: rustls\n  dependency-version: 0.23.42\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: rustyline\n  dependency-version: 18.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: serde\n  dependency-version: 1.0.229\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: serde_json\n  dependency-version: 1.0.151\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: thiserror\n  dependency-version: 2.0.19\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: background\n- dependency-name: tokio\n  dependency-version: 1.53.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: background\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-28T13:49:17+01:00",
+          "tree_id": "c4b875975dc1863a9e8a28f357e988830843c4bf",
+          "url": "https://github.com/holochain/kitsune2/commit/39d970bdb699c45b0b32ad2a7b8261973d29f373"
+        },
+        "date": 1785243391383,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 74871,
+            "range": "± 4321",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 76131,
+            "range": "± 3194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 99860,
+            "range": "± 3866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41892667,
+            "range": "± 90705",
             "unit": "ns/iter"
           }
         ]
