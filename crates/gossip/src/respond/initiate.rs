@@ -196,7 +196,7 @@ mod tests {
     use kitsune2_core::factories::MemoryOp;
     use kitsune2_dht::SECTOR_SIZE;
     use kitsune2_test_utils::enable_tracing;
-    use rand::RngCore;
+    use rand::Rng;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -737,9 +737,7 @@ mod tests {
                             .unwrap()
                             .encode(),
                     }),
-                    tie_breaker: rand::thread_rng()
-                        .next_u32()
-                        .saturating_add(1),
+                    tie_breaker: rand::rng().next_u32().saturating_add(1),
                     new_since: Timestamp::now().as_micros(),
                     max_op_data_bytes: 5_000,
                     dht_op_count: Some(99),
@@ -829,9 +827,7 @@ mod tests {
                         .unwrap()
                         .encode(),
                     }),
-                    tie_breaker: rand::thread_rng()
-                        .next_u32()
-                        .saturating_add(1),
+                    tie_breaker: rand::rng().next_u32().saturating_add(1),
                     new_since: UNIX_TIMESTAMP.as_micros(),
                     max_op_data_bytes: harness
                         .gossip

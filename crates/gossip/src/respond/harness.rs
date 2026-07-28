@@ -11,7 +11,7 @@ use kitsune2_core::{Ed25519LocalAgent, default_test_builder};
 use kitsune2_dht::{ArcSet, Dht};
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
-use rand::RngCore;
+use rand::Rng;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
@@ -216,7 +216,7 @@ impl Deref for TestAgent {
 
 pub(crate) fn test_session_id() -> Bytes {
     let mut session_id = bytes::BytesMut::zeroed(12);
-    rand::thread_rng().fill_bytes(&mut session_id);
+    rand::rng().fill_bytes(&mut session_id);
 
     session_id.freeze()
 }

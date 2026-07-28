@@ -7,7 +7,7 @@ use kitsune2_api::{
     Timestamp,
 };
 use kitsune2_core::factories::MemoryOp;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::HashMap;
 
 /// Intended to represent a single agent in a network, which knows how to sync with
@@ -36,7 +36,7 @@ impl DhtSyncHarness {
             .unwrap();
 
         let mut bytes = [0; 32];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
         let agent_id = AgentId::from(bytes::Bytes::copy_from_slice(&bytes));
 
         Self {

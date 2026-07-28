@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! Test utilities to help with testing Kitsune2.
 
-use rand::RngCore;
+use rand::Rng;
 use tokio::time::error::Elapsed;
 
 pub mod agent;
@@ -33,7 +33,7 @@ pub fn enable_tracing_with_default_level(level: tracing::Level) {
 
 /// Create random bytes of a specified length.
 pub fn random_bytes(length: u16) -> Vec<u8> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut bytes = vec![0; length as usize];
     rng.fill_bytes(&mut bytes);
     bytes

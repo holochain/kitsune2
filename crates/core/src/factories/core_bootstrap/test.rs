@@ -119,8 +119,7 @@ impl Test {
     }
 
     pub async fn push_agent(&self) -> AgentId {
-        let secret =
-            ed25519_dalek::SigningKey::generate(&mut rand::thread_rng());
+        let secret = ed25519_dalek::SigningKey::generate(&mut rand::rng());
         let pubkey = secret.verifying_key();
 
         let agent =

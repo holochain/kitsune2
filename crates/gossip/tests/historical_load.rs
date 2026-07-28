@@ -52,7 +52,7 @@ async fn historical_load() {
     // Create an op every 12 hours for a year
     let mut ops = Vec::<MemoryOpRecord>::with_capacity(2 * 365);
     while time < stop_time {
-        let op_size = rand::random::<usize>()
+        let op_size = rand::random::<u32>() as usize
             % (MAX_OP_SIZE_BYTES - MIN_OP_SIZE_BYTES)
             + MIN_OP_SIZE_BYTES;
 

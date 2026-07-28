@@ -2,7 +2,7 @@ use bytes::Bytes;
 use kitsune2_api::{AgentId, Url};
 use kitsune2_dht::ArcSet;
 use kitsune2_dht::DhtSnapshot;
-use rand::RngCore;
+use rand::Rng;
 
 /// The state of a gossip round.
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl GossipRoundState {
         our_arc_set: ArcSet,
     ) -> Self {
         let mut session_id = bytes::BytesMut::zeroed(12);
-        rand::thread_rng().fill_bytes(&mut session_id);
+        rand::rng().fill_bytes(&mut session_id);
 
         Self {
             session_with_peer,
@@ -54,7 +54,7 @@ impl GossipRoundState {
             stage: RoundStage::Initiated(RoundStageInitiated {
                 our_agents,
                 our_arc_set,
-                tie_breaker: rand::thread_rng().next_u32().saturating_add(1),
+                tie_breaker: rand::rng().next_u32().saturating_add(1),
             }),
         }
     }

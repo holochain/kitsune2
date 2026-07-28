@@ -6,10 +6,10 @@ mod outgoing_request_queue;
 pub(crate) mod test_utils {
     use crate::factories::MemoryOp;
     use kitsune2_api::{Timestamp, Url};
-    use rand::RngCore;
+    use rand::Rng;
 
     pub fn random_peer_url() -> Url {
-        let id = rand::thread_rng().next_u32();
+        let id = rand::rng().next_u32();
         Url::from_str(format!("ws://test:80/{id}")).unwrap()
     }
 
