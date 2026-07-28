@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785160336584,
+  "lastUpdate": 1785235652285,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1676,6 +1676,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41879698,
             "range": "± 124395",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "71685f6cdc264756b591ff2883cd0f579e23d9b6",
+          "message": "fixup! ci: add static-fmt cargo-make task for use as a fast CI gate",
+          "timestamp": "2026-07-28T11:44:17+01:00",
+          "tree_id": "17431c5451988b12663eef5c693bfe65bb1051b9",
+          "url": "https://github.com/holochain/kitsune2/commit/71685f6cdc264756b591ff2883cd0f579e23d9b6"
+        },
+        "date": 1785235651695,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 57801,
+            "range": "± 2359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 63186,
+            "range": "± 2078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 87702,
+            "range": "± 2412",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999440,
+            "range": "± 14725",
             "unit": "ns/iter"
           }
         ]
