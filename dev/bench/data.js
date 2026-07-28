@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785248935128,
+  "lastUpdate": 1785250147522,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2012,6 +2012,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41953000,
             "range": "± 102759",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "833671627488559f42c3c897ace70826b7427914",
+          "message": "build(deps): bump tower-http from 0.6.10 to 0.7.0\n\nBumps [tower-http](https://github.com/tower-rs/tower-http) from 0.6.10 to 0.7.0.\n- [Release notes](https://github.com/tower-rs/tower-http/releases)\n- [Commits](https://github.com/tower-rs/tower-http/compare/tower-http-0.6.10...tower-http-0.7.0)\n\n---\nupdated-dependencies:\n- dependency-name: tower-http\n  dependency-version: 0.7.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-28T15:44:38+01:00",
+          "tree_id": "9d332f15026de39fd2020f7f5d50ebfe9ebe4135",
+          "url": "https://github.com/holochain/kitsune2/commit/833671627488559f42c3c897ace70826b7427914"
+        },
+        "date": 1785250146724,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 49712,
+            "range": "± 1783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 52368,
+            "range": "± 2046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 64221,
+            "range": "± 1355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41318076,
+            "range": "± 167805",
             "unit": "ns/iter"
           }
         ]
