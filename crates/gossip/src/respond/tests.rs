@@ -19,7 +19,7 @@ use kitsune2_api::{
 use kitsune2_core::factories::MemoryOp;
 use kitsune2_dht::{ArcSet, DhtSnapshot, SECTOR_SIZE};
 use kitsune2_test_utils::enable_tracing;
-use rand::RngCore;
+use rand::Rng;
 use std::collections::HashMap;
 
 #[tokio::test]
@@ -319,7 +319,7 @@ async fn accept_respect_size_limit_for_new_ops_and_disc() {
                     .unwrap()
                     .encode(),
                 }),
-                tie_breaker: rand::thread_rng().next_u32().saturating_add(1),
+                tie_breaker: rand::rng().next_u32().saturating_add(1),
                 new_since: UNIX_TIMESTAMP.as_micros(),
                 max_op_data_bytes: harness.gossip.config.max_gossip_op_bytes,
                 dht_op_count: Some(0),

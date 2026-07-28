@@ -1,5 +1,5 @@
 use base64::prelude::*;
-use rand::Rng;
+use rand::RngExt;
 
 #[tokio::main]
 async fn main() {
@@ -19,7 +19,7 @@ async fn main() {
             ));
         }
         let mut token = [0; 32];
-        rand::thread_rng().fill(&mut token);
+        rand::rng().fill(&mut token);
         let token = BASE64_URL_SAFE_NO_PAD.encode(&token[..]);
         axum::response::IntoResponse::into_response(axum::Json(
             serde_json::json!({

@@ -33,7 +33,7 @@
 //! revalidated through subsequent hook server calls.
 
 use base64::Engine;
-use rand::Rng;
+use rand::RngExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -171,7 +171,7 @@ pub async fn process_authenticate(
     } else {
         // No hook server - generate random token (accept all)
         let mut token_bytes = [0u8; 32];
-        rand::thread_rng().fill(&mut token_bytes);
+        rand::rng().fill(&mut token_bytes);
         let token = Arc::<str>::from(
             base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(token_bytes),
         );

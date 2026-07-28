@@ -34,7 +34,7 @@ async fn two_new_agents_sync() {
     const NUM_OPS: usize = 20;
     let mut ops = Vec::<MemoryOpRecord>::with_capacity(NUM_OPS);
     for _ in 0..NUM_OPS {
-        let op_size = rand::random::<usize>() % 1000 + 500;
+        let op_size = rand::random::<u32>() % 1000 + 500;
 
         let op = MemoryOp::new(Timestamp::now(), random_bytes(op_size as u16));
         ops.push(MemoryOpRecord {
@@ -111,7 +111,7 @@ async fn new_agent_joins_existing_network() {
     const NUM_OPS: usize = 20;
     let mut ops = Vec::<MemoryOpRecord>::with_capacity(NUM_OPS);
     for _ in 0..NUM_OPS {
-        let op_size = rand::random::<usize>() % 1000 + 500;
+        let op_size = rand::random::<u32>() % 1000 + 500;
 
         let op = MemoryOp::new(Timestamp::now(), random_bytes(op_size as u16));
         ops.push(MemoryOpRecord {

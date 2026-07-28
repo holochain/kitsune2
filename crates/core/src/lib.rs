@@ -63,7 +63,7 @@ impl std::fmt::Debug for Ed25519LocalAgent {
 
 impl Default for Ed25519LocalAgent {
     fn default() -> Self {
-        Self::new(ed25519_dalek::SigningKey::generate(&mut rand::thread_rng()))
+        Self::new(ed25519_dalek::SigningKey::generate(&mut rand::rng()))
     }
 }
 
