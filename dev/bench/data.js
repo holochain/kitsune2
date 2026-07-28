@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785246881000,
+  "lastUpdate": 1785248935128,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1964,6 +1964,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999526,
             "range": "± 4307",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "c34999247f737d7743207c45fbe97c00a7d1b7df",
+          "message": "build(deps): Update `opentelemetry_sdk` and `opentelemetry-otlp` to 0.32",
+          "timestamp": "2026-07-28T15:19:52+01:00",
+          "tree_id": "7da2bfb709acb62fee7ca2c358bbd4698aa16f4d",
+          "url": "https://github.com/holochain/kitsune2/commit/c34999247f737d7743207c45fbe97c00a7d1b7df"
+        },
+        "date": 1785248934772,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 75213,
+            "range": "± 4830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 76936,
+            "range": "± 3340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 92318,
+            "range": "± 4063",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41953000,
+            "range": "± 102759",
             "unit": "ns/iter"
           }
         ]
