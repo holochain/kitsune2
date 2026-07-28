@@ -185,10 +185,7 @@ impl App {
                     match space.send_notify(url, msg).await {
                         Ok(_) => {
                             printer_tx
-                                .send(format!(
-                                    "chat to {} success",
-                                    &peer.agent
-                                ))
+                                .send(format!("chat to {} success", peer.agent))
                                 .await
                                 .expect("Failed to print message");
                         }
@@ -196,7 +193,7 @@ impl App {
                             printer_tx
                                 .send(format!(
                                     "chat to {} failed: {err:?}",
-                                    &peer.agent
+                                    peer.agent
                                 ))
                                 .await
                                 .expect("Failed to print message");
@@ -308,13 +305,13 @@ impl App {
                         .await
                     {
                         Ok(_) => printer_tx
-                            .send(format!("Published to {}", &peer.agent))
+                            .send(format!("Published to {}", peer.agent))
                             .await
                             .expect("Failed to print message"),
                         Err(err) => printer_tx
                             .send(format!(
                                 "Failed to publish to {}: {err:?}",
-                                &peer.agent
+                                peer.agent
                             ))
                             .await
                             .expect("Failed to print message"),
