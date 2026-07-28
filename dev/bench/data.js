@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785243391948,
+  "lastUpdate": 1785246881000,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -1916,6 +1916,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41892667,
             "range": "± 90705",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "659638b4e020ca1735b25d67f2dcbbdd1da71270",
+          "message": "fix: Update `ed25519-dalek` to be compatible with the `rand` upgrade and update the code to use the new `rand` API\n\n# Conflicts:\n#\tCargo.lock",
+          "timestamp": "2026-07-28T14:45:01+01:00",
+          "tree_id": "5abe728ca74da10ef3f37af3bbef03772a13aa5b",
+          "url": "https://github.com/holochain/kitsune2/commit/659638b4e020ca1735b25d67f2dcbbdd1da71270"
+        },
+        "date": 1785246880637,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 54046,
+            "range": "± 3138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 62085,
+            "range": "± 2575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 85700,
+            "range": "± 1953",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999526,
+            "range": "± 4307",
             "unit": "ns/iter"
           }
         ]
