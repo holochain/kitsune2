@@ -112,7 +112,7 @@ rustls-pemfile = "2.2"
 # axum-server integration with rustls for TLS
 tokio-rustls = "0.26"
 # for generating JSON schemas to help with checking configuration
-schemars = { version = "0.9", features = ["preserve_order"] }
+schemars = { version = "1.2", features = ["preserve_order"] }
 # Used in the showcase CLI
 rustyline = { version = "18.0" }
 # Used in showcase app for the commands
