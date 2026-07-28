@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785250147522,
+  "lastUpdate": 1785252087258,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2060,6 +2060,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41318076,
             "range": "± 167805",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "b9e23e57e82212ef038305dda42983eb3e4c0759",
+          "message": "build(deps): bump schemars from 0.9.0 to 1.2.2\n\nBumps [schemars](https://github.com/GREsau/schemars) from 0.9.0 to 1.2.2.\n- [Release notes](https://github.com/GREsau/schemars/releases)\n- [Changelog](https://github.com/GREsau/schemars/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/GREsau/schemars/compare/v0.9.0...v1.2.2)\n\n---\nupdated-dependencies:\n- dependency-name: schemars\n  dependency-version: 1.2.1\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-28T16:11:01+01:00",
+          "tree_id": "c065db81217d6b85dfe888285abcabfd278fb8be",
+          "url": "https://github.com/holochain/kitsune2/commit/b9e23e57e82212ef038305dda42983eb3e4c0759"
+        },
+        "date": 1785252086339,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 81054,
+            "range": "± 4228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 82968,
+            "range": "± 4467",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 96982,
+            "range": "± 5995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42000672,
+            "range": "± 5917",
             "unit": "ns/iter"
           }
         ]
