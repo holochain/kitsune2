@@ -77,7 +77,7 @@ num_cpus = "1.16.0"
 # api uses this for the kitsune2 wire protocol.
 prost = "0.14"
 # used to generate private cryptography keys.
-rand = "0.8.5"
+rand = "0.10.1"
 # kitsune types need to be serializable for network transmission.
 serde = { version = "1.0", features = ["derive"] }
 # kitsune2 agent info is serialized as json to improve debugability of
