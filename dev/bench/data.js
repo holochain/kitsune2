@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785343993215,
+  "lastUpdate": 1785345006633,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2203,6 +2203,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41710742,
             "range": "± 131760",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "fac2292e6f934b6922666e22e08ba029268c1fac",
+          "message": "build(deps): bump the nix group with 3 updates\n\nBumps the nix group with 3 updates: [crane](https://github.com/ipetkov/crane), [nixpkgs](https://github.com/nixos/nixpkgs) and [rust-overlay](https://github.com/oxalica/rust-overlay).\n\n\nUpdates `crane` from `7930f6c` to `756d6d0`\n- [Release notes](https://github.com/ipetkov/crane/releases)\n- [Commits](https://github.com/ipetkov/crane/compare/7930f6c291de6f83c257839d434592aa085f290a...756d6d07c3818ea95d1e2cdac63fa7d02fe3e61b)\n\nUpdates `nixpkgs` from `8623c4c` to `2f5a153`\n- [Commits](https://github.com/nixos/nixpkgs/compare/8623c4c20aa4ca2f5fb81510d2944066c3fb0d96...2f5a153c270b70cb0f8c11f46d96d6d3bc39f4e3)\n\nUpdates `rust-overlay` from `8ec8a5a` to `b99d484`\n- [Commits](https://github.com/oxalica/rust-overlay/compare/8ec8a5a41f8d8244e672829c9cd705416139d3f0...b99d48435bc3e34309d2c7ae6f7d45e77a156c38)\n\n---\nupdated-dependencies:\n- dependency-name: crane\n  dependency-version: 756d6d07c3818ea95d1e2cdac63fa7d02fe3e61b\n  dependency-type: direct:production\n  dependency-group: nix\n- dependency-name: nixpkgs\n  dependency-version: 2f5a153c270b70cb0f8c11f46d96d6d3bc39f4e3\n  dependency-type: direct:production\n  dependency-group: nix\n- dependency-name: rust-overlay\n  dependency-version: b99d48435bc3e34309d2c7ae6f7d45e77a156c38\n  dependency-type: direct:production\n  dependency-group: nix\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-29T18:06:39+01:00",
+          "tree_id": "667d6f1366f4295a58e02c6d3f088bf92b083e9c",
+          "url": "https://github.com/holochain/kitsune2/commit/fac2292e6f934b6922666e22e08ba029268c1fac"
+        },
+        "date": 1785345006301,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 78458,
+            "range": "± 3462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 82870,
+            "range": "± 4536",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 94872,
+            "range": "± 4796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41998907,
+            "range": "± 5355",
             "unit": "ns/iter"
           }
         ]
