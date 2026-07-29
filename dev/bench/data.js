@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785345006633,
+  "lastUpdate": 1785359979091,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2251,6 +2251,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41998907,
             "range": "± 5355",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "c12ab156edfdb3d09364bf75fb085ae2eae39450",
+          "message": "build(deps): bump the cargo-minor-patch group across 1 directory with 3 updates\n\nBumps the cargo-minor-patch group with 3 updates in the / directory: [http](https://github.com/hyperium/http), [rand](https://github.com/rust-random/rand) and [rustls](https://github.com/rustls/rustls).\n\n\nUpdates `http` from 1.4.2 to 1.5.0\n- [Release notes](https://github.com/hyperium/http/releases)\n- [Changelog](https://github.com/hyperium/http/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/hyperium/http/compare/v1.4.2...v1.5.0)\n\nUpdates `rand` from 0.10.1 to 0.10.2\n- [Release notes](https://github.com/rust-random/rand/releases)\n- [Changelog](https://github.com/rust-random/rand/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/rust-random/rand/compare/0.10.1...0.10.2)\n\nUpdates `rustls` from 0.23.42 to 0.23.43\n- [Release notes](https://github.com/rustls/rustls/releases)\n- [Changelog](https://github.com/rustls/rustls/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/rustls/rustls/compare/v/0.23.42...v/0.23.43)\n\n---\nupdated-dependencies:\n- dependency-name: http\n  dependency-version: 1.5.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: cargo-minor-patch\n- dependency-name: rand\n  dependency-version: 0.10.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: rustls\n  dependency-version: 0.23.43\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-29T22:13:54+01:00",
+          "tree_id": "4f45715db16f54a2071409349821f826f666915b",
+          "url": "https://github.com/holochain/kitsune2/commit/c12ab156edfdb3d09364bf75fb085ae2eae39450"
+        },
+        "date": 1785359978204,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 47541,
+            "range": "± 7255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 50946,
+            "range": "± 3075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 66384,
+            "range": "± 3326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42003304,
+            "range": "± 26667",
             "unit": "ns/iter"
           }
         ]
