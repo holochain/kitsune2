@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785254706347,
+  "lastUpdate": 1785343993215,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2156,6 +2156,53 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42000199,
             "range": "± 27367",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hra@holochain.org",
+            "name": "holochain-release-automation2"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "a1162a3d56c0bc77d18145c64b81145173c864f4",
+          "message": "chore: update dependabot.yml with shared content",
+          "timestamp": "2026-07-29T17:47:51+01:00",
+          "tree_id": "210e667d1ca38c83f4185a657f0b43035fbb66b4",
+          "url": "https://github.com/holochain/kitsune2/commit/a1162a3d56c0bc77d18145c64b81145173c864f4"
+        },
+        "date": 1785343992429,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 41138,
+            "range": "± 1575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 42501,
+            "range": "± 2836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 50746,
+            "range": "± 3642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41710742,
+            "range": "± 131760",
             "unit": "ns/iter"
           }
         ]
