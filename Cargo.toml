@@ -69,7 +69,7 @@ ed25519-dalek = "3.0.0"
 # alternative transport implementation using iroh
 iroh = "1.0.0"
 # automock traits for tests
-mockall = "0.14"
+mockall = "0.15"
 # watchable stream of values used in iroh transport
 n0-watcher = "1.0.0-rc.0"
 # bootstrap_srv uses this to determine worker thread count.
