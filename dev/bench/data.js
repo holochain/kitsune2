@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785359979091,
+  "lastUpdate": 1785400797894,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2299,6 +2299,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42003304,
             "range": "± 26667",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "5057d1c97d999efec8e9abae7834b61deec6ad09",
+          "message": "build(deps): bump base64 from 0.22.1 to 0.23.0\n\nBumps [base64](https://github.com/marshallpierce/rust-base64) from 0.22.1 to 0.23.0.\n- [Changelog](https://github.com/marshallpierce/rust-base64/blob/master/RELEASE-NOTES.md)\n- [Commits](https://github.com/marshallpierce/rust-base64/compare/v0.22.1...v0.23.0)\n\n---\nupdated-dependencies:\n- dependency-name: base64\n  dependency-version: 0.23.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-30T09:30:10+01:00",
+          "tree_id": "18a80956d3a31a0b89f1613d71c111ebbf099bec",
+          "url": "https://github.com/holochain/kitsune2/commit/5057d1c97d999efec8e9abae7834b61deec6ad09"
+        },
+        "date": 1785400797576,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 79789,
+            "range": "± 4696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 83618,
+            "range": "± 3988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 97576,
+            "range": "± 4621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42000688,
+            "range": "± 18470",
             "unit": "ns/iter"
           }
         ]
