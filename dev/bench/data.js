@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785408413018,
+  "lastUpdate": 1785411544086,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2395,6 +2395,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41084009,
             "range": "± 103225",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "0740a4087ab4ab07006330703ba67da53ffea2a6",
+          "message": "build(deps): bump mockall from 0.14.0 to 0.15.0\n\nBumps [mockall](https://github.com/asomers/mockall) from 0.14.0 to 0.15.0.\n- [Changelog](https://github.com/asomers/mockall/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/asomers/mockall/compare/v0.14.0...v0.15.0)\n\n---\nupdated-dependencies:\n- dependency-name: mockall\n  dependency-version: 0.15.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-30T12:34:40+01:00",
+          "tree_id": "c9c39dce0cfbfe26c5a8f236e8b0e37e907cad71",
+          "url": "https://github.com/holochain/kitsune2/commit/0740a4087ab4ab07006330703ba67da53ffea2a6"
+        },
+        "date": 1785411543160,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 80700,
+            "range": "± 4706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 81200,
+            "range": "± 5076",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 94781,
+            "range": "± 5423",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42002642,
+            "range": "± 15267",
             "unit": "ns/iter"
           }
         ]
