@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785411544086,
+  "lastUpdate": 1786111405223,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2443,6 +2443,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42002642,
             "range": "± 15267",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "657898397c7441c9968fef59fef61cd0602275a0",
+          "message": "build(deps): bump the cargo-minor-patch group with 2 updates\n\nBumps the cargo-minor-patch group with 2 updates: [clap](https://github.com/clap-rs/clap) and [jsonschema](https://github.com/Stranger6667/jsonschema).\n\n\nUpdates `clap` from 4.6.4 to 4.6.5\n- [Release notes](https://github.com/clap-rs/clap/releases)\n- [Changelog](https://github.com/clap-rs/clap/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/clap-rs/clap/compare/clap_complete-v4.6.4...clap_complete-v4.6.5)\n\nUpdates `jsonschema` from 0.49.2 to 0.49.3\n- [Release notes](https://github.com/Stranger6667/jsonschema/releases)\n- [Changelog](https://github.com/Stranger6667/jsonschema/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.2...ruby-v0.49.3)\n\n---\nupdated-dependencies:\n- dependency-name: clap\n  dependency-version: 4.6.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: jsonschema\n  dependency-version: 0.49.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-08-07T14:53:11+01:00",
+          "tree_id": "d206959c968d2058583c4d1ce34be65f8168ce09",
+          "url": "https://github.com/holochain/kitsune2/commit/657898397c7441c9968fef59fef61cd0602275a0"
+        },
+        "date": 1786111404025,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 59426,
+            "range": "± 2599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 63990,
+            "range": "± 2495",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 87358,
+            "range": "± 1527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42000636,
+            "range": "± 12720",
             "unit": "ns/iter"
           }
         ]
