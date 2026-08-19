@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786111405223,
+  "lastUpdate": 1787129198923,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2491,6 +2491,53 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42000636,
             "range": "± 12720",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hra@holochain.org",
+            "name": "Holochain Repository Automation"
+          },
+          "committer": {
+            "email": "ThetaSinner@users.noreply.github.com",
+            "name": "ThetaSinner",
+            "username": "ThetaSinner"
+          },
+          "distinct": true,
+          "id": "5bdc0c13e974da36a5c06a1a9d670d0ffc935caa",
+          "message": "chore: update the AI_POLICY.md with shared content",
+          "timestamp": "2026-08-19T09:37:12+01:00",
+          "tree_id": "f018c963bc149d59b5002f543b23a6da5babc08f",
+          "url": "https://github.com/holochain/kitsune2/commit/5bdc0c13e974da36a5c06a1a9d670d0ffc935caa"
+        },
+        "date": 1787129198049,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 54112,
+            "range": "± 3070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 63728,
+            "range": "± 2436",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 82668,
+            "range": "± 1479",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42000703,
+            "range": "± 15577",
             "unit": "ns/iter"
           }
         ]
