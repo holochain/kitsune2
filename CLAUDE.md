@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kitsune2 is a peer-to-peer / DHT communication framework written in Rust, used by Holochain. It is structured as a Cargo workspace of crates that together provide a node implementation, plus a bootstrap server for WAN peer discovery.
 
+## Design documents
+
+`docs/design/` holds design documents for Kitsune2 features. Read the relevant one before working on an area it covers; they explain what a feature does and why, which is context the code alone does not carry. Treat them as a source of information about intended behaviour, alongside the code.
+
+`docs/design/README.md` indexes the documents and records their status. Status describes how settled the design is, not whether it is built: a `Draft` may still change, and an `Accepted` document may not be implemented yet, or only partly. Always check a document against the code rather than assuming the code matches it.
+
+These are living documents. If a change alters behaviour that a design document describes, update the document in the same change. They deliberately avoid references to files, functions, and line numbers, and they do not contain implementation plans or descriptions of tests; keep it that way when editing them.
+
 ## Common commands
 
 This project uses `cargo-make`, configured via `Makefile.toml`, for the standard developer workflow.
