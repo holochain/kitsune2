@@ -719,11 +719,16 @@ impl IrohTransport {
     /// iroh sends the token as an `Authorization: Bearer` header on every
     /// relay WebSocket upgrade, so it is automatically re-presented on
     /// every reconnect.
+    ///
+    /// QUIC address discovery stays enabled on the relay's default QAD
+    /// port, matching what `RelayMap::from_iter` configures at endpoint
+    /// creation. The endpoint relies on QAD to learn its public address;
+    /// without it NAT traversal only ever advertises local candidates.
     fn relay_config_with_token(
         relay_url: &RelayUrl,
         token: Option<&str>,
     ) -> Arc<RelayConfig> {
-        let mut config = RelayConfig::new(relay_url.clone(), None);
+        let mut config = RelayConfig::from(relay_url.clone());
         if let Some(token) = token {
             config = config.with_auth_token(token);
         }
