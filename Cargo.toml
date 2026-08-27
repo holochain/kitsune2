@@ -153,4 +153,4 @@ rcgen = "0.14"
 # Deterministic RNG for reproducible tests
 rand_chacha = "0.10"
 # Used in the schema example
-jsonschema = "0.49"
+jsonschema = "0.51"
