@@ -1,16 +1,27 @@
-//! Re-inserting a relay must not strip QUIC address discovery (QAD) from it.
-//!
-//! A relay configured at endpoint creation gets QAD enabled by
-//! `RelayMap::from_iter`. `configure_for_space` later inserts the same relay
-//! again through `do_insert_relay`, and iroh's `insert_relay` replaces the
-//! existing map entry rather than merging into it. If the replacement carries
-//! no QAD config, net_report can no longer learn the endpoint's public
-//! address, every NAT-traversal round advertises LAN candidates only, and
-//! peers behind different NATs never go direct. That symptom cannot show on
-//! loopback (the QAD-discovered address is the local address), so this test
-//! asserts the relay-map state that the symptom follows from.
+//! `relay_config_with_token` builds the relay config used when authentication
+//! is enabled on the default relay or a relay is customized per space. It must
+//! keep QUIC address discovery (QAD) enabled: without it the endpoint cannot
+//! learn its public address, so NAT traversal only advertises local candidates
+//! and peers behind different NATs never go direct. That cannot be reproduced
+//! on loopback, so these tests assert the relay config instead.
 
 use super::*;
+
+#[test]
+fn relay_config_keeps_qad_enabled_with_and_without_token() {
+    let url = RelayUrl::from_str("http://127.0.0.1:1/relay/").unwrap();
+    let default_quic = RelayConfig::from(url.clone()).quic;
+    assert!(default_quic.is_some(), "iroh enables QAD by default");
+
+    let unauthenticated = IrohTransport::relay_config_with_token(&url, None);
+    assert_eq!(unauthenticated.quic, default_quic);
+    assert_eq!(unauthenticated.auth_token, None);
+
+    let authenticated =
+        IrohTransport::relay_config_with_token(&url, Some("test-token"));
+    assert_eq!(authenticated.quic, default_quic);
+    assert_eq!(authenticated.auth_token.as_deref(), Some("test-token"));
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reinserting_relay_keeps_qad_enabled() {
