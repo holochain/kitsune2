@@ -1257,7 +1257,10 @@ impl TxImp for IrohTransport {
 
         let per_space = per_space_config.map(|c| c.iroh_transport);
 
-        let relay_url = per_space.as_ref().and_then(|c| c.relay_url.clone());
+        let relay_url = per_space_relay_url(
+            per_space.as_ref().and_then(|c| c.relay_url.as_deref()),
+            self.config.relay_url.as_deref(),
+        );
 
         let auth_material = per_space
             .as_ref()

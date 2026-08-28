@@ -92,3 +92,36 @@ pub(super) fn endpoint_from_url(url: &Url) -> K2Result<EndpointAddr> {
         [TransportAddr::Relay(relay_url)],
     ))
 }
+
+/// The relay a space should be configured with, or `None` to leave the
+/// transport's relay alone.
+///
+/// A space that overrides no relay is still handed the global config, whose
+/// `relay_url` is the relay the transport already connected to. Acting on that
+/// would re-insert a relay that has not changed, and the global config carries no
+/// auth material, so an authenticated connection would be replaced by one the
+/// relay refuses - leaving the node with a live token, a live allowlist entry,
+/// and no relay. It would also mark the space per-space managed, so global
+/// address updates would stop reaching it.
+///
+/// Only a relay that actually differs from the transport's own is a per-space
+/// relay. A trailing slash is not a difference.
+pub(super) fn per_space_relay_url(
+    space_relay_url: Option<&str>,
+    transport_relay_url: Option<&str>,
+) -> Option<String> {
+    let space_relay_url = space_relay_url?;
+    let differs = match transport_relay_url {
+        Some(transport_relay_url) => {
+            trim_trailing_slash(space_relay_url)
+                != trim_trailing_slash(transport_relay_url)
+        }
+        // No relay of our own, so anything the space names is its own.
+        None => true,
+    };
+    differs.then(|| space_relay_url.to_string())
+}
+
+fn trim_trailing_slash(url: &str) -> &str {
+    url.strip_suffix('/').unwrap_or(url)
+}

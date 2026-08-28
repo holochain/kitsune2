@@ -1,6 +1,8 @@
 use crate::IrohTransport;
 use crate::url::endpoint_from_url;
-use crate::url::{canonicalize_relay_url, get_url_with_first_relay};
+use crate::url::{
+    canonicalize_relay_url, get_url_with_first_relay, per_space_relay_url,
+};
 use iroh::{EndpointAddr, EndpointId, RelayUrl, TransportAddr};
 use kitsune2_api::{Id, SpaceId, Url};
 use std::collections::HashMap;
@@ -364,4 +366,66 @@ fn own_url_for_preflight_space_relay_takes_precedence() {
         &global_url,
     );
     assert_eq!(result, Some(our_space_url));
+}
+
+/// The case that matters in practice: a space overriding nothing is handed the
+/// global config, so its `relay_url` is the relay already in use. Acting on it
+/// re-inserts that relay from a config with no auth material, which an
+/// authenticated relay then refuses for the life of the process.
+#[test]
+fn per_space_relay_url_ignores_the_relay_already_in_use() {
+    assert_eq!(
+        per_space_relay_url(
+            Some("https://relay.example/"),
+            Some("https://relay.example/")
+        ),
+        None
+    );
+}
+
+#[test]
+fn per_space_relay_url_ignores_a_trailing_slash_difference() {
+    assert_eq!(
+        per_space_relay_url(
+            Some("https://relay.example"),
+            Some("https://relay.example/")
+        ),
+        None
+    );
+    assert_eq!(
+        per_space_relay_url(
+            Some("https://relay.example/"),
+            Some("https://relay.example")
+        ),
+        None
+    );
+}
+
+#[test]
+fn per_space_relay_url_keeps_a_genuine_override() {
+    assert_eq!(
+        per_space_relay_url(
+            Some("https://space-relay.example"),
+            Some("https://relay.example")
+        ),
+        Some("https://space-relay.example".to_string())
+    );
+}
+
+/// With no relay of our own, whatever the space names is its own relay.
+#[test]
+fn per_space_relay_url_keeps_an_override_when_the_transport_has_no_relay() {
+    assert_eq!(
+        per_space_relay_url(Some("https://space-relay.example"), None),
+        Some("https://space-relay.example".to_string())
+    );
+}
+
+#[test]
+fn per_space_relay_url_is_none_when_the_space_names_no_relay() {
+    assert_eq!(
+        per_space_relay_url(None, Some("https://relay.example")),
+        None
+    );
+    assert_eq!(per_space_relay_url(None, None), None);
 }
