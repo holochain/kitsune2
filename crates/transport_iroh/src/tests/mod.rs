@@ -5,6 +5,7 @@ use super::*;
 mod close;
 mod connect_failure;
 mod frame;
+mod relay_lifecycle;
 mod relay_qad;
 mod simultaneous_open;
 mod stream;

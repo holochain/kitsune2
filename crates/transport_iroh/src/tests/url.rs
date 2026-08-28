@@ -1,7 +1,8 @@
 use crate::IrohTransport;
 use crate::url::endpoint_from_url;
 use crate::url::{
-    canonicalize_relay_url, get_url_with_first_relay, per_space_relay_url,
+    SpaceRelay, canonicalize_relay_url, get_url_with_first_relay,
+    is_transport_own_relay, per_space_relay,
 };
 use iroh::{EndpointAddr, EndpointId, RelayUrl, TransportAddr};
 use kitsune2_api::{Id, SpaceId, Url};
@@ -368,64 +369,169 @@ fn own_url_for_preflight_space_relay_takes_precedence() {
     assert_eq!(result, Some(our_space_url));
 }
 
-/// The case that matters in practice: a space overriding nothing is handed the
-/// global config, so its `relay_url` is the relay already in use. Acting on it
-/// re-inserts that relay from a config with no auth material, which an
-/// authenticated relay then refuses for the life of the process.
+/// A space overriding nothing is handed the global config, so its `relay_url` is
+/// the relay already in use. Acting on it would insert that relay as a custom
+/// override. At best, that's pointless, at worst it loses the mapping to auth
+/// material and results in a broken configuration.
 #[test]
-fn per_space_relay_url_ignores_the_relay_already_in_use() {
+fn per_space_relay_ignores_the_relay_already_in_use() {
     assert_eq!(
-        per_space_relay_url(
+        per_space_relay(
             Some("https://relay.example/"),
-            Some("https://relay.example/")
+            None,
+            Some("https://relay.example/"),
+            None,
         ),
         None
     );
 }
 
 #[test]
-fn per_space_relay_url_ignores_a_trailing_slash_difference() {
+fn per_space_relay_ignores_trailing_slash_differences() {
     assert_eq!(
-        per_space_relay_url(
+        per_space_relay(
             Some("https://relay.example"),
-            Some("https://relay.example/")
+            None,
+            Some("https://relay.example/"),
+            None,
         ),
         None
     );
     assert_eq!(
-        per_space_relay_url(
-            Some("https://relay.example/"),
-            Some("https://relay.example")
+        per_space_relay(
+            Some("https://relay.example///"),
+            None,
+            Some("https://relay.example"),
+            None,
         ),
         None
     );
 }
 
 #[test]
-fn per_space_relay_url_keeps_a_genuine_override() {
+fn per_space_relay_keeps_a_genuine_override() {
     assert_eq!(
-        per_space_relay_url(
+        per_space_relay(
             Some("https://space-relay.example"),
-            Some("https://relay.example")
+            None,
+            Some("https://relay.example"),
+            None,
         ),
-        Some("https://space-relay.example".to_string())
+        Some(SpaceRelay {
+            url: "https://space-relay.example".to_string(),
+            auth_material_base64: None,
+        })
     );
 }
 
 /// With no relay of our own, whatever the space names is its own relay.
 #[test]
-fn per_space_relay_url_keeps_an_override_when_the_transport_has_no_relay() {
+fn per_space_relay_keeps_an_override_when_the_transport_has_no_relay() {
     assert_eq!(
-        per_space_relay_url(Some("https://space-relay.example"), None),
-        Some("https://space-relay.example".to_string())
+        per_space_relay(Some("https://space-relay.example"), None, None, None),
+        Some(SpaceRelay {
+            url: "https://space-relay.example".to_string(),
+            auth_material_base64: None,
+        })
+    );
+}
+
+/// A space that brings auth material of its own is naming its own relay even
+/// when the URL matches ours - skipping it would leave that space
+/// unauthenticated.
+#[test]
+fn per_space_relay_keeps_a_matching_relay_that_brings_its_own_auth_material() {
+    assert_eq!(
+        per_space_relay(
+            Some("https://relay.example"),
+            Some("c3BhY2U="),
+            Some("https://relay.example/"),
+            None,
+        ),
+        Some(SpaceRelay {
+            url: "https://relay.example".to_string(),
+            auth_material_base64: Some("c3BhY2U=".to_string()),
+        })
+    );
+}
+
+/// The leak this guards against: a config merge hands a space every field its
+/// override did not set, so a space naming only a relay is handed the global
+/// auth material. Carrying it would PUT our credential to a host the space
+/// chose, which can then replay it against the relay it was issued for.
+#[test]
+fn per_space_relay_never_carries_inherited_auth_material_to_another_relay() {
+    assert_eq!(
+        per_space_relay(
+            Some("https://space-relay.example"),
+            Some("Z2xvYmFs"),
+            Some("https://relay.example"),
+            Some("Z2xvYmFs"),
+        ),
+        Some(SpaceRelay {
+            url: "https://space-relay.example".to_string(),
+            auth_material_base64: None,
+        })
+    );
+}
+
+/// Inherited material naming the relay it was issued for is still nothing to do.
+#[test]
+fn per_space_relay_ignores_inherited_auth_material_for_the_same_relay() {
+    assert_eq!(
+        per_space_relay(
+            Some("https://relay.example"),
+            Some("Z2xvYmFs"),
+            Some("https://relay.example"),
+            Some("Z2xvYmFs"),
+        ),
+        None
+    );
+}
+
+/// A space may still authenticate a relay of its own, so long as the material
+/// came with it.
+#[test]
+fn per_space_relay_keeps_its_own_auth_material_for_its_own_relay() {
+    assert_eq!(
+        per_space_relay(
+            Some("https://space-relay.example"),
+            Some("c3BhY2U="),
+            Some("https://relay.example"),
+            Some("Z2xvYmFs"),
+        ),
+        Some(SpaceRelay {
+            url: "https://space-relay.example".to_string(),
+            auth_material_base64: Some("c3BhY2U=".to_string()),
+        })
     );
 }
 
 #[test]
-fn per_space_relay_url_is_none_when_the_space_names_no_relay() {
+fn per_space_relay_is_none_when_the_space_names_no_relay() {
     assert_eq!(
-        per_space_relay_url(None, Some("https://relay.example")),
+        per_space_relay(None, None, Some("https://relay.example"), None),
         None
     );
-    assert_eq!(per_space_relay_url(None, None), None);
+    assert_eq!(per_space_relay(None, None, None, None), None);
+    // Auth material without a relay to attach it to is still nothing to do.
+    assert_eq!(per_space_relay(None, Some("c3BhY2U="), None, None), None);
+}
+
+#[test]
+fn is_transport_own_relay_ignores_trailing_slashes() {
+    assert!(is_transport_own_relay(
+        "https://relay.example///",
+        Some("https://relay.example")
+    ));
+    assert!(!is_transport_own_relay(
+        "https://space-relay.example",
+        Some("https://relay.example")
+    ));
+}
+
+/// With no relay of our own, nothing is ours to keep.
+#[test]
+fn is_transport_own_relay_is_false_without_a_transport_relay() {
+    assert!(!is_transport_own_relay("https://relay.example", None));
 }

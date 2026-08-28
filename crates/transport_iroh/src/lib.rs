@@ -400,7 +400,7 @@ impl TransportFactory for IrohTransportFactory {
                 });
 
             let auth_material = builder.auth_material_relay.clone();
-            let imp = IrohTransport::create(
+            let imp: DynTxImp = IrohTransport::create(
                 transport_config,
                 handler.clone(),
                 auth_material,
@@ -486,7 +486,7 @@ impl IrohTransport {
         config: IrohTransportConfig,
         handler: Arc<TxImpHnd>,
         auth_material: Option<Vec<u8>>,
-    ) -> K2Result<DynTxImp> {
+    ) -> K2Result<Arc<Self>> {
         // Determine whether we need to authenticate for relay access.
         // Authentication is required when both a relay URL and auth material
         // are provided.
@@ -647,7 +647,7 @@ impl IrohTransport {
             )
         });
 
-        let out: DynTxImp = Arc::new(Self {
+        let out = Arc::new(Self {
             endpoint,
             handler,
             local_url,
@@ -1257,20 +1257,35 @@ impl TxImp for IrohTransport {
 
         let per_space = per_space_config.map(|c| c.iroh_transport);
 
-        let relay_url = per_space_relay_url(
+        let space_relay = per_space_relay(
             per_space.as_ref().and_then(|c| c.relay_url.as_deref()),
+            per_space
+                .as_ref()
+                .and_then(|c| c.auth_material_relay_base64.as_deref()),
             self.config.relay_url.as_deref(),
+            self.config.auth_material_relay_base64.as_deref(),
         );
 
-        let auth_material = per_space
-            .as_ref()
-            .and_then(|c| c.auth_material_relay_base64.as_ref())
-            .and_then(|b64| {
+        if let Some(SpaceRelay {
+            url,
+            auth_material_base64,
+        }) = space_relay
+        {
+            let auth_material = auth_material_base64.and_then(|b64| {
                 use ::base64::Engine;
-                ::base64::engine::general_purpose::STANDARD.decode(b64).ok()
+                let decoded = ::base64::engine::general_purpose::STANDARD
+                    .decode(&b64)
+                    .ok();
+                if decoded.is_none() {
+                    tracing::warn!(
+                        ?space_id,
+                        "Ignoring per-space relay auth material that is not \
+                         valid base64; the relay will be used unauthenticated"
+                    );
+                }
+                decoded
             });
 
-        if let Some(url) = relay_url {
             let endpoint = self.endpoint.clone();
             let space_relays = self.space_relays.clone();
             let space_relay_keepalives = self.space_relay_keepalives.clone();
@@ -1350,7 +1365,28 @@ impl TxImp for IrohTransport {
                     .any(|(r, _)| r == &relay_url);
 
                 if !still_used {
-                    self.endpoint.remove_relay(&relay_url).await;
+                    // A space may have inserted the transport's own relay to
+                    // present auth material of its own. It does not own it, so
+                    // releasing the space must not take the relay with it.
+                    if is_transport_own_relay(
+                        relay_url.as_str(),
+                        self.config.relay_url.as_deref(),
+                    ) {
+                        tracing::debug!(
+                            ?space_id,
+                            %relay_url,
+                            "Keeping the transport's own relay after releasing the space"
+                        );
+                    } else {
+                        self.endpoint.remove_relay(&relay_url).await;
+                        tracing::info!(
+                            ?space_id,
+                            %relay_url,
+                            "Removed per-space relay from endpoint"
+                        );
+                    }
+
+                    // The space's keepalive goes with the space either way.
                     if let Some(handle) = self
                         .space_relay_keepalives
                         .lock()
@@ -1359,11 +1395,6 @@ impl TxImp for IrohTransport {
                     {
                         handle.abort();
                     }
-                    tracing::info!(
-                        ?space_id,
-                        %relay_url,
-                        "Removed per-space relay from endpoint"
-                    );
                 }
             }
 

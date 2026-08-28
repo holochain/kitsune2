@@ -582,3 +582,192 @@ mod configure_for_space_only_when_overridden {
         assert_eq!(configured, vec![TEST_SPACE_ID]);
     }
 }
+
+/// Global bootstrap auth material authenticates the global bootstrap server. A
+/// config merge hands a space every field its override did not set, so a space
+/// naming its own server is still handed our credential - presenting it there
+/// would let that server replay it against ours.
+mod bootstrap_auth_material_is_not_carried_to_another_server {
+    use super::*;
+    use crate::factories::core_space::bootstrap_server_customized;
+    use crate::factories::{CoreBootstrapConfig, CoreBootstrapModConfig};
+
+    const GLOBAL_SERVER: &str = "http://global-bootstrap.example";
+    const SPACE_SERVER: &str = "http://space-bootstrap.example";
+
+    type Seen = Arc<Mutex<Vec<Option<Vec<u8>>>>>;
+
+    #[derive(Debug)]
+    struct NoopBootstrap;
+    impl Bootstrap for NoopBootstrap {
+        fn put(&self, _info: Arc<AgentInfoSigned>) {}
+    }
+
+    /// Records the auth material the space's builder carries by the time the
+    /// bootstrap module is built from it.
+    #[derive(Debug)]
+    struct RecordingBootstrapFactory {
+        seen: Seen,
+    }
+
+    impl BootstrapFactory for RecordingBootstrapFactory {
+        fn default_config(&self, config: &mut Config) -> K2Result<()> {
+            config.set_module_config(&CoreBootstrapModConfig {
+                core_bootstrap: CoreBootstrapConfig {
+                    server_url: Some(GLOBAL_SERVER.into()),
+                    ..Default::default()
+                },
+            })
+        }
+
+        fn validate_config(&self, _config: &Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn create(
+            &self,
+            builder: Arc<Builder>,
+            _peer_store: DynPeerStore,
+            _space_id: SpaceId,
+        ) -> BoxFut<'static, K2Result<DynBootstrap>> {
+            self.seen
+                .lock()
+                .expect("poison")
+                .push(builder.auth_material_bootstrap.clone());
+            Box::pin(async { Ok(Arc::new(NoopBootstrap) as DynBootstrap) })
+        }
+    }
+
+    #[derive(Debug)]
+    struct S;
+    impl SpaceHandler for S {}
+
+    #[derive(Debug)]
+    struct K;
+    impl KitsuneHandler for K {
+        fn create_space(
+            &self,
+            _space_id: SpaceId,
+            _config_override: Option<&Config>,
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
+            Box::pin(async move {
+                let s: DynSpaceHandler = Arc::new(S);
+                Ok(s)
+            })
+        }
+    }
+
+    /// Build a node holding global bootstrap auth material, create one space
+    /// with the given override, and report the material its bootstrap was
+    /// built with.
+    async fn material_seen_by_space(
+        space_server: Option<&str>,
+    ) -> Option<Vec<u8>> {
+        let seen: Seen = Arc::new(Mutex::new(Vec::new()));
+        let builder = Builder {
+            verifier: Arc::new(TestVerifier),
+            auth_material_bootstrap: Some(b"global-credential".to_vec()),
+            bootstrap: Arc::new(RecordingBootstrapFactory {
+                seen: seen.clone(),
+            }),
+            ..crate::default_test_builder()
+        }
+        .with_default_config()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+        builder
+            .register_handler(Arc::new(K) as DynKitsuneHandler)
+            .await
+            .unwrap();
+
+        let config_override = Config::default();
+        config_override
+            .set_module_config(&CoreBootstrapModConfig {
+                core_bootstrap: CoreBootstrapConfig {
+                    server_url: Some(
+                        space_server.unwrap_or(GLOBAL_SERVER).into(),
+                    ),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+
+        builder
+            .space(TEST_SPACE_ID, Some(config_override))
+            .await
+            .unwrap();
+
+        let seen = seen.lock().expect("poison").clone();
+        assert_eq!(seen.len(), 1, "expected exactly one bootstrap to be built");
+        seen.into_iter().next().unwrap()
+    }
+
+    fn config_with_server(server_url: Option<&str>) -> Config {
+        let config = Config::default();
+        config
+            .set_module_config(&CoreBootstrapModConfig {
+                core_bootstrap: CoreBootstrapConfig {
+                    server_url: server_url.map(Into::into),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        config
+    }
+
+    #[test]
+    fn a_different_server_is_a_customized_one() {
+        assert!(bootstrap_server_customized(
+            &config_with_server(Some(GLOBAL_SERVER)),
+            &config_with_server(Some(SPACE_SERVER)),
+        ));
+    }
+
+    #[test]
+    fn a_trailing_slash_is_not_a_different_server() {
+        assert!(!bootstrap_server_customized(
+            &config_with_server(Some("http://bootstrap.example")),
+            &config_with_server(Some("http://bootstrap.example/")),
+        ));
+    }
+
+    /// Auth material given with no global server of our own was configured for
+    /// whatever server the spaces name, so it stays.
+    #[test]
+    fn no_global_server_means_the_material_was_meant_for_the_space() {
+        assert!(!bootstrap_server_customized(
+            &config_with_server(None),
+            &config_with_server(Some(SPACE_SERVER)),
+        ));
+    }
+
+    /// A bootstrap module with a config shape we cannot read handles its own
+    /// material; we leave it alone rather than guessing.
+    #[test]
+    fn an_unreadable_bootstrap_config_leaves_the_material_alone() {
+        let unknown = Config::default();
+        unknown
+            .set_module_config(&serde_json::json!({ "somethingElse": {} }))
+            .unwrap();
+
+        assert!(!bootstrap_server_customized(
+            &unknown,
+            &config_with_server(Some(SPACE_SERVER)),
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cleared_when_the_space_names_its_own_server() {
+        assert_eq!(material_seen_by_space(Some(SPACE_SERVER)).await, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn kept_when_the_space_names_the_global_server() {
+        assert_eq!(
+            material_seen_by_space(None).await,
+            Some(b"global-credential".to_vec()),
+        );
+    }
+}
