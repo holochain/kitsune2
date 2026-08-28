@@ -93,35 +93,59 @@ pub(super) fn endpoint_from_url(url: &Url) -> K2Result<EndpointAddr> {
     ))
 }
 
-/// The relay a space should be configured with, or `None` to leave the
-/// transport's relay alone.
-///
-/// A space that overrides no relay is still handed the global config, whose
-/// `relay_url` is the relay the transport already connected to. Acting on that
-/// would re-insert a relay that has not changed, and the global config carries no
-/// auth material, so an authenticated connection would be replaced by one the
-/// relay refuses - leaving the node with a live token, a live allowlist entry,
-/// and no relay. It would also mark the space per-space managed, so global
-/// address updates would stop reaching it.
-///
-/// Only a relay that actually differs from the transport's own is a per-space
-/// relay. A trailing slash is not a difference.
-pub(super) fn per_space_relay_url(
-    space_relay_url: Option<&str>,
-    transport_relay_url: Option<&str>,
-) -> Option<String> {
-    let space_relay_url = space_relay_url?;
-    let differs = match transport_relay_url {
-        Some(transport_relay_url) => {
-            trim_trailing_slash(space_relay_url)
-                != trim_trailing_slash(transport_relay_url)
-        }
-        // No relay of our own, so anything the space names is its own.
-        None => true,
-    };
-    differs.then(|| space_relay_url.to_string())
+/// What a space's config asks the transport to do about its relay.
+#[derive(Debug, PartialEq)]
+pub(super) struct SpaceRelay {
+    /// The relay to insert for this space.
+    pub url: String,
+    /// The auth material to present to it, if the space brought its own.
+    pub auth_material_base64: Option<String>,
 }
 
-fn trim_trailing_slash(url: &str) -> &str {
-    url.strip_suffix('/').unwrap_or(url)
+/// What to configure for a space, or `None` to leave the transport's relay
+/// alone.
+///
+/// A relay is the space's own when it differs from the transport's - trailing
+/// slashes are not a difference - or when the space brought auth material of its
+/// own.
+///
+/// Auth material only authenticates the relay it was issued for, and a config
+/// merge hands a space every field its override did not set. Material equal to
+/// the transport's was therefore inherited rather than chosen, and is never
+/// carried to a relay the space named itself.
+pub(super) fn per_space_relay(
+    space_relay_url: Option<&str>,
+    space_auth_material: Option<&str>,
+    transport_relay_url: Option<&str>,
+    transport_auth_material: Option<&str>,
+) -> Option<SpaceRelay> {
+    let url = space_relay_url?;
+
+    let own_auth_material =
+        space_auth_material.filter(|m| Some(*m) != transport_auth_material);
+
+    let ours = is_transport_own_relay(url, transport_relay_url);
+
+    if ours && own_auth_material.is_none() {
+        return None;
+    }
+
+    Some(SpaceRelay {
+        url: url.to_string(),
+        auth_material_base64: own_auth_material.map(str::to_string),
+    })
+}
+
+/// Whether this relay is the one the transport connected to itself.
+///
+/// A trailing slash is not a difference. With no relay of our own, nothing is
+/// ours, so anything a space names is its own.
+pub(super) fn is_transport_own_relay(
+    relay_url: &str,
+    transport_relay_url: Option<&str>,
+) -> bool {
+    transport_relay_url.is_some_and(|transport_relay_url| {
+        relay_url.trim_end_matches('/')
+            == transport_relay_url.trim_end_matches('/')
+    })
 }
