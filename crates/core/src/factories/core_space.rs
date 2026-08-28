@@ -74,6 +74,33 @@ impl CoreSpaceFactory {
     }
 }
 
+fn bootstrap_server_url(config: &Config) -> Option<String> {
+    config
+        .get_module_config::<crate::factories::CoreBootstrapModConfig>()
+        .ok()
+        .and_then(|c| c.core_bootstrap.server_url)
+}
+
+/// Whether this space customized the bootstrap server, naming one other than
+/// the server the global auth material was configured to authenticate against.
+///
+/// A config merge hands a space every field its override did not set, so a space
+/// naming only its own server is still handed the global credential. Presenting
+/// it there would let that server replay it against ours.
+///
+/// Global auth material with no global server of our own was configured for
+/// whatever server the spaces name, so it stays.
+fn bootstrap_server_customized(global: &Config, space: &Config) -> bool {
+    let Some(global_url) = bootstrap_server_url(global) else {
+        return false;
+    };
+    let Some(space_url) = bootstrap_server_url(space) else {
+        return false;
+    };
+
+    space_url.trim_end_matches('/') != global_url.trim_end_matches('/')
+}
+
 impl SpaceFactory for CoreSpaceFactory {
     fn default_config(&self, config: &mut Config) -> K2Result<()> {
         config.set_module_config(&CoreSpaceModConfig::default())
@@ -99,8 +126,22 @@ impl SpaceFactory for CoreSpaceFactory {
             // nothing about a space that chose nothing of its own.
             let builder = match config_override {
                 Some(cfg_override) => {
-                    let builder =
-                        Arc::new(builder.with_config_overrides(cfg_override)?);
+                    let mut space_builder =
+                        builder.with_config_overrides(cfg_override)?;
+
+                    if bootstrap_server_customized(
+                        &builder.config,
+                        &space_builder.config,
+                    ) {
+                        // Cleared even when the override brought its own
+                        // material, which would take precedence anyway:
+                        // `Builder` is public and the bootstrap factory is
+                        // pluggable, so the global credential should not travel
+                        // on a space that named someone else's server at all.
+                        space_builder.auth_material_bootstrap = None;
+                    }
+
+                    let builder = Arc::new(space_builder);
                     tx.configure_for_space(space_id.clone(), &builder.config)
                         .await?;
                     builder
