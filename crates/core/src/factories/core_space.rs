@@ -93,19 +93,20 @@ impl SpaceFactory for CoreSpaceFactory {
         tx: DynTransport,
     ) -> BoxFut<'static, K2Result<DynSpace>> {
         Box::pin(async move {
+            // Let the transport handle any per-space configuration it
+            // understands (e.g., a per-space relay URL for iroh), but only for a
+            // space that overrides something, because the global config says
+            // nothing about a space that chose nothing of its own.
             let builder = match config_override {
                 Some(cfg_override) => {
-                    Arc::new(builder.with_config_overrides(cfg_override)?)
+                    let builder =
+                        Arc::new(builder.with_config_overrides(cfg_override)?);
+                    tx.configure_for_space(space_id.clone(), &builder.config)
+                        .await?;
+                    builder
                 }
                 None => builder,
             };
-
-            // Let the transport handle any per-space configuration it
-            // understands (e.g., a per-space relay URL for iroh).
-            // This is non-blocking; the transport delivers the URL
-            // asynchronously via the space handler's new_listening_address.
-            tx.configure_for_space(space_id.clone(), &builder.config)
-                .await?;
 
             let builder_config = &builder.config;
             let config: CoreSpaceModConfig =

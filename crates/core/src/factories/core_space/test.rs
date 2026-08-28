@@ -432,3 +432,153 @@ async fn broadcast_new_agent_info_on_resign() {
     let broadcast = p.0.lock().unwrap().last().cloned().unwrap();
     assert_eq!(bob.agent(), &broadcast.0.agent);
 }
+
+/// The per-space transport hook exists so a space can name a relay of its own.
+/// Calling it for a space that overrides nothing hands the transport the global
+/// config and presents the defaults as that space's own - which the transport
+/// cannot tell apart, and the iroh transport acts on by reconfiguring the relay
+/// it is already connected to.
+mod configure_for_space_only_when_overridden {
+    use super::*;
+
+    type Configured = Arc<Mutex<Vec<SpaceId>>>;
+
+    /// Records the per-space hook and does nothing else; this test only creates
+    /// spaces, it never moves data.
+    #[derive(Debug)]
+    struct RecordingTx {
+        configured: Configured,
+    }
+
+    impl TxImp for RecordingTx {
+        fn url(&self) -> Option<Url> {
+            None
+        }
+
+        fn disconnect(
+            &self,
+            _peer: Url,
+            _payload: Option<(String, bytes::Bytes)>,
+        ) -> BoxFut<'_, ()> {
+            Box::pin(async {})
+        }
+
+        fn send(
+            &self,
+            _peer: Url,
+            _data: bytes::Bytes,
+        ) -> BoxFut<'_, K2Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
+            Box::pin(async {
+                Ok(TransportStats {
+                    backend: "recording".to_string(),
+                    peer_urls: Vec::new(),
+                    connections: Vec::new(),
+                })
+            })
+        }
+
+        fn configure_for_space(
+            &self,
+            space_id: SpaceId,
+            _config: &Config,
+        ) -> BoxFut<'_, K2Result<()>> {
+            self.configured.lock().expect("poison").push(space_id);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[derive(Debug)]
+    struct RecordingTxFactory {
+        configured: Configured,
+    }
+
+    impl TransportFactory for RecordingTxFactory {
+        fn default_config(&self, _config: &mut Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn validate_config(&self, _config: &Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn create(
+            &self,
+            _builder: Arc<Builder>,
+            handler: DynTxHandler,
+        ) -> BoxFut<'static, K2Result<DynTransport>> {
+            let configured = self.configured.clone();
+            Box::pin(async move {
+                let handler = TxImpHnd::new(handler);
+                let imp: DynTxImp = Arc::new(RecordingTx { configured });
+                Ok(DefaultTransport::create(&handler, imp))
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct S;
+    impl SpaceHandler for S {}
+
+    #[derive(Debug)]
+    struct K;
+    impl KitsuneHandler for K {
+        fn create_space(
+            &self,
+            _space_id: SpaceId,
+            _config_override: Option<&Config>,
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
+            Box::pin(async move {
+                let s: DynSpaceHandler = Arc::new(S);
+                Ok(s)
+            })
+        }
+    }
+
+    async fn configured_spaces_for(
+        config_override: Option<Config>,
+    ) -> Vec<SpaceId> {
+        let configured: Configured = Arc::new(Mutex::new(Vec::new()));
+        let builder = Builder {
+            verifier: Arc::new(TestVerifier),
+            transport: Arc::new(RecordingTxFactory {
+                configured: configured.clone(),
+            }),
+            ..crate::default_test_builder()
+        }
+        .with_default_config()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+        builder
+            .register_handler(Arc::new(K) as DynKitsuneHandler)
+            .await
+            .unwrap();
+
+        builder.space(TEST_SPACE_ID, config_override).await.unwrap();
+
+        configured.lock().expect("poison").clone()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn not_called_when_the_space_overrides_nothing() {
+        assert!(
+            configured_spaces_for(None).await.is_empty(),
+            "the transport was handed the global config as if it were this space's own"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn called_when_the_space_overrides_something() {
+        let configured = configured_spaces_for(Some(Config::default())).await;
+        assert_eq!(configured, vec![TEST_SPACE_ID]);
+    }
+}
