@@ -502,9 +502,10 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
 
     /// Apply per-space configuration to this transport.
     ///
-    /// Called by the space factory when creating a new space. The transport
-    /// reads any per-space settings it understands from the provided config
-    /// (e.g., a per-space relay URL and auth material) and applies them
+    /// Called by the space factory when creating a space that was given a
+    /// config override, with that override merged over the global config. The
+    /// transport reads any per-space settings it understands from the provided
+    /// config (e.g., a per-space relay URL and auth material) and applies them
     /// internally.
     ///
     /// Default implementation is a no-op.
@@ -602,9 +603,10 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
 
     /// Apply per-space configuration to this transport.
     ///
-    /// Called by the space factory when creating a new space. The transport
-    /// reads any per-space settings it understands from the provided config
-    /// (e.g., a per-space relay URL and auth material) and applies them
+    /// Called by the space factory when creating a space that was given a
+    /// config override, with that override merged over the global config. The
+    /// transport reads any per-space settings it understands from the provided
+    /// config (e.g., a per-space relay URL and auth material) and applies them
     /// internally.
     ///
     /// Default implementation is a no-op.
