@@ -69,6 +69,36 @@ struct Test {
 
 impl Test {
     pub async fn new(server: &str, auth_material: Option<Vec<u8>>) -> Self {
+        Self::from_builder(Arc::new(Self::builder(server, auth_material))).await
+    }
+
+    /// Build the bootstrap the way `CoreSpaceFactory` does for a space that
+    /// overrides the bootstrap server: the override is merged over the global
+    /// config, and everything the space uses is built from the result.
+    pub async fn new_with_space_override(
+        global_server: &str,
+        space_server: &str,
+    ) -> Self {
+        let space_override = Config::default();
+        space_override
+            .set_module_config(&super::CoreBootstrapModConfig {
+                core_bootstrap: super::CoreBootstrapConfig {
+                    server_url: Some(space_server.into()),
+                    backoff_min_ms: 10,
+                    backoff_max_ms: 10,
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+
+        let builder = Self::builder(global_server, None)
+            .with_config_overrides(space_override)
+            .unwrap();
+
+        Self::from_builder(Arc::new(builder)).await
+    }
+
+    fn builder(server: &str, auth_material: Option<Vec<u8>>) -> Builder {
         let builder = Builder {
             auth_material_bootstrap: auth_material,
             verifier: Arc::new(TestCrypto),
@@ -88,7 +118,10 @@ impl Test {
                 },
             })
             .unwrap();
-        let builder = Arc::new(builder);
+        builder
+    }
+
+    async fn from_builder(builder: Arc<Builder>) -> Self {
         println!("{}", serde_json::to_string(&builder.config).unwrap());
 
         let blocks = builder
@@ -316,4 +349,37 @@ async fn test_should_override_bootstrap_url_per_space() {
     // Creating a space MUST succeed because there we provided bootstrap config for space.
     kitsune.space(kitsune2_test_utils::space::TEST_SPACE_ID, Some(space_config)).await
     .expect("Expected creating a space to succeed after setting bootstrap URL per space");
+}
+
+/// A space that overrides the bootstrap server must push and poll against that
+/// server, not the global one. The existing per-space override test only proves
+/// the override reaches config validation.
+#[tokio::test(flavor = "multi_thread")]
+async fn space_override_targets_the_overridden_bootstrap_server() {
+    let global_srv = TestBootstrapSrv::new(false).await;
+    let space_srv = TestBootstrapSrv::new(false).await;
+
+    let overridden =
+        Test::new_with_space_override(global_srv.addr(), space_srv.addr())
+            .await;
+    let on_space_srv = Test::new(space_srv.addr(), None).await;
+    let on_global_srv = Test::new(global_srv.addr(), None).await;
+
+    let agent = overridden.push_agent().await;
+
+    for _ in 0..5 {
+        if on_space_srv.check_agent(agent.clone()).await.is_ok() {
+            // The poller on the global server has had the same wall clock to
+            // see this agent, and must not have.
+            assert!(
+                on_global_srv.check_agent(agent).await.is_err(),
+                "agent info reached the global bootstrap server"
+            );
+            return;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    panic!("agent info never reached the overridden bootstrap server");
 }
