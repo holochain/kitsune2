@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.1](https://github.com/holochain/kitsune2/compare/v0.5.0...v0.5.1)\] - 2026-09-01
+
+### Bug Fixes
+
+- Do not present auth material to a server the space named
+- Only configure a space on the transport when it overrides something
+  - The per-space transport hook exists so a space can name a relay of its own, but it was called for every space. A space that overrides nothing was handed the global config, which presents the defaults as that space's own - and a transport cannot tell the two apart. The iroh transport acts on it by reconfiguring the relay it is already connected to.
+  - Holochain already passes no override when an app declares none, so this is kitsune2 substituting the global config and presenting it as a per-space one.
+  - Call the hook only when an override was supplied, with the overridden config.
+  - The transport-level guard remains worth keeping: an override that changes only the bootstrap URL still carries the default relay URL, so the hook fires with a config naming a relay that has not changed.
+  - No API change - `TxImp::configure_for_space` keeps its signature and its default implementation. An implementor that assumed the hook fires for every space will no longer see it for spaces that override nothing, which is the behaviour being fixed.
+- Do not reconfigure a space's relay when it has not changed
+  - A space that overrides nothing is still handed the global config, so its `relay_url` is the relay the transport connected to at startup. Acting on every space therefore re-inserts a relay that has not changed, and the global config carries no per-space auth material, so an authenticated relay is replaced by an unauthenticated connection it then refuses.
+  - Nothing in the auth path looks wrong when this happens. The node holds a valid token and keeps its relay allowlist entry alive for as long as it runs; it simply reaches no peers from the moment its first space is created. A node with a public address never notices, because it connects directly and never uses the relay.
+  - Re-inserting also delivered a per-space listening address, which marks the space per-space managed and so stops global address updates reaching it.
+  - Treat only a relay that differs from the transport's own as a per-space relay. A space with no relay of its own falls back to the global URL in `own_url_for_preflight`, which is already the behaviour when no relay is configured for it.
+- *(transport_iroh)* Keep QAD enabled when a relay is re-inserted
+  - `relay_config_with_token` built the relay entry with `quic: None`, which disables QUIC address discovery for that relay. `configure_for_space` runs `do_insert_relay` for every space with the global relay URL, and iroh's `insert_relay` replaces the existing map entry, so the QAD-enabled entry created at endpoint startup was swapped for a QAD-less one as soon as the first space was configured. From then on net_report reported `No port available for this protocol`, the endpoint lost its public address, and NAT traversal only ever advertised LAN candidates — peers behind different NATs never upgraded to a direct path.
+  - Build re-inserted relays with `RelayConfig::from`, the same QAD-default config `RelayMap::from_iter` uses at startup.
+  - The test exercises `do_insert_relay` against an endpoint whose relay map already holds the relay and asserts the QAD config survives; the user-visible symptom only appears behind NAT and cannot be reproduced on loopback.
+
+### Testing
+
+- Cover which bootstrap server a space override targets
+  - `test_should_override_bootstrap_url_per_space` only asserts that creating the space succeeds. With no global bootstrap URL set, that really just proves the override reached config validation - nothing asserted the space talks to the server it named.
+  - Run two bootstrap servers, merge the override the way `CoreSpaceFactory` does, and assert the agent info reaches the overridden server and never the global one.
+- *(transport_iroh)* Cover the authenticated relay config path
+  - Assert that relay_config_with_token keeps QAD enabled both with and without a bearer token. The config it builds is used when authentication is enabled on the default relay and when a relay is customized per space, and both paths lost QAD.
+  - Also drop the QAD notes on relay_config_with_token and shorten the test module docs, which described the old bug rather than how the method behaves now.
+
 ## \[[0.5.0](https://github.com/holochain/kitsune2/compare/v0.3.0...v0.5.0)\] - 2026-07-27
 
 ### Features
