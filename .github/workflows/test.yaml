@@ -208,7 +208,7 @@ jobs:
   changelog-preview-comment:
       name: Add comment of changelog preview
       if: github.event_name == 'pull_request'
-      uses: holochain/actions/.github/workflows/changelog-preview-comment.yml@v1.17.0
+      uses: holochain/actions/.github/workflows/changelog-preview-comment.yml@v1.18.0
 
   ci_pass:
     if: ${{ always() }}
