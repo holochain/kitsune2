@@ -961,6 +961,157 @@ async fn preflight_sent_and_received_by_both_endpoints() {
     .expect("preflight should have been sent by peer 2 and received by peer 1");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn simultaneous_first_sends_are_delivered() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+    let preflight_gate =
+        Arc::new((std::sync::Mutex::new(0_u8), std::sync::Condvar::new()));
+
+    let (ep_1_sender, mut ep_1_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        preflight_validate_incoming: Arc::new({
+            let first_preflight = Arc::new(AtomicBool::new(true));
+            let preflight_gate = preflight_gate.clone();
+            move |_, _| {
+                if first_preflight.swap(false, Ordering::SeqCst) {
+                    let (arrivals, ready) = &*preflight_gate;
+                    let mut arrivals = arrivals.lock().unwrap();
+                    *arrivals += 1;
+                    ready.notify_all();
+                    let (_arrivals, timeout) = ready
+                        .wait_timeout_while(
+                            arrivals,
+                            Duration::from_secs(5),
+                            |arrivals| *arrivals < 2,
+                        )
+                        .unwrap();
+                    assert!(
+                        !timeout.timed_out(),
+                        "both preflights must arrive"
+                    );
+                }
+                Ok(())
+            }
+        }),
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            ep_1_sender.send(data).expect("receiver must remain open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let (ep_2_sender, mut ep_2_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_2 = Arc::new(MockTxHandler {
+        preflight_validate_incoming: Arc::new({
+            let first_preflight = Arc::new(AtomicBool::new(true));
+            let preflight_gate = preflight_gate.clone();
+            move |_, _| {
+                if first_preflight.swap(false, Ordering::SeqCst) {
+                    let (arrivals, ready) = &*preflight_gate;
+                    let mut arrivals = arrivals.lock().unwrap();
+                    *arrivals += 1;
+                    ready.notify_all();
+                    let (_arrivals, timeout) = ready
+                        .wait_timeout_while(
+                            arrivals,
+                            Duration::from_secs(5),
+                            |arrivals| *arrivals < 2,
+                        )
+                        .unwrap();
+                    assert!(
+                        !timeout.timed_out(),
+                        "both preflights must arrive"
+                    );
+                }
+                Ok(())
+            }
+        }),
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            ep_2_sender.send(data).expect("receiver must remain open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6_000),
+        Some(100),
+    )
+    .await
+    .expect("both transports must receive listening addresses");
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+    let send_barrier = Arc::new(tokio::sync::Barrier::new(3));
+
+    let send_from_ep_1 = {
+        let ep_1 = ep_1.clone();
+        let send_barrier = send_barrier.clone();
+        tokio::spawn(async move {
+            send_barrier.wait().await;
+            ep_1.send_space_notify(
+                ep_2_url,
+                TEST_SPACE_ID,
+                Bytes::from_static(b"from endpoint 1"),
+            )
+            .await
+        })
+    };
+    let send_from_ep_2 = {
+        let ep_2 = ep_2.clone();
+        let send_barrier = send_barrier.clone();
+        tokio::spawn(async move {
+            send_barrier.wait().await;
+            ep_2.send_space_notify(
+                ep_1_url,
+                TEST_SPACE_ID,
+                Bytes::from_static(b"from endpoint 2"),
+            )
+            .await
+        })
+    };
+
+    send_barrier.wait().await;
+    let (send_from_ep_1, send_from_ep_2) =
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(send_from_ep_1, send_from_ep_2)
+        })
+        .await
+        .expect("both simultaneous sends must complete");
+    send_from_ep_1
+        .expect("endpoint 1 send task must complete")
+        .expect("endpoint 1 send must succeed");
+    send_from_ep_2
+        .expect("endpoint 2 send task must complete")
+        .expect("endpoint 2 send must succeed");
+
+    let received_by_ep_1 =
+        tokio::time::timeout(Duration::from_secs(2), ep_1_receiver.recv())
+            .await
+            .expect("endpoint 1 must receive the simultaneous first message")
+            .expect("endpoint 1 receive channel must remain open");
+    let received_by_ep_2 =
+        tokio::time::timeout(Duration::from_secs(2), ep_2_receiver.recv())
+            .await
+            .expect("endpoint 2 must receive the simultaneous first message")
+            .expect("endpoint 2 receive channel must remain open");
+
+    assert_eq!(received_by_ep_1, Bytes::from_static(b"from endpoint 2"));
+    assert_eq!(received_by_ep_2, Bytes::from_static(b"from endpoint 1"));
+}
+
 #[tokio::test]
 async fn network_stats() {
     let harness = IrohTransportTestHarness::new().await;
