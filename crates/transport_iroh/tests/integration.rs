@@ -1465,3 +1465,78 @@ async fn no_unresponsive_when_relay_drops() {
         "set_unresponsive must not be called when the relay is disconnected"
     );
 }
+
+/// A `send` immediately after `disconnect` must re-dial and deliver. The
+/// remote may still hold the previous connection as its map entry, so the
+/// fresh connection can be closed as superseded; `send` must retry rather than
+/// return `Ok(())` for a message it never wrote.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn send_after_disconnect_reconnects_and_delivers() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    let (space_notify_sender, mut space_notify_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            space_notify_sender
+                .send(data)
+                .expect("receiver must be open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let handler_2 = Arc::new(MockTxHandler::default());
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6_000),
+        Some(100),
+    )
+    .await
+    .expect("both transports must receive listening addresses");
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+
+    // Reconnect several times in a row. A single round trips the race only
+    // intermittently; five rounds make a regression reliably visible.
+    for round in 0..5u8 {
+        let payload = Bytes::from(format!("round {round}"));
+        ep_2.send_space_notify(
+            ep_1_url.clone(),
+            TEST_SPACE_ID,
+            payload.clone(),
+        )
+        .await
+        .unwrap_or_else(|err| {
+            panic!("round {round} send must succeed: {err:?}")
+        });
+
+        let received = tokio::time::timeout(
+            Duration::from_secs(5),
+            space_notify_receiver.recv(),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("round {round} payload must arrive"))
+        .expect("receive channel must remain open");
+        assert_eq!(received, payload, "round {round} payload mismatch");
+
+        ep_2.disconnect(ep_1_url.clone(), None).await;
+        retry_fn_until_timeout(
+            || async { ep_2.get_connected_peers().await.unwrap().is_empty() },
+            Some(5_000),
+            Some(10),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("round {round} connection must be dropped"));
+    }
+}

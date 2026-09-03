@@ -389,6 +389,13 @@ impl ConnectionContext {
         *self.state.borrow() == ConnectionState::Active
     }
 
+    /// Whether this connection has resolved as superseded by a preferred
+    /// connection to the same peer, as opposed to closed for any other
+    /// reason.
+    pub(super) fn is_superseded(&self) -> bool {
+        *self.state.borrow() == ConnectionState::Superseded
+    }
+
     /// Whether this connection may still take or hold the peer's map slot.
     ///
     /// A connection in a terminal state is a corpse: its reader has stopped or
@@ -567,7 +574,14 @@ impl ConnectionContext {
         }
     }
 
-    fn remove_if_active_and_mark_closed(
+    /// Remove `self` from the map if it is still the entry for `remote_url`,
+    /// then move it to the terminal state matching *why* it ended.
+    ///
+    /// A remote that closed us with [`CloseCode::Superseded`] picked a
+    /// different connection to the same peer; a sender waiting on this context
+    /// must learn that it lost a race (and retry) rather than that the peer
+    /// went away (and give up).
+    fn remove_if_active_and_finish(
         self: &Arc<Self>,
         connections: &Connections,
         remote_url: &Url,
@@ -580,7 +594,14 @@ impl ConnectionContext {
             }
             _ => false,
         };
-        self.mark_closed();
+        if matches!(
+            self.connection.remote_close_reason(),
+            Some((CloseCode::Superseded, _))
+        ) {
+            self.mark_superseded();
+        } else {
+            self.mark_closed();
+        }
         was_active
     }
 
@@ -601,7 +622,7 @@ impl ConnectionContext {
         };
 
         let was_active =
-            ctx.remove_if_active_and_mark_closed(connections, &remote_url);
+            ctx.remove_if_active_and_finish(connections, &remote_url);
         let verdict = classify_exit(
             was_active,
             ctx.connection.remote_close_reason(),
@@ -637,8 +658,19 @@ impl ConnectionContext {
             }
             ReaderCleanup::Quiet => {
                 debug!(?remote_url, reason = %exit.err, "Connection reader stopped without marking peer unresponsive (superseded or not the active connection)");
-                ctx.connection
-                    .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+                // Only claim `Superseded` toward the remote when this
+                // connection actually resolved that way (a genuine
+                // simultaneous-open loss). Other reasons a non-active reader
+                // stops quietly, such as a rejected preflight, must not be
+                // reported as superseded: the sender on the other end treats
+                // that code as a signal to retry.
+                if ctx.is_superseded() {
+                    ctx.connection
+                        .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+                } else {
+                    ctx.connection
+                        .close(CloseCode::Unspecified, exit.err.as_bytes());
+                }
             }
         }
     }

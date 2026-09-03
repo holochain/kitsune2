@@ -239,6 +239,12 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
+/// How many times `send` will re-resolve a connection before giving up.
+///
+/// Each attempt is one full dial-and-preflight round; a peer that keeps losing
+/// simultaneous-open races is either genuinely flapping or being restarted, and
+/// the caller is better served by an error than by an unbounded loop.
+const MAX_SEND_CONNECT_ATTEMPTS: usize = 5;
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -1146,7 +1152,15 @@ impl TxImp for IrohTransport {
                     .clone()
             };
 
+            let mut attempts = 0usize;
             let connection_context = loop {
+                attempts += 1;
+                if attempts > MAX_SEND_CONNECT_ATTEMPTS {
+                    return Err(K2Error::other(format!(
+                        "no connection to {remote_url} survived simultaneous-open resolution after {MAX_SEND_CONNECT_ATTEMPTS} attempts"
+                    )));
+                }
+
                 // Serialize local connection creation, but release the lock
                 // while preflight and simultaneous-open resolution complete.
                 let ctx = {
@@ -1179,9 +1193,22 @@ impl TxImp for IrohTransport {
                             break ctx;
                         }
                     }
-                    ConnectionResolution::Superseded => {}
-                    // Remote preflight rejection historically happened after
-                    // `send` returned, so preserve that behavior for callers.
+                    ConnectionResolution::Superseded => {
+                        // Another connection to this peer won. Make sure the
+                        // loser cannot be picked up again on the next pass,
+                        // otherwise this loop spins on it.
+                        ctx.remove_if_active(&connections, &remote_url);
+                        debug!(
+                            remote = ?remote_url.peer_id(),
+                            attempts,
+                            "Connection superseded while sending; retrying"
+                        );
+                    }
+                    // The remote rejected the preflight, or the connection
+                    // died before it was usable. Historically `send` returned
+                    // success here and the failure surfaced through
+                    // `peer_disconnect`/`set_unresponsive`; keep that
+                    // behavior so callers are not newly broken.
                     ConnectionResolution::Closed => return Ok(()),
                 }
             };
