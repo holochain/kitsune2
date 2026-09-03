@@ -6,12 +6,15 @@ use crate::connection_registry::{
 };
 use kitsune2_api::Url;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 struct FakeEntry {
     lifecycle: ConnectionLifecycle,
     preferred: bool,
     close_calls: AtomicUsize,
+    /// Whether the lifecycle already read as superseded when
+    /// `close_superseded` ran.
+    superseded_at_close: AtomicBool,
 }
 
 impl FakeEntry {
@@ -20,11 +23,16 @@ impl FakeEntry {
             lifecycle: ConnectionLifecycle::new(),
             preferred,
             close_calls: AtomicUsize::new(0),
+            superseded_at_close: AtomicBool::new(false),
         })
     }
 
     fn close_calls(&self) -> usize {
         self.close_calls.load(Ordering::SeqCst)
+    }
+
+    fn superseded_at_close(&self) -> bool {
+        self.superseded_at_close.load(Ordering::SeqCst)
     }
 }
 
@@ -38,6 +46,8 @@ impl RegistryEntry for FakeEntry {
     }
 
     fn close_superseded(&self) {
+        self.superseded_at_close
+            .store(self.lifecycle.is_superseded(), Ordering::SeqCst);
         self.close_calls.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -92,6 +102,26 @@ fn a_preferred_candidate_displaces_a_non_preferred_incumbent() {
         incumbent.close_calls(),
         1,
         "the displaced connection must be closed exactly once"
+    );
+}
+
+/// A send that is already writing to the displaced connection only learns the
+/// write failed because of simultaneous-open resolution, rather than because
+/// the peer is gone, by asking the lifecycle. So the displaced entry must
+/// already read as superseded by the time its connection is closed, otherwise
+/// that send reports a spurious error for a message it could have retried.
+#[test]
+fn a_displaced_entry_is_superseded_before_it_is_closed() {
+    let registry = ConnectionRegistry::<FakeEntry>::new();
+    let incumbent = FakeEntry::new(false);
+    let candidate = FakeEntry::new(true);
+    assert!(registry.register_candidate(&peer(), &incumbent));
+
+    assert!(registry.register_candidate(&peer(), &candidate));
+    assert_eq!(incumbent.close_calls(), 1);
+    assert!(
+        incumbent.superseded_at_close(),
+        "the displaced connection must be marked superseded before it is closed"
     );
 }
 

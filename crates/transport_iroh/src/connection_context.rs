@@ -171,12 +171,30 @@ impl ConnectionContext {
         info!(local_url = ?url, "Sending preflight frame");
         trace!(?frame, "Sending preflight frame");
         if let Err(err) = stream.write_all(&frame).await {
-            error!(?err, "Failed to send preflight frame");
+            self.log_write_failure(&err, "preflight");
             *stream_lock = None;
             return Err(err);
         }
 
         Ok(())
+    }
+
+    /// Report a failed frame write at the level the cause deserves.
+    ///
+    /// Losing simultaneous-open resolution closes this connection underneath
+    /// an in-flight write, and the caller retries on the connection that won.
+    /// That is a routine outcome of two peers dialing at once, so it must not
+    /// be reported as a failure. Every other write failure still is one.
+    fn log_write_failure(&self, err: &K2Error, frame: &str) {
+        if self.is_superseded() {
+            debug!(
+                ?err,
+                frame,
+                "Frame write ended because the connection was superseded"
+            );
+        } else {
+            error!(?err, frame, "Failed to send frame");
+        }
     }
 
     pub async fn send_data_frame(&self, data: Bytes) -> K2Result<()> {
@@ -188,7 +206,7 @@ impl ConnectionContext {
 
         trace!(?frame, "Sending data frame");
         if let Err(err) = stream.write_all(&frame).await {
-            error!(?err, "Failed to send data frame");
+            self.log_write_failure(&err, "data");
             *stream_lock = None;
             return Err(err);
         }
@@ -252,11 +270,26 @@ impl ConnectionContext {
         self.dialed_by_us == larger_endpoint_dialed
     }
 
-    /// Whether this connection has resolved as superseded by a preferred
-    /// connection to the same peer, as opposed to closed for any other
-    /// reason.
+    /// Whether this connection lost simultaneous-open resolution to a
+    /// preferred connection to the same peer, as opposed to ending for any
+    /// other reason.
+    ///
+    /// Two independent signals say so, and a send racing the teardown may only
+    /// see one of them:
+    ///
+    /// - When the *local* registry displaces this connection it marks the
+    ///   lifecycle before closing it, so the lifecycle is always the earlier
+    ///   signal there.
+    /// - When the *remote* supersedes it, the verdict arrives only as a close
+    ///   code. The lifecycle catches up when this connection's reader runs its
+    ///   exit cleanup, which races anything already writing to the connection.
+    ///   Reading the close code directly removes that race.
     pub(super) fn is_superseded(&self) -> bool {
         self.lifecycle.is_superseded()
+            || matches!(
+                self.connection.remote_close_reason(),
+                Some((CloseCode::Superseded, _))
+            )
     }
 
     /// Abort the connection reader task, if it is still running.
@@ -284,6 +317,18 @@ impl ConnectionContext {
         self.mark_superseded();
         self.connection
             .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+    }
+
+    /// Close the underlying connection without notifying the handler, using
+    /// the real failure reason rather than [`CloseCode::Superseded`].
+    ///
+    /// Used when this connection genuinely failed for a reason other than
+    /// simultaneous-open resolution, such as a preflight write that failed
+    /// for its own sake. The remote treats `Superseded` as a signal to
+    /// retry, so a genuine failure must not be reported that way.
+    pub(super) fn close_failed(&self, reason: &[u8]) {
+        self.mark_closed();
+        self.connection.close(CloseCode::Unspecified, reason);
     }
 
     /// Close the connection and inform the local handlers.
@@ -564,6 +609,10 @@ impl ConnectionContext {
                 }
 
                 if !connections.activate(&remote_url, &ctx) {
+                    debug!(
+                        remote = ?remote_url.peer_id(),
+                        "Connection lost the peer's slot before it could be activated"
+                    );
                     return Ok(None);
                 }
                 Ok(Some(remote_url))

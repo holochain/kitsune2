@@ -227,10 +227,29 @@ pub(super) fn build_parked_context(
     dialed_by_us: bool,
     local_id: [u8; 32],
 ) -> Arc<ConnectionContext> {
+    build_parked_context_with_remote_close(
+        handler,
+        connections,
+        dialed_by_us,
+        local_id,
+        None,
+    )
+}
+
+/// As [`build_parked_context`], but the connection reports `remote_close` as
+/// the reason the remote ended it. The reader stays parked, so the context's
+/// lifecycle has not yet reacted to that close.
+pub(super) fn build_parked_context_with_remote_close(
+    handler: Arc<TxImpHnd>,
+    connections: Connections,
+    dialed_by_us: bool,
+    local_id: [u8; 32],
+    remote_close: Option<(CloseCode, Bytes)>,
+) -> Arc<ConnectionContext> {
     let url = remote_url();
     let connection: DynConnection = Arc::new(FakeConnection {
         accept_gate: Arc::new(tokio::sync::Notify::new()),
-        remote_close: None,
+        remote_close,
         remote_id: endpoint_from_url(&url).unwrap().id,
         close_calls: Arc::new(Mutex::new(Vec::new())),
     });

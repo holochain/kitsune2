@@ -258,6 +258,11 @@ impl<E: RegistryEntry> ConnectionRegistry<E> {
     /// Returns whether the entry is active afterwards, so an already-active
     /// entry reports success.
     pub(crate) fn activate(&self, peer: &Url, entry: &Arc<E>) -> bool {
+        // A write lock is taken even though this method never writes to the
+        // map: it serializes against `register_candidate` so the entry
+        // cannot be displaced between the "is this still the current entry"
+        // check and the lifecycle transition below, and holding it across
+        // that transition keeps the critical section deliberately small.
         let entries = self.entries.write().expect("poisoned");
         let is_current = entries
             .get(peer)

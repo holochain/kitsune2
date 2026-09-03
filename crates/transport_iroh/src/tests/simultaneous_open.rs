@@ -11,11 +11,17 @@
 //! mistaken for a genuine peer disconnect. Doing so spuriously marks the peer
 //! unresponsive (which lasts until the agent info expires) and stalls gossip.
 
-use super::support::{build_recording_handler, spawn_active_reader};
+use super::support::{
+    build_parked_context, build_parked_context_with_remote_close,
+    build_recording_handler, remote_url, spawn_active_reader,
+};
+use crate::Connections;
 use crate::close_code::CloseCode;
 use crate::connection_context::SUPERSEDED_CLOSE_REASON;
+use crate::connection_registry::RegistryEntry;
 use bytes::Bytes;
 use kitsune2_test_utils::retry_fn_until_timeout;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 /// When the active connection is closed by the remote with the superseded
@@ -81,10 +87,53 @@ async fn genuine_remote_close_marks_unresponsive() {
     );
 }
 
-use super::support::{build_parked_context, remote_url};
-use crate::Connections;
-use crate::connection_registry::RegistryEntry;
-use std::sync::Arc;
+/// A remote that supersedes a connection says so only in its close code. The
+/// local lifecycle catches up when this connection's reader runs its exit
+/// cleanup, which races a send already writing to the connection: when the
+/// reader loses that race, a send asking the lifecycle alone would report a
+/// spurious error for a message the winning connection can still carry. So the
+/// close code must be enough on its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_remote_supersede_is_visible_before_the_reader_reacts() {
+    let recorder = build_recording_handler();
+
+    let ctx = build_parked_context_with_remote_close(
+        recorder.handler.clone(),
+        Connections::new(),
+        true,
+        [0xff; 32],
+        Some((
+            CloseCode::Superseded,
+            Bytes::from_static(SUPERSEDED_CLOSE_REASON),
+        )),
+    );
+
+    assert!(
+        ctx.lifecycle().is_live(),
+        "the reader is parked, so the lifecycle has not reacted to the close"
+    );
+    assert!(
+        ctx.is_superseded(),
+        "a remote supersede must be visible to a send that is already writing"
+    );
+}
+
+/// The close code must not be read so broadly that an ordinary remote close
+/// looks like a supersede, which would retry a send that should have failed.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ordinary_remote_close_is_not_a_supersede() {
+    let recorder = build_recording_handler();
+
+    let ctx = build_parked_context_with_remote_close(
+        recorder.handler.clone(),
+        Connections::new(),
+        true,
+        [0xff; 32],
+        Some((CloseCode::Graceful, Bytes::from_static(b"goodbye"))),
+    );
+
+    assert!(!ctx.is_superseded());
+}
 
 /// A reconnect arrives while the previous connection to the same peer is still
 /// the map entry, because its reader has not run its exit cleanup yet. Both

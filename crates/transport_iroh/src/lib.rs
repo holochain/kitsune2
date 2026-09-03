@@ -975,9 +975,12 @@ impl IrohTransport {
                 max_frame_bytes: self.config.max_frame_bytes,
             });
 
-            // Publish the candidate before sending preflight. A competing
-            // inbound connection cannot complete preflight until this frame is
-            // sent, so it will always see and resolve against this candidate.
+            // Publish the candidate before sending the preflight, so that a
+            // competing inbound connection from the same peer resolves against
+            // this dial instead of racing an unpublished one. Both directions
+            // reach the same verdict whichever order they register in, because
+            // the tie-break is deterministic and the registry applies it
+            // atomically.
             if !self.connections.register_candidate(&remote_url, &ctx) {
                 ctx.close_quietly();
                 return Ok(ctx);
@@ -990,13 +993,30 @@ impl IrohTransport {
                 )
                 .await
             {
+                // Being published from this point on means a competing
+                // connection can take the peer's slot and close this dial
+                // underneath the preflight write. Either end can decide that:
+                // the remote rejecting this dial in favour of its own is in
+                // fact the more common way this write fails. That is
+                // simultaneous-open resolution working as intended, not a peer
+                // that failed: marking it unresponsive would stall gossip with
+                // it until its agent info expires. Hand the context back
+                // instead, so the caller retries on the connection that won.
+                if ctx.is_superseded() {
+                    debug!(
+                        remote = ?remote_url.peer_id(),
+                        "Dial superseded while sending preflight"
+                    );
+                    return Ok(ctx);
+                }
+
                 // On send preflight error, mark the peer unresponsive
                 let _ = self
                     .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
                     .await;
 
-                ctx.close_quietly();
+                ctx.close_failed(e.to_string().as_bytes());
                 self.connections.remove_if_current(&remote_url, &ctx);
 
                 return Err(e);
@@ -1101,7 +1121,6 @@ impl TxImp for IrohTransport {
     ) -> BoxFut<'_, ()> {
         let ctx = self.connections.take(&peer);
         if let Some(ctx) = ctx {
-            ctx.mark_closed();
             // The reason string travels in the QUIC application close frame
             // itself, so the encoded payload message is intentionally not
             // sent as a data frame first.
@@ -1146,7 +1165,7 @@ impl TxImp for IrohTransport {
             };
 
             let mut attempts = 0usize;
-            let connection_context = loop {
+            loop {
                 attempts += 1;
                 if attempts > MAX_SEND_CONNECT_ATTEMPTS {
                     return Err(K2Error::other(format!(
@@ -1176,8 +1195,8 @@ impl TxImp for IrohTransport {
                         let is_active = connections
                             .get(&remote_url)
                             .is_some_and(|active| Arc::ptr_eq(&active, &ctx));
-                        if is_active {
-                            break ctx;
+                        if !is_active {
+                            continue;
                         }
                     }
                     ConnectionResolution::Superseded => {
@@ -1190,6 +1209,7 @@ impl TxImp for IrohTransport {
                             attempts,
                             "Connection superseded while sending; retrying"
                         );
+                        continue;
                     }
                     // The remote rejected the preflight, or the connection
                     // died before it was usable. Historically `send` returned
@@ -1198,12 +1218,32 @@ impl TxImp for IrohTransport {
                     // behavior so callers are not newly broken.
                     ConnectionResolution::Closed => return Ok(()),
                 }
-            };
 
-            // Send actual message.
-            connection_context.send_data_frame(data).await?;
-
-            Ok(())
+                // The connection was the live one when it was picked, but a
+                // competing connection can still win the peer's slot while the
+                // frame is being written, which closes this one underneath the
+                // write. Either end can decide that, so `is_superseded` reads
+                // both the local verdict and the remote's close code; a write
+                // failure it does not recognize is reported as before.
+                //
+                // In principle the retry below can re-send a payload that
+                // actually reached the peer before a later flush/ack step
+                // failed. `send_space_notify` is at-most-once and every
+                // consumer already tolerates duplicates, so this is accepted.
+                match ctx.send_data_frame(data.clone()).await {
+                    Ok(()) => return Ok(()),
+                    Err(err) if ctx.is_superseded() => {
+                        connections.remove_if_current(&remote_url, &ctx);
+                        debug!(
+                            remote = ?remote_url.peer_id(),
+                            attempts,
+                            ?err,
+                            "Connection superseded mid-send; retrying"
+                        );
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
         })
     }
 
