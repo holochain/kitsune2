@@ -208,7 +208,7 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
     let remote_url = fake_remote_url();
     let target = endpoint_from_url(&remote_url).unwrap();
 
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections = crate::Connections::new();
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
 
     let transport = build_transport(
@@ -242,7 +242,7 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
     assert_eq!(recorded[0].0, remote_url);
 
     // The connections map must not have been mutated for a failed connect.
-    assert!(connections.read().unwrap().is_empty());
+    assert!(connections.get(&remote_url).is_none());
 }
 
 /// When the *outer* `tokio::time::timeout` wrapper fires (i.e. iroh's connect
@@ -300,7 +300,7 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
     let remote_url = fake_remote_url();
     let target = endpoint_from_url(&remote_url).unwrap();
 
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections = crate::Connections::new();
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
 
     let cfg = IrohTransportConfig {

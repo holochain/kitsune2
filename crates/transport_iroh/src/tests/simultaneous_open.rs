@@ -82,8 +82,9 @@ async fn genuine_remote_close_marks_unresponsive() {
 }
 
 use super::support::{build_parked_context, remote_url};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use crate::Connections;
+use crate::connection_registry::RegistryEntry;
+use std::sync::Arc;
 
 /// A reconnect arrives while the previous connection to the same peer is still
 /// the map entry, because its reader has not run its exit cleanup yet. Both
@@ -96,7 +97,7 @@ use std::sync::{Arc, RwLock};
 #[tokio::test(flavor = "multi_thread")]
 async fn newcomer_replaces_a_same_direction_incumbent() {
     let recorder = build_recording_handler();
-    let connections: crate::Connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections: Connections = Connections::new();
     let url = remote_url();
 
     // `[0xff; 32]` > the `0xaa` remote id, so the preferred connection is the
@@ -107,7 +108,7 @@ async fn newcomer_replaces_a_same_direction_incumbent() {
         false,
         [0xff; 32],
     );
-    assert!(incumbent.register_as_candidate(&connections, &url));
+    assert!(connections.register_candidate(&url, &incumbent));
 
     let newcomer = build_parked_context(
         recorder.handler.clone(),
@@ -116,13 +117,12 @@ async fn newcomer_replaces_a_same_direction_incumbent() {
         [0xff; 32],
     );
     assert!(
-        newcomer.register_as_candidate(&connections, &url),
+        connections.register_candidate(&url, &newcomer),
         "a same-direction newcomer must replace the stale incumbent"
     );
 
-    let map = connections.read().unwrap();
     assert!(
-        Arc::ptr_eq(map.get(&url).unwrap(), &newcomer),
+        Arc::ptr_eq(&connections.get(&url).unwrap(), &newcomer),
         "the newcomer must hold the slot"
     );
 }
@@ -133,7 +133,7 @@ async fn newcomer_replaces_a_same_direction_incumbent() {
 #[tokio::test(flavor = "multi_thread")]
 async fn preferred_incumbent_defeats_an_inbound_duplicate() {
     let recorder = build_recording_handler();
-    let connections: crate::Connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections: Connections = Connections::new();
     let url = remote_url();
 
     let incumbent = build_parked_context(
@@ -142,7 +142,7 @@ async fn preferred_incumbent_defeats_an_inbound_duplicate() {
         true,
         [0xff; 32],
     );
-    assert!(incumbent.register_as_candidate(&connections, &url));
+    assert!(connections.register_candidate(&url, &incumbent));
 
     let newcomer = build_parked_context(
         recorder.handler.clone(),
@@ -151,17 +151,16 @@ async fn preferred_incumbent_defeats_an_inbound_duplicate() {
         [0xff; 32],
     );
     assert!(
-        !newcomer.register_as_candidate(&connections, &url),
+        !connections.register_candidate(&url, &newcomer),
         "the inbound duplicate must lose to the preferred incumbent"
     );
     assert!(
-        !newcomer.is_live(),
+        !newcomer.lifecycle().is_live(),
         "the losing newcomer must be marked superseded"
     );
 
-    let map = connections.read().unwrap();
     assert!(
-        Arc::ptr_eq(map.get(&url).unwrap(), &incumbent),
+        Arc::ptr_eq(&connections.get(&url).unwrap(), &incumbent),
         "the preferred incumbent must keep the slot"
     );
 }
@@ -172,7 +171,7 @@ async fn preferred_incumbent_defeats_an_inbound_duplicate() {
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_incumbent_does_not_block_a_newcomer() {
     let recorder = build_recording_handler();
-    let connections: crate::Connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections: Connections = Connections::new();
     let url = remote_url();
 
     let incumbent = build_parked_context(
@@ -181,7 +180,7 @@ async fn terminal_incumbent_does_not_block_a_newcomer() {
         true,
         [0xff; 32],
     );
-    assert!(incumbent.register_as_candidate(&connections, &url));
+    assert!(connections.register_candidate(&url, &incumbent));
     incumbent.mark_closed();
 
     let newcomer = build_parked_context(
@@ -191,10 +190,9 @@ async fn terminal_incumbent_does_not_block_a_newcomer() {
         [0xff; 32],
     );
     assert!(
-        newcomer.register_as_candidate(&connections, &url),
+        connections.register_candidate(&url, &newcomer),
         "a terminal incumbent must be evicted, not defended"
     );
 
-    let map = connections.read().unwrap();
-    assert!(Arc::ptr_eq(map.get(&url).unwrap(), &newcomer));
+    assert!(Arc::ptr_eq(&connections.get(&url).unwrap(), &newcomer));
 }

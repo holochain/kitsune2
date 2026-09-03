@@ -226,9 +226,11 @@ mod url;
 use url::*;
 mod connection;
 mod connection_context;
+mod connection_registry;
 mod endpoint;
 mod stream;
 use connection_context::*;
+use connection_registry::{ConnectionRegistry, ConnectionResolution};
 #[cfg(feature = "metrics")]
 mod metrics;
 
@@ -417,7 +419,7 @@ impl TransportFactory for IrohTransportFactory {
     }
 }
 
-type Connections = Arc<RwLock<HashMap<Url, Arc<ConnectionContext>>>>;
+type Connections = ConnectionRegistry<ConnectionContext>;
 
 /// Per-space relay state: maps SpaceId to (relay URL, our local URL on that relay).
 type SpaceRelays = Arc<RwLock<HashMap<SpaceId, (RelayUrl, Option<Url>)>>>;
@@ -474,14 +476,10 @@ impl Drop for IrohTransport {
         // holds a reference to the context. Thus the context can
         // only be dropped once that reference is dropped, which
         // happens when the task is aborted.
-        self.connections
-            .write()
-            .expect("poisoned")
-            .drain()
-            .for_each(|(remote_url, ctx)| {
-                debug!(?remote_url, "Aborting connection context tasks");
-                ctx.abort_tasks();
-            });
+        self.connections.drain().into_iter().for_each(|ctx| {
+            debug!(remote_url = ?ctx.remote_url(), "Aborting connection context tasks");
+            ctx.abort_tasks();
+        });
         let endpoint = self.endpoint.clone();
         tokio::spawn(async move { endpoint.close().await });
     }
@@ -605,7 +603,7 @@ impl IrohTransport {
 
         let endpoint = Arc::new(IrohEndpoint::new(endpoint));
         let local_url = Arc::new(RwLock::new(None));
-        let connections = Arc::new(RwLock::new(HashMap::new()));
+        let connections = ConnectionRegistry::new();
         let connection_locks = Arc::new(Mutex::new(HashMap::new()));
 
         let watch_addr_task = Self::spawn_watch_addr_task(
@@ -980,7 +978,7 @@ impl IrohTransport {
             // Publish the candidate before sending preflight. A competing
             // inbound connection cannot complete preflight until this frame is
             // sent, so it will always see and resolve against this candidate.
-            if !ctx.register_as_candidate(&self.connections, &remote_url) {
+            if !self.connections.register_candidate(&remote_url, &ctx) {
                 ctx.close_quietly();
                 return Ok(ctx);
             }
@@ -999,7 +997,7 @@ impl IrohTransport {
                     .await;
 
                 ctx.close_quietly();
-                ctx.remove_if_active(&self.connections, &remote_url);
+                self.connections.remove_if_current(&remote_url, &ctx);
 
                 return Err(e);
             }
@@ -1101,14 +1099,9 @@ impl TxImp for IrohTransport {
         peer: Url,
         payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
-        let ctx = {
-            let mut connections = self.connections.write().expect("poisoned");
-            if let Some(ctx) = connections.get(&peer) {
-                ctx.mark_closed();
-            }
-            connections.remove(&peer)
-        };
+        let ctx = self.connections.take(&peer);
         if let Some(ctx) = ctx {
+            ctx.mark_closed();
             // The reason string travels in the QUIC application close frame
             // itself, so the encoded payload message is intentionally not
             // sent as a data frame first.
@@ -1165,11 +1158,7 @@ impl TxImp for IrohTransport {
                 // while preflight and simultaneous-open resolution complete.
                 let ctx = {
                     let _lock_guard = peer_lock.lock().await;
-                    let existing = connections
-                        .read()
-                        .expect("poisoned")
-                        .get(&remote_url)
-                        .cloned();
+                    let existing = connections.get(&remote_url);
                     if let Some(ctx) = existing {
                         ctx
                     } else {
@@ -1185,10 +1174,8 @@ impl TxImp for IrohTransport {
                 match ctx.wait_for_resolution().await {
                     ConnectionResolution::Active => {
                         let is_active = connections
-                            .read()
-                            .expect("poisoned")
                             .get(&remote_url)
-                            .is_some_and(|active| Arc::ptr_eq(active, &ctx));
+                            .is_some_and(|active| Arc::ptr_eq(&active, &ctx));
                         if is_active {
                             break ctx;
                         }
@@ -1197,7 +1184,7 @@ impl TxImp for IrohTransport {
                         // Another connection to this peer won. Make sure the
                         // loser cannot be picked up again on the next pass,
                         // otherwise this loop spins on it.
-                        ctx.remove_if_active(&connections, &remote_url);
+                        connections.remove_if_current(&remote_url, &ctx);
                         debug!(
                             remote = ?remote_url.peer_id(),
                             attempts,
@@ -1221,32 +1208,22 @@ impl TxImp for IrohTransport {
     }
 
     fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
-        Box::pin(async {
-            Ok(self
-                .connections
-                .read()
-                .expect("poisoned")
-                .iter()
-                .filter(|(_, context)| context.is_active())
-                .map(|(peer, _)| peer.clone())
-                .collect())
-        })
+        Box::pin(async { Ok(self.connections.active_peers()) })
     }
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
-            let connections =
-                self.connections.read().expect("poisoned").clone();
             let mut peer_urls = Vec::new();
             if let Some(own_url) =
                 self.local_url.read().expect("poisoned").clone()
             {
                 peer_urls.push(own_url);
             }
-            let stat_connections = connections
-                .into_values()
-                .filter(|context| context.is_active())
-                .map(|context| {
+            let stat_connections = self
+                .connections
+                .active_entries()
+                .into_iter()
+                .map(|(_, context)| {
                     TransportConnectionStats {
                         // Active contexts completed the URL exchange.
                         pub_key: context

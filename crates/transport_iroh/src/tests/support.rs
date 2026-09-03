@@ -186,7 +186,7 @@ pub(super) fn spawn_active_reader(
         close_calls: close_calls.clone(),
     });
 
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections = Connections::new();
 
     let ctx = ConnectionContext::new(ConnectionContextParams {
         handler,
@@ -204,7 +204,7 @@ pub(super) fn spawn_active_reader(
 
     // Register as the active connection *before* the reader is released, so
     // the exit cleanup sees this context as the live map entry (`was_active`).
-    connections.write().unwrap().insert(url, ctx.clone());
+    connections.register_candidate(&url, &ctx);
 
     ActiveReader {
         ctx,
@@ -216,7 +216,7 @@ pub(super) fn spawn_active_reader(
 /// Build a connection context whose reader is parked in `accept_uni`, sharing
 /// `connections` with other contexts built by this helper. Unlike
 /// [`spawn_active_reader`] the context is *not* inserted into the map: tests
-/// drive `register_as_candidate` to decide who takes the slot.
+/// drive `connections.register_candidate` to decide who takes the slot.
 ///
 /// `local_id` controls the simultaneous-open tie-break: [`remote_url`] encodes
 /// a remote id of `0xaa` bytes, so `[0xff; 32]` makes this endpoint the larger

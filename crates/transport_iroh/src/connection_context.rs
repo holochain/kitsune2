@@ -2,8 +2,9 @@ use crate::IrohTransport;
 use crate::SpaceRelays;
 use crate::close_code::CloseCode;
 use crate::connection::DynConnection;
-#[cfg(feature = "metrics")]
-use crate::metrics::connection_counter_metric;
+use crate::connection_registry::{
+    ConnectionLifecycle, ConnectionResolution, RegistryEntry,
+};
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
 use crate::{
     Connections, FRAME_HEADER_LEN, FrameType, decode_frame_header,
@@ -20,10 +21,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{
-    sync::{MutexGuard, watch},
-    task::AbortHandle,
-};
+use tokio::{sync::MutexGuard, task::AbortHandle};
 use tracing::{debug, error, info, trace, warn};
 
 /// Reason sent when a preferred connection wins simultaneous-open resolution.
@@ -36,25 +34,6 @@ struct ReaderExit {
     err: String,
     /// Whether the reader failure should mark the peer unresponsive.
     mark_unresponsive: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ConnectionState {
-    Pending,
-    Active,
-    Superseded,
-    Closed,
-}
-
-/// Result of waiting for a connection's preflight handshake.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ConnectionResolution {
-    /// The connection completed preflight and is selected for the peer.
-    Active,
-    /// A competing connection was selected for the peer.
-    Superseded,
-    /// The connection ended before preflight completed.
-    Closed,
 }
 
 /// Cleanup action for a stopped connection reader.
@@ -111,7 +90,7 @@ pub(super) struct ConnectionContext {
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
     preflight_received: AtomicBool,
-    state: watch::Sender<ConnectionState>,
+    lifecycle: ConnectionLifecycle,
     send_message_count: AtomicU64,
     send_bytes: AtomicU64,
     recv_message_count: AtomicU64,
@@ -153,7 +132,7 @@ impl ConnectionContext {
             remote_url: RwLock::new(params.remote_url),
             preflight_sent: AtomicBool::new(params.preflight_sent),
             preflight_received: AtomicBool::new(false),
-            state: watch::Sender::new(ConnectionState::Pending),
+            lifecycle: ConnectionLifecycle::new(),
             send_message_count: AtomicU64::new(0),
             send_bytes: AtomicU64::new(0),
             recv_message_count: AtomicU64::new(0),
@@ -231,25 +210,7 @@ impl ConnectionContext {
     ///
     /// Returns how preflight and simultaneous-open resolution completed.
     pub(super) async fn wait_for_resolution(&self) -> ConnectionResolution {
-        let mut state = self.state.subscribe();
-        loop {
-            match *state.borrow_and_update() {
-                ConnectionState::Active => {
-                    return ConnectionResolution::Active;
-                }
-                ConnectionState::Superseded => {
-                    return ConnectionResolution::Superseded;
-                }
-                ConnectionState::Closed => {
-                    return ConnectionResolution::Closed;
-                }
-                ConnectionState::Pending => {}
-            }
-
-            if state.changed().await.is_err() {
-                return ConnectionResolution::Closed;
-            }
-        }
+        self.lifecycle.wait_for_resolution().await
     }
 
     pub fn get_send_message_count(&self) -> u64 {
@@ -291,121 +252,11 @@ impl ConnectionContext {
         self.dialed_by_us == larger_endpoint_dialed
     }
 
-    /// Registers `self` as the selected candidate for `remote_url`, resolving
-    /// any simultaneous-open race deterministically.
-    ///
-    /// - If the slot is free, `self` takes it.
-    /// - If `self` is already the selected candidate, this is a no-op.
-    /// - If the incumbent has reached a terminal state, `self` replaces it.
-    /// - If a *different* live connection to the same peer already holds the
-    ///   slot, the [`is_preferred_connection`](Self::is_preferred_connection)
-    ///   tie-break decides which survives. The incumbent is only defended when
-    ///   it is itself the preferred connection; otherwise it is a leftover in
-    ///   the same direction as `self` and `self` replaces it. When `self` is
-    ///   displaced, it is marked superseded. When `self` wins, the displaced
-    ///   connection is closed (not aborted) so its reader observes the close
-    ///   and exits quietly through the identity-aware cleanup path.
-    ///
-    /// Returns `true` if `self` is selected afterwards, `false` if it lost the
-    /// tie-break or had already reached a terminal state.
-    pub(super) fn register_as_candidate(
-        self: &Arc<Self>,
-        connections: &Connections,
-        remote_url: &Url,
-    ) -> bool {
-        let displaced = {
-            let mut map = connections.write().expect("poisoned");
-            if !self.is_live() {
-                return false;
-            }
-            match map.get(remote_url) {
-                Some(existing) if Arc::ptr_eq(existing, self) => return true,
-                // The incumbent has already reached a terminal state: its
-                // reader has not run its exit cleanup yet, but it can never
-                // carry traffic again. Evict it rather than defend it.
-                Some(existing) if !existing.is_live() => {
-                    map.insert(remote_url.clone(), self.clone())
-                }
-                // Only the deterministic winner of the tie-break may defend
-                // the slot. Exactly one of the two connections in a genuine
-                // simultaneous open is preferred, so an incumbent that is not
-                // preferred is a leftover from an earlier connection in the
-                // same direction as `self` — the newer connection wins.
-                Some(existing)
-                    if existing.is_preferred_connection()
-                        && !self.is_preferred_connection() =>
-                {
-                    self.mark_superseded();
-                    return false;
-                }
-                // Slot is free, or we win the tie-break against the existing
-                // connection: take the slot.
-                _ => map.insert(remote_url.clone(), self.clone()),
-            }
-        };
-
-        if let Some(displaced) = displaced {
-            displaced.mark_superseded();
-            displaced
-                .connection
-                .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
-        }
-
-        true
-    }
-
-    /// Marks this connection active if it is still selected for the peer.
-    pub(super) fn activate_if_registered(
-        &self,
-        connections: &Connections,
-        remote_url: &Url,
-    ) -> bool {
-        let map = connections.write().expect("poisoned");
-        let is_registered = map
-            .get(remote_url)
-            .is_some_and(|active| std::ptr::eq(self, Arc::as_ptr(active)));
-        if !is_registered {
-            return false;
-        }
-
-        let activated = self.state.send_if_modified(|state| {
-            if *state == ConnectionState::Pending {
-                *state = ConnectionState::Active;
-                true
-            } else {
-                false
-            }
-        });
-
-        #[cfg(feature = "metrics")]
-        if activated {
-            connection_counter_metric().add(1, &[]);
-        }
-
-        activated || self.is_active()
-    }
-
-    pub(super) fn is_active(&self) -> bool {
-        *self.state.borrow() == ConnectionState::Active
-    }
-
     /// Whether this connection has resolved as superseded by a preferred
     /// connection to the same peer, as opposed to closed for any other
     /// reason.
     pub(super) fn is_superseded(&self) -> bool {
-        *self.state.borrow() == ConnectionState::Superseded
-    }
-
-    /// Whether this connection may still take or hold the peer's map slot.
-    ///
-    /// A connection in a terminal state is a corpse: its reader has stopped or
-    /// is about to, so it must neither claim the slot nor be defended in the
-    /// simultaneous-open tie-break.
-    pub(super) fn is_live(&self) -> bool {
-        matches!(
-            *self.state.borrow(),
-            ConnectionState::Pending | ConnectionState::Active
-        )
+        self.lifecycle.is_superseded()
     }
 
     /// Abort the connection reader task, if it is still running.
@@ -555,56 +406,6 @@ impl ConnectionContext {
         }
     }
 
-    /// Remove `self` from the active-connections map if it is still the
-    /// entry for `remote_url`.
-    ///
-    /// Returns `true` if `self` was the active connection.
-    pub(super) fn remove_if_active(
-        self: &Arc<Self>,
-        connections: &Connections,
-        remote_url: &Url,
-    ) -> bool {
-        let mut map = connections.write().expect("poisoned");
-        match map.get(remote_url) {
-            Some(active) if Arc::ptr_eq(active, self) => {
-                map.remove(remote_url);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Remove `self` from the map if it is still the entry for `remote_url`,
-    /// then move it to the terminal state matching *why* it ended.
-    ///
-    /// A remote that closed us with [`CloseCode::Superseded`] picked a
-    /// different connection to the same peer; a sender waiting on this context
-    /// must learn that it lost a race (and retry) rather than that the peer
-    /// went away (and give up).
-    fn remove_if_active_and_finish(
-        self: &Arc<Self>,
-        connections: &Connections,
-        remote_url: &Url,
-    ) -> bool {
-        let mut map = connections.write().expect("poisoned");
-        let was_active = match map.get(remote_url) {
-            Some(active) if Arc::ptr_eq(active, self) => {
-                map.remove(remote_url);
-                true
-            }
-            _ => false,
-        };
-        if matches!(
-            self.connection.remote_close_reason(),
-            Some((CloseCode::Superseded, _))
-        ) {
-            self.mark_superseded();
-        } else {
-            self.mark_closed();
-        }
-        was_active
-    }
-
     // The reader loop has ended: run the cleanup matching why it ended.
     // See [`ReaderCleanup`] for the possible verdicts and their rationale.
     async fn cleanup_after_exit(
@@ -621,8 +422,15 @@ impl ConnectionContext {
             return;
         };
 
-        let was_active =
-            ctx.remove_if_active_and_finish(connections, &remote_url);
+        let was_active = connections.remove_if_current(&remote_url, &ctx);
+        if matches!(
+            ctx.connection.remote_close_reason(),
+            Some((CloseCode::Superseded, _))
+        ) {
+            ctx.lifecycle.mark_superseded();
+        } else {
+            ctx.lifecycle.mark_closed();
+        }
         let verdict = classify_exit(
             was_active,
             ctx.connection.remote_close_reason(),
@@ -721,7 +529,7 @@ impl ConnectionContext {
                 // Select the surviving connection before acknowledging the
                 // preflight. The dialer treats that acknowledgement as proof
                 // that application data can be sent safely on this connection.
-                if !ctx.register_as_candidate(&connections, &remote_url) {
+                if !connections.register_candidate(&remote_url, &ctx) {
                     debug!(
                         remote = ?remote_url.peer_id(),
                         "Connection superseded by preferred connection to same peer"
@@ -755,7 +563,7 @@ impl ConnectionContext {
                     }
                 }
 
-                if !ctx.activate_if_registered(&connections, &remote_url) {
+                if !connections.activate(&remote_url, &ctx) {
                     return Ok(None);
                 }
                 Ok(Some(remote_url))
@@ -844,33 +652,12 @@ impl ConnectionContext {
         self.preflight_received.store(true, Ordering::SeqCst);
     }
 
-    fn mark_superseded(&self) {
-        self.transition_to_terminal(ConnectionState::Superseded);
+    pub(super) fn mark_superseded(&self) {
+        self.lifecycle.mark_superseded();
     }
 
     pub(super) fn mark_closed(&self) {
-        self.transition_to_terminal(ConnectionState::Closed);
-    }
-
-    fn transition_to_terminal(&self, terminal: ConnectionState) {
-        #[cfg(feature = "metrics")]
-        let mut was_active = false;
-        self.state.send_if_modified(|state| match *state {
-            ConnectionState::Pending | ConnectionState::Active => {
-                #[cfg(feature = "metrics")]
-                {
-                    was_active = *state == ConnectionState::Active;
-                }
-                *state = terminal;
-                true
-            }
-            ConnectionState::Superseded | ConnectionState::Closed => false,
-        });
-
-        #[cfg(feature = "metrics")]
-        if was_active {
-            connection_counter_metric().add(-1, &[]);
-        }
+        self.lifecycle.mark_closed();
     }
 
     fn increment_send_message_count(&self) {
@@ -887,6 +674,21 @@ impl ConnectionContext {
 
     fn increment_recv_bytes(&self, len: u64) {
         self.recv_bytes.fetch_add(len, Ordering::SeqCst);
+    }
+}
+
+impl RegistryEntry for ConnectionContext {
+    fn lifecycle(&self) -> &ConnectionLifecycle {
+        &self.lifecycle
+    }
+
+    fn is_preferred(&self) -> bool {
+        self.is_preferred_connection()
+    }
+
+    fn close_superseded(&self) {
+        self.connection
+            .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
     }
 }
 
