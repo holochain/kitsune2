@@ -80,3 +80,121 @@ async fn genuine_remote_close_marks_unresponsive() {
         "a genuine peer disconnect must mark the peer unresponsive"
     );
 }
+
+use super::support::{build_parked_context, remote_url};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
+/// A reconnect arrives while the previous connection to the same peer is still
+/// the map entry, because its reader has not run its exit cleanup yet. Both
+/// connections were *accepted*, so neither is the preferred one. The tie-break
+/// must not defend the older connection: the newcomer takes the slot.
+///
+/// Regression: rejecting the newcomer here made a send immediately after a
+/// disconnect close the fresh connection with `CloseCode::Superseded`, and the
+/// message was lost.
+#[tokio::test(flavor = "multi_thread")]
+async fn newcomer_replaces_a_same_direction_incumbent() {
+    let recorder = build_recording_handler();
+    let connections: crate::Connections = Arc::new(RwLock::new(HashMap::new()));
+    let url = remote_url();
+
+    // `[0xff; 32]` > the `0xaa` remote id, so the preferred connection is the
+    // one *we* dialed. Both of these were accepted, so neither is preferred.
+    let incumbent = build_parked_context(
+        recorder.handler.clone(),
+        connections.clone(),
+        false,
+        [0xff; 32],
+    );
+    assert!(incumbent.register_as_candidate(&connections, &url));
+
+    let newcomer = build_parked_context(
+        recorder.handler.clone(),
+        connections.clone(),
+        false,
+        [0xff; 32],
+    );
+    assert!(
+        newcomer.register_as_candidate(&connections, &url),
+        "a same-direction newcomer must replace the stale incumbent"
+    );
+
+    let map = connections.read().unwrap();
+    assert!(
+        Arc::ptr_eq(map.get(&url).unwrap(), &newcomer),
+        "the newcomer must hold the slot"
+    );
+}
+
+/// A genuine simultaneous open: the incumbent is the connection we dialed and
+/// is the preferred one, the newcomer is the inbound duplicate. The newcomer
+/// must lose and be marked superseded, leaving the incumbent in the slot.
+#[tokio::test(flavor = "multi_thread")]
+async fn preferred_incumbent_defeats_an_inbound_duplicate() {
+    let recorder = build_recording_handler();
+    let connections: crate::Connections = Arc::new(RwLock::new(HashMap::new()));
+    let url = remote_url();
+
+    let incumbent = build_parked_context(
+        recorder.handler.clone(),
+        connections.clone(),
+        true,
+        [0xff; 32],
+    );
+    assert!(incumbent.register_as_candidate(&connections, &url));
+
+    let newcomer = build_parked_context(
+        recorder.handler.clone(),
+        connections.clone(),
+        false,
+        [0xff; 32],
+    );
+    assert!(
+        !newcomer.register_as_candidate(&connections, &url),
+        "the inbound duplicate must lose to the preferred incumbent"
+    );
+    assert!(
+        !newcomer.is_live(),
+        "the losing newcomer must be marked superseded"
+    );
+
+    let map = connections.read().unwrap();
+    assert!(
+        Arc::ptr_eq(map.get(&url).unwrap(), &incumbent),
+        "the preferred incumbent must keep the slot"
+    );
+}
+
+/// An incumbent that has already reached a terminal state is a corpse waiting
+/// for its reader to be reaped. Even when it is the preferred direction, it
+/// must not block a live newcomer.
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_incumbent_does_not_block_a_newcomer() {
+    let recorder = build_recording_handler();
+    let connections: crate::Connections = Arc::new(RwLock::new(HashMap::new()));
+    let url = remote_url();
+
+    let incumbent = build_parked_context(
+        recorder.handler.clone(),
+        connections.clone(),
+        true,
+        [0xff; 32],
+    );
+    assert!(incumbent.register_as_candidate(&connections, &url));
+    incumbent.mark_closed();
+
+    let newcomer = build_parked_context(
+        recorder.handler.clone(),
+        connections.clone(),
+        false,
+        [0xff; 32],
+    );
+    assert!(
+        newcomer.register_as_candidate(&connections, &url),
+        "a terminal incumbent must be evicted, not defended"
+    );
+
+    let map = connections.read().unwrap();
+    assert!(Arc::ptr_eq(map.get(&url).unwrap(), &newcomer));
+}

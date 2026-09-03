@@ -296,12 +296,15 @@ impl ConnectionContext {
     ///
     /// - If the slot is free, `self` takes it.
     /// - If `self` is already the selected candidate, this is a no-op.
-    /// - If a *different* connection to the same peer already exists, the
-    ///   [`is_preferred_connection`](Self::is_preferred_connection) tie-break
-    ///   decides which survives. When `self` wins, the displaced connection is
-    ///   closed (not aborted) so its reader observes the close and exits
-    ///   quietly through the identity-aware cleanup path. When `self` loses,
-    ///   the existing connection is left in place.
+    /// - If the incumbent has reached a terminal state, `self` replaces it.
+    /// - If a *different* live connection to the same peer already holds the
+    ///   slot, the [`is_preferred_connection`](Self::is_preferred_connection)
+    ///   tie-break decides which survives. The incumbent is only defended when
+    ///   it is itself the preferred connection; otherwise it is a leftover in
+    ///   the same direction as `self` and `self` replaces it. When `self` is
+    ///   displaced, it is marked superseded. When `self` wins, the displaced
+    ///   connection is closed (not aborted) so its reader observes the close
+    ///   and exits quietly through the identity-aware cleanup path.
     ///
     /// Returns `true` if `self` is selected afterwards, `false` if it lost the
     /// tie-break or had already reached a terminal state.
@@ -312,12 +315,26 @@ impl ConnectionContext {
     ) -> bool {
         let displaced = {
             let mut map = connections.write().expect("poisoned");
-            if !self.can_register() {
+            if !self.is_live() {
                 return false;
             }
             match map.get(remote_url) {
                 Some(existing) if Arc::ptr_eq(existing, self) => return true,
-                Some(_) if !self.is_preferred_connection() => {
+                // The incumbent has already reached a terminal state: its
+                // reader has not run its exit cleanup yet, but it can never
+                // carry traffic again. Evict it rather than defend it.
+                Some(existing) if !existing.is_live() => {
+                    map.insert(remote_url.clone(), self.clone())
+                }
+                // Only the deterministic winner of the tie-break may defend
+                // the slot. Exactly one of the two connections in a genuine
+                // simultaneous open is preferred, so an incumbent that is not
+                // preferred is a leftover from an earlier connection in the
+                // same direction as `self` — the newer connection wins.
+                Some(existing)
+                    if existing.is_preferred_connection()
+                        && !self.is_preferred_connection() =>
+                {
                     self.mark_superseded();
                     return false;
                 }
@@ -370,6 +387,18 @@ impl ConnectionContext {
 
     pub(super) fn is_active(&self) -> bool {
         *self.state.borrow() == ConnectionState::Active
+    }
+
+    /// Whether this connection may still take or hold the peer's map slot.
+    ///
+    /// A connection in a terminal state is a corpse: its reader has stopped or
+    /// is about to, so it must neither claim the slot nor be defended in the
+    /// simultaneous-open tie-break.
+    pub(super) fn is_live(&self) -> bool {
+        matches!(
+            *self.state.borrow(),
+            ConnectionState::Pending | ConnectionState::Active
+        )
     }
 
     /// Abort the connection reader task, if it is still running.
@@ -781,18 +810,6 @@ impl ConnectionContext {
 
     fn set_preflight_received(&self) {
         self.preflight_received.store(true, Ordering::SeqCst);
-    }
-
-    fn can_register(&self) -> bool {
-        let mut can_register = false;
-        self.state.send_if_modified(|state| {
-            can_register = matches!(
-                state,
-                ConnectionState::Pending | ConnectionState::Active
-            );
-            false
-        });
-        can_register
     }
 
     fn mark_superseded(&self) {

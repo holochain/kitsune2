@@ -4,6 +4,7 @@
 //! [`ConnectionContext`] reader into its exit cleanup with a configurable
 //! remote close, and to record the resulting handler calls.
 
+use crate::Connections;
 use crate::close_code::CloseCode;
 use crate::connection::{Connection, DynConnection};
 use crate::connection_context::{ConnectionContext, ConnectionContextParams};
@@ -210,4 +211,41 @@ pub(super) fn spawn_active_reader(
         accept_gate,
         close_calls,
     }
+}
+
+/// Build a connection context whose reader is parked in `accept_uni`, sharing
+/// `connections` with other contexts built by this helper. Unlike
+/// [`spawn_active_reader`] the context is *not* inserted into the map: tests
+/// drive `register_as_candidate` to decide who takes the slot.
+///
+/// `local_id` controls the simultaneous-open tie-break: [`remote_url`] encodes
+/// a remote id of `0xaa` bytes, so `[0xff; 32]` makes this endpoint the larger
+/// one and `[0x00; 32]` makes it the smaller one.
+pub(super) fn build_parked_context(
+    handler: Arc<TxImpHnd>,
+    connections: Connections,
+    dialed_by_us: bool,
+    local_id: [u8; 32],
+) -> Arc<ConnectionContext> {
+    let url = remote_url();
+    let connection: DynConnection = Arc::new(FakeConnection {
+        accept_gate: Arc::new(tokio::sync::Notify::new()),
+        remote_close: None,
+        remote_id: endpoint_from_url(&url).unwrap().id,
+        close_calls: Arc::new(Mutex::new(Vec::new())),
+    });
+
+    ConnectionContext::new(ConnectionContextParams {
+        handler,
+        connection,
+        local_id,
+        dialed_by_us,
+        remote_url: Some(url.clone()),
+        preflight_sent: true,
+        opened_at_s: 0,
+        connections,
+        local_url: Arc::new(RwLock::new(Some(url))),
+        space_relays: Arc::new(RwLock::new(HashMap::new())),
+        max_frame_bytes: 64 * 1024,
+    })
 }
