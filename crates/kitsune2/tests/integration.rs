@@ -3,7 +3,7 @@ use kitsune2::default_builder;
 use kitsune2_api::{
     BoxFut, Builder, Config, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, Id,
     IncomingOp, K2Result, KitsuneHandler, LocalAgent, OpId, SpaceHandler,
-    SpaceId, Timestamp,
+    SpaceId, Timestamp, Url,
 };
 use kitsune2_core::{
     Ed25519LocalAgent,
@@ -22,7 +22,8 @@ use kitsune2_transport_iroh::{
     IrohTransportFactory,
     config::{IrohTransportConfig, IrohTransportModConfig},
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 fn create_op_list(num_ops: u16) -> (Vec<IncomingOp>, Vec<OpId>) {
     let mut ops = Vec::new();
@@ -36,29 +37,66 @@ fn create_op_list(num_ops: u16) -> (Vec<IncomingOp>, Vec<OpId>) {
     (ops, op_ids)
 }
 
-#[derive(Debug)]
-struct TestKitsuneHandler;
+/// A [KitsuneHandler] that records every notification received by any of
+/// its spaces, so tests can assert on what was actually delivered.
+#[derive(Debug, Default)]
+struct TestKitsuneHandler {
+    received: Arc<Mutex<Vec<Bytes>>>,
+}
 impl KitsuneHandler for TestKitsuneHandler {
     fn create_space(
         &self,
         _space_id: SpaceId,
         _config_override: Option<&Config>,
     ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
-        Box::pin(async {
-            let space_handler: DynSpaceHandler = Arc::new(TestSpaceHandler);
+        let received = self.received.clone();
+        Box::pin(async move {
+            let space_handler: DynSpaceHandler =
+                Arc::new(TestSpaceHandler { received });
             Ok(space_handler)
         })
     }
 }
+impl TestKitsuneHandler {
+    /// A snapshot of everything this node has been notified of so far.
+    fn received(&self) -> Vec<Bytes> {
+        self.received.lock().expect("poison").clone()
+    }
+}
 
 #[derive(Debug)]
-struct TestSpaceHandler;
-impl SpaceHandler for TestSpaceHandler {}
+struct TestSpaceHandler {
+    received: Arc<Mutex<Vec<Bytes>>>,
+}
+impl SpaceHandler for TestSpaceHandler {
+    fn recv_notify(
+        &self,
+        _from_peer: Url,
+        _space_id: SpaceId,
+        data: Bytes,
+    ) -> K2Result<()> {
+        self.received.lock().expect("poison").push(data);
+        Ok(())
+    }
+}
+
+/// The gossip settings used by every test node except where a test needs
+/// something different, such as suppressing gossip-initiated connections.
+fn default_test_gossip_config() -> K2GossipConfig {
+    K2GossipConfig {
+        initiate_interval_ms: 1000,
+        min_initiate_interval_ms: 100,
+        initiate_jitter_ms: 100,
+        round_timeout_ms: 10_000,
+        ..Default::default()
+    }
+}
 
 async fn make_kitsune_node(
     relay_server_url: &str,
     bootstrap_server_url: &str,
-) -> DynKitsune {
+    gossip_config: K2GossipConfig,
+) -> (DynKitsune, Arc<TestKitsuneHandler>) {
     let kitsune_builder = Builder {
         #[cfg(feature = "transport-iroh")]
         transport: IrohTransportFactory::create(),
@@ -93,24 +131,18 @@ async fn make_kitsune_node(
     kitsune_builder
         .config
         .set_module_config(&K2GossipModConfig {
-            k2_gossip: K2GossipConfig {
-                initiate_interval_ms: 1000,
-                min_initiate_interval_ms: 100,
-                initiate_jitter_ms: 100,
-                round_timeout_ms: 10_000,
-                ..Default::default()
-            },
+            k2_gossip: gossip_config,
         })
         .unwrap();
 
-    let kitsune_handler = Arc::new(TestKitsuneHandler);
+    let kitsune_handler = Arc::new(TestKitsuneHandler::default());
     let kitsune = kitsune_builder.build().await.unwrap();
     kitsune
         .register_handler(kitsune_handler.clone())
         .await
         .unwrap();
 
-    kitsune
+    (kitsune, kitsune_handler)
 }
 
 /// For iroh transport, the relay functionality is integrated into the bootstrap server.
@@ -158,6 +190,18 @@ async fn start_space(kitsune: &DynKitsune) -> DynSpace {
     space
 }
 
+/// The transport URL a node advertises, once the relay has assigned one.
+async fn peer_url_of(space: &DynSpace) -> Url {
+    let mut url = None;
+    iter_check!(10_000, 200, {
+        if let Some(current) = space.current_url() {
+            url = Some(current);
+            break;
+        }
+    });
+    url.expect("the space must learn its own URL")
+}
+
 #[tokio::test]
 async fn two_node_gossip() {
     enable_tracing();
@@ -169,10 +213,18 @@ async fn two_node_gossip() {
     let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances...
-    let kitsune_1 =
-        make_kitsune_node(&relay_server_url, &bootstrap_server_url).await;
-    let kitsune_2 =
-        make_kitsune_node(&relay_server_url, &bootstrap_server_url).await;
+    let (kitsune_1, _handler_1) = make_kitsune_node(
+        &relay_server_url,
+        &bootstrap_server_url,
+        default_test_gossip_config(),
+    )
+    .await;
+    let (kitsune_2, _handler_2) = make_kitsune_node(
+        &relay_server_url,
+        &bootstrap_server_url,
+        default_test_gossip_config(),
+    )
+    .await;
 
     // and 1 space with 1 joined agent each.
     let space_1 = start_space(&kitsune_1).await;
@@ -258,10 +310,18 @@ async fn shutdown_space() {
     let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
 
     // Create 2 Kitsune instances..
-    let kitsune_1 =
-        make_kitsune_node(&relay_server_url, &bootstrap_server_url).await;
-    let kitsune_2 =
-        make_kitsune_node(&relay_server_url, &bootstrap_server_url).await;
+    let (kitsune_1, _handler_1) = make_kitsune_node(
+        &relay_server_url,
+        &bootstrap_server_url,
+        default_test_gossip_config(),
+    )
+    .await;
+    let (kitsune_2, _handler_2) = make_kitsune_node(
+        &relay_server_url,
+        &bootstrap_server_url,
+        default_test_gossip_config(),
+    )
+    .await;
 
     // and 1 space with 1 joined agent each.
     let space_1 = start_space(&kitsune_1).await;
@@ -413,7 +473,7 @@ async fn test_space_should_not_start_without_bootstrap_url_configured() {
     let kitsune = kitsune_builder.build().await.expect("Build Kitsune2");
 
     // register handler
-    let kitsune_handler = Arc::new(TestKitsuneHandler);
+    let kitsune_handler = Arc::new(TestKitsuneHandler::default());
     kitsune
         .register_handler(kitsune_handler.clone())
         .await
@@ -456,7 +516,7 @@ async fn test_should_start_space_with_different_bootstrap_urls() {
 
     let kitsune = kitsune_builder.build().await.unwrap();
     kitsune
-        .register_handler(Arc::new(TestKitsuneHandler))
+        .register_handler(Arc::new(TestKitsuneHandler::default()))
         .await
         .unwrap();
 
@@ -577,7 +637,7 @@ async fn two_spaces_different_relays() {
 
     let kitsune = kitsune_builder.build().await.unwrap();
     kitsune
-        .register_handler(Arc::new(TestKitsuneHandler))
+        .register_handler(Arc::new(TestKitsuneHandler::default()))
         .await
         .unwrap();
 
@@ -737,4 +797,149 @@ async fn two_spaces_different_relays() {
         host_a, host_b,
         "Relay hosts should differ between the two spaces"
     );
+}
+
+/// A gossip config that never initiates on its own.
+///
+/// Gossip runs continuously between test nodes and would otherwise dial the
+/// peer on its own schedule, establishing a connection before a test gets a
+/// chance to exercise a genuinely first-contact simultaneous send.
+fn suppressed_gossip_config() -> K2GossipConfig {
+    K2GossipConfig {
+        initial_initiate_interval_ms: 3_600_000,
+        initiate_interval_ms: 3_600_000,
+        min_initiate_interval_ms: 3_600_000,
+        initiate_jitter_ms: 0,
+        round_timeout_ms: 10_000,
+        ..Default::default()
+    }
+}
+
+/// Two nodes that have never talked send to each other at the same instant.
+/// Both first messages must be delivered.
+///
+/// This is the kitsune2-level cover for the simultaneous-open message loss
+/// that wind-tunnel issue #690 surfaced as a flaky chatter scenario: when both
+/// peers dial at once, one of the two connections loses the deterministic
+/// tie-break, and whichever payload was written to the losing connection was
+/// silently dropped.
+///
+/// The race is only hit when both sides' first dial lands in the same narrow
+/// window, so a single pair of nodes is not a reliable reproduction: this
+/// runs several independent pairs, each a fresh "first contact", to make the
+/// race close to certain to be hit at least once if the bug is present.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn simultaneous_space_notify_is_delivered_both_ways() {
+    enable_tracing();
+
+    let bootstrap_server = TestBootstrapSrv::new(false).await;
+    let bootstrap_server_url = bootstrap_server.addr().to_string();
+
+    #[cfg(feature = "transport-iroh")]
+    let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
+
+    for round in 0..5u32 {
+        // Gossip is suppressed on both nodes so it cannot pre-establish a
+        // connection between them: the notify send below must be the first
+        // contact, and both dials race. Fresh nodes are created each round
+        // so that every round is a genuine first contact, rather than
+        // reusing a connection already established by a previous round.
+        let (kitsune_1, handler_1) = make_kitsune_node(
+            &relay_server_url,
+            &bootstrap_server_url,
+            suppressed_gossip_config(),
+        )
+        .await;
+        let (kitsune_2, handler_2) = make_kitsune_node(
+            &relay_server_url,
+            &bootstrap_server_url,
+            suppressed_gossip_config(),
+        )
+        .await;
+
+        let space_1 = start_space(&kitsune_1).await;
+        let space_2 = start_space(&kitsune_2).await;
+
+        // Each node must know the other's URL before the simultaneous send,
+        // so that the send itself is the first contact and both dials race.
+        let peer_url_1 = peer_url_of(&space_1).await;
+        let peer_url_2 = peer_url_of(&space_2).await;
+
+        // Each side must also already know the other as an agent, not just
+        // its URL, otherwise the notify is silently dropped by the
+        // access-control gate before the transport ever gets a chance to
+        // dial, which would fail the test for an unrelated reason. Agent
+        // info is exchanged by the bootstrap poll, independent of gossip, so
+        // this does not race with the suppressed gossip initiate above.
+        iter_check!(10_000, 200, {
+            let known_to_1 = space_1
+                .peer_store()
+                .get_all()
+                .await
+                .unwrap()
+                .iter()
+                .any(|agent| agent.url.as_ref() == Some(&peer_url_2));
+            let known_to_2 = space_2
+                .peer_store()
+                .get_all()
+                .await
+                .unwrap()
+                .iter()
+                .any(|agent| agent.url.as_ref() == Some(&peer_url_1));
+            if known_to_1 && known_to_2 {
+                break;
+            }
+        });
+
+        let payload_1 =
+            Bytes::from(format!("hello from node 1, round {round}"));
+        let payload_2 =
+            Bytes::from(format!("hello from node 2, round {round}"));
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(3));
+
+        let send_1 = {
+            let space_1 = space_1.clone();
+            let barrier = barrier.clone();
+            let payload_1 = payload_1.clone();
+            let peer_url_2 = peer_url_2.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                space_1.send_notify(peer_url_2, payload_1).await
+            })
+        };
+        let send_2 = {
+            let space_2 = space_2.clone();
+            let barrier = barrier.clone();
+            let payload_2 = payload_2.clone();
+            let peer_url_1 = peer_url_1.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                space_2.send_notify(peer_url_1, payload_2).await
+            })
+        };
+
+        barrier.wait().await;
+        let (result_1, result_2) =
+            tokio::time::timeout(Duration::from_secs(20), async {
+                tokio::join!(send_1, send_2)
+            })
+            .await
+            .expect("both simultaneous sends must complete");
+        result_1
+            .expect("node 1 send task must not panic")
+            .expect("node 1 send must succeed");
+        result_2
+            .expect("node 2 send task must not panic")
+            .expect("node 2 send must succeed");
+
+        // Both payloads must reach the other node's handler.
+        iter_check!(10_000, 200, {
+            let seen_1 = handler_1.received();
+            let seen_2 = handler_2.received();
+            if seen_1.contains(&payload_2) && seen_2.contains(&payload_1) {
+                break;
+            }
+        });
+    }
 }

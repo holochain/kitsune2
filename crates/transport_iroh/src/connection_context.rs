@@ -2,8 +2,9 @@ use crate::IrohTransport;
 use crate::SpaceRelays;
 use crate::close_code::CloseCode;
 use crate::connection::DynConnection;
-#[cfg(feature = "metrics")]
-use crate::metrics::connection_counter_metric;
+use crate::connection_registry::{
+    ConnectionLifecycle, ConnectionResolution, RegistryEntry,
+};
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
 use crate::{
     Connections, FRAME_HEADER_LEN, FrameType, decode_frame_header,
@@ -89,6 +90,7 @@ pub(super) struct ConnectionContext {
     remote_url: RwLock<Option<Url>>,
     preflight_sent: AtomicBool,
     preflight_received: AtomicBool,
+    lifecycle: ConnectionLifecycle,
     send_message_count: AtomicU64,
     send_bytes: AtomicU64,
     recv_message_count: AtomicU64,
@@ -130,6 +132,7 @@ impl ConnectionContext {
             remote_url: RwLock::new(params.remote_url),
             preflight_sent: AtomicBool::new(params.preflight_sent),
             preflight_received: AtomicBool::new(false),
+            lifecycle: ConnectionLifecycle::new(),
             send_message_count: AtomicU64::new(0),
             send_bytes: AtomicU64::new(0),
             recv_message_count: AtomicU64::new(0),
@@ -168,12 +171,30 @@ impl ConnectionContext {
         info!(local_url = ?url, "Sending preflight frame");
         trace!(?frame, "Sending preflight frame");
         if let Err(err) = stream.write_all(&frame).await {
-            error!(?err, "Failed to send preflight frame");
+            self.log_write_failure(&err, "preflight");
             *stream_lock = None;
             return Err(err);
         }
 
         Ok(())
+    }
+
+    /// Report a failed frame write at the level the cause deserves.
+    ///
+    /// Losing simultaneous-open resolution closes this connection underneath
+    /// an in-flight write, and the caller retries on the connection that won.
+    /// That is a routine outcome of two peers dialing at once, so it must not
+    /// be reported as a failure. Every other write failure still is one.
+    fn log_write_failure(&self, err: &K2Error, frame: &str) {
+        if self.is_superseded() {
+            debug!(
+                ?err,
+                frame,
+                "Frame write ended because the connection was superseded"
+            );
+        } else {
+            error!(?err, frame, "Failed to send frame");
+        }
     }
 
     pub async fn send_data_frame(&self, data: Bytes) -> K2Result<()> {
@@ -185,7 +206,7 @@ impl ConnectionContext {
 
         trace!(?frame, "Sending data frame");
         if let Err(err) = stream.write_all(&frame).await {
-            error!(?err, "Failed to send data frame");
+            self.log_write_failure(&err, "data");
             *stream_lock = None;
             return Err(err);
         }
@@ -201,6 +222,13 @@ impl ConnectionContext {
 
     pub fn remote_url(&self) -> Option<Url> {
         self.remote_url.read().expect("poisoned").clone()
+    }
+
+    /// Waits for preflight completion and simultaneous-open resolution.
+    ///
+    /// Returns how preflight and simultaneous-open resolution completed.
+    pub(super) async fn wait_for_resolution(&self) -> ConnectionResolution {
+        self.lifecycle.wait_for_resolution().await
     }
 
     pub fn get_send_message_count(&self) -> u64 {
@@ -242,50 +270,26 @@ impl ConnectionContext {
         self.dialed_by_us == larger_endpoint_dialed
     }
 
-    /// Register `self` as the active connection for `remote_url`, resolving any
-    /// simultaneous-open race deterministically.
+    /// Whether this connection lost simultaneous-open resolution to a
+    /// preferred connection to the same peer, as opposed to ending for any
+    /// other reason.
     ///
-    /// - If the slot is free, `self` takes it.
-    /// - If `self` is already the active connection, this is a no-op.
-    /// - If a *different* connection to the same peer already exists, the
-    ///   [`is_preferred_connection`](Self::is_preferred_connection) tie-break
-    ///   decides which survives. When `self` wins, the displaced connection is
-    ///   closed (not aborted) so its reader observes the close and exits
-    ///   quietly through the identity-aware cleanup path. When `self` loses,
-    ///   the existing connection is left in place.
+    /// Two independent signals say so, and a send racing the teardown may only
+    /// see one of them:
     ///
-    /// Returns `true` if `self` is the active connection afterwards, `false` if
-    /// it lost the tie-break and should be torn down.
-    pub(super) fn register_as_active(
-        self: &Arc<Self>,
-        connections: &Connections,
-        remote_url: &Url,
-    ) -> bool {
-        let displaced = {
-            let mut map = connections.write().expect("poisoned");
-            match map.get(remote_url) {
-                Some(existing) if Arc::ptr_eq(existing, self) => return true,
-                Some(_) if !self.is_preferred_connection() => return false,
-                // Slot is free, or we win the tie-break against the existing
-                // connection: take the slot.
-                _ => map.insert(remote_url.clone(), self.clone()),
-            }
-        };
-
-        // We are now the active connection.
-        #[cfg(feature = "metrics")]
-        connection_counter_metric().add(1, &[]);
-
-        if let Some(displaced) = displaced {
-            // The displaced connection was previously counted as active.
-            #[cfg(feature = "metrics")]
-            connection_counter_metric().add(-1, &[]);
-            displaced
-                .connection
-                .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
-        }
-
-        true
+    /// - When the *local* registry displaces this connection it marks the
+    ///   lifecycle before closing it, so the lifecycle is always the earlier
+    ///   signal there.
+    /// - When the *remote* supersedes it, the verdict arrives only as a close
+    ///   code. The lifecycle catches up when this connection's reader runs its
+    ///   exit cleanup, which races anything already writing to the connection.
+    ///   Reading the close code directly removes that race.
+    pub(super) fn is_superseded(&self) -> bool {
+        self.lifecycle.is_superseded()
+            || matches!(
+                self.connection.remote_close_reason(),
+                Some((CloseCode::Superseded, _))
+            )
     }
 
     /// Abort the connection reader task, if it is still running.
@@ -310,8 +314,21 @@ impl ConnectionContext {
     /// through the identity-aware cleanup path, which sees that this is not the
     /// active connection and so does not fire `peer_disconnect`.
     pub(super) fn close_quietly(&self) {
+        self.mark_superseded();
         self.connection
             .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+    }
+
+    /// Close the underlying connection without notifying the handler, using
+    /// the real failure reason rather than [`CloseCode::Superseded`].
+    ///
+    /// Used when this connection genuinely failed for a reason other than
+    /// simultaneous-open resolution, such as a preflight write that failed
+    /// for its own sake. The remote treats `Superseded` as a signal to
+    /// retry, so a genuine failure must not be reported that way.
+    pub(super) fn close_failed(&self, reason: &[u8]) {
+        self.mark_closed();
+        self.connection.close(CloseCode::Unspecified, reason);
     }
 
     /// Close the connection and inform the local handlers.
@@ -322,13 +339,11 @@ impl ConnectionContext {
     /// quietly instead of marking this peer unresponsive. Local handlers
     /// are informed via `peer_disconnect` with the same reason.
     pub fn disconnect(&self, code: CloseCode, reason: String) {
+        self.mark_closed();
         info!(reason, remote_url = ?self.remote_url(), "Disconnecting from remote");
         self.connection.close(code, reason.as_bytes());
         if let Some(peer) = self.remote_url() {
             self.handler.peer_disconnect(peer, Some(reason));
-            // Record connection counter metric.
-            #[cfg(feature = "metrics")]
-            connection_counter_metric().add(-1, &[]);
         }
     }
 
@@ -436,25 +451,6 @@ impl ConnectionContext {
         }
     }
 
-    /// Remove `self` from the active-connections map if it is still the
-    /// entry for `remote_url`.
-    ///
-    /// Returns `true` if `self` was the active connection.
-    fn remove_if_active(
-        self: &Arc<Self>,
-        connections: &Connections,
-        remote_url: &Url,
-    ) -> bool {
-        let mut map = connections.write().expect("poisoned");
-        match map.get(remote_url) {
-            Some(active) if Arc::ptr_eq(active, self) => {
-                map.remove(remote_url);
-                true
-            }
-            _ => false,
-        }
-    }
-
     // The reader loop has ended: run the cleanup matching why it ended.
     // See [`ReaderCleanup`] for the possible verdicts and their rationale.
     async fn cleanup_after_exit(
@@ -463,6 +459,7 @@ impl ConnectionContext {
         exit: ReaderExit,
     ) {
         let Some(remote_url) = ctx.remote_url() else {
+            ctx.mark_closed();
             // Preflight never completed, so no peer URL was learned and the
             // peer was never surfaced to the handler.
             ctx.connection
@@ -470,7 +467,15 @@ impl ConnectionContext {
             return;
         };
 
-        let was_active = ctx.remove_if_active(connections, &remote_url);
+        let was_active = connections.remove_if_current(&remote_url, &ctx);
+        if matches!(
+            ctx.connection.remote_close_reason(),
+            Some((CloseCode::Superseded, _))
+        ) {
+            ctx.lifecycle.mark_superseded();
+        } else {
+            ctx.lifecycle.mark_closed();
+        }
         let verdict = classify_exit(
             was_active,
             ctx.connection.remote_close_reason(),
@@ -506,8 +511,19 @@ impl ConnectionContext {
             }
             ReaderCleanup::Quiet => {
                 debug!(?remote_url, reason = %exit.err, "Connection reader stopped without marking peer unresponsive (superseded or not the active connection)");
-                ctx.connection
-                    .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+                // Only claim `Superseded` toward the remote when this
+                // connection actually resolved that way (a genuine
+                // simultaneous-open loss). Other reasons a non-active reader
+                // stops quietly, such as a rejected preflight, must not be
+                // reported as superseded: the sender on the other end treats
+                // that code as a signal to retry.
+                if ctx.is_superseded() {
+                    ctx.connection
+                        .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+                } else {
+                    ctx.connection
+                        .close(CloseCode::Unspecified, exit.err.as_bytes());
+                }
             }
         }
     }
@@ -555,6 +571,17 @@ impl ConnectionContext {
                 ctx.set_preflight_received();
                 info!(remote = ?remote_url.peer_id(),"Preflight received successfully");
 
+                // Select the surviving connection before acknowledging the
+                // preflight. The dialer treats that acknowledgement as proof
+                // that application data can be sent safely on this connection.
+                if !connections.register_candidate(&remote_url, &ctx) {
+                    debug!(
+                        remote = ?remote_url.peer_id(),
+                        "Connection superseded by preferred connection to same peer"
+                    );
+                    return Ok(None);
+                }
+
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
@@ -581,26 +608,22 @@ impl ConnectionContext {
                     }
                 }
 
-                Ok(remote_url)
+                if !connections.activate(&remote_url, &ctx) {
+                    debug!(
+                        remote = ?remote_url.peer_id(),
+                        "Connection lost the peer's slot before it could be activated"
+                    );
+                    return Ok(None);
+                }
+                Ok(Some(remote_url))
             })
                 .await
                 .map_err(|err| {
                     K2Error::other_src("timed out waiting for preflight", err)
                 });
             match result {
-                Ok(Ok(remote_url)) => {
-                    // Register as the active connection, resolving any
-                    // simultaneous-open race with another connection to the
-                    // same peer. If this connection lost the tie-break, stop
-                    // reading it; the preferred connection is already active.
-                    if !ctx.register_as_active(&connections, &remote_url) {
-                        debug!(
-                            remote = ?remote_url.peer_id(),
-                            "Connection superseded by preferred connection to same peer"
-                        );
-                        return Ok(false);
-                    }
-                }
+                Ok(Ok(Some(_))) => {}
+                Ok(Ok(None)) => return Ok(false),
                 Ok(Err(err)) | Err(err) => {
                     error!(?err, "failed to receive preflight frame");
                     return Err(err);
@@ -678,6 +701,14 @@ impl ConnectionContext {
         self.preflight_received.store(true, Ordering::SeqCst);
     }
 
+    pub(super) fn mark_superseded(&self) {
+        self.lifecycle.mark_superseded();
+    }
+
+    pub(super) fn mark_closed(&self) {
+        self.lifecycle.mark_closed();
+    }
+
     fn increment_send_message_count(&self) {
         self.send_message_count.fetch_add(1, Ordering::SeqCst);
     }
@@ -692,6 +723,21 @@ impl ConnectionContext {
 
     fn increment_recv_bytes(&self, len: u64) {
         self.recv_bytes.fetch_add(len, Ordering::SeqCst);
+    }
+}
+
+impl RegistryEntry for ConnectionContext {
+    fn lifecycle(&self) -> &ConnectionLifecycle {
+        &self.lifecycle
+    }
+
+    fn is_preferred(&self) -> bool {
+        self.is_preferred_connection()
+    }
+
+    fn close_superseded(&self) {
+        self.connection
+            .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
     }
 }
 

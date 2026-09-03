@@ -4,6 +4,7 @@
 //! [`ConnectionContext`] reader into its exit cleanup with a configurable
 //! remote close, and to record the resulting handler calls.
 
+use crate::Connections;
 use crate::close_code::CloseCode;
 use crate::connection::{Connection, DynConnection};
 use crate::connection_context::{ConnectionContext, ConnectionContextParams};
@@ -185,7 +186,7 @@ pub(super) fn spawn_active_reader(
         close_calls: close_calls.clone(),
     });
 
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections = Connections::new();
 
     let ctx = ConnectionContext::new(ConnectionContextParams {
         handler,
@@ -203,11 +204,67 @@ pub(super) fn spawn_active_reader(
 
     // Register as the active connection *before* the reader is released, so
     // the exit cleanup sees this context as the live map entry (`was_active`).
-    connections.write().unwrap().insert(url, ctx.clone());
+    connections.register_candidate(&url, &ctx);
 
     ActiveReader {
         ctx,
         accept_gate,
         close_calls,
     }
+}
+
+/// Build a connection context whose reader is parked in `accept_uni`, sharing
+/// `connections` with other contexts built by this helper. Unlike
+/// [`spawn_active_reader`] the context is *not* inserted into the map: tests
+/// drive `connections.register_candidate` to decide who takes the slot.
+///
+/// `local_id` controls the simultaneous-open tie-break: [`remote_url`] encodes
+/// a remote id of `0xaa` bytes, so `[0xff; 32]` makes this endpoint the larger
+/// one and `[0x00; 32]` makes it the smaller one.
+pub(super) fn build_parked_context(
+    handler: Arc<TxImpHnd>,
+    connections: Connections,
+    dialed_by_us: bool,
+    local_id: [u8; 32],
+) -> Arc<ConnectionContext> {
+    build_parked_context_with_remote_close(
+        handler,
+        connections,
+        dialed_by_us,
+        local_id,
+        None,
+    )
+}
+
+/// As [`build_parked_context`], but the connection reports `remote_close` as
+/// the reason the remote ended it. The reader stays parked, so the context's
+/// lifecycle has not yet reacted to that close.
+pub(super) fn build_parked_context_with_remote_close(
+    handler: Arc<TxImpHnd>,
+    connections: Connections,
+    dialed_by_us: bool,
+    local_id: [u8; 32],
+    remote_close: Option<(CloseCode, Bytes)>,
+) -> Arc<ConnectionContext> {
+    let url = remote_url();
+    let connection: DynConnection = Arc::new(FakeConnection {
+        accept_gate: Arc::new(tokio::sync::Notify::new()),
+        remote_close,
+        remote_id: endpoint_from_url(&url).unwrap().id,
+        close_calls: Arc::new(Mutex::new(Vec::new())),
+    });
+
+    ConnectionContext::new(ConnectionContextParams {
+        handler,
+        connection,
+        local_id,
+        dialed_by_us,
+        remote_url: Some(url.clone()),
+        preflight_sent: true,
+        opened_at_s: 0,
+        connections,
+        local_url: Arc::new(RwLock::new(Some(url))),
+        space_relays: Arc::new(RwLock::new(HashMap::new())),
+        max_frame_bytes: 64 * 1024,
+    })
 }

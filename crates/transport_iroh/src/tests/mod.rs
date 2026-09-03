@@ -4,6 +4,7 @@ use super::*;
 
 mod close;
 mod connect_failure;
+mod connection_registry;
 mod frame;
 mod relay_lifecycle;
 mod relay_qad;

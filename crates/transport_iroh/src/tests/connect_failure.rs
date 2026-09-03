@@ -208,7 +208,7 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
     let remote_url = fake_remote_url();
     let target = endpoint_from_url(&remote_url).unwrap();
 
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections = crate::Connections::new();
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
 
     let transport = build_transport(
@@ -242,7 +242,7 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
     assert_eq!(recorded[0].0, remote_url);
 
     // The connections map must not have been mutated for a failed connect.
-    assert!(connections.read().unwrap().is_empty());
+    assert!(connections.get(&remote_url).is_none());
 }
 
 /// When the *outer* `tokio::time::timeout` wrapper fires (i.e. iroh's connect
@@ -300,7 +300,7 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
     let remote_url = fake_remote_url();
     let target = endpoint_from_url(&remote_url).unwrap();
 
-    let connections = Arc::new(RwLock::new(HashMap::new()));
+    let connections = crate::Connections::new();
     let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
 
     let cfg = IrohTransportConfig {
@@ -342,4 +342,126 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
         "set_unresponsive should be called exactly once"
     );
     assert_eq!(recorded[0].0, remote_url);
+}
+
+/// An `Endpoint` whose `connect()` succeeds with a preconfigured connection.
+///
+/// `watch_addr`, `accept` and `close` are stubs that should not be exercised
+/// by the tests in this module.
+struct ConnectingEndpoint {
+    connection: DynConnection,
+}
+
+impl std::fmt::Debug for ConnectingEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectingEndpoint").finish()
+    }
+}
+
+impl Endpoint for ConnectingEndpoint {
+    fn watch_addr(&self) -> Box<dyn EndpointAddrWatcher> {
+        Box::new(PendingWatcher)
+    }
+
+    fn accept(&self) -> BoxFut<'_, Option<K2Result<DynConnection>>> {
+        Box::pin(std::future::pending())
+    }
+
+    fn connect(
+        &self,
+        _endpoint_addr: EndpointAddr,
+        _alpn: &[u8],
+    ) -> BoxFut<'_, K2Result<DynConnection>> {
+        let connection = self.connection.clone();
+        Box::pin(async move { Ok(connection) })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn insert_relay(
+        &self,
+        _url: RelayUrl,
+        _config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn remove_relay(
+        &self,
+        _url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        Box::pin(async { None })
+    }
+
+    fn id_bytes(&self) -> [u8; 32] {
+        [0u8; 32]
+    }
+
+    fn is_home_relay_known_down(&self) -> bool {
+        false
+    }
+}
+
+/// A genuine preflight-write failure (the connection's `open_uni` fails, not
+/// a simultaneous-open supersede) must close the connection with the real
+/// failure reason, not `CloseCode::Superseded`. A remote observing
+/// `Superseded` treats it as a signal to retry against the connection that
+/// "won", which is wrong here: this connection just failed on its own.
+#[tokio::test]
+async fn genuine_preflight_write_failure_closes_with_real_reason_not_superseded()
+ {
+    use super::support::FakeConnection;
+    use crate::close_code::CloseCode;
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls.clone());
+
+    let remote_url = fake_remote_url();
+    let target = endpoint_from_url(&remote_url).unwrap();
+
+    let close_calls = Arc::new(Mutex::new(Vec::new()));
+    let connection: DynConnection = Arc::new(FakeConnection {
+        accept_gate: Arc::new(tokio::sync::Notify::new()),
+        remote_close: None,
+        remote_id: target.id,
+        close_calls: close_calls.clone(),
+    });
+
+    let fake_endpoint: DynIrohEndpoint =
+        Arc::new(ConnectingEndpoint { connection });
+
+    let connections = crate::Connections::new();
+    let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
+
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        connections.clone(),
+        local_url,
+        config(),
+    );
+
+    let result = transport
+        .create_connection_and_context(target, remote_url.clone())
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a failed preflight write must surface as an error"
+    );
+
+    let recorded_closes = close_calls.lock().unwrap();
+    assert_eq!(
+        recorded_closes.len(),
+        1,
+        "the connection must be closed exactly once, got {recorded_closes:?}"
+    );
+    assert_eq!(
+        recorded_closes[0].0,
+        CloseCode::Unspecified,
+        "a genuine preflight failure must close with the real reason, not \
+         Superseded, or the remote will treat it as a signal to retry"
+    );
 }
