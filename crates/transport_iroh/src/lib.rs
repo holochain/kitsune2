@@ -226,9 +226,11 @@ mod url;
 use url::*;
 mod connection;
 mod connection_context;
+mod connection_registry;
 mod endpoint;
 mod stream;
 use connection_context::*;
+use connection_registry::{ConnectionRegistry, ConnectionResolution};
 #[cfg(feature = "metrics")]
 mod metrics;
 
@@ -239,6 +241,12 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
+/// How many times `send` will re-resolve a connection before giving up.
+///
+/// Each attempt is one full dial-and-preflight round; a peer that keeps losing
+/// simultaneous-open races is either genuinely flapping or being restarted, and
+/// the caller is better served by an error than by an unbounded loop.
+const MAX_SEND_CONNECT_ATTEMPTS: usize = 5;
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -411,7 +419,7 @@ impl TransportFactory for IrohTransportFactory {
     }
 }
 
-type Connections = Arc<RwLock<HashMap<Url, Arc<ConnectionContext>>>>;
+type Connections = ConnectionRegistry<ConnectionContext>;
 
 /// Per-space relay state: maps SpaceId to (relay URL, our local URL on that relay).
 type SpaceRelays = Arc<RwLock<HashMap<SpaceId, (RelayUrl, Option<Url>)>>>;
@@ -468,14 +476,10 @@ impl Drop for IrohTransport {
         // holds a reference to the context. Thus the context can
         // only be dropped once that reference is dropped, which
         // happens when the task is aborted.
-        self.connections
-            .write()
-            .expect("poisoned")
-            .drain()
-            .for_each(|(remote_url, ctx)| {
-                debug!(?remote_url, "Aborting connection context tasks");
-                ctx.abort_tasks();
-            });
+        self.connections.drain().into_iter().for_each(|ctx| {
+            debug!(remote_url = ?ctx.remote_url(), "Aborting connection context tasks");
+            ctx.abort_tasks();
+        });
         let endpoint = self.endpoint.clone();
         tokio::spawn(async move { endpoint.close().await });
     }
@@ -599,7 +603,7 @@ impl IrohTransport {
 
         let endpoint = Arc::new(IrohEndpoint::new(endpoint));
         let local_url = Arc::new(RwLock::new(None));
-        let connections = Arc::new(RwLock::new(HashMap::new()));
+        let connections = ConnectionRegistry::new();
         let connection_locks = Arc::new(Mutex::new(HashMap::new()));
 
         let watch_addr_task = Self::spawn_watch_addr_task(
@@ -971,6 +975,17 @@ impl IrohTransport {
                 max_frame_bytes: self.config.max_frame_bytes,
             });
 
+            // Publish the candidate before sending the preflight, so that a
+            // competing inbound connection from the same peer resolves against
+            // this dial instead of racing an unpublished one. Both directions
+            // reach the same verdict whichever order they register in, because
+            // the tie-break is deterministic and the registry applies it
+            // atomically.
+            if !self.connections.register_candidate(&remote_url, &ctx) {
+                ctx.close_quietly();
+                return Ok(ctx);
+            }
+
             if let Err(e) = ctx
                 .send_preflight_frame(
                     current_local_url.clone(),
@@ -978,11 +993,31 @@ impl IrohTransport {
                 )
                 .await
             {
+                // Being published from this point on means a competing
+                // connection can take the peer's slot and close this dial
+                // underneath the preflight write. Either end can decide that:
+                // the remote rejecting this dial in favour of its own is in
+                // fact the more common way this write fails. That is
+                // simultaneous-open resolution working as intended, not a peer
+                // that failed: marking it unresponsive would stall gossip with
+                // it until its agent info expires. Hand the context back
+                // instead, so the caller retries on the connection that won.
+                if ctx.is_superseded() {
+                    debug!(
+                        remote = ?remote_url.peer_id(),
+                        "Dial superseded while sending preflight"
+                    );
+                    return Ok(ctx);
+                }
+
                 // On send preflight error, mark the peer unresponsive
                 let _ = self
                     .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
                     .await;
+
+                ctx.close_failed(e.to_string().as_bytes());
+                self.connections.remove_if_current(&remote_url, &ctx);
 
                 return Err(e);
             }
@@ -1084,9 +1119,8 @@ impl TxImp for IrohTransport {
         peer: Url,
         payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
-        if let Some(ctx) =
-            self.connections.write().expect("poisoned").remove(&peer)
-        {
+        let ctx = self.connections.take(&peer);
+        if let Some(ctx) = ctx {
             // The reason string travels in the QUIC application close frame
             // itself, so the encoded payload message is intentionally not
             // sent as a data frame first.
@@ -1130,100 +1164,108 @@ impl TxImp for IrohTransport {
                     .clone()
             };
 
-            // Acquire the write lock to serialize connection creation for this peer.
-            //
-            // Other send requests to the same peer will wait here to acquire the lock.
-            // The lock is released immediately if there is a connection, Otherwise
-            // a connection is established and the preflight and host URL are sent
-            // to the remote, before the lock is released.
-            //
-            // The alternative to this mechanism would be fold the function of this
-            // lock into the connections map. That would slightly reduce the
-            // complexity in this method, but would increase complexity in all places
-            // where the connection map is used. The connecions_locks map is only
-            // used in this method. Overall it is simpler as is.
-            let _lock_guard = peer_lock.lock().await;
+            let mut attempts = 0usize;
+            loop {
+                attempts += 1;
+                if attempts > MAX_SEND_CONNECT_ATTEMPTS {
+                    return Err(K2Error::other(format!(
+                        "no connection to {remote_url} survived simultaneous-open resolution after {MAX_SEND_CONNECT_ATTEMPTS} attempts"
+                    )));
+                }
 
-            // Atomically check and create connection and context if needed.
-            let connection_context = {
-                // Check if connection already exists, as another call might have
-                // created it while this one was waiting for the lock.
-                let existing = connections
-                    .read()
-                    .expect("poisoned")
-                    .get(&remote_url)
-                    .cloned();
-                if let Some(ctx) = existing {
-                    // Connection already exists, use it (preflight already done).
-                    drop(_lock_guard);
-                    ctx
-                } else {
-                    // Connection doesn't exist, create it.
-                    // This establishes the connection and sends the preflight to the remote.
-                    info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
-                    let ctx = self
-                        .create_connection_and_context(
-                            remote,
-                            remote_url.clone(),
-                        )
-                        .await?;
-
-                    // Now that the preflight has been sent successfully, register
-                    // the connection. This resolves any simultaneous-open race
-                    // with an inbound connection from the same peer: if our dial
-                    // lost the deterministic tie-break, close it and send over the
-                    // connection that won instead.
-                    if ctx.register_as_active(&connections, &remote_url) {
+                // Serialize local connection creation, but release the lock
+                // while preflight and simultaneous-open resolution complete.
+                let ctx = {
+                    let _lock_guard = peer_lock.lock().await;
+                    let existing = connections.get(&remote_url);
+                    if let Some(ctx) = existing {
                         ctx
                     } else {
-                        // Our dial lost the tie-break; discard it (its reader
-                        // then exits quietly) and use the connection that won.
-                        ctx.close_quietly();
-                        connections
-                            .read()
-                            .expect("poisoned")
-                            .get(&remote_url)
-                            .cloned()
-                            .unwrap_or(ctx)
+                        info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
+                        self.create_connection_and_context(
+                            remote.clone(),
+                            remote_url.clone(),
+                        )
+                        .await?
                     }
+                };
+
+                match ctx.wait_for_resolution().await {
+                    ConnectionResolution::Active => {
+                        let is_active = connections
+                            .get(&remote_url)
+                            .is_some_and(|active| Arc::ptr_eq(&active, &ctx));
+                        if !is_active {
+                            continue;
+                        }
+                    }
+                    ConnectionResolution::Superseded => {
+                        // Another connection to this peer won. Make sure the
+                        // loser cannot be picked up again on the next pass,
+                        // otherwise this loop spins on it.
+                        connections.remove_if_current(&remote_url, &ctx);
+                        debug!(
+                            remote = ?remote_url.peer_id(),
+                            attempts,
+                            "Connection superseded while sending; retrying"
+                        );
+                        continue;
+                    }
+                    // The remote rejected the preflight, or the connection
+                    // died before it was usable. Historically `send` returned
+                    // success here and the failure surfaced through
+                    // `peer_disconnect`/`set_unresponsive`; keep that
+                    // behavior so callers are not newly broken.
+                    ConnectionResolution::Closed => return Ok(()),
                 }
-            };
 
-            // Send actual message.
-            connection_context.send_data_frame(data).await?;
-
-            Ok(())
+                // The connection was the live one when it was picked, but a
+                // competing connection can still win the peer's slot while the
+                // frame is being written, which closes this one underneath the
+                // write. Either end can decide that, so `is_superseded` reads
+                // both the local verdict and the remote's close code; a write
+                // failure it does not recognize is reported as before.
+                //
+                // In principle the retry below can re-send a payload that
+                // actually reached the peer before a later flush/ack step
+                // failed. `send_space_notify` is at-most-once and every
+                // consumer already tolerates duplicates, so this is accepted.
+                match ctx.send_data_frame(data.clone()).await {
+                    Ok(()) => return Ok(()),
+                    Err(err) if ctx.is_superseded() => {
+                        connections.remove_if_current(&remote_url, &ctx);
+                        debug!(
+                            remote = ?remote_url.peer_id(),
+                            attempts,
+                            ?err,
+                            "Connection superseded mid-send; retrying"
+                        );
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
         })
     }
 
     fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
-        Box::pin(async {
-            Ok(self
-                .connections
-                .read()
-                .expect("poisoned")
-                .keys()
-                .cloned()
-                .collect())
-        })
+        Box::pin(async { Ok(self.connections.active_peers()) })
     }
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move {
-            let connections =
-                self.connections.read().expect("poisoned").clone();
             let mut peer_urls = Vec::new();
             if let Some(own_url) =
                 self.local_url.read().expect("poisoned").clone()
             {
                 peer_urls.push(own_url);
             }
-            let stat_connections = connections
-                .into_values()
-                .map(|context| {
+            let stat_connections = self
+                .connections
+                .active_entries()
+                .into_iter()
+                .map(|(_, context)| {
                     TransportConnectionStats {
-                        // When the context is added to the connections map, the handshake
-                        // with the URL exchange is already complete. URL must be `Some`.
+                        // Active contexts completed the URL exchange.
                         pub_key: context
                             .remote_url()
                             .unwrap()
