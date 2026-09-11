@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788174009255,
+  "lastUpdate": 1789152201654,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2586,6 +2586,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41903361,
             "range": "± 72078",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "08883026c31a4494702bd2fe584b1660fb7bf0c0",
+          "message": "build(deps): bump rust-toolchain from 1.98.0 to 1.98.1\n\nBumps [rust-toolchain](https://github.com/rust-lang/rust) from 1.98.0 to 1.98.1.\n- [Release notes](https://github.com/rust-lang/rust/releases)\n- [Changelog](https://github.com/rust-lang/rust/blob/main/RELEASES.md)\n- [Commits](https://github.com/rust-lang/rust/compare/1.98.0...1.98.1)\n\n---\nupdated-dependencies:\n- dependency-name: rust-toolchain\n  dependency-version: 1.98.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-09-11T12:35:28-06:00",
+          "tree_id": "fba9f03598dadf0d18cb199061038d230cebe7c6",
+          "url": "https://github.com/holochain/kitsune2/commit/08883026c31a4494702bd2fe584b1660fb7bf0c0"
+        },
+        "date": 1789152200570,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 46163,
+            "range": "± 2289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 45538,
+            "range": "± 2258",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 59357,
+            "range": "± 2647",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41109058,
+            "range": "± 83440",
             "unit": "ns/iter"
           }
         ]
