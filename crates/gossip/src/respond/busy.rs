@@ -2,7 +2,7 @@ use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::K2GossipBusyMessage;
 use crate::state::GossipRoundState;
-use kitsune2_api::{K2Error, Timestamp, Url};
+use kitsune2_api::{Timestamp, Url};
 
 impl K2Gossip {
     pub(crate) async fn respond_to_busy(
@@ -55,7 +55,9 @@ impl GossipRoundState {
         accept: K2GossipBusyMessage,
     ) -> K2GossipResult<()> {
         if self.session_with_peer != from_peer {
-            return Err(K2Error::other("Busy message from wrong peer").into());
+            return Err(K2GossipError::peer_behavior(
+                "Busy message from wrong peer",
+            ));
         }
 
         if self.session_id != accept.session_id {
@@ -144,6 +146,11 @@ mod tests {
         assert!(
             error.to_string().contains("Busy message from wrong peer"),
             "Expected error for busy message from wrong peer, got: {error}"
+        );
+        assert!(
+            matches!(error, K2GossipError::PeerBehaviorError { .. }),
+            "Expected a PeerBehaviorError so the dispatcher counts this against \
+             the peer rather than as a local error, got: {error:?}"
         );
 
         let busy = harness

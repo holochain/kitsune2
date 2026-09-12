@@ -282,11 +282,10 @@ impl GossipRoundState {
         accept: &K2GossipAcceptMessage,
     ) -> K2GossipResult<&RoundStageInitiated> {
         if self.session_with_peer != from_peer {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Accept message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            ))
-            .into());
+            )));
         }
 
         if self.session_id != accept.session_id {
