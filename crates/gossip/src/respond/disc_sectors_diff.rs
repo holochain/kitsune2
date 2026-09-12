@@ -9,7 +9,7 @@ use crate::state::{
     GossipRoundState, RoundStage, RoundStageAccepted,
     RoundStageDiscSectorDetailsDiff,
 };
-use kitsune2_api::{AgentId, K2Error, Url};
+use kitsune2_api::{AgentId, Url};
 use kitsune2_dht::DhtSnapshot;
 use kitsune2_dht::DhtSnapshotNextAction;
 use tokio::sync::OwnedMutexGuard;
@@ -137,11 +137,10 @@ impl GossipRoundState {
         disc_sectors_diff: &K2GossipDiscSectorsDiffMessage,
     ) -> K2GossipResult<&RoundStageAccepted> {
         if self.session_with_peer != from_peer {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "DiscSectorsDiff message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            ))
-            .into());
+            )));
         }
 
         if self.session_id != disc_sectors_diff.session_id {

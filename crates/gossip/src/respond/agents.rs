@@ -2,7 +2,7 @@ use crate::error::{K2GossipError, K2GossipResult};
 use crate::gossip::K2Gossip;
 use crate::protocol::{GossipMessage, K2GossipAgentsMessage};
 use crate::state::{GossipRoundState, RoundStage};
-use kitsune2_api::{K2Error, Url};
+use kitsune2_api::Url;
 
 impl K2Gossip {
     pub(super) async fn respond_to_agents(
@@ -38,11 +38,10 @@ impl GossipRoundState {
         agents: &K2GossipAgentsMessage,
     ) -> K2GossipResult<()> {
         if self.session_with_peer != from_peer {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "Agents message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            ))
-            .into());
+            )));
         }
 
         if self.session_id != agents.session_id {
