@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789152201654,
+  "lastUpdate": 1789192280439,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2634,6 +2634,53 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41109058,
             "range": "± 83440",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hra@holochain.org",
+            "name": "holochain-release-automation2"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "61e1c06faa2db7dfcbf48087e2ff7d69865bd533",
+          "message": "chore: update dependabot.yml with shared content",
+          "timestamp": "2026-09-11T23:42:31-06:00",
+          "tree_id": "23be316a65d246c783563e38bb756aaae0c8a1d2",
+          "url": "https://github.com/holochain/kitsune2/commit/61e1c06faa2db7dfcbf48087e2ff7d69865bd533"
+        },
+        "date": 1789192279875,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 57370,
+            "range": "± 2098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 61923,
+            "range": "± 2159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 80016,
+            "range": "± 1407",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999825,
+            "range": "± 11290",
             "unit": "ns/iter"
           }
         ]
