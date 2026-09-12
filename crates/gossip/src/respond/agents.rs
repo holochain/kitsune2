@@ -183,6 +183,11 @@ mod tests {
             error.to_string().contains("Agents message from wrong peer"),
             "Expected error for agents message from wrong peer, got: {error:?}"
         );
+        assert!(
+            matches!(error, K2GossipError::PeerBehaviorError { .. }),
+            "Expected a PeerBehaviorError so the dispatcher counts this against \
+             the peer rather than as a local error, got: {error:?}"
+        );
 
         // Should not have added any agents to the peer store,
         let all_agents = harness.gossip.peer_store.get_all().await.unwrap();
@@ -232,6 +237,11 @@ mod tests {
         assert!(
             error.to_string().contains("Session id mismatch"),
             "Expected error for mismatched session id, got: {error:?}"
+        );
+        assert!(
+            matches!(error, K2GossipError::PeerBehaviorError { .. }),
+            "Expected a PeerBehaviorError so the dispatcher counts this against \
+             the peer rather than as a local error, got: {error:?}"
         );
 
         // Should not have added any agents to the peer store,

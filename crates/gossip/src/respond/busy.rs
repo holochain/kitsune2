@@ -147,6 +147,11 @@ mod tests {
             error.to_string().contains("Busy message from wrong peer"),
             "Expected error for busy message from wrong peer, got: {error}"
         );
+        assert!(
+            matches!(error, K2GossipError::PeerBehaviorError { .. }),
+            "Expected a PeerBehaviorError so the dispatcher counts this against \
+             the peer rather than as a local error, got: {error:?}"
+        );
 
         let busy = harness
             .gossip
