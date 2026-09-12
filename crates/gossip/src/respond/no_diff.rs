@@ -5,7 +5,7 @@ use crate::protocol::{
     K2GossipTerminateMessage, encode_agent_infos,
 };
 use crate::state::{GossipRoundState, RoundStage, RoundStageAccepted};
-use kitsune2_api::{AgentId, K2Error, Url};
+use kitsune2_api::{AgentId, Url};
 
 impl K2Gossip {
     pub(super) async fn respond_to_no_diff(
@@ -73,11 +73,10 @@ impl GossipRoundState {
         no_diff: &K2GossipNoDiffMessage,
     ) -> K2GossipResult<()> {
         if self.session_with_peer != from_peer {
-            return Err(K2Error::other(format!(
+            return Err(K2GossipError::peer_behavior(format!(
                 "NoDiff message from wrong peer: {} != {}",
                 self.session_with_peer, from_peer
-            ))
-            .into());
+            )));
         }
 
         if self.session_id != no_diff.session_id {
