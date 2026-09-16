@@ -975,7 +975,7 @@ impl IrohTransport {
                 max_frame_bytes: self.config.max_frame_bytes,
             });
 
-            // Publish the candidate before sending the preflight, so that a
+            // Register the candidate before sending the preflight, so that a
             // competing inbound connection from the same peer resolves against
             // this dial instead of racing an unpublished one. Both directions
             // reach the same verdict whichever order they register in, because
