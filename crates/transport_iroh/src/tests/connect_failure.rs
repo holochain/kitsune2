@@ -10,7 +10,7 @@ use crate::test_utils::MockTxHandler;
 use crate::url::endpoint_from_url;
 use crate::{IrohTransport, IrohTransportConfig};
 use bytes::Bytes;
-use iroh::{EndpointAddr, RelayConfig, RelayUrl};
+use iroh::{EndpointAddr, EndpointId, RelayConfig, RelayUrl, TransportAddr};
 use kitsune2_api::{
     BoxFut, DefaultTransport, K2Error, K2Result, TransportStats, TxImp,
     TxImpHnd, Url,
@@ -18,6 +18,8 @@ use kitsune2_api::{
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use n0_watcher::Disconnected;
 use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -27,6 +29,7 @@ use std::time::Duration;
 /// by the tests in this module.
 struct FakeEndpoint {
     connect_error_factory: Arc<dyn Fn() -> K2Error + 'static + Send + Sync>,
+    connect_calls: Arc<AtomicUsize>,
 }
 
 impl std::fmt::Debug for FakeEndpoint {
@@ -49,6 +52,7 @@ impl Endpoint for FakeEndpoint {
         _endpoint_addr: EndpointAddr,
         _alpn: &[u8],
     ) -> BoxFut<'_, K2Result<DynConnection>> {
+        self.connect_calls.fetch_add(1, Ordering::Relaxed);
         let factory = self.connect_error_factory.clone();
         Box::pin(async move { Err(factory()) })
     }
@@ -85,8 +89,97 @@ impl Endpoint for FakeEndpoint {
 struct PendingWatcher;
 
 impl EndpointAddrWatcher for PendingWatcher {
+    fn get(&mut self) -> EndpointAddr {
+        endpoint_addr(None)
+    }
+
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
         Box::pin(std::future::pending())
+    }
+}
+
+/// Provides a controllable endpoint address for transport startup tests.
+#[derive(Debug)]
+struct ControlledEndpoint {
+    initial_addr: EndpointAddr,
+    updates: Arc<
+        tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<EndpointAddr>>,
+    >,
+    watcher_started: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+}
+
+/// Returns the configured initial address and waits for test-driven updates.
+struct ControlledWatcher {
+    initial_addr: EndpointAddr,
+    updates: Arc<
+        tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<EndpointAddr>>,
+    >,
+    watcher_started: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+}
+
+impl EndpointAddrWatcher for ControlledWatcher {
+    fn get(&mut self) -> EndpointAddr {
+        self.initial_addr.clone()
+    }
+
+    fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
+        if let Some(watcher_started) =
+            self.watcher_started.lock().expect("poisoned").take()
+        {
+            let _ = watcher_started.send(());
+        }
+        Box::pin(async move {
+            self.updates.lock().await.recv().await.ok_or(Disconnected)
+        })
+    }
+}
+
+impl Endpoint for ControlledEndpoint {
+    fn watch_addr(&self) -> Box<dyn EndpointAddrWatcher> {
+        Box::new(ControlledWatcher {
+            initial_addr: self.initial_addr.clone(),
+            updates: self.updates.clone(),
+            watcher_started: self.watcher_started.clone(),
+        })
+    }
+
+    fn accept(&self) -> BoxFut<'_, Option<K2Result<DynConnection>>> {
+        Box::pin(std::future::pending())
+    }
+
+    fn connect(
+        &self,
+        _endpoint_addr: EndpointAddr,
+        _alpn: &[u8],
+    ) -> BoxFut<'_, K2Result<DynConnection>> {
+        Box::pin(async { unreachable!("startup test must not connect") })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn insert_relay(
+        &self,
+        _url: RelayUrl,
+        _config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn remove_relay(
+        &self,
+        _url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        Box::pin(async { None })
+    }
+
+    fn id_bytes(&self) -> [u8; 32] {
+        [0; 32]
+    }
+
+    fn is_home_relay_known_down(&self) -> bool {
+        false
     }
 }
 
@@ -156,6 +249,17 @@ fn fake_remote_url() -> Url {
     .unwrap()
 }
 
+fn endpoint_addr(relay_url: Option<RelayUrl>) -> EndpointAddr {
+    let endpoint_id = EndpointId::from_str(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+    let addrs = relay_url
+        .map(|url| vec![TransportAddr::Relay(url)])
+        .unwrap_or_default();
+    EndpointAddr::from_parts(endpoint_id, addrs)
+}
+
 /// Build an `IrohTransport` directly from its component pieces, bypassing the
 /// async `create()` constructor so unit tests can inject a fake `Endpoint`
 /// and observe `connections` / `local_url` after the test runs. The
@@ -192,6 +296,90 @@ fn config() -> IrohTransportConfig {
     }
 }
 
+#[tokio::test]
+async fn transport_creation_waits_for_first_listening_url() {
+    // Construct a test endpoint where we can manually set the listening URL
+    let (update_tx, update_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (watcher_started_tx, watcher_started_rx) =
+        tokio::sync::oneshot::channel();
+    let endpoint: DynIrohEndpoint = Arc::new(ControlledEndpoint {
+        initial_addr: endpoint_addr(None),
+        updates: Arc::new(tokio::sync::Mutex::new(update_rx)),
+        watcher_started: Arc::new(Mutex::new(Some(watcher_started_tx))),
+    });
+    let handler = TxImpHnd::new(Arc::new(MockTxHandler::default()));
+
+    // Try to create a transport without a listening URL. It should not be created.
+    let creation = tokio::spawn(IrohTransport::create_with_endpoint(
+        endpoint,
+        handler,
+        config(),
+        None,
+    ));
+    watcher_started_rx
+        .await
+        .expect("address watcher should signal when it starts waiting");
+    assert!(
+        !creation.is_finished(),
+        "transport must not be available before its listening URL"
+    );
+
+    // Set the listening url. Transport should be created.
+    let endpoint_id = EndpointId::from_str(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+    let relay_url =
+        RelayUrl::from_str("https://relay.example.com:443/").unwrap();
+    update_tx
+        .send(EndpointAddr::from_parts(
+            endpoint_id,
+            vec![TransportAddr::Relay(relay_url)],
+        ))
+        .unwrap();
+
+    let transport = tokio::time::timeout(Duration::from_secs(1), creation)
+        .await
+        .expect("transport creation should finish after receiving the URL")
+        .expect("creation task should not panic")
+        .expect("transport creation should succeed");
+    assert!(
+        transport.local_url.read().expect("poisoned").is_some(),
+        "transport must publish the listening URL before creation completes"
+    );
+}
+
+#[tokio::test]
+async fn transport_creation_uses_current_listening_url() {
+    // Create an endpoint whose watcher already holds a listening URL
+    let relay_url =
+        RelayUrl::from_str("https://relay.example.com:443/").unwrap();
+    let (_update_tx, update_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (watcher_started_tx, _watcher_started_rx) =
+        tokio::sync::oneshot::channel();
+    let endpoint: DynIrohEndpoint = Arc::new(ControlledEndpoint {
+        initial_addr: endpoint_addr(Some(relay_url)),
+        updates: Arc::new(tokio::sync::Mutex::new(update_rx)),
+        watcher_started: Arc::new(Mutex::new(Some(watcher_started_tx))),
+    });
+    let handler = TxImpHnd::new(Arc::new(MockTxHandler::default()));
+
+    // Create the transport without publishing another address update
+    let transport = tokio::time::timeout(
+        Duration::from_secs(1),
+        IrohTransport::create_with_endpoint(endpoint, handler, config(), None),
+    )
+    .await
+    .expect("transport creation should use the watcher's current URL")
+    .expect("transport creation should succeed");
+
+    // Creation should publish the watcher's current URL
+    assert_eq!(
+        *transport.local_url.read().expect("poisoned"),
+        Some(fake_remote_url())
+    );
+}
+
 /// When `iroh::Endpoint::connect` returns an error (the production case-B
 /// path: quinn `ConnectionError::TimedOut` after the relay has nothing to
 /// say), `create_connection_and_context` must mark the peer unresponsive
@@ -203,6 +391,7 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
 
     let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
         connect_error_factory: Arc::new(|| K2Error::other("timed out")),
+        connect_calls: Arc::new(AtomicUsize::new(0)),
     });
 
     let remote_url = fake_remote_url();
@@ -243,6 +432,44 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
 
     // The connections map must not have been mutated for a failed connect.
     assert!(connections.read().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn missing_local_url_prevents_opening_connection() {
+    // Build a transport with no local URL and a fake endpoint that records
+    // every connection attempt.
+    let handler = build_handler_with_space(Arc::new(Mutex::new(Vec::new())));
+    let connect_calls = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new(|| K2Error::other("connected")),
+        connect_calls: connect_calls.clone(),
+    });
+    let remote_url = fake_remote_url();
+    let target = endpoint_from_url(&remote_url).unwrap();
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        Arc::new(RwLock::new(HashMap::new())),
+        Arc::new(RwLock::new(None)),
+        config(),
+    );
+
+    // Attempt to create a connection before the transport has a listening url
+    let error = transport
+        .create_connection_and_context(target, remote_url)
+        .await
+        .expect_err("connection should require a local URL");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Connection attempted before home relay URL is known")
+    );
+    assert_eq!(
+        connect_calls.load(Ordering::Relaxed),
+        0,
+        "endpoint must not be dialled without a local URL"
+    );
 }
 
 /// When the *outer* `tokio::time::timeout` wrapper fires (i.e. iroh's connect
