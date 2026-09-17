@@ -241,12 +241,6 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
-/// How many times `send` will re-resolve a connection before giving up.
-///
-/// Each attempt is one full dial-and-preflight round; a peer that keeps losing
-/// simultaneous-open races is either genuinely flapping or being restarted, and
-/// the caller is better served by an error than by an unbounded loop.
-const MAX_SEND_CONNECT_ATTEMPTS: usize = 5;
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -982,7 +976,7 @@ impl IrohTransport {
             // the tie-break is deterministic and the registry applies it
             // atomically.
             if !self.connections.register_candidate(&remote_url, &ctx) {
-                ctx.close_quietly();
+                ctx.close_superseded();
                 return Ok(ctx);
             }
 
@@ -1109,6 +1103,31 @@ impl IrohTransport {
     }
 }
 
+async fn wait_for_send_replacement(
+    connections: &Connections,
+    remote_url: &Url,
+    superseded: &Arc<ConnectionContext>,
+    wait_timeout: Duration,
+) -> K2Result<Arc<ConnectionContext>> {
+    match tokio::time::timeout(
+        wait_timeout,
+        connections.wait_for_replacement(remote_url, superseded),
+    )
+    .await
+    {
+        Ok(replacement) => Ok(replacement),
+        Err(err) => {
+            connections.remove_if_current(remote_url, superseded);
+            Err(K2Error::other_src(
+                format!(
+                    "timed out waiting for the connection selected for {remote_url}"
+                ),
+                err,
+            ))
+        }
+    }
+}
+
 impl TxImp for IrohTransport {
     fn url(&self) -> Option<Url> {
         self.local_url.read().expect("poisoned").clone()
@@ -1164,51 +1183,50 @@ impl TxImp for IrohTransport {
                     .clone()
             };
 
-            let mut attempts = 0usize;
-            loop {
-                attempts += 1;
-                if attempts > MAX_SEND_CONNECT_ATTEMPTS {
-                    return Err(K2Error::other(format!(
-                        "no connection to {remote_url} survived simultaneous-open resolution after {MAX_SEND_CONNECT_ATTEMPTS} attempts"
-                    )));
+            let mut ctx = {
+                let _lock_guard = peer_lock.lock().await;
+                let existing = connections.get(&remote_url);
+                if let Some(ctx) = existing {
+                    ctx
+                } else {
+                    info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
+                    self.create_connection_and_context(
+                        remote,
+                        remote_url.clone(),
+                    )
+                    .await?
                 }
+            };
 
-                // Serialize local connection creation, but release the lock
-                // while preflight and simultaneous-open resolution complete.
-                let ctx = {
-                    let _lock_guard = peer_lock.lock().await;
-                    let existing = connections.get(&remote_url);
-                    if let Some(ctx) = existing {
-                        ctx
-                    } else {
-                        info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
-                        self.create_connection_and_context(
-                            remote.clone(),
-                            remote_url.clone(),
-                        )
-                        .await?
-                    }
-                };
-
+            loop {
                 match ctx.wait_for_resolution().await {
                     ConnectionResolution::Active => {
                         let is_active = connections
                             .get(&remote_url)
                             .is_some_and(|active| Arc::ptr_eq(&active, &ctx));
                         if !is_active {
+                            ctx = wait_for_send_replacement(
+                                &connections,
+                                &remote_url,
+                                &ctx,
+                                PREFLIGHT_TIMEOUT,
+                            )
+                            .await?;
                             continue;
                         }
                     }
                     ConnectionResolution::Superseded => {
-                        // Another connection to this peer won. Make sure the
-                        // loser cannot be picked up again on the next pass,
-                        // otherwise this loop spins on it.
-                        connections.remove_if_current(&remote_url, &ctx);
                         debug!(
                             remote = ?remote_url.peer_id(),
-                            attempts,
-                            "Connection superseded while sending; retrying"
+                            "Waiting for the connection that won simultaneous-open resolution"
                         );
+                        ctx = wait_for_send_replacement(
+                            &connections,
+                            &remote_url,
+                            &ctx,
+                            PREFLIGHT_TIMEOUT,
+                        )
+                        .await?;
                         continue;
                     }
                     // The remote rejected the preflight, or the connection
@@ -1233,13 +1251,18 @@ impl TxImp for IrohTransport {
                 match ctx.send_data_frame(data.clone()).await {
                     Ok(()) => return Ok(()),
                     Err(err) if ctx.is_superseded() => {
-                        connections.remove_if_current(&remote_url, &ctx);
                         debug!(
                             remote = ?remote_url.peer_id(),
-                            attempts,
                             ?err,
-                            "Connection superseded mid-send; retrying"
+                            "Connection superseded mid-send; waiting for winner"
                         );
+                        ctx = wait_for_send_replacement(
+                            &connections,
+                            &remote_url,
+                            &ctx,
+                            PREFLIGHT_TIMEOUT,
+                        )
+                        .await?;
                     }
                     Err(err) => return Err(err),
                 }

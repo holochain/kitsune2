@@ -223,6 +223,30 @@ fn only_active_entries_are_reported_as_peers() {
     assert_eq!(registry.active_peers(), vec![peer()]);
 }
 
+#[tokio::test]
+async fn waits_for_a_replacement_that_has_not_registered_yet() {
+    let registry = ConnectionRegistry::<FakeEntry>::new();
+    let incumbent = FakeEntry::new(false);
+    assert!(registry.register_candidate(&peer(), &incumbent));
+    incumbent.lifecycle.mark_superseded();
+
+    let waiter = tokio::spawn({
+        let registry = registry.clone();
+        let incumbent = incumbent.clone();
+        async move { registry.wait_for_replacement(&peer(), &incumbent).await }
+    });
+    tokio::task::yield_now().await;
+    assert!(
+        !waiter.is_finished(),
+        "the superseded entry is not its own replacement"
+    );
+
+    let replacement = FakeEntry::new(true);
+    assert!(registry.register_candidate(&peer(), &replacement));
+    let observed = waiter.await.unwrap();
+    assert!(Arc::ptr_eq(&observed, &replacement));
+}
+
 /// Let a reader finish preflight while its replacement is about to mark it
 /// superseded. Reader cleanup must never win by marking the loser closed.
 #[test]
