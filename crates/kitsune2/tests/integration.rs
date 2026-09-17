@@ -25,6 +25,11 @@ use kitsune2_transport_iroh::{
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Prevents the simultaneous-open stress test from starving the shutdown
+/// test's time-sensitive gossip round on slower CI runners.
+static RESOURCE_INTENSIVE_TEST_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
+
 fn create_op_list(num_ops: u16) -> (Vec<IncomingOp>, Vec<OpId>) {
     let mut ops = Vec::new();
     let mut op_ids = Vec::new();
@@ -291,6 +296,7 @@ async fn two_node_gossip() {
 /// Tokio tasks for a space are gone, then it's not actively doing work in the background.
 #[tokio::test]
 async fn shutdown_space() {
+    let _resource_guard = RESOURCE_INTENSIVE_TEST_LOCK.lock().await;
     enable_tracing();
 
     // Capture the task baseline before anything is started, in particular
@@ -830,6 +836,7 @@ fn suppressed_gossip_config() -> K2GossipConfig {
 /// race close to certain to be hit at least once if the bug is present.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn simultaneous_space_notify_is_delivered_both_ways() {
+    let _resource_guard = RESOURCE_INTENSIVE_TEST_LOCK.lock().await;
     enable_tracing();
 
     let bootstrap_server = TestBootstrapSrv::new(false).await;
