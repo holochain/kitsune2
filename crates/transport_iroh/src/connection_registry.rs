@@ -174,12 +174,14 @@ pub(crate) trait RegistryEntry {
 #[derive(Debug)]
 pub(crate) struct ConnectionRegistry<E> {
     entries: Arc<RwLock<HashMap<Url, Arc<E>>>>,
+    changes: watch::Sender<u64>,
 }
 
 impl<E> Clone for ConnectionRegistry<E> {
     fn clone(&self) -> Self {
         Self {
             entries: self.entries.clone(),
+            changes: self.changes.clone(),
         }
     }
 }
@@ -194,6 +196,7 @@ impl<E: RegistryEntry> ConnectionRegistry<E> {
     pub(crate) fn new() -> Self {
         Self {
             entries: Arc::new(RwLock::new(HashMap::new())),
+            changes: watch::Sender::new(0),
         }
     }
 
@@ -252,6 +255,8 @@ impl<E: RegistryEntry> ConnectionRegistry<E> {
             displaced
         };
 
+        self.notify_changed();
+
         if let Some(displaced) = displaced {
             displaced.close_superseded();
         }
@@ -283,13 +288,41 @@ impl<E: RegistryEntry> ConnectionRegistry<E> {
     /// Remove `entry` from the map if it is still `peer`'s slot holder.
     /// Returns whether it was.
     pub(crate) fn remove_if_current(&self, peer: &Url, entry: &Arc<E>) -> bool {
-        let mut entries = self.entries.write().expect("poisoned");
-        match entries.get(peer) {
-            Some(current) if Arc::ptr_eq(current, entry) => {
-                entries.remove(peer);
-                true
+        let removed = {
+            let mut entries = self.entries.write().expect("poisoned");
+            match entries.get(peer) {
+                Some(current) if Arc::ptr_eq(current, entry) => {
+                    entries.remove(peer);
+                    true
+                }
+                _ => false,
             }
-            _ => false,
+        };
+        if removed {
+            self.notify_changed();
+        }
+        removed
+    }
+
+    /// Waits until `peer` has a live entry other than `superseded`.
+    pub(crate) async fn wait_for_replacement(
+        &self,
+        peer: &Url,
+        superseded: &Arc<E>,
+    ) -> Arc<E> {
+        let mut changes = self.changes.subscribe();
+        loop {
+            if let Some(entry) = self.get(peer)
+                && !Arc::ptr_eq(&entry, superseded)
+                && entry.lifecycle().is_live()
+            {
+                return entry;
+            }
+
+            changes
+                .changed()
+                .await
+                .expect("connection registry owns the change sender");
         }
     }
 
@@ -329,5 +362,11 @@ impl<E: RegistryEntry> ConnectionRegistry<E> {
             .drain()
             .map(|(_, entry)| entry)
             .collect()
+    }
+
+    fn notify_changed(&self) {
+        self.changes.send_modify(|revision| {
+            *revision = revision.wrapping_add(1);
+        });
     }
 }

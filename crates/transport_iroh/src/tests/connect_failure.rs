@@ -18,6 +18,7 @@ use kitsune2_api::{
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use n0_watcher::Disconnected;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -190,6 +191,234 @@ fn config() -> IrohTransportConfig {
         connect_timeout_s: 60,
         ..Default::default()
     }
+}
+
+fn build_sendable_context(
+    handler: Arc<TxImpHnd>,
+    connections: crate::Connections,
+) -> (
+    Arc<crate::connection_context::ConnectionContext>,
+    Arc<crate::stream::mock::MockSendStream>,
+) {
+    use crate::stream::{DynIrohSendStream, mock::MockSendStream};
+
+    let writes = Arc::new(MockSendStream::new());
+    let ctx = build_context_with_stream(
+        handler,
+        connections,
+        writes.clone() as DynIrohSendStream,
+        true,
+    );
+    (ctx, writes)
+}
+
+fn build_context_with_stream(
+    handler: Arc<TxImpHnd>,
+    connections: crate::Connections,
+    send_stream: crate::stream::DynIrohSendStream,
+    dialed_by_us: bool,
+) -> Arc<crate::connection_context::ConnectionContext> {
+    use crate::connection::MockConnection;
+    use crate::connection_context::{
+        ConnectionContext, ConnectionContextParams,
+    };
+
+    let remote_url = fake_remote_url();
+    let remote_id = endpoint_from_url(&remote_url).unwrap().id;
+    let mut connection = MockConnection::new();
+    let stream = send_stream.clone();
+    connection.expect_open_uni().returning(move || {
+        let stream = stream.clone();
+        Box::pin(async move { Ok(stream) })
+    });
+    connection
+        .expect_accept_uni()
+        .returning(|| Box::pin(std::future::pending()));
+    connection.expect_remote_id().return_const(remote_id);
+    connection.expect_close().returning(|_, _| {});
+    connection.expect_is_direct().return_const(false);
+    connection.expect_remote_close_reason().returning(|| None);
+
+    ConnectionContext::new(ConnectionContextParams {
+        handler,
+        connection: Arc::new(connection),
+        local_id: [0xff; 32],
+        dialed_by_us,
+        remote_url: Some(remote_url.clone()),
+        preflight_sent: true,
+        opened_at_s: 0,
+        connections,
+        local_url: Arc::new(RwLock::new(Some(remote_url))),
+        space_relays: Arc::new(RwLock::new(HashMap::new())),
+        max_frame_bytes: 64 * 1024,
+    })
+}
+
+struct FailingWriteStream {
+    started: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+impl crate::stream::SendStream for FailingWriteStream {
+    fn write_all<'a>(&'a self, _data: &'a [u8]) -> BoxFut<'a, K2Result<()>> {
+        Box::pin(async move {
+            self.started.notify_one();
+            self.release.notified().await;
+            Err(K2Error::other("connection closed during write"))
+        })
+    }
+}
+
+#[tokio::test]
+async fn waits_for_the_winner_to_learn_its_peer_url() {
+    use crate::tests::support::build_parked_context;
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls);
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let loser = build_parked_context(
+        handler.clone(),
+        connections.clone(),
+        true,
+        [0xff; 32],
+    );
+    assert!(connections.register_candidate(&remote_url, &loser));
+    loser.mark_superseded();
+
+    let connect_attempts = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new({
+            let connect_attempts = connect_attempts.clone();
+            move || {
+                connect_attempts.fetch_add(1, Ordering::SeqCst);
+                K2Error::other("unexpected replacement dial")
+            }
+        }),
+    });
+    let transport = Arc::new(build_transport(
+        fake_endpoint,
+        handler.clone(),
+        connections.clone(),
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    ));
+    let send = tokio::spawn({
+        let transport = transport.clone();
+        let remote_url = remote_url.clone();
+        async move {
+            transport
+                .send(remote_url, Bytes::from_static(b"hello"))
+                .await
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    let (winner, writes) = build_sendable_context(handler, connections.clone());
+    assert!(connections.register_candidate(&remote_url, &winner));
+    assert!(connections.activate(&remote_url, &winner));
+
+    tokio::time::timeout(Duration::from_secs(1), send)
+        .await
+        .expect("send must resume when the winner learns its peer URL")
+        .unwrap()
+        .unwrap();
+    assert_eq!(connect_attempts.load(Ordering::SeqCst), 0);
+    assert_eq!(writes.get_written_data().len(), 1);
+}
+
+#[tokio::test]
+async fn transfers_a_send_superseded_during_the_frame_write() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls);
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let incumbent = build_context_with_stream(
+        handler.clone(),
+        connections.clone(),
+        Arc::new(FailingWriteStream {
+            started: started.clone(),
+            release: release.clone(),
+        }),
+        false,
+    );
+    assert!(connections.register_candidate(&remote_url, &incumbent));
+    assert!(connections.activate(&remote_url, &incumbent));
+
+    let connect_attempts = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new({
+            let connect_attempts = connect_attempts.clone();
+            move || {
+                connect_attempts.fetch_add(1, Ordering::SeqCst);
+                K2Error::other("unexpected replacement dial")
+            }
+        }),
+    });
+    let transport = Arc::new(build_transport(
+        fake_endpoint,
+        handler.clone(),
+        connections.clone(),
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    ));
+    let send = tokio::spawn({
+        let transport = transport.clone();
+        let remote_url = remote_url.clone();
+        async move {
+            transport
+                .send(remote_url, Bytes::from_static(b"hello"))
+                .await
+        }
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), started.notified())
+        .await
+        .expect("the incumbent must start writing the frame");
+    let (winner, writes) = build_sendable_context(handler, connections.clone());
+    assert!(connections.register_candidate(&remote_url, &winner));
+    assert!(connections.activate(&remote_url, &winner));
+    release.notify_one();
+
+    tokio::time::timeout(Duration::from_secs(1), send)
+        .await
+        .expect("send must continue on the winning connection")
+        .unwrap()
+        .unwrap();
+    assert_eq!(connect_attempts.load(Ordering::SeqCst), 0);
+    assert_eq!(writes.get_written_data().len(), 1);
+}
+
+#[tokio::test]
+async fn drops_a_superseded_connection_when_no_winner_appears() {
+    use crate::tests::support::build_parked_context;
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls);
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let loser =
+        build_parked_context(handler, connections.clone(), true, [0xff; 32]);
+    assert!(connections.register_candidate(&remote_url, &loser));
+    loser.mark_superseded();
+
+    let err = crate::wait_for_send_replacement(
+        &connections,
+        &remote_url,
+        &loser,
+        Duration::from_millis(25),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("timed out waiting for the connection selected"),
+        "unexpected timeout error: {err}"
+    );
+    assert!(connections.get(&remote_url).is_none());
 }
 
 /// When `iroh::Endpoint::connect` returns an error (the production case-B

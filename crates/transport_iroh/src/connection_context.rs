@@ -25,7 +25,7 @@ use tokio::{sync::MutexGuard, task::AbortHandle};
 use tracing::{debug, error, info, trace, warn};
 
 /// Maximum time to open a stream and complete the preflight exchange.
-const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(10);
+pub(super) const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Reason sent when a preferred connection wins simultaneous-open resolution.
 pub(super) const SUPERSEDED_CLOSE_REASON: &[u8] =
@@ -52,21 +52,28 @@ pub(super) enum ReaderCleanup {
         /// The remote's close reason.
         reason: String,
     },
-    /// Closes a superseded or inactive connection without notifying handlers.
-    Quiet,
+    /// Closes a connection discarded during simultaneous-open resolution.
+    Superseded,
+    /// Closes a connection that was never active without notifying handlers.
+    Inactive,
 }
 
 /// Selects the cleanup action for a stopped reader.
 pub(super) fn classify_exit(
     was_active: bool,
+    was_superseded: bool,
     remote_close: Option<(CloseCode, Bytes)>,
     mark_unresponsive: bool,
 ) -> ReaderCleanup {
     let superseded_by_remote =
         matches!(remote_close, Some((CloseCode::Superseded, _)));
 
-    if !was_active || superseded_by_remote {
-        return ReaderCleanup::Quiet;
+    if was_superseded || superseded_by_remote {
+        return ReaderCleanup::Superseded;
+    }
+
+    if !was_active {
+        return ReaderCleanup::Inactive;
     }
 
     if let Some((CloseCode::Graceful, reason)) = remote_close {
@@ -319,7 +326,7 @@ impl ConnectionContext {
     /// resolution. The connection's reader then observes the close and exits
     /// through the identity-aware cleanup path, which sees that this is not the
     /// active connection and so does not fire `peer_disconnect`.
-    pub(super) fn close_quietly(&self) {
+    pub(super) fn close_superseded(&self) {
         self.mark_superseded();
         self.connection
             .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
@@ -499,6 +506,7 @@ impl ConnectionContext {
         }
         let verdict = classify_exit(
             was_active,
+            ctx.is_superseded(),
             ctx.connection.remote_close_reason(),
             exit.mark_unresponsive,
         );
@@ -530,21 +538,15 @@ impl ConnectionContext {
                 }
                 ctx.disconnect(CloseCode::Unspecified, exit.err);
             }
-            ReaderCleanup::Quiet => {
-                debug!(?remote_url, reason = %exit.err, "Connection reader stopped without marking peer unresponsive (superseded or not the active connection)");
-                // Only claim `Superseded` toward the remote when this
-                // connection actually resolved that way (a genuine
-                // simultaneous-open loss). Other reasons a non-active reader
-                // stops quietly, such as a rejected preflight, must not be
-                // reported as superseded: the sender on the other end treats
-                // that code as a signal to retry.
-                if ctx.is_superseded() {
-                    ctx.connection
-                        .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
-                } else {
-                    ctx.connection
-                        .close(CloseCode::Unspecified, exit.err.as_bytes());
-                }
+            ReaderCleanup::Superseded => {
+                debug!(?remote_url, reason = %exit.err, "Superseded connection reader stopped");
+                ctx.connection
+                    .close(CloseCode::Superseded, SUPERSEDED_CLOSE_REASON);
+            }
+            ReaderCleanup::Inactive => {
+                debug!(?remote_url, reason = %exit.err, "Inactive connection reader stopped");
+                ctx.connection
+                    .close(CloseCode::Unspecified, exit.err.as_bytes());
             }
         }
     }
