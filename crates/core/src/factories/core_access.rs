@@ -182,7 +182,9 @@ mod test {
     use crate::factories::{
         CoreKnownPeers, MemBlocks, MemPeerStore, MemPeerStoreConfig,
     };
-    use kitsune2_api::{AccessDecision, AgentId, BlockTarget, Blocks, Id};
+    use kitsune2_api::{
+        AccessDecision, AgentId, BlockTarget, Blocks, Id, KnownPeers,
+    };
     use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
     use std::sync::Arc;
 
@@ -204,6 +206,75 @@ mod test {
             blocks,
             known_peers,
         ))
+    }
+
+    /// Discovery can return a current endpoint together with another peer's
+    /// stale cached advertisement for the same agent. Batch order must not
+    /// leave the current endpoint without an access decision.
+    #[tokio::test]
+    async fn stale_endpoint_batch_preserves_peer_access() {
+        let old_url = make_url("old");
+        let new_url = make_url("new");
+        let now = Timestamp::now();
+        let newer = AgentBuilder {
+            agent: Some(AGENT_1),
+            created_at: Some(now),
+            url: Some(Some(new_url.clone())),
+            ..Default::default()
+        }
+        .build(TestLocalAgent::default());
+        let older = AgentBuilder {
+            agent: Some(AGENT_1),
+            created_at: Some((now - Duration::from_secs(1)).unwrap()),
+            url: Some(Some(old_url.clone())),
+            ..Default::default()
+        }
+        .build(TestLocalAgent::default());
+        for batch in [
+            vec![newer.clone(), older.clone()],
+            vec![older.clone(), newer.clone()],
+        ] {
+            let blocks = Arc::new(MemBlocks::default());
+            let known_peers = Arc::new(CoreKnownPeers::default());
+            let peer_store =
+                make_peer_store(blocks.clone(), known_peers.clone());
+            let access_state = CorePeerAccessState::new(
+                known_peers.clone(),
+                blocks,
+                &peer_store,
+            )
+            .unwrap();
+            peer_store.insert(batch).await.unwrap();
+            assert_eq!(
+                peer_store.get(AGENT_1).await.unwrap().unwrap().url,
+                Some(new_url.clone())
+            );
+            assert_eq!(
+                known_peers.get_by_url(new_url.clone()).await.unwrap(),
+                vec![AGENT_1]
+            );
+            assert!(
+                known_peers
+                    .get_by_url(old_url.clone())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            assert_eq!(
+                access_state
+                    .get_access_decision(new_url.clone())
+                    .unwrap()
+                    .map(|d| d.decision),
+                Some(AccessDecision::Granted)
+            );
+
+            // A later replay must preserve the same consistency.
+            peer_store.insert(vec![older.clone()]).await.unwrap();
+            assert_eq!(
+                known_peers.get_by_url(new_url.clone()).await.unwrap(),
+                vec![AGENT_1]
+            );
+        }
     }
 
     /// Blocking one agent at a URL must block the URL even when a

@@ -71,23 +71,97 @@ impl KnownPeers for CoreKnownPeers {
 
 #[derive(Default)]
 struct Inner {
-    /// Agent ID → most recently seen URL for that agent.
-    store: HashMap<AgentId, Option<Url>>,
+    /// Agent ID → newest advertisement timestamp and URL for that agent.
+    store: HashMap<AgentId, (Timestamp, Option<Url>)>,
 }
 
 impl Inner {
     fn record(&mut self, agent_infos: Vec<Arc<AgentInfoSigned>>) {
         for agent_info in agent_infos {
-            self.store
-                .insert(agent_info.agent.clone(), agent_info.url.clone());
+            // Discovery batches may contain cached advertisements. Match the
+            // peer store's ordering so a stale URL cannot erase the current
+            // endpoint's agent mapping before access listeners run.
+            if self.store.get(&agent_info.agent).is_some_and(
+                |(created_at, _)| *created_at >= agent_info.created_at,
+            ) {
+                continue;
+            }
+            self.store.insert(
+                agent_info.agent.clone(),
+                (agent_info.created_at, agent_info.url.clone()),
+            );
         }
     }
 
     fn get_by_url(&self, url: &Url) -> Vec<AgentId> {
         self.store
             .iter()
-            .filter(|(_, stored_url)| stored_url.as_ref() == Some(url))
+            .filter(|(_, (_, stored_url))| stored_url.as_ref() == Some(url))
             .map(|(agent_id, _)| agent_id.clone())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use kitsune2_test_utils::agent::{AgentBuilder, TestLocalAgent};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn endpoint_ordering_preserves_equal_time_and_accepts_newer_info() {
+        let known = CoreKnownPeers::default();
+        let agent =
+            AgentId(Id(bytes::Bytes::from_static(b"endpoint-ordering")));
+        let now = Timestamp::now();
+        let first_url = Url::from_str("ws://a.b:80/first").unwrap();
+        let next_url = Url::from_str("ws://a.b:80/next").unwrap();
+        let info = |created_at, url| {
+            AgentBuilder {
+                agent: Some(agent.clone()),
+                created_at: Some(created_at),
+                url: Some(Some(url)),
+                ..Default::default()
+            }
+            .build(TestLocalAgent::default())
+        };
+        let first = info(now, first_url.clone());
+        let equal = info(now, next_url.clone());
+        known.record(vec![first.clone(), equal]).await.unwrap();
+        assert_eq!(
+            known.get_by_url(first_url.clone()).await.unwrap(),
+            vec![agent.clone()]
+        );
+        assert!(known.get_by_url(next_url.clone()).await.unwrap().is_empty());
+        let newer = info(now + Duration::from_secs(1), next_url.clone());
+        known.record(vec![newer, first]).await.unwrap();
+        assert_eq!(known.get_by_url(next_url).await.unwrap(), vec![agent]);
+        assert!(known.get_by_url(first_url).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stale_info_cannot_replace_a_newer_tombstone() {
+        let known = CoreKnownPeers::default();
+        let agent =
+            AgentId(Id(bytes::Bytes::from_static(b"endpoint-tombstone")));
+        let now = Timestamp::now();
+        let url = Url::from_str("ws://a.b:80/old").unwrap();
+        let live = AgentBuilder {
+            agent: Some(agent.clone()),
+            created_at: Some(now),
+            url: Some(Some(url.clone())),
+            ..Default::default()
+        }
+        .build(TestLocalAgent::default());
+        let tombstone = AgentBuilder {
+            agent: Some(agent),
+            created_at: Some(now + Duration::from_secs(1)),
+            url: Some(None),
+            is_tombstone: Some(true),
+            ..Default::default()
+        }
+        .build(TestLocalAgent::default());
+        known.record(vec![tombstone, live]).await.unwrap();
+        assert!(known.get_by_url(url).await.unwrap().is_empty());
     }
 }
