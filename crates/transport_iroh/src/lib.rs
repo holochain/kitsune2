@@ -239,6 +239,11 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
+
+/// Timeout that transport create will wait for the first listening URL
+/// to be ready.
+const LISTENING_ADDRESS_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -588,44 +593,72 @@ impl IrohTransport {
             None
         };
 
-        // Clone the raw endpoint before consuming it into IrohEndpoint so that
-        // insert_relay can be called after the watcher task is subscribed.
-        // iroh::Endpoint is Arc-backed so this is a cheap reference copy.
-        let raw_endpoint_for_relay = if needs_relay_auth {
-            Some(endpoint.clone())
-        } else {
-            None
-        };
+        let endpoint: DynIrohEndpoint =
+            Arc::new(IrohEndpoint::new(endpoint.clone()));
 
-        let endpoint = Arc::new(IrohEndpoint::new(endpoint));
+        Self::create_with_endpoint(endpoint, handler, config, relay_auth).await
+    }
+
+    /// Starts background endpoint handling and returns only after the first
+    /// listening URL is available.
+    async fn create_with_endpoint(
+        endpoint: DynIrohEndpoint,
+        handler: Arc<TxImpHnd>,
+        config: IrohTransportConfig,
+        relay_auth: Option<(Arc<RelayAuthParams>, String)>,
+    ) -> K2Result<Arc<Self>> {
         let local_url = Arc::new(RwLock::new(None));
         let connections = Arc::new(RwLock::new(HashMap::new()));
         let connection_locks = Arc::new(Mutex::new(HashMap::new()));
+
+        // The watcher resolves this one-shot exactly once, when it stores the
+        // first usable relay-backed URL.
+        let (listening_url_ready_tx, listening_url_ready_rx) =
+            tokio::sync::oneshot::channel();
 
         let watch_addr_task = Self::spawn_watch_addr_task(
             endpoint.clone(),
             handler.clone(),
             local_url.clone(),
+            Some(listening_url_ready_tx),
         );
 
-        // The watcher is now subscribed. Insert the relay so that the address
-        // update it fires is captured by the running watcher task, ensuring
-        // local_url is populated before any outbound send can run.
-        if let Some(raw_ep) = raw_endpoint_for_relay {
-            let (params, token) = relay_auth
-                .as_ref()
-                .expect("relay_auth is Some when raw_endpoint_for_relay is");
+        let relay_keepalive_params =
+            relay_auth.as_ref().map(|(params, _)| params.clone());
+        if let Some((params, token)) = relay_auth {
             let relay_url = params.relay_url.clone();
-            raw_ep
+            endpoint
                 .insert_relay(
                     relay_url.clone(),
-                    Self::relay_config_with_token(&relay_url, Some(token)),
+                    Self::relay_config_with_token(&relay_url, Some(&token)),
                 )
                 .await;
             info!(
                 ?relay_url,
                 "Relay inserted into endpoint, waiting for address assignment"
             );
+        }
+
+        // Wait for the first listening URL or the timeout.
+        if let Err(err) =
+            tokio::time::timeout(LISTENING_ADDRESS_TIMEOUT, listening_url_ready_rx)
+                .await
+                .map_err(|_| {
+                    K2Error::other(
+                        "Timed out waiting for relay connection to establish a local URL",
+                    )
+                })
+                .and_then(|result| {
+                    result.map_err(|_| {
+                        K2Error::other(
+                            "Address watcher ended before providing a local URL",
+                        )
+                    })
+                })
+        {
+
+            watch_addr_task.abort();
+            return Err(err);
         }
 
         let space_relays: SpaceRelays = Arc::new(RwLock::new(HashMap::new()));
@@ -640,14 +673,14 @@ impl IrohTransport {
         );
 
         // Keep the endpoint's relay allowlist entry alive.
-        let relay_keepalive_task = relay_auth.map(|(params, _)| {
+        let relay_keepalive_task = relay_keepalive_params.map(|params| {
             Self::spawn_relay_keepalive_task(
                 params,
                 Duration::from_secs(config.relay_keepalive_interval_s as u64),
             )
         });
 
-        let out = Arc::new(Self {
+        Ok(Arc::new(Self {
             endpoint,
             handler,
             local_url,
@@ -659,8 +692,7 @@ impl IrohTransport {
             space_relay_keepalives: Arc::new(Mutex::new(HashMap::new())),
             config,
             space_relays,
-        });
-        Ok(out)
+        }))
     }
 
     /// Keep the endpoint public key registered with the bootstrap server's
@@ -730,31 +762,49 @@ impl IrohTransport {
         Arc::new(config)
     }
 
-    /// Spawns a background task to watch for changes in the endpoint's listening address.
+    /// Spawns a background task that tracks the endpoint's listening address.
     ///
     /// The task monitors the iroh endpoint's address watcher, updating the local URL
     /// when it changes and notifying the handler of a new listening address.
     /// It runs asynchronously until the watcher encounters an error.
+    ///
+    /// `url_ready` is resolved after storing the first usable URL so transport
+    /// creation can wait for readiness without polling shared state.
     fn spawn_watch_addr_task(
         endpoint: DynIrohEndpoint,
         handler: Arc<TxImpHnd>,
         local_url: Arc<RwLock<Option<Url>>>,
+        mut url_ready: Option<tokio::sync::oneshot::Sender<()>>,
     ) -> AbortHandle {
         let mut watcher = endpoint.watch_addr();
+        let mut current_addr = Some(watcher.get());
         tokio::spawn(async move {
             loop {
-                match watcher.updated().await {
+                let update = if let Some(addr) = current_addr.take() {
+                    Ok(addr)
+                } else {
+                    watcher.updated().await
+                };
+                match update {
                     Ok(addr) => {
                         if let Some(url) = get_url_with_first_relay(&addr) {
-                            {
+                            let first_url = {
                                 info!(?url, "Received a new listening address from relay server");
                                 let mut guard =
                                     local_url.write().expect("poisoned");
+                                let first_url = guard.is_none();
                                 if guard.as_ref() != Some(&url) {
                                     *guard = Some(url.clone());
                                 }
+                                first_url
+                            };
+
+                            if first_url
+                                && let Some(url_ready) = url_ready.take()
+                            {
+                                let _ = url_ready.send(());
                             }
-                            handler.new_listening_address(url.clone(), None).await;
+                            handler.new_listening_address(url, None).await;
                         }
                     }
                     Err(err) => {
@@ -903,7 +953,22 @@ impl IrohTransport {
             return Err(K2Error::other(RELAY_NOT_CONNECTED_ERR));
         }
 
-        // Establish connection
+        // Pick which of our URLs to advertise before opening the connection:
+        // the per-space relay URL when the peer uses one of those relays, or
+        // the global URL otherwise.
+        let global_url = self.local_url.read().expect("poisoned").clone();
+        let space_relays_snapshot =
+            self.space_relays.read().expect("poisoned").clone();
+        let current_local_url = Self::own_url_for_preflight(
+            &remote_url,
+            &space_relays_snapshot,
+            &global_url,
+        )
+        .ok_or_else(|| {
+            K2Error::other(
+                "Connection attempted before home relay URL is known",
+            )
+        })?;
         debug!(?target, connect_timeout_s = self.config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
         let start = Instant::now();
         let conn = match tokio::time::timeout(
@@ -913,7 +978,6 @@ impl IrohTransport {
         .await
         {
             Err(e) => {
-                // On connection establishment error, mark the peer unresponsive
                 let _ = self
                     .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
@@ -922,7 +986,6 @@ impl IrohTransport {
                 Err(K2Error::other_src("iroh connect timed out", e))
             }
             Ok(Err(e)) => {
-                // On connection establishment error, mark the peer unresponsive
                 let _ = self
                     .handler
                     .set_unresponsive(remote_url.clone(), Timestamp::now())
@@ -941,62 +1004,36 @@ impl IrohTransport {
                 Duration::from_secs(0)
             })
             .as_secs();
+        let preflight_bytes =
+            self.handler.peer_connect(remote_url.clone()).await?;
 
-        // Send preflight as first message on the new connection.
-        // Pick which of our URLs to advertise: per-space relay URL if
-        // the peer is on one of our per-space relays, global URL otherwise.
-        let global_url = self.local_url.read().expect("poisoned").clone();
-        let space_relays_snapshot =
-            self.space_relays.read().expect("poisoned").clone();
-        let maybe_local_url = Self::own_url_for_preflight(
-            &remote_url,
-            &space_relays_snapshot,
-            &global_url,
-        );
-        if let Some(current_local_url) = maybe_local_url {
-            let preflight_bytes =
-                self.handler.peer_connect(remote_url.clone()).await?;
+        let ctx = ConnectionContext::new(ConnectionContextParams {
+            handler: self.handler.clone(),
+            connection: conn,
+            local_id: self.endpoint.id_bytes(),
+            dialed_by_us: true,
+            remote_url: Some(remote_url.clone()),
+            preflight_sent: true,
+            opened_at_s: conn_opened_at_s,
+            connections: self.connections.clone(),
+            local_url: self.local_url.clone(),
+            space_relays: self.space_relays.clone(),
+            max_frame_bytes: self.config.max_frame_bytes,
+        });
 
-            let ctx = ConnectionContext::new(ConnectionContextParams {
-                handler: self.handler.clone(),
-                connection: conn,
-                local_id: self.endpoint.id_bytes(),
-                dialed_by_us: true,
-                remote_url: Some(remote_url.clone()),
-                preflight_sent: true,
-                opened_at_s: conn_opened_at_s,
-                connections: self.connections.clone(),
-                local_url: self.local_url.clone(),
-                space_relays: self.space_relays.clone(),
-                max_frame_bytes: self.config.max_frame_bytes,
-            });
+        if let Err(e) = ctx
+            .send_preflight_frame(current_local_url, preflight_bytes)
+            .await
+        {
+            let _ = self
+                .handler
+                .set_unresponsive(remote_url.clone(), Timestamp::now())
+                .await;
 
-            if let Err(e) = ctx
-                .send_preflight_frame(
-                    current_local_url.clone(),
-                    preflight_bytes,
-                )
-                .await
-            {
-                // On send preflight error, mark the peer unresponsive
-                let _ = self
-                    .handler
-                    .set_unresponsive(remote_url.clone(), Timestamp::now())
-                    .await;
-
-                return Err(e);
-            }
-
-            Ok(ctx)
-        } else {
-            warn!(
-                ?remote_url,
-                "Outbound connection attempted before relay address is known; relay registration may still be in progress"
-            );
-            Err(K2Error::other(
-                "Connection attempted before home relay URL is known",
-            ))
+            return Err(e);
         }
+
+        Ok(ctx)
     }
 
     /// Dynamically add a relay server to the shared iroh endpoint.
@@ -1295,47 +1332,33 @@ impl TxImp for IrohTransport {
             let handler = self.handler.clone();
             let space_id_clone = space_id.clone();
 
+            // Complete relay insertion and publish its listening URL before
+            // reporting successful space configuration. Errors propagate to
+            // the caller instead of being lost in a detached task.
             Box::pin(async move {
-                tokio::spawn(async move {
-                    match Self::do_insert_relay(endpoint, url, auth_material)
-                        .await
-                    {
-                        Ok((relay_url, local_url, auth_params)) => {
-                            space_relays.write().expect("poisoned").insert(
-                                space_id_clone.clone(),
-                                (relay_url.clone(), Some(local_url.clone())),
-                            );
-                            // Keep the allowlist entry for this relay alive
-                            // for as long as the relay is in use.
-                            if let Some(params) = auth_params {
-                                space_relay_keepalives
-                                    .lock()
-                                    .expect("poisoned")
-                                    .entry(relay_url)
-                                    .or_insert_with(|| {
-                                        Self::spawn_relay_keepalive_task(
-                                            params,
-                                            keepalive_interval,
-                                        )
-                                    });
-                            }
-                            handler
-                                .new_listening_address(
-                                    local_url,
-                                    Some(&space_id_clone),
-                                )
-                                .await;
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                ?space_id_clone,
-                                ?e,
-                                "Background relay insertion failed"
-                            );
-                        }
-                    }
-                });
-
+                let (relay_url, local_url, auth_params) =
+                    Self::do_insert_relay(endpoint, url, auth_material).await?;
+                space_relays.write().expect("poisoned").insert(
+                    space_id_clone.clone(),
+                    (relay_url.clone(), Some(local_url.clone())),
+                );
+                // Keep the allowlist entry for this relay alive for as long as
+                // the relay is in use.
+                if let Some(params) = auth_params {
+                    space_relay_keepalives
+                        .lock()
+                        .expect("poisoned")
+                        .entry(relay_url)
+                        .or_insert_with(|| {
+                            Self::spawn_relay_keepalive_task(
+                                params,
+                                keepalive_interval,
+                            )
+                        });
+                }
+                handler
+                    .new_listening_address(local_url, Some(&space_id_clone))
+                    .await;
                 Ok(())
             })
         } else {
