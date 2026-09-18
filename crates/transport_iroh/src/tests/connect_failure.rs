@@ -391,6 +391,85 @@ async fn transfers_a_send_superseded_during_the_frame_write() {
     assert_eq!(writes.get_written_data().len(), 1);
 }
 
+#[tokio::test(start_paused = true)]
+async fn repeated_supersessions_share_one_send_deadline() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls);
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let first_started = Arc::new(tokio::sync::Notify::new());
+    let first_release = Arc::new(tokio::sync::Notify::new());
+    let first = build_context_with_stream(
+        handler.clone(),
+        connections.clone(),
+        Arc::new(FailingWriteStream {
+            started: first_started.clone(),
+            release: first_release.clone(),
+        }),
+        false,
+    );
+    assert!(connections.register_candidate(&remote_url, &first));
+    assert!(connections.activate(&remote_url, &first));
+
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new(|| {
+            K2Error::other("unexpected replacement dial")
+        }),
+    });
+    let transport = Arc::new(build_transport(
+        fake_endpoint,
+        handler.clone(),
+        connections.clone(),
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    ));
+    let send = tokio::spawn({
+        let transport = transport.clone();
+        let remote_url = remote_url.clone();
+        async move {
+            transport
+                .send(remote_url, Bytes::from_static(b"hello"))
+                .await
+        }
+    });
+
+    first_started.notified().await;
+    tokio::time::advance(Duration::from_secs(6)).await;
+
+    let second_started = Arc::new(tokio::sync::Notify::new());
+    let second_release = Arc::new(tokio::sync::Notify::new());
+    let second = build_context_with_stream(
+        handler,
+        connections.clone(),
+        Arc::new(FailingWriteStream {
+            started: second_started.clone(),
+            release: second_release.clone(),
+        }),
+        true,
+    );
+    assert!(connections.register_candidate(&remote_url, &second));
+    assert!(connections.activate(&remote_url, &second));
+    first_release.notify_one();
+    second_started.notified().await;
+
+    tokio::time::advance(Duration::from_secs(5)).await;
+    second.mark_superseded();
+    assert!(connections.remove_if_current(&remote_url, &second));
+    second_release.notify_one();
+    tokio::task::yield_now().await;
+
+    assert!(
+        send.is_finished(),
+        "connection churn must not renew the send deadline"
+    );
+    let err = send.await.unwrap().unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("timed out waiting for the connection selected"),
+        "unexpected timeout error: {err}"
+    );
+}
+
 #[tokio::test]
 async fn drops_a_superseded_connection_when_no_winner_appears() {
     use crate::tests::support::build_parked_context;
@@ -408,7 +487,7 @@ async fn drops_a_superseded_connection_when_no_winner_appears() {
         &connections,
         &remote_url,
         &loser,
-        Duration::from_millis(25),
+        tokio::time::Instant::now() + Duration::from_millis(25),
     )
     .await
     .unwrap_err();

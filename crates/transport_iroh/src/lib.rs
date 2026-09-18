@@ -1107,10 +1107,10 @@ async fn wait_for_send_replacement(
     connections: &Connections,
     remote_url: &Url,
     superseded: &Arc<ConnectionContext>,
-    wait_timeout: Duration,
+    deadline: tokio::time::Instant,
 ) -> K2Result<Arc<ConnectionContext>> {
-    match tokio::time::timeout(
-        wait_timeout,
+    match tokio::time::timeout_at(
+        deadline,
         connections.wait_for_replacement(remote_url, superseded),
     )
     .await
@@ -1197,6 +1197,7 @@ impl TxImp for IrohTransport {
                     .await?
                 }
             };
+            let send_deadline = tokio::time::Instant::now() + PREFLIGHT_TIMEOUT;
 
             loop {
                 match ctx.wait_for_resolution().await {
@@ -1209,7 +1210,7 @@ impl TxImp for IrohTransport {
                                 &connections,
                                 &remote_url,
                                 &ctx,
-                                PREFLIGHT_TIMEOUT,
+                                send_deadline,
                             )
                             .await?;
                             continue;
@@ -1224,7 +1225,7 @@ impl TxImp for IrohTransport {
                             &connections,
                             &remote_url,
                             &ctx,
-                            PREFLIGHT_TIMEOUT,
+                            send_deadline,
                         )
                         .await?;
                         continue;
@@ -1260,7 +1261,7 @@ impl TxImp for IrohTransport {
                             &connections,
                             &remote_url,
                             &ctx,
-                            PREFLIGHT_TIMEOUT,
+                            send_deadline,
                         )
                         .await?;
                     }
