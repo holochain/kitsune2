@@ -288,20 +288,14 @@ impl<E: RegistryEntry> ConnectionRegistry<E> {
     /// Remove `entry` from the map if it is still `peer`'s slot holder.
     /// Returns whether it was.
     pub(crate) fn remove_if_current(&self, peer: &Url, entry: &Arc<E>) -> bool {
-        let removed = {
-            let mut entries = self.entries.write().expect("poisoned");
-            match entries.get(peer) {
-                Some(current) if Arc::ptr_eq(current, entry) => {
-                    entries.remove(peer);
-                    true
-                }
-                _ => false,
+        let mut entries = self.entries.write().expect("poisoned");
+        match entries.get(peer) {
+            Some(current) if Arc::ptr_eq(current, entry) => {
+                entries.remove(peer);
+                true
             }
-        };
-        if removed {
-            self.notify_changed();
+            _ => false,
         }
-        removed
     }
 
     /// Waits until `peer` has a live entry other than `superseded`.
