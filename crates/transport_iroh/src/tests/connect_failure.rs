@@ -4,7 +4,7 @@
 //! exercise error paths in [`IrohTransport::create_connection_and_context`]
 //! that are difficult to trigger reproducibly via the real iroh stack.
 
-use crate::connection::DynConnection;
+use crate::connection::{DynConnection, MockConnection};
 use crate::endpoint::{DynIrohEndpoint, Endpoint, EndpointAddrWatcher};
 use crate::test_utils::MockTxHandler;
 use crate::url::endpoint_from_url;
@@ -55,6 +55,73 @@ impl Endpoint for FakeEndpoint {
         self.connect_calls.fetch_add(1, Ordering::Relaxed);
         let factory = self.connect_error_factory.clone();
         Box::pin(async move { Err(factory()) })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn insert_relay(
+        &self,
+        _url: RelayUrl,
+        _config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn remove_relay(
+        &self,
+        _url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        Box::pin(async { None })
+    }
+
+    fn id_bytes(&self) -> [u8; 32] {
+        [0u8; 32]
+    }
+
+    fn is_home_relay_known_down(&self) -> bool {
+        false
+    }
+}
+
+struct DelayedSuccessEndpoint {
+    connection: DynConnection,
+    connect_started: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    connect_continue: Arc<tokio::sync::Notify>,
+}
+
+impl std::fmt::Debug for DelayedSuccessEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DelayedSuccessEndpoint").finish()
+    }
+}
+
+impl Endpoint for DelayedSuccessEndpoint {
+    fn watch_addr(&self) -> Box<dyn EndpointAddrWatcher> {
+        Box::new(PendingWatcher)
+    }
+
+    fn accept(&self) -> BoxFut<'_, Option<K2Result<DynConnection>>> {
+        Box::pin(std::future::pending())
+    }
+
+    fn connect(
+        &self,
+        _endpoint_addr: EndpointAddr,
+        _alpn: &[u8],
+    ) -> BoxFut<'_, K2Result<DynConnection>> {
+        if let Some(connect_started) =
+            self.connect_started.lock().expect("poison").take()
+        {
+            let _ = connect_started.send(());
+        }
+        let connect_continue = self.connect_continue.clone();
+        let connection = self.connection.clone();
+        Box::pin(async move {
+            connect_continue.notified().await;
+            Ok(connection)
+        })
     }
 
     fn close(&self) -> BoxFut<'_, ()> {
@@ -405,7 +472,7 @@ async fn transport_creation_uses_current_listening_url() {
 
     // Creation should publish the watcher's current URL
     assert_eq!(
-        *transport.local_url.read().expect("poisoned"),
+        *transport.local_url.read().expect("poison"),
         Some(fake_remote_url())
     );
 }
@@ -499,6 +566,61 @@ async fn missing_local_url_prevents_opening_connection() {
         connect_calls.load(Ordering::Relaxed),
         0,
         "endpoint must not be dialled without a local URL"
+    );
+}
+
+#[tokio::test]
+async fn removed_local_url_is_not_sent_after_connection_opens() {
+    let handler = build_handler_with_space(Arc::new(Mutex::new(Vec::new())));
+    let remote_url = fake_remote_url();
+    let target = endpoint_from_url(&remote_url).unwrap();
+    let local_url = Arc::new(RwLock::new(Some(remote_url.clone())));
+
+    let mut connection = MockConnection::new();
+    connection.expect_is_direct().return_const(false);
+    connection
+        .expect_accept_uni()
+        .returning(|| Box::pin(std::future::pending()));
+
+    let (connect_started_tx, connect_started_rx) =
+        tokio::sync::oneshot::channel();
+    let connect_continue = Arc::new(tokio::sync::Notify::new());
+    let endpoint: DynIrohEndpoint = Arc::new(DelayedSuccessEndpoint {
+        connection: Arc::new(connection),
+        connect_started: Mutex::new(Some(connect_started_tx)),
+        connect_continue: connect_continue.clone(),
+    });
+    let transport = Arc::new(build_transport(
+        endpoint,
+        handler,
+        Arc::new(RwLock::new(HashMap::new())),
+        local_url.clone(),
+        config(),
+    ));
+
+    let connection_task = {
+        let transport = transport.clone();
+        tokio::spawn(async move {
+            transport
+                .create_connection_and_context(target, remote_url)
+                .await
+        })
+    };
+    connect_started_rx
+        .await
+        .expect("endpoint should report when connection starts");
+    *local_url.write().expect("poison") = None;
+    connect_continue.notify_one();
+
+    let error = connection_task
+        .await
+        .expect("connection task should not panic")
+        .expect_err("preflight should reject a removed local URL");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Local relay URL became unavailable before preflight")
     );
 }
 
