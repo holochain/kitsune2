@@ -34,8 +34,9 @@
 //!   relay registration. When set, the endpoint's public key is registered
 //!   with the relay before connecting.
 //!
-//! Other fields (`max_frame_bytes`, `connect_timeout_s`) are endpoint-wide
-//! and are ignored in per-space overrides.
+//! Other fields (`max_frame_bytes`, `connect_timeout_s`,
+//! `listening_address_timeout_s`) are endpoint-wide and are ignored in
+//! per-space overrides.
 //!
 //! # Architecture
 //!
@@ -240,10 +241,6 @@ mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
 
-/// Timeout that transport create will wait for the first listening URL
-/// to be ready.
-const LISTENING_ADDRESS_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -288,6 +285,14 @@ pub mod config {
         #[cfg_attr(feature = "schema", schemars(default))]
         pub connect_timeout_s: u32,
 
+        /// The timeout for waiting for the first listening address while
+        /// creating the transport.
+        ///
+        /// Defaults to 10 seconds.
+        #[serde(default = "default_listening_address_timeout_s")]
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub listening_address_timeout_s: u32,
+
         /// Base64-encoded auth material for relay registration.
         /// When set alongside `relay_url` in a per-space config override,
         /// the endpoint's public key is registered with the relay server
@@ -316,6 +321,10 @@ pub mod config {
         120
     }
 
+    fn default_listening_address_timeout_s() -> u32 {
+        10
+    }
+
     impl Default for IrohTransportConfig {
         fn default() -> Self {
             Self {
@@ -323,6 +332,8 @@ pub mod config {
                 relay_allow_plain_text: false,
                 max_frame_bytes: 100 * 1024 * 1024,
                 connect_timeout_s: 60,
+                listening_address_timeout_s:
+                    default_listening_address_timeout_s(),
                 auth_material_relay_base64: None,
                 relay_keepalive_interval_s: default_relay_keepalive_interval_s(
                 ),
@@ -640,9 +651,11 @@ impl IrohTransport {
         }
 
         // Wait for the first listening URL or the timeout.
-        if let Err(err) =
-            tokio::time::timeout(LISTENING_ADDRESS_TIMEOUT, listening_url_ready_rx)
-                .await
+        if let Err(err) = tokio::time::timeout(
+            Duration::from_secs(config.listening_address_timeout_s as u64),
+            listening_url_ready_rx,
+        )
+        .await
                 .map_err(|_| {
                     K2Error::other(
                         "Timed out waiting for relay connection to establish a local URL",
