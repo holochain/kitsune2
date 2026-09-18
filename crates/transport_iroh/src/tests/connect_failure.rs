@@ -350,6 +350,36 @@ async fn transport_creation_waits_for_first_listening_url() {
 }
 
 #[tokio::test]
+async fn transport_creation_uses_configured_listening_address_timeout() {
+    let (_update_tx, update_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (watcher_started_tx, _watcher_started_rx) =
+        tokio::sync::oneshot::channel();
+    let endpoint: DynIrohEndpoint = Arc::new(ControlledEndpoint {
+        initial_addr: endpoint_addr(None),
+        updates: Arc::new(tokio::sync::Mutex::new(update_rx)),
+        watcher_started: Arc::new(Mutex::new(Some(watcher_started_tx))),
+    });
+    let handler = TxImpHnd::new(Arc::new(MockTxHandler::default()));
+    let config = IrohTransportConfig {
+        listening_address_timeout_s: 0,
+        ..Default::default()
+    };
+
+    let error =
+        IrohTransport::create_with_endpoint(endpoint, handler, config, None)
+            .await
+            .expect_err(
+                "transport creation should respect the configured timeout",
+            );
+
+    assert!(
+        error
+            .to_string()
+            .contains("Timed out waiting for relay connection")
+    );
+}
+
+#[tokio::test]
 async fn transport_creation_uses_current_listening_url() {
     // Create an endpoint whose watcher already holds a listening URL
     let relay_url =
