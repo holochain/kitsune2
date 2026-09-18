@@ -973,16 +973,17 @@ impl IrohTransport {
         let global_url = self.local_url.read().expect("poisoned").clone();
         let space_relays_snapshot =
             self.space_relays.read().expect("poisoned").clone();
-        let current_local_url = Self::own_url_for_preflight(
+        if Self::own_url_for_preflight(
             &remote_url,
             &space_relays_snapshot,
             &global_url,
         )
-        .ok_or_else(|| {
-            K2Error::other(
+        .is_none()
+        {
+            return Err(K2Error::other(
                 "Connection attempted before home relay URL is known",
-            )
-        })?;
+            ));
+        }
         debug!(?target, connect_timeout_s = self.config.connect_timeout_s, remote = ?remote_url.peer_id(), "Attempting QUIC connection");
         let start = Instant::now();
         let conn = match tokio::time::timeout(
@@ -1034,6 +1035,20 @@ impl IrohTransport {
             space_relays: self.space_relays.clone(),
             max_frame_bytes: self.config.max_frame_bytes,
         });
+
+        let global_url = self.local_url.read().expect("poison").clone();
+        let space_relays_snapshot =
+            self.space_relays.read().expect("poison").clone();
+        let current_local_url = Self::own_url_for_preflight(
+            &remote_url,
+            &space_relays_snapshot,
+            &global_url,
+        )
+        .ok_or_else(|| {
+            K2Error::other(
+                "Local relay URL became unavailable before preflight",
+            )
+        })?;
 
         if let Err(e) = ctx
             .send_preflight_frame(current_local_url, preflight_bytes)
