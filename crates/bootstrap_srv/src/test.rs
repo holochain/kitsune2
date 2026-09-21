@@ -174,7 +174,10 @@ impl PutInfo<'_> {
         }
         .new_agent();
 
-        let res = agent.put(&addr).send(&info).unwrap();
+        let res = agent
+            .put(&addr)
+            .send(&info)
+            .map_err(std::io::Error::other)?;
         if res.status().is_success() {
             let res = res
                 .into_body()
@@ -193,6 +196,22 @@ impl PutInfo<'_> {
             Err(std::io::Error::other(res))
         }
     }
+}
+
+#[test]
+fn put_info_returns_connection_errors() {
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").expect("bind test port");
+    let addr = listener.local_addr().expect("read test port");
+    drop(listener);
+
+    let result = PutInfo {
+        addr,
+        ..Default::default()
+    }
+    .call();
+
+    assert!(result.is_err());
 }
 
 #[test]
