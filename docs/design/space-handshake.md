@@ -49,8 +49,8 @@ moving that responsibility to where it belongs.
 - Ensure that before a space sends anything to a peer, that peer knows at least
   one agent the space has, so that block enforcement has something to act on and
   does not fall back to dropping everything.
-- Work correctly when a space starts after a connection already exists, and
-  when a space is torn down and re-created while the connection persists.
+- Work correctly when a space starts after a connection already exists
+- Recover when a space is torn down and re-created while the connection persists.
 - Preserve block enforcement exactly as it is. The handshake makes enforcement
   work correctly across multiple spaces; it must not make it more permissive.
 - Live in shared code, so that transport implementations need no knowledge of
