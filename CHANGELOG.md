@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.6.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.6.0-dev.1...v0.6.0-dev.2)\] - 2026-09-22
+
+### Features
+
+- Make listening address timeout configurable by @mattyg
+
+### Bug Fixes
+
+- Ensure the stored url is not stale before actually sending the preflight by @mattyg in [#641](https://github.com/holochain/kitsune2/pull/641)
+- *(transport_iroh)* Create should not complete until it has a listening url by @mattyg
+- *(core)* Order known-peer endpoints by advertisement timestamp by @light-merlin-dark in [#642](https://github.com/holochain/kitsune2/pull/642)
+  - `CoreKnownPeers` recorded the last URL seen for an agent, overwriting the entry on every batch. Discovery batches can carry cached advertisements, so an older advertisement arriving after a newer one replaced the current endpoint with a superseded one.
+  - `MemPeerStore` orders the same advertisements by `created_at` and keeps the newest, so the two stores could disagree: the peer store held the current endpoint while `CoreKnownPeers` held the old one. `CorePeerAccessState` then could not resolve the current endpoint back to an agent, dropped its access decision, and `CoreSpace` blocked the peer — which is indistinguishable from a deliberate block when reading the blocked counters.
+  - Store the advertisement timestamp alongside the URL and ignore an advertisement that is not newer than the stored one, matching the peer store's ordering. Equal timestamps keep the existing entry.
+  - Adds a `CoreKnownPeers` unit test covering equal and newer timestamps, and a `CoreAccess` regression test that runs both batch orderings and asserts the current endpoint keeps its access decision.
+
+### Testing
+
+- *(transport_iroh)* Transport create fails without a listening url, completes only when one is ready by @mattyg
+
+### Automated Changes
+
+- *(deps)* Bump the nix group with 3 updates by @dependabot[bot] in [#637](https://github.com/holochain/kitsune2/pull/637)
+- Update dependabot.yml with shared content in [#635](https://github.com/holochain/kitsune2/pull/635)
+- *(deps)* Bump the cargo-minor-patch group across 1 directory with 2 updates by @dependabot[bot] in [#633](https://github.com/holochain/kitsune2/pull/633)
+- *(deps)* Bump jsonschema from 0.52.1 to 0.55.0 by @dependabot[bot] in [#634](https://github.com/holochain/kitsune2/pull/634)
+- *(deps)* Bump rust-toolchain from 1.98.0 to 1.98.1 by @dependabot[bot] in [#629](https://github.com/holochain/kitsune2/pull/629)
+- *(deps)* Bump the cargo-minor-patch group across 1 directory with 8 updates by @dependabot[bot] in [#632](https://github.com/holochain/kitsune2/pull/632)
+- *(deps)* Bump jsonschema from 0.51.0 to 0.52.1 by @dependabot[bot] in [#631](https://github.com/holochain/kitsune2/pull/631)
+- *(deps)* Bump the nix group with 4 updates by @dependabot[bot] in [#626](https://github.com/holochain/kitsune2/pull/626)
+
+### First-time Contributors
+
+- @light-merlin-dark made their first contribution in [#642](https://github.com/holochain/kitsune2/pull/642)
+
 ## \[[0.6.0-dev.1](https://github.com/holochain/kitsune2/compare/v0.6.0-dev.0...v0.6.0-dev.1)\] - 2026-09-01
 
 ### Bug Fixes
