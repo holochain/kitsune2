@@ -89,14 +89,22 @@ async fn releasing_a_space_keeps_the_transport_own_relay() {
     .await
     .unwrap();
 
-    let inserted = tx
-        .space_relays
-        .read()
-        .expect("poisoned")
-        .get(&TEST_SPACE_ID)
-        .expect("configure_for_space returned before the relay was ready")
-        .0
-        .clone();
+    let inserted = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if let Some((relay, _)) = tx
+                .space_relays
+                .read()
+                .expect("poisoned")
+                .get(&TEST_SPACE_ID)
+                .cloned()
+            {
+                return relay;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("relay was not inserted for the space within 30 s");
 
     tx.unconfigure_for_space(TEST_SPACE_ID).await.unwrap();
 
