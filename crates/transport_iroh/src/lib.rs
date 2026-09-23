@@ -1109,6 +1109,13 @@ async fn wait_for_send_replacement(
     superseded: &Arc<ConnectionContext>,
     deadline: tokio::time::Instant,
 ) -> K2Result<Arc<ConnectionContext>> {
+    if deadline <= tokio::time::Instant::now() {
+        connections.remove_if_current(remote_url, superseded);
+        return Err(K2Error::other(format!(
+            "timed out waiting for the connection selected for {remote_url}"
+        )));
+    }
+
     match tokio::time::timeout_at(
         deadline,
         connections.wait_for_replacement(remote_url, superseded),

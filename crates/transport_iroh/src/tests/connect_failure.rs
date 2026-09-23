@@ -500,6 +500,49 @@ async fn drops_a_superseded_connection_when_no_winner_appears() {
     assert!(connections.get(&remote_url).is_none());
 }
 
+#[tokio::test]
+async fn expired_send_deadline_rejects_an_available_replacement() {
+    use crate::tests::support::build_parked_context;
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls);
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let loser = build_parked_context(
+        handler.clone(),
+        connections.clone(),
+        true,
+        [0xff; 32],
+    );
+    assert!(connections.register_candidate(&remote_url, &loser));
+    loser.mark_superseded();
+
+    let winner =
+        build_parked_context(handler, connections.clone(), false, [0; 32]);
+    assert!(connections.register_candidate(&remote_url, &winner));
+
+    let err = crate::wait_for_send_replacement(
+        &connections,
+        &remote_url,
+        &loser,
+        tokio::time::Instant::now() - Duration::from_millis(1),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("timed out waiting for the connection selected"),
+        "unexpected timeout error: {err}"
+    );
+    assert!(
+        connections
+            .get(&remote_url)
+            .is_some_and(|current| Arc::ptr_eq(&current, &winner)),
+        "timing out the loser must preserve the selected replacement"
+    );
+}
+
 /// When `iroh::Endpoint::connect` returns an error (the production case-B
 /// path: quinn `ConnectionError::TimedOut` after the relay has nothing to
 /// say), `create_connection_and_context` must mark the peer unresponsive
