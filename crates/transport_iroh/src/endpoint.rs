@@ -7,7 +7,6 @@ use n0_watcher::{Disconnected, Watcher};
 use std::sync::Arc;
 
 pub(crate) trait EndpointAddrWatcher: Send + Sync {
-    fn get(&mut self) -> EndpointAddr;
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>>;
 }
 
@@ -19,10 +18,6 @@ impl<W> EndpointAddrWatcher for IrohWatcher<W>
 where
     W: Watcher<Value = EndpointAddr> + Send + Sync,
 {
-    fn get(&mut self) -> EndpointAddr {
-        self.inner.get()
-    }
-
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
         Box::pin(self.inner.updated())
     }
