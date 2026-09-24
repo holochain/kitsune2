@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.2](https://github.com/holochain/kitsune2/compare/v0.5.1...v0.5.2)\] - 2026-09-24
+
+### Bug Fixes
+
+- *(transport_iroh)* Enforce send replacement deadline
+- *(transport_iroh)* Bound simultaneous-open send retries
+- *(transport_iroh)* Wait for simultaneous-open winner
+- *(transport_iroh)* Preserve sends during simultaneous open
+  - When two peers dial each other concurrently, connection arbitration can close the connection carrying a pending send. Wait for preflight and connection selection before sending application data, then retry on the surviving connection when either peer supersedes the original connection.
+  - Centralize pending, active, superseded, and closed states in a connection registry. Publish outbound candidates before writing preflight, resolve competing connections deterministically, and mark displaced connections superseded atomically with replacement. Allow reconnects to replace stale connections and report only active connections in peer lists and stats.
+  - Retry superseded preflight and data writes up to five connection attempts. Distinguish genuine failures from supersession using both lifecycle state and remote close codes, preserving failure reporting without marking a healthy peer unresponsive when its duplicate connection is discarded.
+  - Use one ten-second deadline for opening the first stream and completing preflight. Expire stalled candidates and release waiting sends while allowing established connections to accept later streams without that deadline.
+  - Cover arbitration, reader-cleanup races, failure classification, preflight timeouts, simultaneous first sends, and reconnects with unit and integration tests at the transport and Kitsune2 levels.
+
+### Miscellaneous Tasks
+
+- Improve comment
+
+### Testing
+
+- *(kitsune2)* Serialize resource-intensive integration tests
+
 ## \[[0.5.1](https://github.com/holochain/kitsune2/compare/v0.5.0...v0.5.1)\] - 2026-09-01
 
 ### Bug Fixes
