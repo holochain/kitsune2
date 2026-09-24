@@ -961,6 +961,157 @@ async fn preflight_sent_and_received_by_both_endpoints() {
     .expect("preflight should have been sent by peer 2 and received by peer 1");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn simultaneous_first_sends_are_delivered() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+    let preflight_gate =
+        Arc::new((std::sync::Mutex::new(0_u8), std::sync::Condvar::new()));
+
+    let (ep_1_sender, mut ep_1_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        preflight_validate_incoming: Arc::new({
+            let first_preflight = Arc::new(AtomicBool::new(true));
+            let preflight_gate = preflight_gate.clone();
+            move |_, _| {
+                if first_preflight.swap(false, Ordering::SeqCst) {
+                    let (arrivals, ready) = &*preflight_gate;
+                    let mut arrivals = arrivals.lock().unwrap();
+                    *arrivals += 1;
+                    ready.notify_all();
+                    let (_arrivals, timeout) = ready
+                        .wait_timeout_while(
+                            arrivals,
+                            Duration::from_secs(5),
+                            |arrivals| *arrivals < 2,
+                        )
+                        .unwrap();
+                    assert!(
+                        !timeout.timed_out(),
+                        "both preflights must arrive"
+                    );
+                }
+                Ok(())
+            }
+        }),
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            ep_1_sender.send(data).expect("receiver must remain open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let (ep_2_sender, mut ep_2_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_2 = Arc::new(MockTxHandler {
+        preflight_validate_incoming: Arc::new({
+            let first_preflight = Arc::new(AtomicBool::new(true));
+            let preflight_gate = preflight_gate.clone();
+            move |_, _| {
+                if first_preflight.swap(false, Ordering::SeqCst) {
+                    let (arrivals, ready) = &*preflight_gate;
+                    let mut arrivals = arrivals.lock().unwrap();
+                    *arrivals += 1;
+                    ready.notify_all();
+                    let (_arrivals, timeout) = ready
+                        .wait_timeout_while(
+                            arrivals,
+                            Duration::from_secs(5),
+                            |arrivals| *arrivals < 2,
+                        )
+                        .unwrap();
+                    assert!(
+                        !timeout.timed_out(),
+                        "both preflights must arrive"
+                    );
+                }
+                Ok(())
+            }
+        }),
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            ep_2_sender.send(data).expect("receiver must remain open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6_000),
+        Some(100),
+    )
+    .await
+    .expect("both transports must receive listening addresses");
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+    let send_barrier = Arc::new(tokio::sync::Barrier::new(3));
+
+    let send_from_ep_1 = {
+        let ep_1 = ep_1.clone();
+        let send_barrier = send_barrier.clone();
+        tokio::spawn(async move {
+            send_barrier.wait().await;
+            ep_1.send_space_notify(
+                ep_2_url,
+                TEST_SPACE_ID,
+                Bytes::from_static(b"from endpoint 1"),
+            )
+            .await
+        })
+    };
+    let send_from_ep_2 = {
+        let ep_2 = ep_2.clone();
+        let send_barrier = send_barrier.clone();
+        tokio::spawn(async move {
+            send_barrier.wait().await;
+            ep_2.send_space_notify(
+                ep_1_url,
+                TEST_SPACE_ID,
+                Bytes::from_static(b"from endpoint 2"),
+            )
+            .await
+        })
+    };
+
+    send_barrier.wait().await;
+    let (send_from_ep_1, send_from_ep_2) =
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(send_from_ep_1, send_from_ep_2)
+        })
+        .await
+        .expect("both simultaneous sends must complete");
+    send_from_ep_1
+        .expect("endpoint 1 send task must complete")
+        .expect("endpoint 1 send must succeed");
+    send_from_ep_2
+        .expect("endpoint 2 send task must complete")
+        .expect("endpoint 2 send must succeed");
+
+    let received_by_ep_1 =
+        tokio::time::timeout(Duration::from_secs(2), ep_1_receiver.recv())
+            .await
+            .expect("endpoint 1 must receive the simultaneous first message")
+            .expect("endpoint 1 receive channel must remain open");
+    let received_by_ep_2 =
+        tokio::time::timeout(Duration::from_secs(2), ep_2_receiver.recv())
+            .await
+            .expect("endpoint 2 must receive the simultaneous first message")
+            .expect("endpoint 2 receive channel must remain open");
+
+    assert_eq!(received_by_ep_1, Bytes::from_static(b"from endpoint 2"));
+    assert_eq!(received_by_ep_2, Bytes::from_static(b"from endpoint 1"));
+}
+
 #[tokio::test]
 async fn network_stats() {
     let harness = IrohTransportTestHarness::new().await;
@@ -1313,4 +1464,211 @@ async fn no_unresponsive_when_relay_drops() {
         set_unresponsive_receiver.try_recv().is_err(),
         "set_unresponsive must not be called when the relay is disconnected"
     );
+}
+
+/// A `send` immediately after `disconnect` must re-dial and deliver. The
+/// remote may still hold the previous connection as its map entry, so the
+/// fresh connection can be closed as superseded; `send` must retry rather than
+/// return `Ok(())` for a message it never wrote.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn send_after_disconnect_reconnects_and_delivers() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    let (space_notify_sender, mut space_notify_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            space_notify_sender
+                .send(data)
+                .expect("receiver must be open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let handler_2 = Arc::new(MockTxHandler::default());
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6_000),
+        Some(100),
+    )
+    .await
+    .expect("both transports must receive listening addresses");
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+
+    // Reconnect several times in a row. A single round trips the race only
+    // intermittently; five rounds make a regression reliably visible.
+    for round in 0..5u8 {
+        let payload = Bytes::from(format!("round {round}"));
+        ep_2.send_space_notify(
+            ep_1_url.clone(),
+            TEST_SPACE_ID,
+            payload.clone(),
+        )
+        .await
+        .unwrap_or_else(|err| {
+            panic!("round {round} send must succeed: {err:?}")
+        });
+
+        let received = tokio::time::timeout(
+            Duration::from_secs(5),
+            space_notify_receiver.recv(),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("round {round} payload must arrive"))
+        .expect("receive channel must remain open");
+        assert_eq!(received, payload, "round {round} payload mismatch");
+
+        ep_2.disconnect(ep_1_url.clone(), None).await;
+        retry_fn_until_timeout(
+            || async { ep_2.get_connected_peers().await.unwrap().is_empty() },
+            Some(5_000),
+            Some(10),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("round {round} connection must be dropped"));
+    }
+}
+
+/// Both peers disconnect and immediately redial at the same instant, over and
+/// over. No send may fail because of the resulting simultaneous open.
+///
+/// Unlike [`send_after_disconnect_reconnects_and_delivers`], both sides tear
+/// the connection down, so every redial races a redial from the other end. A
+/// dial is published as the peer's connection before its preflight is written,
+/// and a send picks a connection before it writes the data frame, so in both
+/// windows the competing inbound dial can take the slot and close the
+/// connection mid-write. That is resolution working, and the send must retry
+/// on the connection that won rather than report the peer as unresponsive and
+/// fail with a locally closed connection.
+///
+/// Only the send results are asserted. A frame written to a connection that is
+/// still the live one locally can still be dropped by a peer that superseded
+/// it before draining the stream, which the writer cannot observe: the write
+/// succeeded. That is a separate, pre-existing gap that needs an
+/// acknowledgement the wire protocol does not have, so per-round delivery is
+/// awaited to pace the rounds but not asserted. Delivery after a reconnect is
+/// asserted by [`send_after_disconnect_reconnects_and_delivers`], which
+/// disconnects from one side only and so does not race.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn simultaneous_disconnect_and_resend_never_fails_a_send() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+    let dummy_url = dummy_url();
+
+    let (ep_1_sender, mut ep_1_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            ep_1_sender.send(data).expect("receiver must be open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let (ep_2_sender, mut ep_2_receiver) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_2 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            ep_2_sender.send(data).expect("receiver must be open");
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().unwrap().clone() != dummy_url
+                && handler_2.current_url.lock().unwrap().clone() != dummy_url
+        },
+        Some(6_000),
+        Some(100),
+    )
+    .await
+    .expect("both transports must receive listening addresses");
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+
+    // A single round hits the mid-write supersession only occasionally, so
+    // many rounds are needed to make a regression reliably visible.
+    for round in 0..40u8 {
+        let payload_1 = Bytes::from(format!("from endpoint 1, round {round}"));
+        let payload_2 = Bytes::from(format!("from endpoint 2, round {round}"));
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(3));
+        let send_from_ep_1 = {
+            let ep_1 = ep_1.clone();
+            let barrier = barrier.clone();
+            let ep_2_url = ep_2_url.clone();
+            let payload_1 = payload_1.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                ep_1.send_space_notify(ep_2_url, TEST_SPACE_ID, payload_1)
+                    .await
+            })
+        };
+        let send_from_ep_2 = {
+            let ep_2 = ep_2.clone();
+            let barrier = barrier.clone();
+            let ep_1_url = ep_1_url.clone();
+            let payload_2 = payload_2.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                ep_2.send_space_notify(ep_1_url, TEST_SPACE_ID, payload_2)
+                    .await
+            })
+        };
+
+        barrier.wait().await;
+        let (result_1, result_2) =
+            tokio::time::timeout(Duration::from_secs(20), async {
+                tokio::join!(send_from_ep_1, send_from_ep_2)
+            })
+            .await
+            .unwrap_or_else(|_| panic!("round {round} sends must complete"));
+        result_1
+            .unwrap_or_else(|err| panic!("round {round} task 1: {err:?}"))
+            .unwrap_or_else(|err| {
+                panic!("round {round} endpoint 1 send must succeed: {err:?}")
+            });
+        result_2
+            .unwrap_or_else(|err| panic!("round {round} task 2: {err:?}"))
+            .unwrap_or_else(|err| {
+                panic!("round {round} endpoint 2 send must succeed: {err:?}")
+            });
+
+        // Give each payload a chance to land before tearing the connection
+        // down again, so a round starts from a settled connection. A payload
+        // the peer dropped when it superseded the connection is not a failure
+        // of the send, so the outcome is not asserted.
+        let _ =
+            tokio::time::timeout(Duration::from_secs(5), ep_1_receiver.recv())
+                .await;
+        let _ =
+            tokio::time::timeout(Duration::from_secs(5), ep_2_receiver.recv())
+                .await;
+
+        // Both ends tear the connection down at once, so the next round's
+        // sends both have to redial into each other.
+        tokio::join!(
+            ep_1.disconnect(ep_2_url.clone(), None),
+            ep_2.disconnect(ep_1_url.clone(), None),
+        );
+    }
 }
