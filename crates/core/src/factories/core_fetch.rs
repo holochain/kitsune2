@@ -29,6 +29,21 @@ mod config {
         /// Default: 2.
         #[cfg_attr(feature = "schema", schemars(default))]
         pub parallel_request_count: u8,
+
+        /// The maximum number of op ids to send to a peer in one request.
+        ///
+        /// Requests to the same peer that are already queued are combined,
+        /// up to this number. Fetching never waits for more requests in order
+        /// to fill a batch.
+        ///
+        /// Default: 1.
+        #[serde(default = "default_max_ops_per_request")]
+        #[cfg_attr(feature = "schema", schemars(default))]
+        pub max_ops_per_request: u8,
+    }
+
+    fn default_max_ops_per_request() -> u8 {
+        1
     }
 
     impl Default for CoreFetchConfig {
@@ -36,6 +51,7 @@ mod config {
         fn default() -> Self {
             Self {
                 parallel_request_count: 2,
+                max_ops_per_request: default_max_ops_per_request(),
             }
         }
     }
@@ -270,6 +286,7 @@ impl CoreFetch {
                     space_id.clone(),
                     peer_meta_store.clone(),
                     Arc::downgrade(&transport),
+                    config.max_ops_per_request,
                 ));
             tasks.push(request_task);
         }
@@ -320,10 +337,20 @@ impl CoreFetch {
         space_id: SpaceId,
         peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
+        max_ops_per_request: u8,
     ) {
-        while let Some((op_id, peer_url)) =
-            outgoing_request_rx.lock().await.recv().await
-        {
+        // A request to another peer, taken off the queue while batching.
+        let mut deferred: Option<OutgoingRequest> = None;
+        loop {
+            let (op_id, peer_url) = match deferred.take() {
+                Some(request) => request,
+                // The receiver lock is only held while receiving, so that the
+                // configured parallel workers can send requests concurrently.
+                None => match outgoing_request_rx.lock().await.recv().await {
+                    Some(request) => request,
+                    None => break,
+                },
+            };
             tracing::debug!(?op_id, ?peer_url, "processing outgoing request");
             let Some(transport) = transport.upgrade() else {
                 tracing::info!(
@@ -332,7 +359,24 @@ impl CoreFetch {
                 break;
             };
 
-            // If peer URL is set as unresponsive, remove current request from state.
+            // Add requests to the same peer that are already queued, up to
+            // the configured maximum. Never wait for more requests to arrive.
+            let mut op_ids = vec![op_id];
+            while op_ids.len() < max_ops_per_request as usize {
+                let Ok(mut receiver) = outgoing_request_rx.try_lock() else {
+                    break;
+                };
+                match receiver.try_recv() {
+                    Ok((op_id, url)) if url == peer_url => op_ids.push(op_id),
+                    Ok(request) => {
+                        deferred = Some(request);
+                        break;
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            // If peer URL is set as unresponsive, remove current requests from state.
             let peer_url_unresponsive = match peer_meta_store
                 .get_unresponsive(peer_url.clone())
                 .await
@@ -343,24 +387,24 @@ impl CoreFetch {
                     false
                 }
             };
-            if peer_url_unresponsive {
-                state
-                    .lock()
-                    .expect("poisoned")
-                    .requests
-                    .remove(&(op_id.clone(), peer_url.clone()));
-            }
 
-            // Do nothing if op id is no longer in the set of requests to send.
+            // Only send op ids that are still in the set of requests to send.
             //
-            // If the peer URL is unresponsive, the current request will have been removed
+            // If the peer URL is unresponsive, the current requests are removed
             // from state and no request will be sent.
             {
-                let lock = state.lock().expect("poisoned");
-                if !lock
-                    .requests
-                    .contains_key(&(op_id.clone(), peer_url.clone()))
-                {
+                let mut lock = state.lock().expect("poison");
+                if peer_url_unresponsive {
+                    for op_id in &op_ids {
+                        lock.requests
+                            .remove(&(op_id.clone(), peer_url.clone()));
+                    }
+                }
+                op_ids.retain(|op_id| {
+                    lock.requests
+                        .contains_key(&(op_id.clone(), peer_url.clone()))
+                });
+                if op_ids.is_empty() {
                     // Check if the fetch queue is drained and notify listeners.
                     Self::notify_listeners_if_queue_drained(lock);
 
@@ -371,12 +415,12 @@ impl CoreFetch {
             tracing::debug!(
                 ?peer_url,
                 ?space_id,
-                ?op_id,
+                ?op_ids,
                 "sending fetch request"
             );
 
             // Send fetch request to peer.
-            let data = serialize_request_message(vec![op_id.clone()]);
+            let data = serialize_request_message(op_ids.clone());
             if let Err(err) = transport
                 .send_module(
                     peer_url.clone(),
@@ -387,7 +431,7 @@ impl CoreFetch {
                 .await
             {
                 tracing::warn!(
-                    ?op_id,
+                    ?op_ids,
                     ?peer_url,
                     "could not send fetch request: {err}."
                 );
