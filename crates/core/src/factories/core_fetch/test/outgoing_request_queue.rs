@@ -698,3 +698,73 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
         .expect("Timed out")
         .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn parallel_workers_send_requests_concurrently() {
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+
+    // Every send signals that it started and then never completes, so each
+    // worker stays busy with its first request.
+    let (send_started_tx, mut send_started_rx) =
+        tokio::sync::mpsc::unbounded_channel();
+    let mut mock_transport = MockTransport::new();
+    mock_transport
+        .expect_send_module()
+        .returning(move |_, _, _, _| {
+            send_started_tx.send(()).unwrap();
+            Box::pin(futures::future::pending())
+        });
+    mock_transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| ());
+    let mock_transport = Arc::new(mock_transport);
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
+
+    let fetch = CoreFetch::new(
+        CoreFetchConfig {
+            parallel_request_count: 2,
+        },
+        TEST_SPACE_ID,
+        report,
+        op_store,
+        peer_meta_store,
+        mock_transport.clone(),
+    );
+
+    fetch
+        .request_ops(
+            create_op_id_list(2)
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            random_peer_url(),
+        )
+        .await
+        .unwrap();
+
+    // Both workers should be sending at the same time.
+    for _ in 0..2 {
+        tokio::time::timeout(Duration::from_secs(1), send_started_rx.recv())
+            .await
+            .expect("second worker did not send concurrently")
+            .unwrap();
+    }
+}
