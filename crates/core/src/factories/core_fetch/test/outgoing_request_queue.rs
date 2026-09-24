@@ -165,6 +165,7 @@ async fn request_op_failures_are_purged_from_state() {
 async fn happy_op_fetch_from_multiple_agents() {
     let config = CoreFetchConfig {
         parallel_request_count: 5,
+        ..Default::default()
     };
     let TestCase {
         fetch,
@@ -738,6 +739,7 @@ async fn parallel_workers_send_requests_concurrently() {
     let fetch = CoreFetch::new(
         CoreFetchConfig {
             parallel_request_count: 2,
+            ..Default::default()
         },
         TEST_SPACE_ID,
         report,
@@ -767,4 +769,107 @@ async fn parallel_workers_send_requests_concurrently() {
             .expect("second worker did not send concurrently")
             .unwrap();
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_requests_to_same_peer_are_batched() {
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+
+    // Record the op ids of every request message. The first send waits
+    // until it is released, so that more requests can queue up behind it.
+    let messages_sent = Arc::new(Mutex::new(Vec::<Vec<OpId>>::new()));
+    let release_first_send = Arc::new(tokio::sync::Notify::new());
+    let mut mock_transport = MockTransport::new();
+    mock_transport.expect_send_module().returning({
+        let messages_sent = messages_sent.clone();
+        let release_first_send = release_first_send.clone();
+        move |_, _, _, data| {
+            let fetch_message = K2FetchMessage::decode(data).unwrap();
+            let op_ids: Vec<OpId> =
+                FetchRequest::decode(fetch_message.data).unwrap().into();
+            let mut lock = messages_sent.lock().expect("poison");
+            lock.push(op_ids);
+            let is_first_send = lock.len() == 1;
+            let release_first_send = release_first_send.clone();
+            Box::pin(async move {
+                if is_first_send {
+                    release_first_send.notified().await;
+                }
+                Ok(())
+            })
+        }
+    });
+    mock_transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| ());
+    let mock_transport = Arc::new(mock_transport);
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
+
+    let fetch = CoreFetch::new(
+        CoreFetchConfig {
+            parallel_request_count: 1,
+            max_ops_per_request: 3,
+        },
+        TEST_SPACE_ID,
+        report,
+        op_store,
+        peer_meta_store,
+        mock_transport.clone(),
+    );
+
+    let peer_url = random_peer_url();
+    let publish_ops = |op_ids: Vec<OpId>| {
+        op_ids
+            .into_iter()
+            .map(|op_id| PublishOp {
+                op_id,
+                metadata: None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    fetch
+        .request_ops(publish_ops(create_op_id_list(1)), peer_url.clone())
+        .await
+        .unwrap();
+    iter_check!({
+        if messages_sent.lock().expect("poison").len() == 1 {
+            break;
+        }
+    });
+
+    // Queue three more requests while the first send is in progress.
+    let queued_op_ids = create_op_id_list(3);
+    fetch
+        .request_ops(publish_ops(queued_op_ids.clone()), peer_url.clone())
+        .await
+        .unwrap();
+    release_first_send.notify_one();
+
+    // All three should be sent in one message.
+    iter_check!({
+        if messages_sent.lock().expect("poison").len() >= 2 {
+            break;
+        }
+    });
+    let mut batch = messages_sent.lock().expect("poison")[1].clone();
+    let mut expected = queued_op_ids;
+    batch.sort();
+    expected.sort();
+    assert_eq!(batch, expected);
 }
