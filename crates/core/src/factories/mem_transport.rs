@@ -53,6 +53,9 @@ struct MemTransport {
     task_list: Arc<Mutex<tokio::task::JoinSet<()>>>,
     cmd_send: CmdSend,
     net_stats: Arc<Mutex<TransportStats>>,
+    /// Handler used to notify the wrapping transport of peer state
+    /// changes, e.g. marking a peer unresponsive after a failed send.
+    handler: Arc<TxImpHnd>,
 }
 
 impl Drop for MemTransport {
@@ -64,6 +67,9 @@ impl Drop for MemTransport {
 }
 
 impl MemTransport {
+    /// Construct a new memory transport implementation: registers a fresh
+    /// in-process listener, reports its address to the handler, and spawns
+    /// the connection-listener and command-runner tasks.
     pub async fn create(handler: Arc<TxImpHnd>) -> DynTxImp {
         let mut listener = get_transport_instances().listen();
         let this_url = listener.url();
@@ -102,7 +108,7 @@ impl MemTransport {
         // our core command runner task
         task_list.lock().unwrap().spawn(cmd_task(
             task_list.clone(),
-            handler,
+            handler.clone(),
             this_url.clone(),
             cmd_send.clone(),
             cmd_recv,
@@ -114,6 +120,7 @@ impl MemTransport {
             task_list,
             cmd_send,
             net_stats,
+            handler,
         });
 
         out
@@ -142,17 +149,31 @@ impl TxImp for MemTransport {
         })
     }
 
+    /// Send `data` to `peer` over the in-memory channel. On failure the
+    /// peer is marked unresponsive via [TxImpHnd::set_unresponsive],
+    /// matching the behavior of the production transport.
     fn send(&self, peer: Url, data: bytes::Bytes) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
             let (result_sender, result_receiver) =
                 tokio::sync::oneshot::channel();
-            match self.cmd_send.send(Cmd::Send(peer, data, result_sender)) {
+            let result = match self.cmd_send.send(Cmd::Send(
+                peer.clone(),
+                data,
+                result_sender,
+            )) {
                 Err(_) => Err(K2Error::other("Connection Closed")),
                 Ok(_) => match result_receiver.await {
                     Ok(result) => result,
                     Err(_) => Err(K2Error::other("Connection Closed")),
                 },
+            };
+            if result.is_err() {
+                // Without this, tests that kill nodes never see those
+                // nodes become unresponsive.
+                let _ =
+                    self.handler.set_unresponsive(peer, Timestamp::now()).await;
             }
+            result
         })
     }
 
