@@ -49,7 +49,6 @@ impl TransportFactory for MemTransportFactory {
 
 #[derive(Debug)]
 struct MemTransport {
-    this_url: Url,
     task_list: Arc<Mutex<tokio::task::JoinSet<()>>>,
     cmd_send: CmdSend,
     net_stats: Arc<Mutex<TransportStats>>,
@@ -67,7 +66,12 @@ impl MemTransport {
     pub async fn create(handler: Arc<TxImpHnd>) -> DynTxImp {
         let mut listener = get_transport_instances().listen();
         let this_url = listener.url();
-        handler.new_listening_address(this_url.clone(), None).await;
+        handler
+            .transport_url_changed(
+                TransportUrl::Available(this_url.clone()),
+                None,
+            )
+            .await;
 
         let task_list = Arc::new(Mutex::new(tokio::task::JoinSet::new()));
 
@@ -110,7 +114,6 @@ impl MemTransport {
         ));
 
         let out: DynTxImp = Arc::new(Self {
-            this_url,
             task_list,
             cmd_send,
             net_stats,
@@ -121,10 +124,6 @@ impl MemTransport {
 }
 
 impl TxImp for MemTransport {
-    fn url(&self) -> Option<Url> {
-        Some(self.this_url.clone())
-    }
-
     fn disconnect(
         &self,
         peer: Url,

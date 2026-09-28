@@ -189,16 +189,23 @@ async fn graceful_disconnect_informs_remote_end_to_end() {
     let transport_a = harness.build_transport(handler_a).await;
     transport_a.register_space_handler(TEST_SPACE_ID, mock_a.clone());
 
-    // Wait until B has a real listening address (new_listening_address
-    // updates MockTxHandler::current_url).
+    // Both transports must have an advertised address before A can generate
+    // the outbound preflight.
     let initial_url = crate::test_utils::dummy_url();
+    retry_fn_until_timeout(
+        || async { *mock_a.current_url.lock().unwrap() != initial_url },
+        Some(30_000),
+        Some(10),
+    )
+    .await
+    .expect("A did not obtain a listening address");
     retry_fn_until_timeout(
         || async { *mock_b.current_url.lock().unwrap() != initial_url },
         Some(30_000),
         Some(10),
     )
     .await
-    .expect("condition not met within timeout");
+    .expect("B did not obtain a listening address");
     let url_b = mock_b.current_url.lock().unwrap().clone();
 
     // Establish a connection A -> B with a space notify and wait for B to

@@ -130,6 +130,7 @@ impl State {
 struct CoreFetch {
     state: Arc<Mutex<State>>,
     outgoing_request_tx: Sender<OutgoingRequest>,
+    transport_url_available_tx: tokio::sync::watch::Sender<bool>,
     tasks: Vec<JoinHandle<()>>,
     op_store: DynOpStore,
     #[cfg(test)]
@@ -225,6 +226,11 @@ impl Fetch for CoreFetch {
     fn get_state_summary(&self) -> BoxFut<'_, K2Result<FetchStateSummary>> {
         Box::pin(async move { Ok(self.state.lock().unwrap().summary()) })
     }
+
+    fn set_transport_url_available(&self, is_transport_url_available: bool) {
+        self.transport_url_available_tx
+            .send_replace(is_transport_url_available);
+    }
 }
 
 impl CoreFetch {
@@ -259,6 +265,9 @@ impl CoreFetch {
             notify_when_drained_senders: vec![],
         }));
 
+        let (transport_url_available_tx, transport_url_available_rx) =
+            tokio::sync::watch::channel(true);
+
         let mut tasks =
             Vec::with_capacity(config.parallel_request_count as usize);
         // Spawn request tasks.
@@ -270,6 +279,7 @@ impl CoreFetch {
                     space_id.clone(),
                     peer_meta_store.clone(),
                     Arc::downgrade(&transport),
+                    transport_url_available_rx.clone(),
                 ));
             tasks.push(request_task);
         }
@@ -281,6 +291,7 @@ impl CoreFetch {
                 op_store.clone(),
                 Arc::downgrade(&transport),
                 space_id.clone(),
+                transport_url_available_rx,
             ));
         tasks.push(incoming_request_task);
 
@@ -307,6 +318,7 @@ impl CoreFetch {
         Self {
             state,
             outgoing_request_tx,
+            transport_url_available_tx,
             tasks,
             op_store,
             #[cfg(test)]
@@ -320,81 +332,87 @@ impl CoreFetch {
         space_id: SpaceId,
         peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
+        mut transport_url_available: tokio::sync::watch::Receiver<bool>,
     ) {
         while let Some((op_id, peer_url)) =
             outgoing_request_rx.lock().await.recv().await
         {
-            tracing::debug!(?op_id, ?peer_url, "processing outgoing request");
-            let Some(transport) = transport.upgrade() else {
-                tracing::info!(
-                    "Transport dropped, stopping outgoing request task"
-                );
-                break;
-            };
-
-            // If peer URL is set as unresponsive, remove current request from state.
-            let peer_url_unresponsive = match peer_meta_store
-                .get_unresponsive(peer_url.clone())
-                .await
-            {
-                Ok(maybe_value) => maybe_value.is_some(),
-                Err(err) => {
-                    tracing::warn!(?err, "could not query peer meta store");
-                    false
-                }
-            };
-            if peer_url_unresponsive {
-                state
-                    .lock()
-                    .expect("poisoned")
-                    .requests
-                    .remove(&(op_id.clone(), peer_url.clone()));
-            }
-
-            // Do nothing if op id is no longer in the set of requests to send.
-            //
-            // If the peer URL is unresponsive, the current request will have been removed
-            // from state and no request will be sent.
-            {
-                let lock = state.lock().expect("poisoned");
-                if !lock
-                    .requests
-                    .contains_key(&(op_id.clone(), peer_url.clone()))
-                {
-                    // Check if the fetch queue is drained and notify listeners.
-                    Self::notify_listeners_if_queue_drained(lock);
-
-                    continue;
-                }
-            }
-
-            tracing::debug!(
-                ?peer_url,
-                ?space_id,
-                ?op_id,
-                "sending fetch request"
-            );
-
-            // Send fetch request to peer.
             let data = serialize_request_message(vec![op_id.clone()]);
-            if let Err(err) = transport
-                .send_module(
-                    peer_url.clone(),
-                    space_id.clone(),
-                    MOD_NAME.to_string(),
-                    data,
+            loop {
+                if !super::wait_for_transport_url_available(
+                    &mut transport_url_available,
                 )
                 .await
-            {
-                tracing::warn!(
-                    ?op_id,
-                    ?peer_url,
-                    "could not send fetch request: {err}."
-                );
-                // Remove all requests to that peer and notify if drained.
-                let mut lock = state.lock().expect("poisoned");
-                lock.requests.retain(|(_, a), _| *a != peer_url);
-                Self::notify_listeners_if_queue_drained(lock);
+                {
+                    return;
+                }
+                let Some(transport) = transport.upgrade() else {
+                    tracing::info!(
+                        "Transport dropped, stopping outgoing request task"
+                    );
+                    return;
+                };
+
+                let peer_url_unresponsive = match peer_meta_store
+                    .get_unresponsive(peer_url.clone())
+                    .await
+                {
+                    Ok(maybe_value) => maybe_value.is_some(),
+                    Err(err) => {
+                        tracing::warn!(?err, "could not query peer meta store");
+                        false
+                    }
+                };
+                if peer_url_unresponsive {
+                    state
+                        .lock()
+                        .expect("poisoned")
+                        .requests
+                        .remove(&(op_id.clone(), peer_url.clone()));
+                }
+
+                {
+                    let lock = state.lock().expect("poisoned");
+                    if !lock
+                        .requests
+                        .contains_key(&(op_id.clone(), peer_url.clone()))
+                    {
+                        Self::notify_listeners_if_queue_drained(lock);
+                        break;
+                    }
+                }
+
+                match transport
+                    .send_module(
+                        peer_url.clone(),
+                        space_id.clone(),
+                        MOD_NAME.to_string(),
+                        data.clone(),
+                    )
+                    .await
+                {
+                    Ok(()) => break,
+                    Err(K2Error::TransportUrlUnavailable) => {
+                        if !super::wait_for_transport_url_recovery(
+                            &mut transport_url_available,
+                        )
+                        .await
+                        {
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?op_id,
+                            ?peer_url,
+                            "could not send fetch request: {err}."
+                        );
+                        let mut lock = state.lock().expect("poisoned");
+                        lock.requests.retain(|(_, url), _| *url != peer_url);
+                        Self::notify_listeners_if_queue_drained(lock);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -419,18 +437,9 @@ impl CoreFetch {
         op_store: DynOpStore,
         transport: WeakDynTransport,
         space_id: SpaceId,
+        mut transport_url_available: tokio::sync::watch::Receiver<bool>,
     ) {
         while let Some((op_ids, peer)) = response_rx.recv().await {
-            tracing::debug!(?peer, ?op_ids, "incoming request");
-
-            let Some(transport) = transport.upgrade() else {
-                tracing::info!(
-                    "Transport dropped, stopping incoming request task"
-                );
-                break;
-            };
-
-            // Retrieve ops to send from store.
             let ops = match op_store.retrieve_ops(op_ids.clone()).await {
                 Err(err) => {
                     tracing::error!("could not read ops from store: {err}");
@@ -438,30 +447,57 @@ impl CoreFetch {
                 }
                 Ok(ops) => ops,
             };
-
             if ops.is_empty() {
                 tracing::info!(
                     "none of the ops requested from {peer} found in store"
                 );
-                // Do not send a response when no ops could be retrieved.
                 continue;
             }
-
             let data = serialize_response_message(ops);
-            if let Err(err) = transport
-                .send_module(
-                    peer.clone(),
-                    space_id.clone(),
-                    MOD_NAME.to_string(),
-                    data,
+
+            loop {
+                if !super::wait_for_transport_url_available(
+                    &mut transport_url_available,
                 )
                 .await
-            {
-                tracing::warn!(
-                    ?op_ids,
-                    ?peer,
-                    "could not send ops to requesting peer: {err}"
-                );
+                {
+                    return;
+                }
+                let Some(transport) = transport.upgrade() else {
+                    tracing::info!(
+                        "Transport dropped, stopping incoming request task"
+                    );
+                    return;
+                };
+
+                match transport
+                    .send_module(
+                        peer.clone(),
+                        space_id.clone(),
+                        MOD_NAME.to_string(),
+                        data.clone(),
+                    )
+                    .await
+                {
+                    Ok(()) => break,
+                    Err(K2Error::TransportUrlUnavailable) => {
+                        if !super::wait_for_transport_url_recovery(
+                            &mut transport_url_available,
+                        )
+                        .await
+                        {
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?op_ids,
+                            ?peer,
+                            "could not send ops to requesting peer: {err}"
+                        );
+                        break;
+                    }
+                }
             }
         }
     }

@@ -2,6 +2,31 @@
 //!
 //! Documentation for individual core modules can be found in [this crate's doc module](super::doc).
 
+async fn wait_for_transport_url_available(
+    transport_url_available: &mut tokio::sync::watch::Receiver<bool>,
+) -> bool {
+    transport_url_available
+        .wait_for(|is_available| *is_available)
+        .await
+        .is_ok()
+}
+
+async fn wait_for_transport_url_recovery(
+    transport_url_available: &mut tokio::sync::watch::Receiver<bool>,
+) -> bool {
+    let (state_changed, is_available) = {
+        let current = transport_url_available.borrow_and_update();
+        (current.has_changed(), *current)
+    };
+    if is_available
+        && !state_changed
+        && transport_url_available.changed().await.is_err()
+    {
+        return false;
+    }
+    wait_for_transport_url_available(transport_url_available).await
+}
+
 mod core_kitsune;
 pub use core_kitsune::*;
 

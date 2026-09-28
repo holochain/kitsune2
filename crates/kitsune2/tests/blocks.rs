@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
-use kitsune2_api::{AgentId, Id, LocalAgent, MessageBlockCount, SpaceId};
+use kitsune2_api::{
+    AgentId, Id, LocalAgent, MessageBlockCount, SpaceId, TransportUrl,
+};
 use kitsune2_api::{
     AgentInfoSigned, BlockTarget, BoxFut, Builder, DynSpace, DynTransport,
     K2Result, SpaceHandler, TxBaseHandler, TxHandler, TxModuleHandler,
@@ -100,8 +102,13 @@ impl TxModuleHandler for TestTxHandler {
 }
 
 impl TxBaseHandler for TestTxHandler {
-    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        *(self.peer_url.lock().unwrap()) = this_url;
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        if let TransportUrl::Available(url) = state {
+            *self.peer_url.lock().unwrap() = url;
+        }
         Box::pin(async {})
     }
 

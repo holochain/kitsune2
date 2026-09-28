@@ -3,7 +3,7 @@
 use crate::*;
 use std::sync::Arc;
 
-/// Method for bootstrapping WAN discovery of peers.
+/// Method for bootstrapping peer discovery.
 ///
 /// The internal implementation will take care of whatever polling
 /// or managing of message queues is required to be notified of
@@ -17,6 +17,13 @@ pub trait Bootstrap: 'static + Send + Sync + std::fmt::Debug {
     /// - we receive a new info that supersedes the previous
     /// - or the info expires
     fn put(&self, info: Arc<AgentInfoSigned>);
+
+    /// Notify bootstrap whether a local transport URL can be advertised.
+    ///
+    /// Implementations must not publish stale local advertisements while the
+    /// URL is unavailable. Discovery work that does not expose a local address
+    /// may continue.
+    fn set_transport_url_available(&self, _is_transport_url_available: bool) {}
 }
 
 /// Trait-object [Bootstrap].

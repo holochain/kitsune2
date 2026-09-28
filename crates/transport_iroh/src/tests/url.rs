@@ -1,9 +1,9 @@
-use crate::IrohTransport;
 use crate::url::endpoint_from_url;
 use crate::url::{
     SpaceRelay, canonicalize_relay_url, get_url_with_first_relay,
-    is_transport_own_relay, per_space_relay,
+    is_transport_own_relay, per_space_relay, relay_urls_equal,
 };
+use crate::{IrohTransport, SpaceRelayState};
 use iroh::{EndpointAddr, EndpointId, RelayUrl, TransportAddr};
 use kitsune2_api::{Id, SpaceId, Url};
 use std::collections::HashMap;
@@ -280,6 +280,40 @@ fn space(name: &[u8]) -> SpaceId {
 }
 
 #[test]
+fn space_relay_address_requires_successful_installation() {
+    let endpoint_id = test_endpoint_id();
+    let connected_relay =
+        RelayUrl::from_str("https://connected-relay.com:443/").unwrap();
+    let configured_relay =
+        RelayUrl::from_str("https://configured-relay.com:443/").unwrap();
+    let endpoint_addr = EndpointAddr::from_parts(
+        endpoint_id,
+        vec![TransportAddr::Relay(connected_relay)],
+    );
+    let mut relay_state = SpaceRelayState {
+        relay_url: configured_relay,
+        local_url: None,
+        installed: false,
+    };
+
+    assert_eq!(
+        IrohTransport::space_relay_url(&relay_state, &endpoint_addr, None),
+        None
+    );
+
+    relay_state.installed = true;
+    assert_eq!(
+        IrohTransport::space_relay_url(&relay_state, &endpoint_addr, None),
+        Some(
+            Url::from_str(format!(
+                "https://configured-relay.com:443/{endpoint_id}"
+            ))
+            .unwrap()
+        )
+    );
+}
+
+#[test]
 fn own_url_for_preflight_matches_space_relay() {
     let eid = test_endpoint_id();
     let relay =
@@ -295,7 +329,14 @@ fn own_url_for_preflight_matches_space_relay() {
         Url::from_str(format!("https://global-relay.com:443/{eid}")).unwrap(),
     );
     let mut space_relays = HashMap::new();
-    space_relays.insert(space(b"s1"), (relay, Some(our_space_url.clone())));
+    space_relays.insert(
+        space(b"s1"),
+        SpaceRelayState {
+            relay_url: relay,
+            local_url: Some(our_space_url.clone()),
+            installed: true,
+        },
+    );
 
     let result = IrohTransport::own_url_for_preflight(
         &peer_url,
@@ -359,7 +400,14 @@ fn own_url_for_preflight_space_relay_takes_precedence() {
     )
     .unwrap();
     let mut space_relays = HashMap::new();
-    space_relays.insert(space(b"s1"), (relay, Some(our_space_url.clone())));
+    space_relays.insert(
+        space(b"s1"),
+        SpaceRelayState {
+            relay_url: relay,
+            local_url: Some(our_space_url.clone()),
+            installed: true,
+        },
+    );
 
     let result = IrohTransport::own_url_for_preflight(
         &peer_url,
@@ -406,6 +454,14 @@ fn per_space_relay_ignores_trailing_slash_differences() {
         ),
         None
     );
+}
+
+#[test]
+fn relay_url_comparison_ignores_one_canonical_trailing_slash() {
+    let configured = RelayUrl::from_str("http://relay.example/path").unwrap();
+    let peer = RelayUrl::from_str("http://relay.example/path/").unwrap();
+
+    assert!(relay_urls_equal(&configured, &peer));
 }
 
 #[test]

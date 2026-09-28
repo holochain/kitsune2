@@ -134,6 +134,11 @@ pub trait Publish: 'static + Send + Sync + std::fmt::Debug {
         agent_info: Arc<AgentInfoSigned>,
         target: Url,
     ) -> BoxFut<'_, K2Result<()>>;
+
+    /// Pause or resume outbound work based on local transport URL availability.
+    ///
+    /// Implementations must retain queued work while paused.
+    fn set_transport_url_available(&self, _is_transport_url_available: bool) {}
 }
 
 /// Trait object [Publish].

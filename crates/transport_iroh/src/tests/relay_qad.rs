@@ -39,13 +39,16 @@ async fn reinserting_relay_keeps_qad_enabled() {
         .quic
         .clone();
     assert!(startup_quic.is_some(), "startup relay has QAD enabled");
+    let prepared =
+        IrohTransport::prepare_space_relay(&endpoint, url.to_string(), None)
+            .unwrap();
+    let prepared_url = prepared.relay_url;
     endpoint
-        .insert_relay(url.clone(), RelayConfig::from(url.clone()).into())
+        .insert_relay(
+            prepared_url.clone(),
+            IrohTransport::relay_config_with_token(&prepared_url, None),
+        )
         .await;
-
-    IrohTransport::do_insert_relay(endpoint.clone(), url.to_string(), None)
-        .await
-        .unwrap();
 
     let reinserted = endpoint
         .remove_relay(&url)

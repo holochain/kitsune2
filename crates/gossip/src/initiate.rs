@@ -125,6 +125,11 @@ pub fn spawn_initiate_task(
                         Ok(false) => {
                             // Don't log here, will already have logged the reason
                         }
+                        Err(K2Error::TransportUrlUnavailable) => {
+                            tracing::debug!(
+                                "Paused gossip initiation because the transport URL is unavailable"
+                            );
+                        }
                         Err(e) => {
                             tracing::warn!("Failed to initiate gossip: {:?}", e);
 

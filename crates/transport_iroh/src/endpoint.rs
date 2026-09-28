@@ -11,6 +11,13 @@ pub(crate) trait EndpointAddrWatcher: Send + Sync {
     fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>>;
 }
 
+pub(crate) type RelayStatuses = Vec<(RelayUrl, bool)>;
+
+pub(crate) trait EndpointRelayStatusWatcher: Send + Sync {
+    fn get(&mut self) -> RelayStatuses;
+    fn updated(&mut self) -> BoxFut<'_, Result<RelayStatuses, Disconnected>>;
+}
+
 struct IrohWatcher<W> {
     inner: W,
 }
@@ -28,11 +35,42 @@ where
     }
 }
 
+struct IrohRelayStatusWatcher<W> {
+    inner: W,
+}
+
+fn relay_statuses(statuses: Vec<iroh::endpoint::RelayStatus>) -> RelayStatuses {
+    statuses
+        .into_iter()
+        .map(|status| (status.url().clone(), status.is_connected()))
+        .collect()
+}
+
+impl<W> EndpointRelayStatusWatcher for IrohRelayStatusWatcher<W>
+where
+    W: Watcher<Value = Vec<iroh::endpoint::RelayStatus>> + Send + Sync,
+{
+    fn get(&mut self) -> RelayStatuses {
+        relay_statuses(self.inner.get())
+    }
+
+    fn updated(&mut self) -> BoxFut<'_, Result<RelayStatuses, Disconnected>> {
+        Box::pin(async move { self.inner.updated().await.map(relay_statuses) })
+    }
+}
+
 pub(crate) trait Endpoint:
     'static + Send + Sync + std::fmt::Debug
 {
     /// Returns a Watcher for the current EndpointAddr for this endpoint.
     fn watch_addr(&self) -> Box<dyn EndpointAddrWatcher>;
+
+    /// Watches connection state for the currently selected home relay.
+    fn watch_relay_status(
+        &self,
+    ) -> Option<Box<dyn EndpointRelayStatusWatcher>> {
+        None
+    }
 
     /// Accepts an incoming connection.
     /// Returns None if the endpoint is closed.
@@ -55,6 +93,11 @@ pub(crate) trait Endpoint:
         config: Arc<RelayConfig>,
     ) -> BoxFut<'_, ()>;
 
+    /// Re-evaluate relay selection after relay configuration changes.
+    fn network_change(&self) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
     /// Remove a relay server from this endpoint.
     fn remove_relay(
         &self,
@@ -63,16 +106,6 @@ pub(crate) trait Endpoint:
 
     /// Returns the public key bytes of this endpoint.
     fn id_bytes(&self) -> [u8; 32];
-
-    /// Returns `true` if a home relay is in a confirmed failed state
-    /// (`RelayConnectionState::Disconnected` with a recorded error).
-    ///
-    /// Returns `false` when no relay has been selected yet, when the relay is
-    /// in the initial `Connecting` phase, or when the relay is `Connected`.
-    /// The distinction matters: `Connecting` means iroh is still dialling and
-    /// a connection attempt might succeed; `Disconnected` means the relay has
-    /// explicitly failed and iroh is waiting to retry.
-    fn is_home_relay_known_down(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -91,6 +124,14 @@ impl Endpoint for IrohEndpoint {
         Box::new(IrohWatcher {
             inner: self.inner.watch_addr(),
         })
+    }
+
+    fn watch_relay_status(
+        &self,
+    ) -> Option<Box<dyn EndpointRelayStatusWatcher>> {
+        Some(Box::new(IrohRelayStatusWatcher {
+            inner: self.inner.home_relay_status(),
+        }))
     }
 
     fn accept(&self) -> BoxFut<'_, Option<K2Result<DynConnection>>> {
@@ -154,6 +195,10 @@ impl Endpoint for IrohEndpoint {
         })
     }
 
+    fn network_change(&self) -> BoxFut<'_, ()> {
+        Box::pin(async move { self.inner.network_change().await })
+    }
+
     fn remove_relay(
         &self,
         url: &RelayUrl,
@@ -164,14 +209,6 @@ impl Endpoint for IrohEndpoint {
 
     fn id_bytes(&self) -> [u8; 32] {
         *self.inner.id().as_bytes()
-    }
-
-    fn is_home_relay_known_down(&self) -> bool {
-        self.inner
-            .home_relay_status()
-            .get()
-            .iter()
-            .any(|s| !s.is_connected() && s.last_error().is_some())
     }
 }
 

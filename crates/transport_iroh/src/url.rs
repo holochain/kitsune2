@@ -65,6 +65,10 @@ pub(super) fn relay_url_from_peer_url(url: &Url) -> K2Result<RelayUrl> {
         .map_err(|err| K2Error::other_src("invalid relay url", err))
 }
 
+pub(super) fn relay_urls_equal(left: &RelayUrl, right: &RelayUrl) -> bool {
+    left.as_str().trim_end_matches('/') == right.as_str().trim_end_matches('/')
+}
+
 /// Reconstruct an iroh EndpointAddr from a kitsune2 peer URL.
 ///
 /// The peer URL encodes the full relay path, so the relay URL can be

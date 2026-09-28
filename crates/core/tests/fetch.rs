@@ -14,8 +14,13 @@ struct MockTxHandler {
     peer_url: std::sync::Mutex<Url>,
 }
 impl TxBaseHandler for MockTxHandler {
-    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        *(self.peer_url.lock().unwrap()) = this_url;
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        if let TransportUrl::Available(url) = state {
+            *self.peer_url.lock().unwrap() = url;
+        }
         Box::pin(async {})
     }
 }
@@ -382,9 +387,7 @@ async fn metadata_round_trip_through_fetch() {
         .create(bob_builder.clone(), bob_transport.clone())
         .await
         .unwrap();
-    bob_transport
-        .register_space_handler(TEST_SPACE_ID, bob_tx_handler.clone())
-        .unwrap();
+    bob_transport.register_space_handler(TEST_SPACE_ID, bob_tx_handler.clone());
 
     let received: Arc<Mutex<Vec<IncomingOp>>> =
         Arc::new(Mutex::new(Vec::new()));

@@ -160,6 +160,7 @@ pub(crate) struct CorePublish {
     max_metadata_bytes: u32,
     outgoing_publish_ops_tx: Sender<OutgoingPublishOps>,
     outgoing_publish_agent_tx: Sender<OutgoingAgentInfo>,
+    transport_url_available_tx: tokio::sync::watch::Sender<bool>,
     tasks: Vec<AbortHandle>,
 }
 
@@ -241,6 +242,11 @@ impl Publish for CorePublish {
             Ok(())
         })
     }
+
+    fn set_transport_url_available(&self, is_transport_url_available: bool) {
+        self.transport_url_available_tx
+            .send_replace(is_transport_url_available);
+    }
 }
 
 impl CorePublish {
@@ -270,6 +276,9 @@ impl CorePublish {
         let (incoming_publish_agent_tx, incoming_publish_agent_rx) =
             channel::<IncomingAgentInfoEncoded>(16_384);
 
+        let (transport_url_available_tx, transport_url_available_rx) =
+            tokio::sync::watch::channel(true);
+
         let mut tasks = Vec::new();
 
         // Spawn outgoing publish ops task.
@@ -279,6 +288,7 @@ impl CorePublish {
                 space_id.clone(),
                 peer_meta_store,
                 Arc::downgrade(&transport),
+                transport_url_available_rx.clone(),
             ))
             .abort_handle();
         tasks.push(outgoing_publish_ops_task);
@@ -298,6 +308,7 @@ impl CorePublish {
                 outgoing_publish_agent_rx,
                 space_id.clone(),
                 Arc::downgrade(&transport),
+                transport_url_available_rx,
             ))
             .abort_handle();
         tasks.push(outgoing_publish_agent_task);
@@ -329,6 +340,7 @@ impl CorePublish {
             max_metadata_bytes: config.max_metadata_bytes,
             outgoing_publish_ops_tx,
             outgoing_publish_agent_tx,
+            transport_url_available_tx,
             tasks,
         }
     }
@@ -338,46 +350,68 @@ impl CorePublish {
         space_id: SpaceId,
         peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
+        mut transport_url_available: tokio::sync::watch::Receiver<bool>,
     ) {
         while let Some((ops, peer_url)) = outgoing_publish_ops_rx.recv().await {
-            let Some(transport) = transport.upgrade() else {
-                tracing::warn!("Transport dropped, stopping publish ops task");
-                return;
-            };
-
-            // Check if peer URL to publish to is unresponsive.
-            let peer_url_unresponsive = match peer_meta_store
-                .get_unresponsive(peer_url.clone())
-                .await
-            {
-                Ok(maybe_value) => maybe_value.is_some(),
-                Err(err) => {
-                    tracing::warn!(?err, "could not query peer meta store");
-                    false
-                }
-            };
-            if peer_url_unresponsive {
-                // Peer URL is unresponsive, do not publish.
-                continue;
-            }
-
-            // Send ops publish message to peer.
-            let data = serialize_publish_ops_message(ops.clone());
-            if let Err(err) = transport
-                .send_module(
-                    peer_url.clone(),
-                    space_id.clone(),
-                    PUBLISH_MOD_NAME.to_string(),
-                    data,
+            let op_ids: Vec<_> =
+                ops.iter().map(|op| op.op_id.clone()).collect();
+            let data = serialize_publish_ops_message(ops);
+            loop {
+                if !super::wait_for_transport_url_available(
+                    &mut transport_url_available,
                 )
                 .await
-            {
-                let op_ids: Vec<_> = ops.iter().map(|o| &o.op_id).collect();
-                tracing::warn!(
-                    ?op_ids,
-                    ?peer_url,
-                    "could not send publish ops: {err}"
-                );
+                {
+                    return;
+                }
+                let Some(transport) = transport.upgrade() else {
+                    tracing::warn!(
+                        "Transport dropped, stopping publish ops task"
+                    );
+                    return;
+                };
+                let peer_url_unresponsive = match peer_meta_store
+                    .get_unresponsive(peer_url.clone())
+                    .await
+                {
+                    Ok(maybe_value) => maybe_value.is_some(),
+                    Err(err) => {
+                        tracing::warn!(?err, "could not query peer meta store");
+                        false
+                    }
+                };
+                if peer_url_unresponsive {
+                    break;
+                }
+
+                match transport
+                    .send_module(
+                        peer_url.clone(),
+                        space_id.clone(),
+                        PUBLISH_MOD_NAME.to_string(),
+                        data.clone(),
+                    )
+                    .await
+                {
+                    Ok(()) => break,
+                    Err(K2Error::TransportUrlUnavailable) => {
+                        if !super::wait_for_transport_url_recovery(
+                            &mut transport_url_available,
+                        )
+                        .await
+                        {
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?op_ids,
+                            ?peer_url,
+                            "could not send publish ops: {err}"
+                        );
+                        break;
+                    }
+                }
             }
         }
     }
@@ -403,44 +437,66 @@ impl CorePublish {
         mut outgoing_publish_agent_rx: Receiver<OutgoingAgentInfo>,
         space_id: SpaceId,
         transport: WeakDynTransport,
+        mut transport_url_available: tokio::sync::watch::Receiver<bool>,
     ) {
         while let Some((agent_info, peer_url)) =
             outgoing_publish_agent_rx.recv().await
         {
-            let Some(transport) = transport.upgrade() else {
-                tracing::warn!(
-                    "Transport dropped, stopping publish agent task"
-                );
-                return;
-            };
-
-            // Send fetch request to peer.
-            match serialize_publish_agent_message(&agent_info) {
-                Ok(data) => {
-                    if let Err(err) = transport
-                        .send_module(
-                            peer_url.clone(),
-                            space_id.clone(),
-                            PUBLISH_MOD_NAME.to_string(),
-                            data,
-                        )
-                        .await
-                    {
-                        tracing::debug!(
-                            ?agent_info,
-                            ?peer_url,
-                            "could not send publish agent: {err}"
-                        );
-                    }
-                }
+            let data = match serialize_publish_agent_message(&agent_info) {
+                Ok(data) => data,
                 Err(err) => {
                     tracing::warn!(
                         ?agent_info,
                         ?peer_url,
                         "Failed to serialize publish agent message: {err}"
-                    )
+                    );
+                    continue;
                 }
             };
+            loop {
+                if !super::wait_for_transport_url_available(
+                    &mut transport_url_available,
+                )
+                .await
+                {
+                    return;
+                }
+                let Some(transport) = transport.upgrade() else {
+                    tracing::warn!(
+                        "Transport dropped, stopping publish agent task"
+                    );
+                    return;
+                };
+
+                match transport
+                    .send_module(
+                        peer_url.clone(),
+                        space_id.clone(),
+                        PUBLISH_MOD_NAME.to_string(),
+                        data.clone(),
+                    )
+                    .await
+                {
+                    Ok(()) => break,
+                    Err(K2Error::TransportUrlUnavailable) => {
+                        if !super::wait_for_transport_url_recovery(
+                            &mut transport_url_available,
+                        )
+                        .await
+                        {
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        tracing::debug!(
+                            ?agent_info,
+                            ?peer_url,
+                            "could not send publish agent: {err}"
+                        );
+                        break;
+                    }
+                }
+            }
         }
     }
 

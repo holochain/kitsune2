@@ -3,16 +3,29 @@
 use crate::{protocol::*, *};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, Weak};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock, Weak};
 
 type SpaceMap = Arc<Mutex<HashMap<SpaceId, DynTxSpaceHandler>>>;
 type ModMap = Arc<Mutex<HashMap<(SpaceId, String), DynTxModuleHandler>>>;
 type MessageBlocksMap =
     Arc<Mutex<HashMap<Url, HashMap<SpaceId, MessageBlockCount>>>>;
 
-type PendingSpaceUrls = Arc<Mutex<HashMap<SpaceId, Url>>>;
-type PerSpaceManaged = Arc<Mutex<HashSet<SpaceId>>>;
+type SpaceTransportUrls = Arc<Mutex<HashMap<SpaceId, TransportUrl>>>;
+type GlobalTransportUrl = Arc<RwLock<TransportUrl>>;
+
+/// The URL the transport can currently advertise and use for preflight.
+///
+/// This state describes whether a local URL is usable through any route the
+/// transport supports. It does not imply that a particular relay is connected
+/// or that every remote peer can currently reach the node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransportUrl {
+    /// The transport is alive but has no URL that can currently be advertised.
+    Unavailable,
+    /// The transport can currently advertise and use this URL for preflight.
+    Available(Url),
+}
 
 /// This is the low-level backend transport handler designed to work
 /// with [DefaultTransport].
@@ -24,12 +37,8 @@ pub struct TxImpHnd {
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
-    pending_space_urls: PendingSpaceUrls,
-    /// Spaces whose listening address is managed by the transport
-    /// (e.g., via per-space relay). These are excluded from the
-    /// global [`new_listening_address`](Self::new_listening_address)
-    /// broadcast.
-    per_space_managed: PerSpaceManaged,
+    global_transport_url: GlobalTransportUrl,
+    space_transport_urls: SpaceTransportUrls,
 }
 
 impl TxImpHnd {
@@ -42,69 +51,88 @@ impl TxImpHnd {
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
             blocked_message_counts: Arc::new(Mutex::new(HashMap::new())),
-            pending_space_urls: Arc::new(Mutex::new(HashMap::new())),
-            per_space_managed: Arc::new(Mutex::new(HashSet::new())),
+            global_transport_url: Arc::new(RwLock::new(
+                TransportUrl::Unavailable,
+            )),
+            space_transport_urls: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    /// Call this when you receive or bind a new address at which
-    /// this local node can be reached by peers.
+    /// Report the current transport URL.
     ///
-    /// When `for_space` is `None`, the URL is broadcast to all space
-    /// handlers that are not per-space managed.
-    ///
-    /// When `for_space` targets a specific space, that space is marked
-    /// as per-space managed (excluded from future global broadcasts)
-    /// and the URL is delivered only to that space's handler. If the
-    /// handler is not yet registered, the URL is stored and delivered
-    /// when the handler registers
-    /// (see [DefaultTransport::register_space_handler]).
-    pub fn new_listening_address(
+    /// A global URL is routed to the transport handler and every space that
+    /// does not have a per-space URL. A per-space URL is retained and routed
+    /// only to that space, including when it becomes unavailable.
+    pub fn transport_url_changed(
         &self,
-        this_url: Url,
+        state: TransportUrl,
         for_space: Option<&SpaceId>,
     ) -> BoxFut<'static, ()> {
         if let Some(space_id) = for_space {
-            self.per_space_managed
+            self.space_transport_urls
                 .lock()
-                .unwrap()
-                .insert(space_id.clone());
+                .expect("poison")
+                .insert(space_id.clone(), state.clone());
 
-            let handler = self.space_map.lock().unwrap().get(space_id).cloned();
-            if let Some(h) = handler {
-                Box::pin(async move { h.new_listening_address(this_url).await })
+            let handler = self
+                .space_map
+                .lock()
+                .expect("poison")
+                .get(space_id)
+                .cloned();
+            if let Some(handler) = handler {
+                Box::pin(async move {
+                    handler.transport_url_changed(state).await;
+                })
             } else {
-                self.pending_space_urls
-                    .lock()
-                    .unwrap()
-                    .insert(space_id.clone(), this_url);
                 Box::pin(async {})
             }
         } else {
+            *self.global_transport_url.write().expect("poison") = state.clone();
+
             let handler = self.handler.clone();
-            let managed = self.per_space_managed.lock().unwrap().clone();
-            let space_map: Vec<_> = self
+            let managed = self.space_transport_urls.lock().expect("poison");
+            let space_handlers: Vec<_> = self
                 .space_map
                 .lock()
-                .unwrap()
+                .expect("poison")
                 .iter()
-                .filter(|(id, _)| !managed.contains(id))
-                .map(|(_, h)| h.clone())
+                .filter(|(id, _)| !managed.contains_key(id))
+                .map(|(_, handler)| handler.clone())
                 .collect();
 
             Box::pin(async move {
-                handler.new_listening_address(this_url.clone()).await;
-                for s in space_map {
-                    s.new_listening_address(this_url.clone()).await;
+                handler.transport_url_changed(state.clone()).await;
+                for space_handler in space_handlers {
+                    space_handler.transport_url_changed(state.clone()).await;
                 }
             })
         }
     }
 
-    /// Remove a space from the per-space managed set, so it will
-    /// again receive global address broadcasts.
-    pub fn unmark_per_space_managed(&self, space_id: &SpaceId) {
-        self.per_space_managed.lock().unwrap().remove(space_id);
+    /// Stop managing a space independently and immediately route the current
+    /// global transport URL to it.
+    pub fn use_global_transport_url_for_space(
+        &self,
+        space_id: &SpaceId,
+    ) -> BoxFut<'static, ()> {
+        self.space_transport_urls
+            .lock()
+            .expect("poison")
+            .remove(space_id);
+
+        let handler = self
+            .space_map
+            .lock()
+            .expect("poison")
+            .get(space_id)
+            .cloned();
+        let state = self.global_transport_url.read().expect("poison").clone();
+        Box::pin(async move {
+            if let Some(handler) = handler {
+                handler.transport_url_changed(state).await;
+            }
+        })
     }
 
     /// Call this when you establish an outgoing connection and
@@ -476,9 +504,6 @@ fn incr_blocked_message_count_outgoing(
 }
 /// A low-level transport implementation.
 pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
-    /// Get the current url if any.
-    fn url(&self) -> Option<Url>;
-
     /// Indicates that the implementation should close any open connections to
     /// the given peer. If a payload is provided, the implementation can
     /// make a best effort to send it to the remote first on a short timeout.
@@ -544,12 +569,12 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     /// Panics if you attempt to register a duplicate handler for
     /// a space.
     ///
-    /// Returns the current url if any.
+    /// Returns the current transport URL for this space.
     fn register_space_handler(
         &self,
         space_id: SpaceId,
         handler: DynTxSpaceHandler,
-    ) -> Option<Url>;
+    ) -> TransportUrl;
 
     /// Register a module handler for receiving incoming module messages.
     ///
@@ -653,7 +678,8 @@ pub struct DefaultTransport {
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
-    pending_space_urls: PendingSpaceUrls,
+    global_transport_url: GlobalTransportUrl,
+    space_transport_urls: SpaceTransportUrls,
 }
 
 impl DefaultTransport {
@@ -668,7 +694,8 @@ impl DefaultTransport {
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
             blocked_message_counts: hnd.blocked_message_counts.clone(),
-            pending_space_urls: hnd.pending_space_urls.clone(),
+            global_transport_url: hnd.global_transport_url.clone(),
+            space_transport_urls: hnd.space_transport_urls.clone(),
         });
         out
     }
@@ -697,20 +724,21 @@ impl Transport for DefaultTransport {
         &self,
         space_id: SpaceId,
         handler: DynTxSpaceHandler,
-    ) -> Option<Url> {
-        let pending_url =
-            self.pending_space_urls.lock().unwrap().remove(&space_id);
-
-        let mut lock = self.space_map.lock().unwrap();
-        if lock.insert(space_id.clone(), handler).is_some() {
+    ) -> TransportUrl {
+        let mut space_map = self.space_map.lock().expect("poison");
+        if space_map.insert(space_id.clone(), handler).is_some() {
             panic!("Attempted to register duplicate space handler! {space_id}");
         }
+        drop(space_map);
 
-        if pending_url.is_some() {
-            return pending_url;
-        }
-
-        self.imp.url()
+        self.space_transport_urls
+            .lock()
+            .expect("poison")
+            .get(&space_id)
+            .cloned()
+            .unwrap_or_else(|| {
+                self.global_transport_url.read().expect("poison").clone()
+            })
     }
 
     fn register_module_handler(
@@ -872,10 +900,12 @@ impl Transport for DefaultTransport {
 /// Base trait for transport handler events.
 /// The other three handler types are all based on this trait.
 pub trait TxBaseHandler: 'static + Send + Sync + std::fmt::Debug {
-    /// A notification that a new listening address has been bound.
-    /// Peers should now go to this new address to reach this node.
-    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        drop(this_url);
+    /// A notification that the transport URL changed.
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        drop(state);
         Box::pin(async move {})
     }
 
@@ -1081,4 +1111,158 @@ pub struct TransportConnectionStats {
 
     /// True if this connection has successfully upgraded to a direct peer connection.
     pub is_direct: bool,
+}
+
+#[cfg(test)]
+mod transport_url_tests {
+    use super::*;
+
+    #[derive(Debug, Default)]
+    struct RecordingHandler {
+        states: Mutex<Vec<TransportUrl>>,
+    }
+
+    impl TxBaseHandler for RecordingHandler {
+        fn transport_url_changed(
+            &self,
+            state: TransportUrl,
+        ) -> BoxFut<'static, ()> {
+            self.states.lock().expect("poison").push(state);
+            Box::pin(async {})
+        }
+    }
+
+    impl TxHandler for RecordingHandler {}
+
+    impl TxSpaceHandler for RecordingHandler {
+        fn is_any_agent_at_url_blocked(
+            &self,
+            _peer_url: &Url,
+        ) -> K2Result<bool> {
+            Ok(false)
+        }
+    }
+
+    #[derive(Debug)]
+    struct StubTransport;
+
+    impl TxImp for StubTransport {
+        fn disconnect(
+            &self,
+            _peer: Url,
+            _payload: Option<(String, Bytes)>,
+        ) -> BoxFut<'_, ()> {
+            Box::pin(async {})
+        }
+
+        fn send(&self, _peer: Url, _data: Bytes) -> BoxFut<'_, K2Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
+            Box::pin(async {
+                Ok(TransportStats {
+                    backend: "stub".to_string(),
+                    peer_urls: Vec::new(),
+                    connections: Vec::new(),
+                })
+            })
+        }
+    }
+
+    fn test_url(port: u16) -> Url {
+        Url::from_str(format!("ws://127.0.0.1:{port}")).unwrap()
+    }
+
+    fn setup() -> (Arc<TxImpHnd>, DynTransport) {
+        let handler = Arc::new(RecordingHandler::default());
+        let transport_handler = TxImpHnd::new(handler);
+        let transport = DefaultTransport::create(
+            &transport_handler,
+            Arc::new(StubTransport),
+        );
+        (transport_handler, transport)
+    }
+
+    #[tokio::test]
+    async fn registered_space_receives_all_transport_url_transitions() {
+        let (handler, transport) = setup();
+        let space_id = SpaceId::from(Bytes::from_static(b"space"));
+        let space_handler = Arc::new(RecordingHandler::default());
+
+        let initial =
+            transport.register_space_handler(space_id, space_handler.clone());
+        assert_eq!(TransportUrl::Unavailable, initial);
+
+        let first = test_url(1);
+        let replacement = test_url(2);
+        handler
+            .transport_url_changed(TransportUrl::Available(first), None)
+            .await;
+        handler
+            .transport_url_changed(
+                TransportUrl::Available(replacement.clone()),
+                None,
+            )
+            .await;
+        handler
+            .transport_url_changed(TransportUrl::Unavailable, None)
+            .await;
+
+        assert_eq!(
+            *space_handler.states.lock().expect("poison"),
+            vec![
+                TransportUrl::Available(test_url(1)),
+                TransportUrl::Available(replacement),
+                TransportUrl::Unavailable,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn late_space_receives_retained_transport_url() {
+        let (handler, transport) = setup();
+        let available = TransportUrl::Available(test_url(3));
+        handler.transport_url_changed(available.clone(), None).await;
+
+        let state = transport.register_space_handler(
+            SpaceId::from(Bytes::from_static(b"late")),
+            Arc::new(RecordingHandler::default()),
+        );
+
+        assert_eq!(available, state);
+    }
+
+    #[tokio::test]
+    async fn per_space_transport_url_is_independent_and_can_return_to_global() {
+        let (handler, transport) = setup();
+        let global = TransportUrl::Available(test_url(4));
+        let per_space = TransportUrl::Available(test_url(5));
+        let space_id = SpaceId::from(Bytes::from_static(b"overridden"));
+
+        handler.transport_url_changed(global.clone(), None).await;
+        handler
+            .transport_url_changed(per_space.clone(), Some(&space_id))
+            .await;
+
+        let space_handler = Arc::new(RecordingHandler::default());
+        let initial = transport
+            .register_space_handler(space_id.clone(), space_handler.clone());
+        assert_eq!(per_space, initial);
+
+        handler
+            .transport_url_changed(TransportUrl::Unavailable, None)
+            .await;
+        assert!(space_handler.states.lock().expect("poison").is_empty());
+
+        handler.use_global_transport_url_for_space(&space_id).await;
+        assert_eq!(
+            *space_handler.states.lock().expect("poison"),
+            vec![TransportUrl::Unavailable]
+        );
+    }
 }

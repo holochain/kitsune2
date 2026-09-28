@@ -63,6 +63,13 @@ pub enum K2Error {
     /// unresponsive.
     #[error("No local agent has joined a space during preflight")]
     NoLocalAgentsDuringPreflight,
+
+    /// The transport is alive but has no URL it can currently advertise.
+    ///
+    /// This is a temporary condition in this node and must not be attributed
+    /// to the remote peer.
+    #[error("Transport URL is unavailable")]
+    TransportUrlUnavailable,
 }
 
 impl K2Error {

@@ -3,7 +3,8 @@ use crate::{
 };
 use kitsune2_api::{
     BoxFut, Builder, DynTransport, DynTxHandler, K2Result, SpaceId, Timestamp,
-    TxBaseHandler, TxHandler, TxModuleHandler, TxSpaceHandler, Url,
+    TransportUrl, TxBaseHandler, TxHandler, TxModuleHandler, TxSpaceHandler,
+    Url,
 };
 use kitsune2_test_utils::bootstrap::TestBootstrapSrv;
 use std::sync::{Arc, Mutex};
@@ -63,8 +64,9 @@ pub fn dummy_url() -> Url {
 
 /// A mock handler that implements the various TxHandler traits
 pub struct MockTxHandler {
-    /// Mock function to implement [`TxBaseHandler::new_listening_address()`]
-    pub new_listening_address: Arc<dyn Fn(Url) + 'static + Send + Sync>,
+    /// Mock function to implement [`TxBaseHandler::transport_url_changed()`]
+    pub transport_url_changed:
+        Arc<dyn Fn(TransportUrl) + 'static + Send + Sync>,
     /// Mock function to implement [`TxBaseHandler::peer_connect()`]
     pub peer_connect: Arc<dyn Fn(Url) -> K2Result<()> + 'static + Send + Sync>,
     /// Mock function to implement [`TxBaseHandler::peer_disconnect()`]
@@ -100,8 +102,10 @@ pub struct MockTxHandler {
     /// Mock function to implement [`TxSpaceHandler::has_local_agents()`]
     pub has_local_agents:
         Arc<dyn Fn() -> K2Result<bool> + 'static + Send + Sync>,
-    /// The current URL of this peer.
+    /// The most recently available URL of this peer.
     pub current_url: Arc<Mutex<Url>>,
+    /// The current transport URL, including unavailability.
+    pub transport_url: Arc<Mutex<TransportUrl>>,
 }
 
 impl std::fmt::Debug for MockTxHandler {
@@ -113,7 +117,7 @@ impl std::fmt::Debug for MockTxHandler {
 impl Default for MockTxHandler {
     fn default() -> Self {
         Self {
-            new_listening_address: Arc::new(|_| {}),
+            transport_url_changed: Arc::new(|_| {}),
             peer_connect: Arc::new(|_| Ok(())),
             peer_disconnect: Arc::new(|_, _| {}),
             preflight_gather_outgoing: Arc::new(|_| Ok(bytes::Bytes::new())),
@@ -124,14 +128,21 @@ impl Default for MockTxHandler {
             is_any_agent_at_url_blocked: Arc::new(|_| Ok(false)),
             has_local_agents: Arc::new(|| Ok(true)),
             current_url: Arc::new(Mutex::new(dummy_url())),
+            transport_url: Arc::new(Mutex::new(TransportUrl::Unavailable)),
         }
     }
 }
 
 impl TxBaseHandler for MockTxHandler {
-    fn new_listening_address(&self, url: Url) -> BoxFut<'static, ()> {
-        (self.new_listening_address)(url.clone());
-        *self.current_url.lock().unwrap() = url;
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        (self.transport_url_changed)(state.clone());
+        *self.transport_url.lock().unwrap() = state.clone();
+        if let TransportUrl::Available(url) = state {
+            *self.current_url.lock().unwrap() = url;
+        }
         Box::pin(async {})
     }
 

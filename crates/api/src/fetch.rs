@@ -119,6 +119,11 @@ pub trait Fetch: 'static + Send + Sync + std::fmt::Debug {
 
     /// Get a state summary from the fetch module.
     fn get_state_summary(&self) -> BoxFut<'_, K2Result<FetchStateSummary>>;
+
+    /// Pause or resume outbound work based on local transport URL availability.
+    ///
+    /// Implementations must retain queued work while paused.
+    fn set_transport_url_available(&self, _is_transport_url_available: bool) {}
 }
 
 /// Trait object [Fetch].

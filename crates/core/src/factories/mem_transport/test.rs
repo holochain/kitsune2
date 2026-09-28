@@ -31,8 +31,13 @@ impl std::fmt::Debug for TrackHnd {
 }
 
 impl TxBaseHandler for TrackHnd {
-    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        self.track.lock().unwrap().push(Track::ThisUrl(this_url));
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        if let TransportUrl::Available(url) = state {
+            self.track.lock().unwrap().push(Track::ThisUrl(url));
+        }
         Box::pin(async move {})
     }
 

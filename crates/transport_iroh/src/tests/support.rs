@@ -80,10 +80,6 @@ impl Connection for FakeConnection {
 struct StubTxImp;
 
 impl TxImp for StubTxImp {
-    fn url(&self) -> Option<Url> {
-        None
-    }
-
     fn disconnect(
         &self,
         _peer: Url,

@@ -142,13 +142,27 @@ impl BootstrapFactory for CoreBootstrapFactory {
     }
 }
 
-type PushSend = tokio::sync::mpsc::Sender<Arc<AgentInfoSigned>>;
-type PushRecv = tokio::sync::mpsc::Receiver<Arc<AgentInfoSigned>>;
+#[derive(Clone, Copy, Debug)]
+struct BootstrapTransportUrlState {
+    available: bool,
+    epoch: u64,
+}
+
+#[derive(Debug)]
+struct PushItem {
+    epoch: u64,
+    info: Arc<AgentInfoSigned>,
+}
+
+type PushSend = tokio::sync::mpsc::Sender<PushItem>;
+type PushRecv = tokio::sync::mpsc::Receiver<PushItem>;
 
 #[derive(Debug)]
 struct CoreBootstrap {
     space: SpaceId,
     push_send: PushSend,
+    transport_url_available_tx:
+        tokio::sync::watch::Sender<BootstrapTransportUrlState>,
     push_task: tokio::task::JoinHandle<()>,
     poll_task: tokio::task::JoinHandle<()>,
 }
@@ -181,10 +195,15 @@ impl CoreBootstrap {
         };
 
         let (push_send, push_recv) = tokio::sync::mpsc::channel(1024);
+        let (transport_url_available_tx, transport_url_available_rx) =
+            tokio::sync::watch::channel(BootstrapTransportUrlState {
+                available: true,
+                epoch: 0,
+            });
 
         let push_task = tokio::task::spawn(push_task(
             config.clone(),
-            push_send.clone(),
+            transport_url_available_rx.clone(),
             push_recv,
             auth_material.clone(),
         ));
@@ -195,11 +214,13 @@ impl CoreBootstrap {
             space.clone(),
             peer_store,
             auth_material,
+            transport_url_available_rx,
         ));
 
         Ok(Self {
             space,
             push_send,
+            transport_url_available_tx,
             push_task,
             poll_task,
         })
@@ -217,16 +238,51 @@ impl Bootstrap for CoreBootstrap {
             return;
         }
 
-        // if we can't push onto our large buffer channel... we've got problems
-        if let Err(err) = self.push_send.try_send(info) {
+        let state = *self.transport_url_available_tx.borrow();
+        // Live records are regenerated on recovery; tombstones are not.
+        if !state.available && !info.is_tombstone {
+            return;
+        }
+        if let Err(err) = self.push_send.try_send(PushItem {
+            epoch: state.epoch,
+            info,
+        }) {
             tracing::warn!(?err, "Bootstrap overloaded, dropping put");
         }
     }
+
+    fn set_transport_url_available(&self, is_transport_url_available: bool) {
+        let current = *self.transport_url_available_tx.borrow();
+        let epoch = if current.available && !is_transport_url_available {
+            current.epoch.wrapping_add(1)
+        } else {
+            current.epoch
+        };
+        self.transport_url_available_tx.send_replace(
+            BootstrapTransportUrlState {
+                available: is_transport_url_available,
+                epoch,
+            },
+        );
+    }
+}
+
+async fn wait_for_bootstrap_available(
+    transport_url_available: &mut tokio::sync::watch::Receiver<
+        BootstrapTransportUrlState,
+    >,
+) -> bool {
+    transport_url_available
+        .wait_for(|state| state.available)
+        .await
+        .is_ok()
 }
 
 async fn push_task(
     config: CoreBootstrapConfig,
-    push_send: PushSend,
+    mut transport_url_available: tokio::sync::watch::Receiver<
+        BootstrapTransportUrlState,
+    >,
     mut push_recv: PushRecv,
     auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
 ) {
@@ -238,56 +294,55 @@ async fn push_task(
             .expect("bootstrap url not checked"),
     )
     .expect("invalid server url");
-    let mut wait = None;
 
-    while let Some(info) = push_recv.recv().await {
-        match tokio::task::spawn_blocking({
-            let auth_material = auth_material.clone();
-            let server_url = server_url.clone();
-            let info = info.clone();
-            move || {
-                kitsune2_bootstrap_client::blocking_put_auth(
-                    server_url,
-                    &info,
-                    auth_material.as_ref().as_ref(),
-                )
+    while let Some(item) = push_recv.recv().await {
+        let mut wait: Option<std::time::Duration> = None;
+        loop {
+            if !wait_for_bootstrap_available(&mut transport_url_available).await
+            {
+                return;
             }
-        })
-        .await
-        {
-            Ok(Ok(_)) => {
-                // the put was successful, we don't need to wait
-                // before sending the next info if it is ready
-                wait = None;
+            if item.epoch != transport_url_available.borrow().epoch
+                && !item.info.is_tombstone
+            {
+                break;
             }
-            err => {
-                tracing::debug!(
-                    ?err,
-                    "Failed to push agent info to bootstrap server"
-                );
 
-                let now = Timestamp::now();
-
-                // the put failed, send it back to try again if not expired
-                if info.expires_at > now {
-                    let _ = push_send.try_send(info);
+            let result = tokio::task::spawn_blocking({
+                let auth_material = auth_material.clone();
+                let server_url = server_url.clone();
+                let info = item.info.clone();
+                move || {
+                    kitsune2_bootstrap_client::blocking_put_auth(
+                        server_url,
+                        &info,
+                        auth_material.as_ref().as_ref(),
+                    )
                 }
+            })
+            .await;
 
-                // we need to configure a backoff so we don't hammer the server
-                match wait {
-                    None => wait = Some(config.backoff_min()),
-                    Some(p) => {
-                        let mut p = p * 2;
-                        if p > config.backoff_max() {
-                            p = config.backoff_max();
-                        }
-                        wait = Some(p);
+            if matches!(result, Ok(Ok(_))) {
+                break;
+            }
+            tracing::debug!(
+                ?result,
+                "Failed to push agent info to bootstrap server"
+            );
+            if item.info.expires_at <= Timestamp::now() {
+                break;
+            }
+
+            wait = Some(match wait {
+                None => config.backoff_min(),
+                Some(previous) => (previous * 2).min(config.backoff_max()),
+            });
+            tokio::select! {
+                _ = tokio::time::sleep(wait.expect("set above")) => {}
+                changed = transport_url_available.changed() => {
+                    if changed.is_err() {
+                        return;
                     }
-                }
-
-                // wait for the backoff time
-                if let Some(wait) = &wait {
-                    tokio::time::sleep(*wait).await;
                 }
             }
         }
@@ -300,6 +355,9 @@ async fn poll_task(
     space_id: SpaceId,
     peer_store: DynPeerStore,
     auth_material: Arc<Option<kitsune2_bootstrap_client::AuthMaterial>>,
+    mut transport_url_available: tokio::sync::watch::Receiver<
+        BootstrapTransportUrlState,
+    >,
 ) {
     // Already checked to be a valid URL by the config validation.
     let server_url = url::Url::parse(
@@ -309,10 +367,12 @@ async fn poll_task(
             .expect("bootstrap url not checked"),
     )
     .expect("invalid server url");
-
     let mut wait = config.backoff_min();
 
     loop {
+        if !wait_for_bootstrap_available(&mut transport_url_available).await {
+            return;
+        }
         match tokio::task::spawn_blocking({
             let auth_material = auth_material.clone();
             let server_url = server_url.clone();
@@ -342,8 +402,14 @@ async fn poll_task(
         if wait > config.backoff_max() {
             wait = config.backoff_max();
         }
-
-        tokio::time::sleep(wait).await;
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            changed = transport_url_available.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+        }
     }
 }
 

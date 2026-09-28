@@ -43,8 +43,14 @@ impl KitsuneFactory for CoreKitsuneFactory {
 struct TxHandlerTranslator(DynKitsuneHandler);
 
 impl TxBaseHandler for TxHandlerTranslator {
-    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
-        self.0.new_listening_address(this_url)
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        match state {
+            TransportUrl::Available(url) => self.0.new_listening_address(url),
+            TransportUrl::Unavailable => Box::pin(async {}),
+        }
     }
 
     fn peer_disconnect(&self, peer: Url, reason: Option<String>) {
@@ -217,10 +223,14 @@ impl Kitsune for CoreKitsune {
                         ));
                     }
 
+                    // Release any transport resources configured for this
+                    // space, then unregister its handlers.
+                    self.transport()
+                        .await?
+                        .unconfigure_for_space(space_id.clone())
+                        .await?;
                     // Checks passed, remove our reference to the space.
                     self.map.lock().unwrap().remove(&space_id);
-
-                    // Unregister the space and its module handlers from the transport.
                     self.transport().await?.unregister_space(space_id).await;
 
                     // Get all the peer URLs of connected peers.

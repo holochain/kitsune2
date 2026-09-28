@@ -403,18 +403,17 @@ impl ConnectionContext {
                                 .to_string();
                         }
                         Err(err) => {
-                            // Don't mark peer as unresponsive for NoLocalAgentsDuringPreflight
-                            // errors - this is a temporary state that will resolve once an
-                            // agent joins. It is not a real failure, so log it quietly and
-                            // reserve `error!` for genuine preflight failures.
+                            // Temporary local preflight state is not evidence
+                            // that the remote peer is unresponsive.
                             if matches!(
                                 err,
                                 K2Error::NoLocalAgentsDuringPreflight
+                                    | K2Error::TransportUrlUnavailable
                             ) {
                                 mark_unresponsive = false;
                                 debug!(
                                     ?err,
-                                    "Stream closed during preflight; no local agents yet"
+                                    "Stream closed during temporary local unavailability"
                                 );
                             } else {
                                 error!(?err, "Stream closed by remote");
@@ -499,7 +498,7 @@ impl ConnectionContext {
                 } else {
                     info!(
                         ?remote_url,
-                        "Skipping set_unresponsive due to temporary error (no local agents)"
+                        "Skipping set_unresponsive due to temporary local state"
                     );
                 }
                 ctx.disconnect(CloseCode::Unspecified, exit.err);
@@ -558,27 +557,40 @@ impl ConnectionContext {
                 // If the preflight has not been sent yet, it must be the first message
                 // sent back to the remote.
                 if !ctx.preflight_sent() {
-                    let global_url = local_url.read().expect("poisoned").clone();
-                    let space_relays = ctx.space_relays.read().expect("poisoned").clone();
+                    let global_url =
+                        local_url.read().expect("poisoned").clone();
+                    let space_relays =
+                        ctx.space_relays.read().expect("poisoned").clone();
+                    if IrohTransport::own_url_for_preflight(
+                        &remote_url,
+                        &space_relays,
+                        &global_url,
+                    )
+                    .is_none()
+                    {
+                        debug!(peer = ?ctx.connection.remote_id(), "Cannot return preflight while the transport URL is unavailable");
+                        return Err(K2Error::TransportUrlUnavailable);
+                    }
+
+                    let return_preflight =
+                        ctx.handler.peer_connect(remote_url.clone()).await?;
+                    let global_url =
+                        local_url.read().expect("poisoned").clone();
+                    let space_relays =
+                        ctx.space_relays.read().expect("poisoned").clone();
                     let own_url = IrohTransport::own_url_for_preflight(
                         &remote_url,
                         &space_relays,
                         &global_url,
-                    );
-                    if let Some(own_url) = own_url {
-                        let return_preflight =
-                            ctx.handler.peer_connect(remote_url.clone()).await?;
-                        ctx.send_preflight_frame(
-                            own_url.clone(),
-                            return_preflight,
-                        )
-                            .await?;
-                        info!(peer = ?ctx.connection.remote_id(), ?own_url, "Sent preflight to peer");
-                        ctx.set_preflight_sent();
-                    } else {
-                        warn!(peer = ?ctx.connection.remote_id(), "Received preflight, but cannot return preflight because own URL is unknown");
-                        return Err(K2Error::other("Connection received before home relay URL is known"));
-                    }
+                    )
+                    .ok_or(K2Error::TransportUrlUnavailable)?;
+                    ctx.send_preflight_frame(
+                        own_url.clone(),
+                        return_preflight,
+                    )
+                    .await?;
+                    info!(peer = ?ctx.connection.remote_id(), ?own_url, "Sent preflight to peer");
+                    ctx.set_preflight_sent();
                 }
 
                 Ok(remote_url)

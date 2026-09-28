@@ -32,6 +32,10 @@ pub trait Gossip: 'static + Send + Sync + std::fmt::Debug {
         &self,
         request: GossipStateSummaryRequest,
     ) -> BoxFut<'_, K2Result<GossipStateSummary>>;
+
+    /// Pause or resume outbound participation based on local transport URL
+    /// availability.
+    fn set_transport_url_available(&self, _is_transport_url_available: bool) {}
 }
 
 /// Trait-object [Gossip].

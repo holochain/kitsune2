@@ -11,8 +11,9 @@ use crate::test_utils::MockTxHandler;
 use base64::Engine as _;
 use kitsune2_api::{Config, DynTxHandler, SpaceId, TxImp, TxImpHnd};
 use kitsune2_bootstrap_srv::{AuthConfig, BootstrapSrv};
-use kitsune2_test_utils::auth::AuthHookServer;
-use kitsune2_test_utils::space::TEST_SPACE_ID;
+use kitsune2_test_utils::{
+    auth::AuthHookServer, retry_fn_until_timeout, space::TEST_SPACE_ID,
+};
 use std::time::Duration;
 
 /// Start a local bootstrap server with relay authentication enabled.
@@ -58,6 +59,147 @@ fn space_config(relay_url: &str, auth_material: &[u8]) -> Config {
     config
 }
 
+async fn wait_for_space_address(
+    tx: &IrohTransport,
+    space_id: &SpaceId,
+) -> RelayUrl {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if let Some(state) = tx
+                .space_relays
+                .read()
+                .expect("poisoned")
+                .get(space_id)
+                .cloned()
+                .filter(|state| state.local_url.is_some())
+            {
+                return state.relay_url;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("relay was not available for the space within 30 s")
+}
+
+async fn wait_for_inserted_space_relay(
+    tx: &IrohTransport,
+    space_id: &SpaceId,
+) -> RelayUrl {
+    let relay = tx
+        .space_relays
+        .read()
+        .expect("poisoned")
+        .get(space_id)
+        .expect("space relay should be configured")
+        .relay_url
+        .clone();
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            if let Some(config) = tx.endpoint.remove_relay(&relay).await {
+                tx.endpoint.insert_relay(relay.clone(), config).await;
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("relay was not inserted within 30 s");
+    relay
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn offline_start_recovers_and_sends_when_relay_appears() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("reserve relay port");
+    let relay_addr = listener.local_addr().expect("read relay address");
+    drop(listener);
+    let relay_url = format!("http://{relay_addr}/relay");
+    let config = IrohTransportConfig {
+        relay_url: Some(relay_url),
+        relay_allow_plain_text: true,
+        ..Default::default()
+    };
+
+    let received = Arc::new(tokio::sync::Notify::new());
+    let received_notify = received.clone();
+    let handler_b = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_, _, _| {
+            received_notify.notify_one();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let imp_handler_b = TxImpHnd::new(handler_b.clone());
+    let imp_b =
+        IrohTransport::create(config.clone(), imp_handler_b.clone(), None)
+            .await
+            .expect("offline transport B should be constructed");
+    let transport_b = DefaultTransport::create(&imp_handler_b, imp_b.clone());
+    assert_eq!(
+        transport_b.register_space_handler(TEST_SPACE_ID, handler_b.clone()),
+        TransportUrl::Unavailable
+    );
+
+    let handler_a = Arc::new(MockTxHandler::default());
+    let imp_handler_a = TxImpHnd::new(handler_a.clone());
+    let imp_a = IrohTransport::create(config, imp_handler_a.clone(), None)
+        .await
+        .expect("offline transport A should be constructed");
+    let transport_a = DefaultTransport::create(&imp_handler_a, imp_a.clone());
+    assert_eq!(
+        transport_a.register_space_handler(TEST_SPACE_ID, handler_a.clone()),
+        TransportUrl::Unavailable
+    );
+
+    let server = tokio::task::spawn_blocking(move || {
+        BootstrapSrv::new(kitsune2_bootstrap_srv::Config {
+            listen_address_list: vec![relay_addr],
+            ..kitsune2_bootstrap_srv::Config::testing()
+        })
+    })
+    .await
+    .expect("relay server task should not panic")
+    .expect("relay server should start");
+
+    retry_fn_until_timeout(
+        || async {
+            matches!(
+                *handler_a.transport_url.lock().expect("poison"),
+                TransportUrl::Available(_)
+            ) && matches!(
+                *handler_b.transport_url.lock().expect("poison"),
+                TransportUrl::Available(_)
+            )
+        },
+        Some(30_000),
+        Some(20),
+    )
+    .await
+    .expect("transports did not recover after the relay started");
+
+    let target = match handler_b.transport_url.lock().expect("poison").clone() {
+        TransportUrl::Available(url) => url,
+        TransportUrl::Unavailable => {
+            panic!("transport B lost its recovered URL")
+        }
+    };
+    transport_a
+        .send_space_notify(
+            target,
+            TEST_SPACE_ID,
+            Bytes::from_static(b"recovered"),
+        )
+        .await
+        .expect("send should succeed after relay recovery");
+    tokio::time::timeout(Duration::from_secs(30), received.notified())
+        .await
+        .expect("recovered transport did not deliver the notification");
+
+    drop(server);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn releasing_a_space_keeps_the_transport_own_relay() {
     kitsune2_test_utils::enable_tracing();
@@ -89,14 +231,7 @@ async fn releasing_a_space_keeps_the_transport_own_relay() {
     .await
     .unwrap();
 
-    let inserted = tx
-        .space_relays
-        .read()
-        .expect("poisoned")
-        .get(&TEST_SPACE_ID)
-        .expect("configure_for_space returned before the relay was ready")
-        .0
-        .clone();
+    let inserted = wait_for_space_address(&tx, &TEST_SPACE_ID).await;
 
     tx.unconfigure_for_space(TEST_SPACE_ID).await.unwrap();
 
@@ -138,22 +273,7 @@ async fn releasing_a_space_removes_a_relay_it_named() {
     .await
     .unwrap();
 
-    let inserted = tokio::time::timeout(Duration::from_secs(30), async {
-        loop {
-            if let Some((relay, _)) = tx
-                .space_relays
-                .read()
-                .expect("poisoned")
-                .get(&space_id)
-                .cloned()
-            {
-                return relay;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("relay was not inserted for the space within 30 s");
+    let inserted = wait_for_inserted_space_relay(&tx, &space_id).await;
 
     tx.unconfigure_for_space(space_id).await.unwrap();
 

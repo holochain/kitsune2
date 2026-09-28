@@ -183,7 +183,9 @@ impl SpaceFactory for CoreSpaceFactory {
             let local_agent_store =
                 builder.local_agent_store.create(builder.clone()).await?;
             report.space(space_id.clone(), local_agent_store.clone());
-            let inner = Arc::new(RwLock::new(InnerData { current_url: None }));
+            let inner = Arc::new(RwLock::new(InnerData {
+                transport_url: TransportUrl::Unavailable,
+            }));
             let op_store = builder
                 .op_store
                 .create(builder.clone(), space_id.clone())
@@ -228,12 +230,18 @@ impl SpaceFactory for CoreSpaceFactory {
                 )
                 .await?;
 
-            let out: DynSpace = Arc::new_cyclic(move |this| {
-                let current_url = tx.register_space_handler(
+            let out: Arc<CoreSpace> = Arc::new_cyclic(move |this| {
+                let mut current_state = inner.write().expect("poison");
+                let transport_url = tx.register_space_handler(
                     space_id.clone(),
-                    Arc::new(TxHandlerTranslator(handler, this.clone())),
+                    Arc::new(TxHandlerTranslator(
+                        handler,
+                        this.clone(),
+                        inner.clone(),
+                    )),
                 );
-                inner.write().unwrap().current_url = current_url;
+                current_state.transport_url = transport_url;
+                drop(current_state);
                 CoreSpace::new(
                     config.core_space,
                     space_id,
@@ -252,12 +260,17 @@ impl SpaceFactory for CoreSpaceFactory {
                     peer_access_state,
                 )
             });
-            Ok(out)
+            out.apply_transport_url().await;
+            Ok(out as DynSpace)
         })
     }
 }
 
-struct TxHandlerTranslator(DynSpaceHandler, Weak<CoreSpace>);
+struct TxHandlerTranslator(
+    DynSpaceHandler,
+    Weak<CoreSpace>,
+    Arc<RwLock<InnerData>>,
+);
 
 impl std::fmt::Debug for TxHandlerTranslator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -266,11 +279,15 @@ impl std::fmt::Debug for TxHandlerTranslator {
 }
 
 impl TxBaseHandler for TxHandlerTranslator {
-    fn new_listening_address(&self, this_url: Url) -> BoxFut<'static, ()> {
+    fn transport_url_changed(
+        &self,
+        state: TransportUrl,
+    ) -> BoxFut<'static, ()> {
+        self.2.write().expect("poison").transport_url = state;
         let space = self.1.upgrade();
         Box::pin(async move {
-            if let Some(this) = space {
-                this.new_url(this_url).await;
+            if let Some(space) = space {
+                space.apply_transport_url().await;
             }
         })
     }
@@ -367,7 +384,7 @@ impl TxSpaceHandler for TxHandlerTranslator {
 }
 
 struct InnerData {
-    current_url: Option<Url>,
+    transport_url: TransportUrl,
 }
 
 struct CoreSpace {
@@ -428,6 +445,14 @@ impl CoreSpace {
             peer_store.clone(),
             local_agent_store.clone(),
         ));
+        let is_transport_url_available = matches!(
+            inner.read().expect("poison").transport_url,
+            TransportUrl::Available(_)
+        );
+        bootstrap.set_transport_url_available(is_transport_url_available);
+        fetch.set_transport_url_available(is_transport_url_available);
+        publish.set_transport_url_available(is_transport_url_available);
+        gossip.set_transport_url_available(is_transport_url_available);
         Self {
             space_id,
             tx,
@@ -447,11 +472,19 @@ impl CoreSpace {
         }
     }
 
-    pub async fn new_url(&self, this_url: Url) {
-        {
-            let mut lock = self.inner.write().unwrap();
-            lock.current_url = Some(this_url);
-        }
+    async fn apply_transport_url(&self) {
+        let is_transport_url_available = matches!(
+            self.inner.read().expect("poison").transport_url,
+            TransportUrl::Available(_)
+        );
+        self.bootstrap
+            .set_transport_url_available(is_transport_url_available);
+        self.fetch
+            .set_transport_url_available(is_transport_url_available);
+        self.publish
+            .set_transport_url_available(is_transport_url_available);
+        self.gossip
+            .set_transport_url_available(is_transport_url_available);
 
         if let Ok(local_agents) = self.local_agent_store.get_all().await {
             for local_agent in local_agents {
@@ -499,7 +532,10 @@ impl Space for CoreSpace {
     }
 
     fn current_url(&self) -> Option<Url> {
-        self.inner.read().unwrap().current_url.clone()
+        match &self.inner.read().expect("poison").transport_url {
+            TransportUrl::Unavailable => None,
+            TransportUrl::Available(url) => Some(url.clone()),
+        }
     }
 
     fn local_agent_join(
@@ -523,64 +559,73 @@ impl Space for CoreSpace {
             local_agent.register_cb(Arc::new(move || {
                 let inner = inner.clone();
                 let space_id = space_id.clone();
-                let local_agent2 = local_agent2.clone();
+                let local_agent = local_agent2.clone();
                 let peer_store = peer_store.clone();
                 let local_agent_store = local_agent_store.clone();
                 let publish = publish.clone();
                 let bootstrap = bootstrap.clone();
                 tokio::task::spawn(async move {
-                    let url = {
-                        inner.read().unwrap().current_url.clone()
-                    };
-
-                    if let Some(url) = url {
-                        // sign a new agent info
-                        let created_at = Timestamp::now();
-                        let expires_at = created_at
-                            + std::time::Duration::from_secs(60 * 20);
-                        let info = AgentInfo {
-                            agent: local_agent2.agent().clone(),
-                            space: space_id,
-                            created_at,
-                            expires_at,
-                            is_tombstone: false,
-                            url: Some(url),
-                            storage_arc: local_agent2.get_cur_storage_arc(),
-                        };
-
-                        let info =
-                            match AgentInfoSigned::sign(&local_agent2, info)
-                                .await
-                            {
-                                Err(err) => {
+                    let transport_url =
+                        inner.read().expect("poison").transport_url.clone();
+                    let url = match transport_url {
+                            TransportUrl::Unavailable => {
+                                if let Err(err) = peer_store
+                                    .remove(local_agent.agent().clone())
+                                    .await
+                                {
                                     tracing::warn!(
                                         ?err,
-                                        "failed to sign agent info",
+                                        "failed to remove unavailable local agent info"
                                     );
-                                    return;
                                 }
-                                Ok(info) => info,
-                            };
+                                return;
+                            }
+                            TransportUrl::Available(url) => url.clone(),
+                        };
 
-                        // add it to the peer_store.
-                        if let Err(err) =
-                            peer_store.insert(vec![info.clone()]).await
-                        {
-                            tracing::warn!(
-                                ?err,
-                                "failed to add agent info to peer store"
-                            );
+                    let created_at = Timestamp::now();
+                    let info = AgentInfo {
+                        agent: local_agent.agent().clone(),
+                        space: space_id,
+                        created_at,
+                        expires_at: created_at
+                            + std::time::Duration::from_secs(60 * 20),
+                        is_tombstone: false,
+                        url: Some(url),
+                        storage_arc: local_agent.get_cur_storage_arc(),
+                    };
+                    let info = match AgentInfoSigned::sign(&local_agent, info)
+                        .await
+                    {
+                        Err(err) => {
+                            tracing::warn!(?err, "failed to sign agent info");
+                            return;
                         }
+                        Ok(info) => info,
+                    };
 
-                        // add it to bootstrapping.
-                        bootstrap.put(info.clone());
+                    if let Err(err) =
+                        peer_store.insert(vec![info.clone()]).await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            "failed to add agent info to peer store"
+                        );
+                    }
 
-                        // and send it to our peers.
-                        if let Err(err) = broadcast_agent_info(peer_store, local_agent_store, publish, info).await {
-                            tracing::warn!(?err, "Failed to broadcast agent info")
-                        }
-                    } else {
-                        tracing::info!("Not updating agent info because we don't have a current url");
+                    bootstrap.put(info.clone());
+                    if let Err(err) = broadcast_agent_info(
+                        peer_store,
+                        local_agent_store,
+                        publish,
+                        info,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            "Failed to broadcast agent info"
+                        );
                     }
                 });
             }));
@@ -654,12 +699,17 @@ impl Space for CoreSpace {
             }
         })
     }
-
     fn send_notify(
         &self,
         to_peer: Url,
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
+        if matches!(
+            self.inner.read().expect("poison").transport_url,
+            TransportUrl::Unavailable
+        ) {
+            return Box::pin(async { Err(K2Error::TransportUrlUnavailable) });
+        }
         self.tx
             .send_space_notify(to_peer, self.space_id.clone(), data)
     }

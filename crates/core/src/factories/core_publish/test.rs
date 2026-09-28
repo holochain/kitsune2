@@ -7,7 +7,7 @@ use kitsune2_api::{
     AgentId, AgentInfo, AgentInfoSigned, BoxFut, Builder, DhtArc, DynOpStore,
     DynPeerMetaStore, DynPeerStore, DynTransport, DynVerifier, K2Error,
     K2Result, MockTransport, Publish, PublishOp, Signer, SpaceHandler, SpaceId,
-    Timestamp, TxBaseHandler, TxHandler, TxSpaceHandler, Url,
+    Timestamp, TransportUrl, TxBaseHandler, TxHandler, TxSpaceHandler, Url,
 };
 use kitsune2_test_utils::{
     agent::{TestLocalAgent, TestVerifier},
@@ -386,6 +386,61 @@ async fn no_publish_to_unresponsive_url() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn queued_publish_resumes_when_transport_url_becomes_available() {
+    let send_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let send_observed = Arc::new(tokio::sync::Notify::new());
+    let observed_count = send_count.clone();
+    let observed_send = send_observed.clone();
+    let mut transport = MockTransport::new();
+    transport.expect_send_module().returning(move |_, _, _, _| {
+        observed_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        observed_send.notify_one();
+        Box::pin(async { Ok(()) })
+    });
+    transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| {});
+    let transport: DynTransport = Arc::new(transport);
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let (publish, _, _, _) = create_publish(
+        CorePublishConfig::default(),
+        builder,
+        transport.clone(),
+    )
+    .await;
+    publish.set_transport_url_available(false);
+
+    publish
+        .publish_ops(
+            vec![PublishOp {
+                op_id: MemoryOp::new(Timestamp::now(), vec![1]).compute_op_id(),
+                metadata: None,
+            }],
+            Url::from_str("ws://peer.example:80").unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(50),
+            send_observed.notified()
+        )
+        .await
+        .is_err(),
+        "queued publish must not be sent while unavailable"
+    );
+    assert_eq!(send_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    publish.set_transport_url_available(true);
+    tokio::time::timeout(Duration::from_secs(1), send_observed.notified())
+        .await
+        .expect("queued publish should resume after availability");
+    assert_eq!(send_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn publish_ops_rejects_oversized_metadata() {
     let mut transport = MockTransport::new();
     transport
@@ -540,9 +595,11 @@ impl Test {
             .await
             .unwrap();
 
-        let url = transport
+        let TransportUrl::Available(url) = transport
             .register_space_handler(TEST_SPACE_ID, Arc::new(NoopHandler))
-            .unwrap();
+        else {
+            panic!("memory transport should be immediately available");
+        };
 
         let (publish, op_store, peer_store, _) = create_publish(
             CorePublishConfig::default(),

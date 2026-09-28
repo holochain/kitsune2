@@ -116,8 +116,10 @@ async fn configure_for_space_adds_relay() {
     let got_address = Arc::new(tokio::sync::Notify::new());
     let got_address_clone = got_address.clone();
     let handler: DynTxHandler = Arc::new(MockTxHandler {
-        new_listening_address: Arc::new(move |_url| {
-            got_address_clone.notify_one();
+        transport_url_changed: Arc::new(move |state| {
+            if matches!(state, TransportUrl::Available(_)) {
+                got_address_clone.notify_one();
+            }
         }),
         ..MockTxHandler::default()
     });

@@ -1,11 +1,10 @@
 use bytes::Bytes;
-use kitsune2_api::{K2Proto, K2WireType, Timestamp, Url};
+use kitsune2_api::{K2Error, K2Proto, K2WireType, Timestamp, Url};
 use kitsune2_test_utils::{
     enable_tracing, retry_fn_until_timeout, space::TEST_SPACE_ID,
 };
-use kitsune2_transport_iroh::{
-    RELAY_NOT_CONNECTED_ERR,
-    test_utils::{IrohTransportTestHarness, MockTxHandler, dummy_url},
+use kitsune2_transport_iroh::test_utils::{
+    IrohTransportTestHarness, MockTxHandler, dummy_url,
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{
@@ -1277,9 +1276,9 @@ async fn no_unresponsive_when_relay_drops() {
     } = harness;
     drop(_bootstrap_server);
 
-    // Poll until the is_home_relay_connected() guard activates: a send to the
-    // fake peer must return near-instantly with the relay-not-connected error
-    // rather than hanging for connect_timeout_s (60 s).
+    // Poll until the local relay guard activates: a send to the fake peer must
+    // return near-instantly with typed local unavailability rather than hanging
+    // for connect_timeout_s (60 s).
     //
     // Each loop iteration uses a 500 ms inner timeout.  While iroh has not yet
     // detected the relay drop the inner future is cancelled (no set_unresponsive),
@@ -1295,9 +1294,7 @@ async fn no_unresponsive_when_relay_drops() {
                 ),
             )
             .await;
-            if let Ok(Err(ref e)) = result
-                && e.to_string().contains(RELAY_NOT_CONNECTED_ERR)
-            {
+            if let Ok(Err(K2Error::TransportUrlUnavailable)) = result {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;

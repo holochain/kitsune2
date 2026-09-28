@@ -116,6 +116,8 @@ impl RespondTestHarness {
                 agent_verifier: builder.verifier.clone(),
                 transport: Arc::downgrade(&transport),
                 burst: AcceptBurstTracker::new(config),
+                transport_url_available_tx: tokio::sync::watch::channel(true).0,
+                force_initiate: Default::default(),
                 _initiate_task: Default::default(),
                 _timeout_task: Default::default(),
                 _dht_update_task: Default::default(),

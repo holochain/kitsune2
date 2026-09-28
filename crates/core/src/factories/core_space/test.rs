@@ -433,6 +433,162 @@ async fn broadcast_new_agent_info_on_resign() {
     assert_eq!(bob.agent(), &broadcast.0.agent);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn unavailable_space_refreshes_agent_info_when_transport_url_appears() {
+    type Controller = Arc<Mutex<Option<Arc<TxImpHnd>>>>;
+
+    #[derive(Debug)]
+    struct OfflineTx;
+
+    impl TxImp for OfflineTx {
+        fn disconnect(
+            &self,
+            _peer: Url,
+            _payload: Option<(String, bytes::Bytes)>,
+        ) -> BoxFut<'_, ()> {
+            Box::pin(async {})
+        }
+
+        fn send(
+            &self,
+            _peer: Url,
+            _data: bytes::Bytes,
+        ) -> BoxFut<'_, K2Result<()>> {
+            Box::pin(async { Err(K2Error::TransportUrlUnavailable) })
+        }
+
+        fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
+            Box::pin(async {
+                Ok(TransportStats {
+                    backend: "offline".to_string(),
+                    peer_urls: Vec::new(),
+                    connections: Vec::new(),
+                })
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct OfflineTxFactory(Controller);
+
+    impl TransportFactory for OfflineTxFactory {
+        fn default_config(&self, _config: &mut Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn validate_config(&self, _config: &Config) -> K2Result<()> {
+            Ok(())
+        }
+
+        fn create(
+            &self,
+            _builder: Arc<Builder>,
+            handler: DynTxHandler,
+        ) -> BoxFut<'static, K2Result<DynTransport>> {
+            let controller = self.0.clone();
+            Box::pin(async move {
+                let handler = TxImpHnd::new(handler);
+                *controller.lock().expect("poison") = Some(handler.clone());
+                Ok(DefaultTransport::create(&handler, Arc::new(OfflineTx)))
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct Handler;
+    impl SpaceHandler for Handler {}
+    impl KitsuneHandler for Handler {
+        fn create_space(
+            &self,
+            _space_id: SpaceId,
+            _config_override: Option<&Config>,
+        ) -> BoxFut<'_, K2Result<DynSpaceHandler>> {
+            Box::pin(async { Ok(Arc::new(Handler) as DynSpaceHandler) })
+        }
+    }
+
+    let controller: Controller = Arc::new(Mutex::new(None));
+    let kitsune = Builder {
+        verifier: Arc::new(TestVerifier),
+        transport: Arc::new(OfflineTxFactory(controller.clone())),
+        ..crate::default_test_builder()
+    }
+    .with_default_config()
+    .unwrap()
+    .build()
+    .await
+    .unwrap();
+    kitsune.register_handler(Arc::new(Handler)).await.unwrap();
+    let space = kitsune.space(TEST_SPACE_ID, None).await.unwrap();
+    let agent = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
+    space.local_agent_join(agent.clone()).await.unwrap();
+
+    iter_check!(1000, {
+        if space
+            .peer_store()
+            .get(agent.agent().clone())
+            .await
+            .unwrap()
+            .is_none()
+        {
+            break;
+        }
+    });
+    assert_eq!(space.current_url(), None);
+    let send_error = space
+        .send_notify(
+            Url::from_str("ws://remote.example:80").unwrap(),
+            bytes::Bytes::from_static(b"offline"),
+        )
+        .await
+        .expect_err("remote signals should be deferred while unavailable");
+    assert!(matches!(send_error, K2Error::TransportUrlUnavailable));
+
+    let replacement = Url::from_str("ws://replacement.example:80").unwrap();
+    let transport_handler = controller
+        .lock()
+        .expect("poison")
+        .clone()
+        .expect("transport controller should be installed");
+    transport_handler
+        .transport_url_changed(
+            TransportUrl::Available(replacement.clone()),
+            None,
+        )
+        .await;
+
+    iter_check!(1000, {
+        if let Some(info) =
+            space.peer_store().get(agent.agent().clone()).await.unwrap()
+            && info.url.as_ref() == Some(&replacement)
+        {
+            break;
+        }
+    });
+
+    assert_eq!(space.current_url(), Some(replacement));
+
+    transport_handler
+        .transport_url_changed(TransportUrl::Unavailable, None)
+        .await;
+    iter_check!(1000, {
+        if space
+            .peer_store()
+            .get(agent.agent().clone())
+            .await
+            .unwrap()
+            .is_none()
+        {
+            break;
+        }
+    });
+    assert_eq!(space.current_url(), None);
+}
+
 /// The per-space transport hook exists so a space can name a relay of its own.
 /// Calling it for a space that overrides nothing hands the transport the global
 /// config and presents the defaults as that space's own - which the transport
@@ -451,10 +607,6 @@ mod configure_for_space_only_when_overridden {
     }
 
     impl TxImp for RecordingTx {
-        fn url(&self) -> Option<Url> {
-            None
-        }
-
         fn disconnect(
             &self,
             _peer: Url,

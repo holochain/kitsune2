@@ -118,6 +118,8 @@ pub(crate) struct K2Gossip {
     pub(crate) agent_verifier: DynVerifier,
     pub(crate) transport: WeakDynTransport,
     pub(crate) burst: AcceptBurstTracker,
+    pub(crate) transport_url_available_tx: tokio::sync::watch::Sender<bool>,
+    pub(crate) force_initiate: Arc<OnceLock<tokio::sync::mpsc::Sender<()>>>,
     pub(crate) _initiate_task: Arc<OnceLock<Option<DropAbortHandle>>>,
     pub(crate) _timeout_task: Arc<OnceLock<Option<DropAbortHandle>>>,
     pub(crate) _dht_update_task: Arc<OnceLock<Option<DropAbortHandle>>>,
@@ -146,6 +148,7 @@ impl K2Gossip {
         tracing::info!("DHT model initialised in {:?}", start.elapsed());
 
         let config = Arc::new(config);
+        let (transport_url_available_tx, _) = tokio::sync::watch::channel(true);
         let gossip = K2Gossip {
             config: config.clone(),
             initiated_round_state: Default::default(),
@@ -160,6 +163,8 @@ impl K2Gossip {
             agent_verifier,
             transport: Arc::downgrade(&transport),
             burst: AcceptBurstTracker::new(config),
+            transport_url_available_tx,
+            force_initiate: Default::default(),
             _initiate_task: Default::default(),
             _timeout_task: Default::default(),
             _dht_update_task: Default::default(),
@@ -175,6 +180,10 @@ impl K2Gossip {
 
         let (force_initiate, initiate_task) =
             spawn_initiate_task(gossip.config.clone(), Arc::downgrade(&gossip));
+        gossip
+            .force_initiate
+            .set(force_initiate.clone())
+            .expect("force initiate sender is set once");
         gossip
             ._initiate_task
             .set(Some(DropAbortHandle {
@@ -217,6 +226,9 @@ impl K2Gossip {
         &self,
         target_peer_url: Url,
     ) -> K2Result<bool> {
+        if !*self.transport_url_available_tx.borrow() {
+            return Ok(false);
+        }
         let mut initiated_lock = self.initiated_round_state.lock().await;
         if initiated_lock.is_some() {
             tracing::debug!("initiate_gossip: already initiated");
@@ -315,7 +327,7 @@ impl K2Gossip {
         Ok(())
     }
 
-    /// Send a gossip message to a peer
+    /// Send a gossip message to a peer.
     pub(crate) async fn send_gossip_message(
         &self,
         msg: GossipMessage,
@@ -332,14 +344,15 @@ impl K2Gossip {
             target_url,
             msg
         );
-
-        let msg = serialize_gossip_message(msg)?;
+        if !*self.transport_url_available_tx.borrow() {
+            return Err(K2Error::TransportUrlUnavailable);
+        }
         transport
             .send_module(
                 target_url,
                 self.space_id.clone(),
                 MOD_NAME.to_string(),
-                msg,
+                serialize_gossip_message(msg)?,
             )
             .await
     }
@@ -372,6 +385,13 @@ impl K2Gossip {
                             e
                         );
                     }
+                }
+                Err(K2GossipError::K2Error(
+                    K2Error::TransportUrlUnavailable,
+                )) => {
+                    tracing::debug!(
+                        "Paused gossip response because the transport URL is unavailable"
+                    );
                 }
                 Err(e) => {
                     tracing::error!(
@@ -407,6 +427,18 @@ impl Gossip for K2Gossip {
         request: GossipStateSummaryRequest,
     ) -> BoxFut<'_, K2Result<GossipStateSummary>> {
         Box::pin(async move { self.summary(request.include_dht_summary).await })
+    }
+
+    fn set_transport_url_available(&self, is_transport_url_available: bool) {
+        let was_available = self
+            .transport_url_available_tx
+            .send_replace(is_transport_url_available);
+        if is_transport_url_available
+            && !was_available
+            && let Some(force_initiate) = self.force_initiate.get()
+        {
+            let _ = force_initiate.try_send(());
+        }
     }
 }
 

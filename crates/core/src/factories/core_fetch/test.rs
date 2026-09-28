@@ -151,8 +151,7 @@ mod tests {
         tx.register_space_handler(
             kitsune2_test_utils::space::TEST_SPACE_ID,
             Arc::new(MockTxHandler),
-        )
-        .unwrap();
+        );
 
         // We need to add an agent info of the sending peer to the receiving
         // peer's peer store so that it won't consider the peer blocked and
