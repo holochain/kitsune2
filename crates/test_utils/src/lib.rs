@@ -57,7 +57,7 @@ macro_rules! iter_check {
             },
         )
         .await
-        .unwrap();
+        .unwrap()
     };
 
     ($timeout_ms:literal, $code:block) => {
