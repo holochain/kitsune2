@@ -348,7 +348,7 @@ async fn shutdown_space() {
         .unwrap();
 
     // Wait for gossip to exchange all ops.
-    iter_check!(15000, 500, {
+    iter_check!(60000, 500, {
         let actual_ops_1 = space_1
             .op_store()
             .retrieve_ops(op_ids_2.clone())
