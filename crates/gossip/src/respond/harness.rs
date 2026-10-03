@@ -1,29 +1,35 @@
 use crate::burst::AcceptBurstTracker;
 use crate::gossip::K2Gossip;
 use crate::peer_meta_store::K2PeerMetaStore;
-use crate::protocol::{GossipMessage, deserialize_gossip_message};
-use crate::state::GossipRoundState;
+use crate::protocol::{
+    AcceptResponseMessage, GossipMessage, K2GossipNoDiffMessage,
+    deserialize_gossip_message,
+};
+use crate::state::{GossipRoundState, RoundStage, RoundStageAccepted};
 use crate::{K2GossipConfig, MOD_NAME};
-use base64::Engine;
 use bytes::Bytes;
 use kitsune2_api::*;
 use kitsune2_core::{Ed25519LocalAgent, default_test_builder};
 use kitsune2_dht::{ArcSet, Dht};
 use kitsune2_test_utils::agent::AgentBuilder;
 use kitsune2_test_utils::space::TEST_SPACE_ID;
+#[cfg(test)]
 use rand::Rng;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
-pub(crate) struct RespondTestHarness {
+/// Test-only harness for deterministically exercising gossip responses.
+pub struct RespondTestHarness {
     pub(crate) gossip: K2Gossip,
+    pub(crate) known_peers: DynKnownPeers,
     pub(crate) rx: tokio::sync::mpsc::Receiver<(Url, Bytes)>,
     pub(crate) _transport: DynTransport,
 }
 
 impl RespondTestHarness {
-    pub(crate) async fn create() -> Self {
+    /// Create a responder harness with the default gossip configuration.
+    pub async fn create() -> Self {
         RespondTestHarness::create_with_config(Default::default()).await
     }
 
@@ -85,7 +91,12 @@ impl RespondTestHarness {
                 space_id: TEST_SPACE_ID,
                 peer_store: builder
                     .peer_store
-                    .create(builder.clone(), TEST_SPACE_ID, blocks, known_peers)
+                    .create(
+                        builder.clone(),
+                        TEST_SPACE_ID,
+                        blocks,
+                        known_peers.clone(),
+                    )
                     .await
                     .unwrap(),
                 local_agent_store: builder
@@ -120,25 +131,20 @@ impl RespondTestHarness {
                 _timeout_task: Default::default(),
                 _dht_update_task: Default::default(),
             },
+            known_peers,
             rx,
             _transport: transport,
         }
     }
 
-    pub(crate) async fn create_agent(
-        &self,
-        tgt_storage_arc: DhtArc,
-    ) -> TestAgent {
+    /// Create a signed test agent with the requested target storage arc.
+    pub async fn create_agent(&self, tgt_storage_arc: DhtArc) -> TestAgent {
         let local_agent = Ed25519LocalAgent::default();
         local_agent.set_tgt_storage_arc_hint(tgt_storage_arc);
 
         let builder = AgentBuilder::default().with_url(Some(
-            Url::from_str(format!(
-                "ws://test:80/{}",
-                base64::prelude::BASE64_URL_SAFE
-                    .encode(local_agent.agent().0.as_ref())
-            ))
-            .unwrap(),
+            Url::from_str(format!("ws://test:80/{}", rand::random::<u64>()))
+                .unwrap(),
         ));
 
         let local: DynLocalAgent = Arc::new(local_agent);
@@ -187,6 +193,91 @@ impl RespondTestHarness {
         session_id
     }
 
+    /// Return the peer store used by this gossip instance.
+    pub fn peer_store(&self) -> DynPeerStore {
+        self.gossip.peer_store.clone()
+    }
+
+    /// Return the URL index used by this gossip instance.
+    pub fn known_peers(&self) -> DynKnownPeers {
+        self.known_peers.clone()
+    }
+
+    /// Capture the agents response selected for a request.
+    pub async fn prepare_agents_response(
+        &mut self,
+        responder: &TestAgent,
+        requester: &TestAgent,
+        requested_agent: AgentId,
+        updated_new_since: Timestamp,
+    ) -> (Bytes, Bytes) {
+        let session_id =
+            self.insert_accepted_round_state(responder, requester).await;
+        {
+            let accepted = self.gossip.accepted_round_states.read().await;
+            let mut state = accepted
+                .get(requester.url.as_ref().unwrap())
+                .unwrap()
+                .lock()
+                .await;
+            state.stage = RoundStage::Accepted(RoundStageAccepted {
+                our_agents: vec![requested_agent.clone()],
+                common_arc_set: ArcSet::new(vec![DhtArc::FULL]).unwrap(),
+            });
+        }
+        self.gossip
+            .respond_to_msg(
+                requester.url.clone().unwrap(),
+                GossipMessage::NoDiff(K2GossipNoDiffMessage {
+                    session_id: session_id.clone(),
+                    accept_response: Some(AcceptResponseMessage {
+                        missing_agents: vec![requested_agent.0.into()],
+                        provided_agents: vec![],
+                        new_ops: vec![],
+                        updated_new_since: updated_new_since.as_micros(),
+                    }),
+                    cannot_compare: false,
+                }),
+            )
+            .await
+            .unwrap();
+
+        let (_, response) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.rx.recv(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        (session_id, response)
+    }
+
+    /// Deliver a previously captured agents response.
+    pub async fn receive_agents_response(
+        &self,
+        local_agent: &TestAgent,
+        remote_agent: &TestAgent,
+        session_id: Bytes,
+        response: Bytes,
+    ) {
+        self.insert_initiated_round_state(local_agent, remote_agent)
+            .await;
+        {
+            let mut state = self.gossip.initiated_round_state.lock().await;
+            let state = state.as_mut().unwrap();
+            state.session_id = session_id;
+            state.stage = RoundStage::NoDiff;
+        }
+        self.gossip
+            .respond_to_msg(
+                remote_agent.url.clone().unwrap(),
+                deserialize_gossip_message(response).unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[cfg(test)]
     pub(crate) async fn wait_for_sent_response(&mut self) -> GossipMessage {
         let received = tokio::time::timeout(
             std::time::Duration::from_secs(5),
@@ -200,9 +291,12 @@ impl RespondTestHarness {
     }
 }
 
+/// A local agent and its signed advertisement for responder tests.
 #[derive(Debug)]
 pub struct TestAgent {
+    /// The signing local agent.
     pub local: DynLocalAgent,
+    /// The signed agent advertisement.
     pub agent_info: Arc<AgentInfoSigned>,
 }
 
@@ -214,6 +308,7 @@ impl Deref for TestAgent {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn test_session_id() -> Bytes {
     let mut session_id = bytes::BytesMut::zeroed(12);
     rand::rng().fill_bytes(&mut session_id);
