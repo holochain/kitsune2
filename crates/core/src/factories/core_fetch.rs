@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use kitsune2_api::*;
 use message_handler::FetchMessageHandler;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::MutexGuard;
 use std::sync::{Arc, Mutex};
 use tokio::{
@@ -517,6 +517,10 @@ impl CoreFetch {
                             op.data.len() as u64,
                         );
                     }
+                    // Look up processed op ids in a set, so removing them is
+                    // linear rather than pending requests × processed ops.
+                    let processed_op_ids: HashSet<&OpId> =
+                        processed_op_ids.iter().collect();
                     lock.requests.retain(|(op_id, _), _| {
                         !processed_op_ids.contains(op_id)
                     });
