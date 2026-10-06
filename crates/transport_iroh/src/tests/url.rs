@@ -372,6 +372,43 @@ fn own_url_for_preflight_unknown_relay_ignores_unshared_space_relay() {
 }
 
 #[test]
+fn own_url_for_preflight_does_not_advertise_space_relay_to_peer_on_another_relay()
+ {
+    let eid = test_endpoint_id();
+    let relay =
+        RelayUrl::from_str("https://space-relay.com:443/relay/").unwrap();
+    let our_space_url =
+        Url::from_str(format!("https://space-relay.com:443/relay/{eid}"))
+            .unwrap();
+    // The home relay is the per-space relay.
+    let global_url = Some(our_space_url.clone());
+    let mut space_relays = HashMap::new();
+    space_relays.insert(space(b"s1"), (relay, Some(our_space_url.clone())));
+
+    let peer_on_another_relay = Url::from_str(
+        "https://unknown-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_on_another_relay,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, None);
+
+    let peer_on_space_relay = Url::from_str(
+        "https://space-relay.com:443/relay/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_on_space_relay,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, Some(our_space_url));
+}
+
+#[test]
 fn own_url_for_preflight_without_own_url_returns_none() {
     let peer_url = Url::from_str(
         "https://unknown-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

@@ -830,28 +830,49 @@ impl IrohTransport {
     /// If the peer is on one of our per-space relays, return our URL on
     /// that relay. Otherwise return our global URL, whichever relay the
     /// peer is on: the peer reaches us through the relay we advertise, not
-    /// through its own. Return `None` only if we have no URL to advertise.
+    /// through its own.
+    ///
+    /// A per-space relay is only ever advertised to a peer on that relay.
+    /// Return `None` if our global URL is unknown or is on a per-space
+    /// relay the peer is not on.
     pub(crate) fn own_url_for_preflight(
         peer_url: &Url,
         space_relays: &HashMap<SpaceId, (RelayUrl, Option<Url>)>,
         global_url: &Option<Url>,
     ) -> Option<Url> {
-        if let Ok(peer_relay) = relay_url_from_peer_url(peer_url) {
-            for (relay_url, our_url) in space_relays.values() {
-                if *relay_url == peer_relay
-                    && let Some(url) = our_url
-                {
-                    info!(
-                        %peer_url,
-                        own_url = %url,
-                        "Using per-space URL for preflight"
-                    );
-                    return Some(url.clone());
-                }
+        let peer_relay = relay_url_from_peer_url(peer_url).ok();
+
+        for (relay_url, our_url) in space_relays.values() {
+            if Some(relay_url) == peer_relay.as_ref()
+                && let Some(url) = our_url
+            {
+                info!(
+                    %peer_url,
+                    own_url = %url,
+                    "Using per-space URL for preflight"
+                );
+                return Some(url.clone());
             }
         }
 
-        global_url.clone()
+        let global = global_url.as_ref()?;
+        let global_relay = relay_url_from_peer_url(global).ok()?;
+
+        // The home relay can be one a space brought. Do not advertise it
+        // to a peer that is not on it.
+        if Some(&global_relay) != peer_relay.as_ref()
+            && space_relays
+                .values()
+                .any(|(relay_url, _)| *relay_url == global_relay)
+        {
+            warn!(
+                %peer_url,
+                "Home relay is a per-space relay the peer is not on, failing preflight"
+            );
+            return None;
+        }
+
+        Some(global.clone())
     }
 
     /// Creates a new connection and its associated context for a peer.
