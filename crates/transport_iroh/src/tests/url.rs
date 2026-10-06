@@ -326,7 +326,7 @@ fn own_url_for_preflight_matches_global_relay() {
 }
 
 #[test]
-fn own_url_for_preflight_unknown_relay_returns_none() {
+fn own_url_for_preflight_unknown_relay_falls_back_to_global() {
     let eid = test_endpoint_id();
     let global_url = Some(
         Url::from_str(format!("https://global-relay.com:443/{eid}")).unwrap(),
@@ -342,6 +342,54 @@ fn own_url_for_preflight_unknown_relay_returns_none() {
         &space_relays,
         &global_url,
     );
+    assert_eq!(result, global_url);
+}
+
+#[test]
+fn own_url_for_preflight_unknown_relay_ignores_unshared_space_relay() {
+    let eid = test_endpoint_id();
+    let relay =
+        RelayUrl::from_str("https://space-relay.com:443/relay/").unwrap();
+    let our_space_url =
+        Url::from_str(format!("https://space-relay.com:443/relay/{eid}"))
+            .unwrap();
+    let global_url = Some(
+        Url::from_str(format!("https://global-relay.com:443/{eid}")).unwrap(),
+    );
+    let peer_url = Url::from_str(
+        "https://unknown-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+    let mut space_relays = HashMap::new();
+    space_relays.insert(space(b"s1"), (relay, Some(our_space_url)));
+
+    let result = IrohTransport::own_url_for_preflight(
+        &peer_url,
+        &space_relays,
+        &global_url,
+    );
+    assert_eq!(result, global_url);
+}
+
+#[test]
+fn own_url_for_preflight_without_own_url_returns_none() {
+    let peer_url = Url::from_str(
+        "https://unknown-relay.com:443/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    .unwrap();
+
+    let result =
+        IrohTransport::own_url_for_preflight(&peer_url, &HashMap::new(), &None);
+    assert_eq!(result, None);
+
+    // A matching per-space relay we have no URL on yet gives nothing to
+    // advertise either.
+    let relay = RelayUrl::from_str("https://unknown-relay.com:443/").unwrap();
+    let mut space_relays = HashMap::new();
+    space_relays.insert(space(b"s1"), (relay, None));
+
+    let result =
+        IrohTransport::own_url_for_preflight(&peer_url, &space_relays, &None);
     assert_eq!(result, None);
 }
 

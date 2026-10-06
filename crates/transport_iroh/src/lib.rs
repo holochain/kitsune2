@@ -828,49 +828,30 @@ impl IrohTransport {
     /// Choose which of our own URLs to advertise in a preflight to `peer_url`.
     ///
     /// If the peer is on one of our per-space relays, return our URL on
-    /// that relay. If the peer is on our global relay, return our global
-    /// URL. If the peer is on an unknown relay, return `None` — the
-    /// preflight must fail rather than silently falling back to the wrong
-    /// relay.
+    /// that relay. Otherwise return our global URL, whichever relay the
+    /// peer is on: the peer reaches us through the relay we advertise, not
+    /// through its own. Return `None` only if we have no URL to advertise.
     pub(crate) fn own_url_for_preflight(
         peer_url: &Url,
         space_relays: &HashMap<SpaceId, (RelayUrl, Option<Url>)>,
         global_url: &Option<Url>,
     ) -> Option<Url> {
-        let peer_relay = match relay_url_from_peer_url(peer_url) {
-            Ok(r) => r,
-            Err(_) => {
-                warn!(%peer_url, "Cannot extract relay from peer URL, failing preflight");
-                return None;
-            }
-        };
-
-        for (relay_url, our_url) in space_relays.values() {
-            if *relay_url == peer_relay
-                && let Some(url) = our_url
-            {
-                info!(
-                    %peer_url,
-                    own_url = %url,
-                    "Using per-space URL for preflight"
-                );
-                return Some(url.clone());
+        if let Ok(peer_relay) = relay_url_from_peer_url(peer_url) {
+            for (relay_url, our_url) in space_relays.values() {
+                if *relay_url == peer_relay
+                    && let Some(url) = our_url
+                {
+                    info!(
+                        %peer_url,
+                        own_url = %url,
+                        "Using per-space URL for preflight"
+                    );
+                    return Some(url.clone());
+                }
             }
         }
 
-        if let Some(global) = global_url
-            && let Ok(our_relay) = relay_url_from_peer_url(global)
-            && our_relay == peer_relay
-        {
-            return Some(global.clone());
-        }
-
-        warn!(
-            %peer_url,
-            %peer_relay,
-            "Peer is on unknown relay, failing preflight"
-        );
-        None
+        global_url.clone()
     }
 
     /// Creates a new connection and its associated context for a peer.
