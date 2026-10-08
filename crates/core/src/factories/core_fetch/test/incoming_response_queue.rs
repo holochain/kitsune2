@@ -384,3 +384,44 @@ async fn op_ids_are_not_removed_when_storing_op_failed() {
     // Op id should not have been removed from requests.
     assert_eq!(fetch.state.lock().unwrap().requests.len(), 1);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn final_response_notifies_drain_listeners() {
+    let TestCase {
+        fetch, _transport, ..
+    } = setup_test().await;
+
+    let peer_url = random_peer_url();
+    let incoming_op = MemoryOp::new(Timestamp::now(), vec![1]);
+
+    fetch
+        .request_ops(
+            vec![PublishOp {
+                op_id: incoming_op.compute_op_id(),
+                metadata: None,
+            }],
+            peer_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    let (tx, rx) = futures::channel::oneshot::channel();
+    fetch.notify_on_drained(tx);
+
+    // Receiving the last requested op empties the fetch queue, which should
+    // wake the listener.
+    fetch
+        .message_handler
+        .recv_module_msg(
+            peer_url,
+            TEST_SPACE_ID,
+            crate::factories::core_fetch::MOD_NAME.to_string(),
+            serialize_response_message(vec![incoming_op.into()]),
+        )
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(1), rx)
+        .await
+        .expect("drain listener was not notified")
+        .unwrap();
+}
