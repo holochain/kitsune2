@@ -24,8 +24,8 @@ mod ring_sector_details_diff;
 mod ring_sector_details_diff_response;
 mod terminate;
 
-#[cfg(test)]
-mod harness;
+#[cfg(any(test, feature = "test-utils"))]
+pub(crate) mod harness;
 #[cfg(test)]
 mod tests;
 
