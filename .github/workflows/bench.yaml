@@ -37,6 +37,11 @@ jobs:
         with:
           cmake-version: "3.31.x"
 
+      # rust-cache can restore the criterion directory tree without its files,
+      # which makes criterion fail on a missing `base/sample.json`.
+      - name: clear stale criterion data
+        run: rm -rf target/criterion
+
       - name: Run benchmarks and write results to file
         env:
           RUST_LOG: info
