@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791987574271,
+  "lastUpdate": 1791988229930,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2871,6 +2871,52 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41228336,
             "range": "± 138291",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Christian Visintin",
+            "username": "veeso",
+            "email": "christian.visintin@veeso.dev"
+          },
+          "committer": {
+            "name": "Christian Visintin",
+            "username": "veeso",
+            "email": "christian.visintin@veeso.dev"
+          },
+          "id": "d5049cf5f8df8c1922ac71f36fd2da8227c10f9a",
+          "message": "ci: clear stale criterion data before running benchmarks\n\nrust-cache can restore the criterion directory tree without its files, so criterion fails on a missing base/sample.json. Remove target/criterion before the benchmarks run.",
+          "timestamp": "2026-10-14T14:13:21Z",
+          "url": "https://github.com/holochain/kitsune2/commit/d5049cf5f8df8c1922ac71f36fd2da8227c10f9a"
+        },
+        "date": 1791988229413,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 76908,
+            "range": "± 4753",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 85925,
+            "range": "± 5087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 99384,
+            "range": "± 3647",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41997810,
+            "range": "± 36070",
             "unit": "ns/iter"
           }
         ]
