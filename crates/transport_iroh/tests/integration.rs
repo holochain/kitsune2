@@ -128,6 +128,87 @@ async fn send_and_receive_space_notify() {
 }
 
 #[tokio::test]
+async fn send_and_receive_space_notify_across_relays() {
+    enable_tracing();
+    // Each harness runs its own relay.
+    let harness_1 = IrohTransportTestHarness::new().await;
+    let harness_2 = IrohTransportTestHarness::new().await;
+    let dummy_url = Url::from_str("http://url.not.set:0/0").unwrap();
+
+    let (space_notify_sender_1, mut space_notify_receiver_1) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_1 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            space_notify_sender_1.send(data).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_1 = harness_1.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let (space_notify_sender_2, mut space_notify_receiver_2) =
+        tokio::sync::mpsc::unbounded_channel();
+    let handler_2 = Arc::new(MockTxHandler {
+        recv_space_notify: Arc::new(move |_peer, _space_id, data| {
+            space_notify_sender_2.send(data).unwrap();
+            Ok(())
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness_2.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    // Wait for URLs to be updated
+    retry_fn_until_timeout(
+        || async {
+            let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+            let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+            ep_1_url != dummy_url && ep_2_url != dummy_url
+        },
+        Some(5000),
+        Some(500),
+    )
+    .await
+    .unwrap();
+
+    let ep_1_url = handler_1.current_url.lock().unwrap().clone();
+    let ep_2_url = handler_2.current_url.lock().unwrap().clone();
+    assert_ne!(ep_1_url.addr(), ep_2_url.addr());
+
+    ep_1.send_space_notify(
+        ep_2_url,
+        TEST_SPACE_ID,
+        Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let received = space_notify_receiver_2.recv().await.unwrap();
+        assert_eq!(*received, *b"hello");
+    })
+    .await
+    .expect("message was not received by ep_2");
+
+    // The reply goes to the URL ep_1 advertised in its preflight.
+    ep_2.send_space_notify(
+        ep_1_url,
+        TEST_SPACE_ID,
+        Bytes::from_static(b"hello back"),
+    )
+    .await
+    .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let received = space_notify_receiver_1.recv().await.unwrap();
+        assert_eq!(*received, *b"hello back");
+    })
+    .await
+    .expect("message was not received by ep_1");
+}
+
+#[tokio::test]
 async fn send_and_receive_module_message() {
     enable_tracing();
     let harness = IrohTransportTestHarness::new().await;
