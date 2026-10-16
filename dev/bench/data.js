@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791988229930,
+  "lastUpdate": 1792134537431,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2917,6 +2917,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41997810,
             "range": "± 36070",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "1e44c65a30ec47129b280c7cb27208e3ac433326",
+          "message": "ci: clear stale criterion data before running benchmarks\n\nrust-cache can restore the criterion directory tree without its files, so criterion fails on a missing base/sample.json. Remove target/criterion before the benchmarks run.",
+          "timestamp": "2026-10-16T09:05:18+02:00",
+          "tree_id": "272c4b1fef6b55579060b3aa28d8867df709ea3a",
+          "url": "https://github.com/holochain/kitsune2/commit/1e44c65a30ec47129b280c7cb27208e3ac433326"
+        },
+        "date": 1792134536590,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 76107,
+            "range": "± 5638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 82792,
+            "range": "± 4881",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 95998,
+            "range": "± 3770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41999560,
+            "range": "± 12684",
             "unit": "ns/iter"
           }
         ]
