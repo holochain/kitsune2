@@ -2,8 +2,8 @@ use bytes::Bytes;
 use kitsune2::default_builder;
 use kitsune2_api::{
     BoxFut, Builder, Config, DhtArc, DynKitsune, DynSpace, DynSpaceHandler, Id,
-    IncomingOp, K2Result, KitsuneHandler, LocalAgent, OpId, SpaceHandler,
-    SpaceId, Timestamp, Url,
+    IncomingOp, K2Result, KITSUNE_CLOSED_ERR, KitsuneHandler, LocalAgent, OpId,
+    SpaceHandler, SpaceId, Timestamp, Url,
 };
 use kitsune2_core::{
     Ed25519LocalAgent,
@@ -949,4 +949,86 @@ async fn simultaneous_space_notify_is_delivered_both_ways() {
             }
         });
     }
+}
+
+#[tokio::test]
+async fn closed_node_disconnects_from_peers() {
+    let _resource_guard = RESOURCE_INTENSIVE_TEST_LOCK.lock().await;
+    enable_tracing();
+
+    let bootstrap_server = TestBootstrapSrv::new(false).await;
+    let bootstrap_server_url = bootstrap_server.addr().to_string();
+    #[cfg(feature = "transport-iroh")]
+    let relay_server_url = iroh_relay_from_bootstrap(&bootstrap_server).await;
+
+    let (kitsune_1, _h1) = make_kitsune_node(
+        &relay_server_url,
+        &bootstrap_server_url,
+        default_test_gossip_config(),
+    )
+    .await;
+    let (kitsune_2, h2) = make_kitsune_node(
+        &relay_server_url,
+        &bootstrap_server_url,
+        default_test_gossip_config(),
+    )
+    .await;
+    let space_1 = start_space(&kitsune_1).await;
+    let space_2 = start_space(&kitsune_2).await;
+    let url_1 = peer_url_of(&space_1).await;
+    let url_2 = peer_url_of(&space_2).await;
+
+    // Wait until each node knows the other, so the first notify is not
+    // dropped for a peer that is not yet discovered.
+    iter_check!(10_000, 200, {
+        let known_to_1 = space_1
+            .peer_store()
+            .get_all()
+            .await
+            .unwrap()
+            .iter()
+            .any(|agent| agent.url.as_ref() == Some(&url_2));
+        let known_to_2 = space_2
+            .peer_store()
+            .get_all()
+            .await
+            .unwrap()
+            .iter()
+            .any(|agent| agent.url.as_ref() == Some(&url_1));
+        if known_to_1 && known_to_2 {
+            break;
+        }
+    });
+
+    space_1
+        .send_notify(url_2, Bytes::from_static(b"hello"))
+        .await
+        .unwrap();
+    iter_check!(10_000, 100, {
+        if !h2.received().is_empty() {
+            break;
+        }
+    });
+    let tx_2 = kitsune_2.transport().await.unwrap();
+    iter_check!(10_000, 100, {
+        if tx_2.get_connected_peers().await.unwrap().contains(&url_1) {
+            break;
+        }
+    });
+
+    kitsune_1.close().await;
+
+    let err = kitsune_1
+        .transport()
+        .await
+        .expect_err("transport must be gone after close");
+    assert!(
+        err.to_string().contains(KITSUNE_CLOSED_ERR),
+        "unexpected error: {err}"
+    );
+    iter_check!(10_000, 100, {
+        if !tx_2.get_connected_peers().await.unwrap().contains(&url_1) {
+            break;
+        }
+    });
 }
