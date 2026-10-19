@@ -213,7 +213,10 @@ use kitsune2_api::*;
 use std::{
     collections::HashMap,
     str::FromStr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{
+        Arc, Mutex, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant, SystemTime},
 };
 use tokio::task::AbortHandle;
@@ -241,6 +244,17 @@ pub mod test_utils;
 mod tests;
 
 const ALPN: &[u8] = b"kitsune2/0";
+
+/// Reason sent to the remote in the graceful close frame when this transport closes.
+///
+/// Remote peers may display this text, and the graceful close code tells them
+/// the shutdown was deliberate rather than a failure. Exported so integration
+/// tests can match it without depending on a free-form string literal.
+#[cfg(any(test, feature = "test-utils"))]
+pub const TRANSPORT_CLOSED_REASON: &str = "Transport closed";
+#[cfg(not(any(test, feature = "test-utils")))]
+pub(crate) const TRANSPORT_CLOSED_REASON: &str = "Transport closed";
+
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -451,21 +465,27 @@ struct IrohTransport {
     space_relay_keepalives: Arc<Mutex<HashMap<RelayUrl, AbortHandle>>>,
     config: IrohTransportConfig,
     space_relays: SpaceRelays,
+    /// Background tasks started by `configure_for_space` that insert a
+    /// per-space relay.
+    relay_insert_tasks: Arc<Mutex<Vec<AbortHandle>>>,
+    /// Set when `close` is first called, before it waits for a running
+    /// close, and when the transport is dropped. Relay insertion tasks check
+    /// it under the `space_relay_keepalives` lock, so none of them starts a
+    /// keepalive after the keepalives have been aborted.
+    closed: Arc<AtomicBool>,
+    close_once: CloseOnce,
 }
 
 impl Drop for IrohTransport {
     fn drop(&mut self) {
-        info!(local_url = ?self.local_url, "Dropping transport");
-        self.watch_addr_task.abort();
-        self.accept_task.abort();
-        if let Some(handle) = self.relay_keepalive_task.take() {
-            handle.abort();
+        // Only a completed close makes this a no-op. After a cancelled close
+        // the endpoint may still be open, so it is closed here as usual.
+        if self.close_once.is_done() {
+            debug!(local_url = ?self.local_url, "Dropping closed transport");
+            return;
         }
-        self.space_relay_keepalives
-            .lock()
-            .expect("poisoned")
-            .drain()
-            .for_each(|(_, handle)| handle.abort());
+        info!(local_url = ?self.local_url, "Dropping transport");
+        self.abort_background_tasks();
         // The connection reader task inside the connection context
         // holds a reference to the context. Thus the context can
         // only be dropped once that reference is dropped, which
@@ -480,6 +500,80 @@ impl Drop for IrohTransport {
 }
 
 impl IrohTransport {
+    /// Records `inserted` as the relay of `space_id` and starts its
+    /// keepalive, unless the transport has closed. Returns whether the relay
+    /// was recorded.
+    ///
+    /// `close` sets `closed` before draining the keepalives under the same
+    /// lock, so a keepalive started here is always aborted by `close`.
+    fn record_space_relay(
+        closed: &AtomicBool,
+        space_relays: &SpaceRelays,
+        keepalives: &Mutex<HashMap<RelayUrl, AbortHandle>>,
+        space_id: SpaceId,
+        inserted: (RelayUrl, Url, Option<Arc<RelayAuthParams>>),
+        keepalive_interval: Duration,
+    ) -> bool {
+        let (relay_url, local_url, auth_params) = inserted;
+        let mut keepalives = keepalives.lock().expect("poison");
+        if closed.load(Ordering::SeqCst) {
+            return false;
+        }
+        space_relays
+            .write()
+            .expect("poison")
+            .insert(space_id, (relay_url.clone(), Some(local_url)));
+        // Keep the allowlist entry for this relay alive for as long as the
+        // relay is in use.
+        if let Some(params) = auth_params {
+            keepalives.entry(relay_url).or_insert_with(|| {
+                Self::spawn_relay_keepalive_task(params, keepalive_interval)
+            });
+        }
+        true
+    }
+
+    /// Stores `task` as a running relay insertion so that `close` aborts it,
+    /// and aborts it right away if the transport has already closed.
+    ///
+    /// A close that starts after the caller checked `closed`, but before the
+    /// handle is stored, drains the list without seeing this task, so the
+    /// flag is checked again once the handle is stored.
+    fn track_relay_insert_task(
+        closed: &AtomicBool,
+        relay_insert_tasks: &Mutex<Vec<AbortHandle>>,
+        task: AbortHandle,
+    ) {
+        let mut tasks = relay_insert_tasks.lock().expect("poison");
+        tasks.retain(|handle| !handle.is_finished());
+        tasks.push(task.clone());
+        drop(tasks);
+        if closed.load(Ordering::SeqCst) {
+            task.abort();
+        }
+    }
+
+    /// Aborts the transport's long-running background tasks, shared by `close`
+    /// and `Drop`.
+    fn abort_background_tasks(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.watch_addr_task.abort();
+        self.accept_task.abort();
+        if let Some(handle) = &self.relay_keepalive_task {
+            handle.abort();
+        }
+        self.relay_insert_tasks
+            .lock()
+            .expect("poison")
+            .drain(..)
+            .for_each(|handle| handle.abort());
+        self.space_relay_keepalives
+            .lock()
+            .expect("poison")
+            .drain()
+            .for_each(|(_, handle)| handle.abort());
+    }
+
     async fn create(
         config: IrohTransportConfig,
         handler: Arc<TxImpHnd>,
@@ -657,6 +751,9 @@ impl IrohTransport {
             space_relay_keepalives: Arc::new(Mutex::new(HashMap::new())),
             config,
             space_relays,
+            relay_insert_tasks: Arc::new(Mutex::new(Vec::new())),
+            closed: Arc::new(AtomicBool::new(false)),
+            close_once: CloseOnce::new(),
         });
         Ok(out)
     }
@@ -873,6 +970,27 @@ impl IrohTransport {
         None
     }
 
+    /// Marks `remote_url` unresponsive after a failed connection attempt,
+    /// unless the transport is closing.
+    ///
+    /// Closing the transport closes the endpoint, which fails any dial still
+    /// in flight. That failure comes from our own shutdown, not from the peer,
+    /// so it must not count against the peer.
+    async fn mark_unresponsive(&self, remote_url: &Url) {
+        if self.closed.load(Ordering::SeqCst) {
+            debug!(
+                ?remote_url,
+                "transport closing, not marking peer unresponsive"
+            );
+            return;
+        }
+
+        let _ = self
+            .handler
+            .set_unresponsive(remote_url.clone(), Timestamp::now())
+            .await;
+    }
+
     /// Creates a new connection and its associated context for a peer.
     ///
     /// The connection is established and the preflight frame is sent. If this
@@ -912,19 +1030,13 @@ impl IrohTransport {
         {
             Err(e) => {
                 // On connection establishment error, mark the peer unresponsive
-                let _ = self
-                    .handler
-                    .set_unresponsive(remote_url.clone(), Timestamp::now())
-                    .await;
+                self.mark_unresponsive(&remote_url).await;
 
                 Err(K2Error::other_src("iroh connect timed out", e))
             }
             Ok(Err(e)) => {
                 // On connection establishment error, mark the peer unresponsive
-                let _ = self
-                    .handler
-                    .set_unresponsive(remote_url.clone(), Timestamp::now())
-                    .await;
+                self.mark_unresponsive(&remote_url).await;
 
                 Err(K2Error::other_src("iroh connect error", e))
             }
@@ -1005,10 +1117,7 @@ impl IrohTransport {
                 }
 
                 // On send preflight error, mark the peer unresponsive
-                let _ = self
-                    .handler
-                    .set_unresponsive(remote_url.clone(), Timestamp::now())
-                    .await;
+                self.mark_unresponsive(&remote_url).await;
 
                 ctx.close_failed(e.to_string().as_bytes());
                 self.connections.remove_if_current(&remote_url, &ctx);
@@ -1325,6 +1434,11 @@ impl TxImp for IrohTransport {
         space_id: SpaceId,
         config: &Config,
     ) -> BoxFut<'_, K2Result<()>> {
+        // A closed transport adds no relays.
+        if self.closed.load(Ordering::SeqCst) {
+            return Box::pin(async { Ok(()) });
+        }
+
         let per_space_config: Option<IrohTransportModConfig> =
             config.get_module_config().ok();
 
@@ -1367,30 +1481,24 @@ impl TxImp for IrohTransport {
             );
             let handler = self.handler.clone();
             let space_id_clone = space_id.clone();
+            let closed = self.closed.clone();
+            let relay_insert_tasks = self.relay_insert_tasks.clone();
 
             Box::pin(async move {
-                tokio::spawn(async move {
+                let task = tokio::spawn(async move {
                     match Self::do_insert_relay(endpoint, url, auth_material)
                         .await
                     {
                         Ok((relay_url, local_url, auth_params)) => {
-                            space_relays.write().expect("poisoned").insert(
+                            if !Self::record_space_relay(
+                                &closed,
+                                &space_relays,
+                                &space_relay_keepalives,
                                 space_id_clone.clone(),
-                                (relay_url.clone(), Some(local_url.clone())),
-                            );
-                            // Keep the allowlist entry for this relay alive
-                            // for as long as the relay is in use.
-                            if let Some(params) = auth_params {
-                                space_relay_keepalives
-                                    .lock()
-                                    .expect("poisoned")
-                                    .entry(relay_url)
-                                    .or_insert_with(|| {
-                                        Self::spawn_relay_keepalive_task(
-                                            params,
-                                            keepalive_interval,
-                                        )
-                                    });
+                                (relay_url, local_url.clone(), auth_params),
+                                keepalive_interval,
+                            ) {
+                                return;
                             }
                             handler
                                 .new_listening_address(
@@ -1409,11 +1517,43 @@ impl TxImp for IrohTransport {
                     }
                 });
 
+                Self::track_relay_insert_task(
+                    &self.closed,
+                    &relay_insert_tasks,
+                    task.abort_handle(),
+                );
+
                 Ok(())
             })
         } else {
             Box::pin(async { Ok(()) })
         }
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            // Stop new relay insertions right away, even while another close
+            // is running.
+            self.closed.store(true, Ordering::SeqCst);
+
+            self.close_once
+                .run(async {
+                    info!(local_url = ?self.local_url, "Closing transport");
+                    self.abort_background_tasks();
+                    for ctx in self.connections.drain() {
+                        // A graceful close code tells the remote this is a
+                        // deliberate shutdown. An unspecified code makes the
+                        // remote mark this node as unresponsive.
+                        ctx.disconnect(
+                            close_code::CloseCode::Graceful,
+                            TRANSPORT_CLOSED_REASON.to_string(),
+                        );
+                        ctx.abort_tasks();
+                    }
+                    self.endpoint.close().await;
+                })
+                .await;
+        })
     }
 
     fn unconfigure_for_space(

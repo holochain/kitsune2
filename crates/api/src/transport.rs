@@ -13,6 +13,11 @@ type MessageBlocksMap =
 
 type PendingSpaceUrls = Arc<Mutex<HashMap<SpaceId, Url>>>;
 type PerSpaceManaged = Arc<Mutex<HashSet<SpaceId>>>;
+type HandlerSlot = Arc<Mutex<Option<DynTxHandler>>>;
+
+/// Error context returned by a [DefaultTransport], and by the [TxImpHnd]
+/// it was created from, once the transport has been closed.
+pub const TRANSPORT_CLOSED_ERR: &str = "transport closed";
 
 /// This is the low-level backend transport handler designed to work
 /// with [DefaultTransport].
@@ -20,7 +25,9 @@ type PerSpaceManaged = Arc<Mutex<HashSet<SpaceId>>>;
 /// then call [DefaultTransport::create] to return the high-level handler
 /// from the [TransportFactory].
 pub struct TxImpHnd {
-    handler: DynTxHandler,
+    /// Cleared by [DefaultTransport::close], so a closed transport no longer
+    /// keeps the handler alive.
+    handler: HandlerSlot,
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
@@ -38,13 +45,24 @@ impl TxImpHnd {
     /// Pass the handler into here to construct one.
     pub fn new(handler: DynTxHandler) -> Arc<Self> {
         Arc::new(Self {
-            handler,
+            handler: Arc::new(Mutex::new(Some(handler))),
             space_map: Arc::new(Mutex::new(HashMap::new())),
             mod_map: Arc::new(Mutex::new(HashMap::new())),
             blocked_message_counts: Arc::new(Mutex::new(HashMap::new())),
             pending_space_urls: Arc::new(Mutex::new(HashMap::new())),
             per_space_managed: Arc::new(Mutex::new(HashSet::new())),
         })
+    }
+
+    // The handler, or `None` once the transport has been closed.
+    fn handler(&self) -> Option<DynTxHandler> {
+        self.handler.lock().expect("poison").clone()
+    }
+
+    // The handler, or an error once the transport has been closed.
+    fn open_handler(&self) -> K2Result<DynTxHandler> {
+        self.handler()
+            .ok_or_else(|| K2Error::other(TRANSPORT_CLOSED_ERR))
     }
 
     /// Call this when you receive or bind a new address at which
@@ -81,18 +99,25 @@ impl TxImpHnd {
                 Box::pin(async {})
             }
         } else {
-            let handler = self.handler.clone();
-            let managed = self.per_space_managed.lock().unwrap().clone();
+            let handler = self.handler();
+            let managed =
+                self.per_space_managed.lock().expect("poison").clone();
             let space_map: Vec<_> = self
                 .space_map
                 .lock()
-                .unwrap()
+                .expect("poison")
                 .iter()
                 .filter(|(id, _)| !managed.contains(id))
                 .map(|(_, h)| h.clone())
                 .collect();
 
             Box::pin(async move {
+                let Some(handler) = handler else {
+                    tracing::warn!(
+                        "received a new listening address after the transport has been closed"
+                    );
+                    return;
+                };
                 handler.new_listening_address(this_url.clone()).await;
                 for s in space_map {
                     s.new_listening_address(this_url.clone()).await;
@@ -118,20 +143,26 @@ impl TxImpHnd {
         peer: Url,
     ) -> BoxFut<'_, K2Result<bytes::Bytes>> {
         Box::pin(async {
-            for mod_handler in self.mod_map.lock().unwrap().values() {
+            for mod_handler in self.mod_map.lock().expect("poison").values() {
                 mod_handler.peer_connect(peer.clone())?;
             }
-            for space_handler in self.space_map.lock().unwrap().values() {
+            for space_handler in self.space_map.lock().expect("poison").values()
+            {
                 space_handler.peer_connect(peer.clone())?;
             }
-            self.handler.peer_connect(peer.clone())?;
+            self.open_handler()?.peer_connect(peer.clone())?;
 
             // Check if any space has local agents before generating preflight.
             // If no space has local agents, we cannot generate a meaningful preflight
             // and should return an error. This is a temporary state that occurs
             // when receiving an incoming connection before any agent has joined.
-            let space_handlers: Vec<_> =
-                self.space_map.lock().unwrap().values().cloned().collect();
+            let space_handlers: Vec<_> = self
+                .space_map
+                .lock()
+                .expect("poison")
+                .values()
+                .cloned()
+                .collect();
             if !space_handlers.is_empty() {
                 let mut has_any_local_agents = false;
                 for handler in &space_handlers {
@@ -146,7 +177,7 @@ impl TxImpHnd {
             }
 
             let preflight =
-                self.handler.preflight_gather_outgoing(peer).await?;
+                self.open_handler()?.preflight_gather_outgoing(peer).await?;
             let enc = (K2Proto {
                 ty: K2WireType::Preflight as i32,
                 data: preflight,
@@ -160,13 +191,18 @@ impl TxImpHnd {
 
     /// Call this whenever a connection is closed.
     pub fn peer_disconnect(&self, peer: Url, reason: Option<String>) {
-        for h in self.mod_map.lock().unwrap().values() {
+        for h in self.mod_map.lock().expect("poison").values() {
             h.peer_disconnect(peer.clone(), reason.clone());
         }
-        for h in self.space_map.lock().unwrap().values() {
+        for h in self.space_map.lock().expect("poison").values() {
             h.peer_disconnect(peer.clone(), reason.clone());
         }
-        self.handler.peer_disconnect(peer, reason);
+        match self.handler() {
+            Some(handler) => handler.peer_disconnect(peer, reason),
+            None => tracing::warn!(
+                "peer disconnected after the transport has been closed"
+            ),
+        }
     }
 
     /// Call this whenever data is received on an open connection.
@@ -216,7 +252,9 @@ impl TxImpHnd {
             match message_type {
                 K2WireType::Unspecified => Ok(()),
                 K2WireType::Preflight => {
-                    self.handler.preflight_validate_incoming(peer, data).await
+                    self.open_handler()?
+                        .preflight_validate_incoming(peer, data)
+                        .await
                 }
                 K2WireType::Notify => {
                     if let Some(space_id) = space_id {
@@ -357,9 +395,9 @@ impl std::fmt::Debug for TxImpHnd {
         write!(
             f,
             "TxImpHnd {{ handler: {:?}, space_map: [{} entries], mod_map: [{} entries] }}",
-            self.handler,
-            self.space_map.lock().unwrap().len(),
-            self.mod_map.lock().unwrap().len()
+            self.handler(),
+            self.space_map.lock().expect("poison").len(),
+            self.mod_map.lock().expect("poison").len()
         )
     }
 }
@@ -531,6 +569,19 @@ pub trait TxImp: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async { Ok(()) })
     }
+
+    /// Close the transport implementation.
+    ///
+    /// Aborts background tasks and closes all open connections. Once the
+    /// returned future resolves, no new network activity is started. A
+    /// request that is already running outside the async runtime, such as
+    /// a blocking HTTP call, may still complete.
+    ///
+    /// Calling this again after a close has completed must be a no-op that
+    /// returns promptly. A concurrent call must not resolve before the close
+    /// has completed, and a call made after a close was cancelled must finish
+    /// the close. [CloseOnce] implements this behavior.
+    fn close(&self) -> BoxFut<'_, ()>;
 }
 
 /// Trait-object [TxImp].
@@ -632,6 +683,24 @@ pub trait Transport: 'static + Send + Sync + std::fmt::Debug {
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async { Ok(()) })
     }
+
+    /// Close the transport.
+    ///
+    /// Closes the underlying [TxImp] and releases the [TxHandler] and all
+    /// registered space and module handlers.
+    ///
+    /// After close, [`send_space_notify`](Self::send_space_notify),
+    /// [`send_module`](Self::send_module) and
+    /// [`configure_for_space`](Self::configure_for_space) return an error, and
+    /// [`register_space_handler`](Self::register_space_handler) and
+    /// [`register_module_handler`](Self::register_module_handler) drop the
+    /// handler without registering it.
+    ///
+    /// Calling this again after a close has completed must be a no-op that
+    /// returns promptly. A concurrent call must not resolve before the close
+    /// has completed, and a call made after a close was cancelled must finish
+    /// the close. [CloseOnce] implements this behavior.
+    fn close(&self) -> BoxFut<'_, ()>;
 }
 
 /// Trait-object [Transport].
@@ -650,10 +719,12 @@ pub type WeakDynTransport = Weak<dyn Transport>;
 #[derive(Clone, Debug)]
 pub struct DefaultTransport {
     imp: DynTxImp,
+    handler: HandlerSlot,
     space_map: SpaceMap,
     mod_map: ModMap,
     blocked_message_counts: MessageBlocksMap,
     pending_space_urls: PendingSpaceUrls,
+    close_once: Arc<CloseOnce>,
 }
 
 impl DefaultTransport {
@@ -665,12 +736,23 @@ impl DefaultTransport {
     pub fn create(hnd: &TxImpHnd, imp: DynTxImp) -> DynTransport {
         let out: DynTransport = Arc::new(DefaultTransport {
             imp,
+            handler: hnd.handler.clone(),
             space_map: hnd.space_map.clone(),
             mod_map: hnd.mod_map.clone(),
             blocked_message_counts: hnd.blocked_message_counts.clone(),
             pending_space_urls: hnd.pending_space_urls.clone(),
+            close_once: Arc::new(CloseOnce::new()),
         });
         out
+    }
+
+    // Fails once `close` has been called, so that no new work reaches the
+    // transport.
+    fn check_open(&self) -> K2Result<()> {
+        if self.close_once.is_requested() {
+            return Err(K2Error::other(TRANSPORT_CLOSED_ERR));
+        }
+        Ok(())
     }
 
     // Check if this space has local agents before generating preflight.
@@ -698,10 +780,19 @@ impl Transport for DefaultTransport {
         space_id: SpaceId,
         handler: DynTxSpaceHandler,
     ) -> Option<Url> {
-        let pending_url =
-            self.pending_space_urls.lock().unwrap().remove(&space_id);
+        let pending_url = self
+            .pending_space_urls
+            .lock()
+            .expect("poison")
+            .remove(&space_id);
 
-        let mut lock = self.space_map.lock().unwrap();
+        let mut lock = self.space_map.lock().expect("poison");
+        // `close` marks the close as requested before clearing the map under
+        // this lock, so checking it here means a handler is either cleared by
+        // `close` or never inserted.
+        if self.close_once.is_requested() {
+            return None;
+        }
         if lock.insert(space_id.clone(), handler).is_some() {
             panic!("Attempted to register duplicate space handler! {space_id}");
         }
@@ -719,10 +810,13 @@ impl Transport for DefaultTransport {
         module: String,
         handler: DynTxModuleHandler,
     ) {
-        if self
-            .mod_map
-            .lock()
-            .unwrap()
+        let mut lock = self.mod_map.lock().expect("poison");
+        // Checked under the map lock for the same reason as in
+        // `register_space_handler`.
+        if self.close_once.is_requested() {
+            return;
+        }
+        if lock
             .insert((space_id.clone(), module.clone()), handler)
             .is_some()
         {
@@ -760,6 +854,7 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            self.check_open()?;
             self.error_if_no_local_agents(space_id.clone()).await?;
             if is_peer_blocked(
                 self.space_map.clone(),
@@ -795,6 +890,7 @@ impl Transport for DefaultTransport {
         data: bytes::Bytes,
     ) -> BoxFut<'_, K2Result<()>> {
         Box::pin(async move {
+            self.check_open()?;
             self.error_if_no_local_agents(space_id.clone()).await?;
             if is_peer_blocked(
                 self.space_map.clone(),
@@ -858,6 +954,9 @@ impl Transport for DefaultTransport {
         space_id: SpaceId,
         config: &config::Config,
     ) -> BoxFut<'_, K2Result<()>> {
+        if let Err(err) = self.check_open() {
+            return Box::pin(async move { Err(err) });
+        }
         self.imp.configure_for_space(space_id, config)
     }
 
@@ -866,6 +965,36 @@ impl Transport for DefaultTransport {
         space_id: SpaceId,
     ) -> BoxFut<'_, K2Result<()>> {
         self.imp.unconfigure_for_space(space_id)
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async move {
+            // `run` rejects new work right away, even while another close is
+            // running.
+            self.close_once
+                .run(async {
+                    // Close the imp before clearing the maps, so space handlers
+                    // still receive the peer_disconnect callbacks fired while
+                    // connections close.
+                    self.imp.close().await;
+
+                    // Take the handlers out of their slots and drop them after
+                    // the locks are released, so a handler's Drop never runs
+                    // under a lock.
+                    let spaces = std::mem::take(
+                        &mut *self.space_map.lock().expect("poison"),
+                    );
+                    let modules = std::mem::take(
+                        &mut *self.mod_map.lock().expect("poison"),
+                    );
+                    let handler = self.handler.lock().expect("poison").take();
+                    self.pending_space_urls.lock().expect("poison").clear();
+                    drop(spaces);
+                    drop(modules);
+                    drop(handler);
+                })
+                .await;
+        })
     }
 }
 
@@ -1081,4 +1210,268 @@ pub struct TransportConnectionStats {
 
     /// True if this connection has successfully upgraded to a direct peer connection.
     pub is_direct: bool,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    #[derive(Debug)]
+    struct NoopHandler;
+
+    impl TxBaseHandler for NoopHandler {}
+    impl TxHandler for NoopHandler {}
+
+    /// A [TxHandler] that counts the events it receives.
+    #[derive(Debug)]
+    struct RecordingHandler {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl TxBaseHandler for RecordingHandler {
+        fn new_listening_address(&self, _this_url: Url) -> BoxFut<'static, ()> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        }
+
+        fn peer_disconnect(&self, _peer: Url, _reason: Option<String>) {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl TxHandler for RecordingHandler {}
+
+    #[derive(Debug)]
+    struct NoopSpaceHandler;
+
+    impl TxBaseHandler for NoopSpaceHandler {}
+    impl TxSpaceHandler for NoopSpaceHandler {
+        fn is_any_agent_at_url_blocked(
+            &self,
+            _peer_url: &Url,
+        ) -> K2Result<bool> {
+            Ok(false)
+        }
+    }
+
+    #[derive(Debug)]
+    struct NoopModuleHandler;
+
+    impl TxBaseHandler for NoopModuleHandler {}
+    impl TxModuleHandler for NoopModuleHandler {}
+
+    /// A [TxImp] whose `close` counts calls and only finishes once its gate
+    /// is open.
+    #[derive(Debug)]
+    struct GatedImp {
+        close_calls: Arc<AtomicUsize>,
+        gate: tokio::sync::watch::Receiver<bool>,
+    }
+
+    impl TxImp for GatedImp {
+        fn url(&self) -> Option<Url> {
+            None
+        }
+
+        fn disconnect(
+            &self,
+            _peer: Url,
+            _payload: Option<(String, bytes::Bytes)>,
+        ) -> BoxFut<'_, ()> {
+            Box::pin(async {})
+        }
+
+        fn send(
+            &self,
+            _peer: Url,
+            _data: bytes::Bytes,
+        ) -> BoxFut<'_, K2Result<()>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
+            Box::pin(async {
+                Ok(TransportStats {
+                    backend: String::new(),
+                    peer_urls: Vec::new(),
+                    connections: Vec::new(),
+                })
+            })
+        }
+
+        fn close(&self) -> BoxFut<'_, ()> {
+            self.close_calls.fetch_add(1, Ordering::SeqCst);
+            let mut gate = self.gate.clone();
+            Box::pin(async move {
+                gate.wait_for(|open| *open).await.expect("gate dropped");
+            })
+        }
+    }
+
+    /// Builds a [GatedImp], returning it with its gate sender and its
+    /// `close` call counter.
+    fn gated_imp()
+    -> (DynTxImp, tokio::sync::watch::Sender<bool>, Arc<AtomicUsize>) {
+        let (gate_send, gate) = tokio::sync::watch::channel(false);
+        let close_calls = Arc::new(AtomicUsize::new(0));
+        let imp: DynTxImp = Arc::new(GatedImp {
+            close_calls: close_calls.clone(),
+            gate,
+        });
+        (imp, gate_send, close_calls)
+    }
+
+    fn assert_transport_closed(result: K2Result<()>) {
+        let err = result.expect_err("call must fail after close");
+        assert!(
+            err.to_string().contains(TRANSPORT_CLOSED_ERR),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn close_releases_handlers_and_rejects_use() {
+        let (imp, gate, close_calls) = gated_imp();
+        gate.send(true).unwrap();
+        let handler_calls = Arc::new(AtomicUsize::new(0));
+        let handler: DynTxHandler = Arc::new(RecordingHandler {
+            calls: handler_calls.clone(),
+        });
+        let weak_handler = Arc::downgrade(&handler);
+        let hnd = TxImpHnd::new(handler);
+        let tx = DefaultTransport::create(&hnd, imp);
+        let space_id = SpaceId::from(bytes::Bytes::from_static(b"s"));
+        let peer = Url::from_str("ws://test:80/1").unwrap();
+        let space: DynTxSpaceHandler = Arc::new(NoopSpaceHandler);
+        let module: DynTxModuleHandler = Arc::new(NoopModuleHandler);
+        tx.register_space_handler(space_id.clone(), space.clone());
+        tx.register_module_handler(
+            space_id.clone(),
+            "test".into(),
+            module.clone(),
+        );
+        hnd.peer_disconnect(peer.clone(), None);
+        assert_eq!(handler_calls.load(Ordering::SeqCst), 1);
+
+        tx.close().await;
+
+        assert_eq!(close_calls.load(Ordering::SeqCst), 1);
+        // `hnd` and `tx` are both still alive, yet neither keeps the
+        // handlers.
+        assert!(weak_handler.upgrade().is_none());
+        assert_eq!(Arc::strong_count(&space), 1);
+        assert_eq!(Arc::strong_count(&module), 1);
+
+        // Sends and per-space configuration are rejected.
+        assert_transport_closed(
+            tx.send_space_notify(
+                peer.clone(),
+                space_id.clone(),
+                bytes::Bytes::new(),
+            )
+            .await,
+        );
+        assert_transport_closed(
+            tx.send_module(
+                peer.clone(),
+                space_id.clone(),
+                "test".into(),
+                bytes::Bytes::new(),
+            )
+            .await,
+        );
+        assert_transport_closed(
+            tx.configure_for_space(space_id.clone(), &Config::default())
+                .await,
+        );
+
+        // Handlers registered after close are dropped instead of retained.
+        let late_space: DynTxSpaceHandler = Arc::new(NoopSpaceHandler);
+        assert!(
+            tx.register_space_handler(space_id.clone(), late_space.clone())
+                .is_none()
+        );
+        let late_module: DynTxModuleHandler = Arc::new(NoopModuleHandler);
+        tx.register_module_handler(
+            space_id.clone(),
+            "late".into(),
+            late_module.clone(),
+        );
+        assert_eq!(Arc::strong_count(&late_space), 1);
+        assert_eq!(Arc::strong_count(&late_module), 1);
+
+        // Events the imp still reports no longer reach the released
+        // handler, and the ones that need it fail.
+        hnd.new_listening_address(peer.clone(), None).await;
+        hnd.peer_disconnect(peer.clone(), None);
+        assert_eq!(handler_calls.load(Ordering::SeqCst), 1);
+        assert_transport_closed(
+            hnd.peer_connect(peer.clone()).await.map(|_| ()),
+        );
+        let preflight = K2Proto {
+            ty: K2WireType::Preflight as i32,
+            data: bytes::Bytes::new(),
+            space_id: None,
+            module_id: None,
+        }
+        .encode()
+        .unwrap();
+        assert_transport_closed(hnd.recv_data(peer, preflight).await);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn close_after_cancelled_close_closes_imp() {
+        let (imp, gate, close_calls) = gated_imp();
+        let hnd = TxImpHnd::new(Arc::new(NoopHandler));
+        let tx = DefaultTransport::create(&hnd, imp);
+
+        tokio::time::timeout(Duration::from_millis(50), tx.close())
+            .await
+            .expect_err("close must wait for the imp to close");
+
+        gate.send(true).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), tx.close())
+            .await
+            .expect("close after a cancelled close must complete");
+
+        assert_eq!(close_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_close_waits_for_running_close() {
+        let (imp, gate, close_calls) = gated_imp();
+        let hnd = TxImpHnd::new(Arc::new(NoopHandler));
+        let tx = DefaultTransport::create(&hnd, imp);
+
+        let first = tokio::spawn({
+            let tx = tx.clone();
+            async move { tx.close().await }
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while close_calls.load(Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("first close must reach the imp");
+
+        tokio::time::timeout(Duration::from_millis(100), tx.close())
+            .await
+            .expect_err("a concurrent close must wait for the running close");
+
+        gate.send(true).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), first)
+            .await
+            .expect("first close must complete once the imp closes")
+            .unwrap();
+        tx.close().await;
+
+        assert_eq!(close_calls.load(Ordering::SeqCst), 1);
+    }
 }
