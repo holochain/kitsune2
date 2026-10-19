@@ -493,6 +493,10 @@ mod configure_for_space_only_when_overridden {
             self.configured.lock().expect("poison").push(space_id);
             Box::pin(async { Ok(()) })
         }
+
+        fn close(&self) -> BoxFut<'_, ()> {
+            Box::pin(async {})
+        }
     }
 
     #[derive(Debug)]

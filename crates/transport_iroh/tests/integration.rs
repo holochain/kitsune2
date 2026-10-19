@@ -4,7 +4,7 @@ use kitsune2_test_utils::{
     enable_tracing, retry_fn_until_timeout, space::TEST_SPACE_ID,
 };
 use kitsune2_transport_iroh::{
-    RELAY_NOT_CONNECTED_ERR,
+    RELAY_NOT_CONNECTED_ERR, TRANSPORT_CLOSED_REASON,
     test_utils::{IrohTransportTestHarness, MockTxHandler, dummy_url},
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1671,4 +1671,124 @@ async fn simultaneous_disconnect_and_resend_never_fails_a_send() {
             ep_2.disconnect(ep_1_url.clone(), None),
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn close_disconnects_peers_gracefully() {
+    enable_tracing();
+    let harness = IrohTransportTestHarness::new().await;
+
+    let handler_1 = Arc::new(MockTxHandler::default());
+    let ep_1 = harness.build_transport(handler_1.clone()).await;
+    ep_1.register_space_handler(TEST_SPACE_ID, handler_1.clone());
+
+    let disconnects = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let unresponsive = Arc::new(AtomicBool::new(false));
+    let handler_2 = Arc::new(MockTxHandler {
+        peer_disconnect: Arc::new({
+            let disconnects = disconnects.clone();
+            move |url, reason| {
+                disconnects.lock().expect("poison").push((url, reason))
+            }
+        }),
+        set_unresponsive: Arc::new({
+            let unresponsive = unresponsive.clone();
+            move |_, _| {
+                unresponsive.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }),
+        ..Default::default()
+    });
+    let ep_2 = harness.build_transport(handler_2.clone()).await;
+    ep_2.register_space_handler(TEST_SPACE_ID, handler_2.clone());
+
+    // Wait for URLs to be updated
+    let dummy_url = Url::from_str("http://url.not.set:0/0").unwrap();
+    retry_fn_until_timeout(
+        || async {
+            handler_1.current_url.lock().expect("poison").clone() != dummy_url
+                && handler_2.current_url.lock().expect("poison").clone()
+                    != dummy_url
+        },
+        Some(6000),
+        Some(500),
+    )
+    .await
+    .unwrap();
+
+    let ep_1_url = handler_1.current_url.lock().expect("poison").clone();
+    let ep_2_url = handler_2.current_url.lock().expect("poison").clone();
+    ep_1.send_space_notify(
+        ep_2_url.clone(),
+        TEST_SPACE_ID,
+        Bytes::from_static(b"hi"),
+    )
+    .await
+    .unwrap();
+    retry_fn_until_timeout(
+        || async { ep_2.get_connected_peers().await.unwrap().len() == 1 },
+        Some(5000),
+        Some(100),
+    )
+    .await
+    .unwrap();
+
+    ep_1.close().await;
+
+    // The remote is told gracefully and does not mark us unresponsive.
+    retry_fn_until_timeout(
+        || async {
+            disconnects
+                .lock()
+                .expect("poison")
+                .iter()
+                .any(|(url, reason)| {
+                    *url == ep_1_url
+                        && reason.as_deref() == Some(TRANSPORT_CLOSED_REASON)
+                })
+        },
+        Some(5000),
+        Some(100),
+    )
+    .await
+    .expect("remote must receive a graceful disconnect");
+    assert!(ep_2.get_connected_peers().await.unwrap().is_empty());
+    assert!(!unresponsive.load(Ordering::SeqCst));
+
+    // The closed endpoint holds no connections.
+    assert!(ep_1.get_connected_peers().await.unwrap().is_empty());
+
+    // `ep_1` is still alive, yet it no longer holds its handler.
+    retry_fn_until_timeout(
+        || async { Arc::strong_count(&handler_1) == 1 },
+        Some(5000),
+        Some(50),
+    )
+    .await
+    .expect("handler must be released after close while ep_1 is held");
+
+    tokio::time::timeout(Duration::from_secs(1), ep_1.close())
+        .await
+        .expect("second close must return promptly");
+}
+
+#[test]
+fn drop_after_close_needs_no_runtime() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let (ep, harness) = rt.block_on(async {
+        let harness = IrohTransportTestHarness::new().await;
+        let handler = Arc::new(MockTxHandler::default());
+        let ep = harness.build_transport(handler).await;
+        ep.close().await;
+        (ep, harness)
+    });
+    assert_eq!(Arc::strong_count(&ep), 1, "ep must be the last reference");
+
+    // Drop the transport on a thread with no tokio runtime.
+    std::thread::spawn(move || drop(ep))
+        .join()
+        .expect("dropping a closed transport must not need a runtime");
+
+    rt.block_on(async move { drop(harness) });
 }

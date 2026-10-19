@@ -3,6 +3,9 @@
 use crate::*;
 use std::sync::Arc;
 
+/// Error context returned by a closed [Kitsune] instance.
+pub const KITSUNE_CLOSED_ERR: &str = "kitsune closed";
+
 /// Handler for events coming out of Kitsune2.
 pub trait KitsuneHandler: 'static + Send + Sync + std::fmt::Debug {
     /// A notification that a new listening address has been bound.
@@ -103,6 +106,25 @@ pub trait Kitsune: 'static + Send + Sync + std::fmt::Debug {
 
     /// Get the report handle.
     fn report(&self) -> K2Result<DynReport>;
+
+    /// Close this Kitsune instance.
+    ///
+    /// Removes every space without the local agent check of
+    /// [`remove_space`](Self::remove_space), closes the transport and releases
+    /// the handler, transport and report. As with
+    /// [`remove_space`](Self::remove_space), a space only shuts down once every
+    /// reference to it is dropped, so a space the caller still holds keeps its
+    /// modules running against the closed transport until the caller drops
+    /// it. Afterwards, every call that returns a [K2Result] fails with
+    /// [KITSUNE_CLOSED_ERR], except [`remove_space`](Self::remove_space).
+    /// [`list_spaces`](Self::list_spaces) returns nothing and
+    /// [`space_if_exists`](Self::space_if_exists) returns `None`.
+    ///
+    /// Calling this again after a close has completed must be a no-op that
+    /// returns promptly. A concurrent call must not resolve before the close
+    /// has completed, and a call made after a close was cancelled must finish
+    /// the close. [CloseOnce] implements this behavior.
+    fn close(&self) -> BoxFut<'_, ()>;
 }
 
 /// Trait-object [Kitsune].

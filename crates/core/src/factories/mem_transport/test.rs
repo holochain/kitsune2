@@ -385,6 +385,161 @@ async fn transport_disconnect() {
     assert!(s1.transport_stats.connections.is_empty());
 }
 
+/// A [`MemTransport`](super::MemTransport) with a space handler, connected
+/// to a second transport by a sent space notification.
+struct ConnectedPair {
+    h1: Arc<TrackHnd>,
+    imp1: Arc<super::MemTransport>,
+    t1: DynTransport,
+    s1: Arc<TrackHnd>,
+    /// Kept alive so the connection to it stays open.
+    _t2: DynTransport,
+    u2: Url,
+}
+
+/// Build a [`ConnectedPair`] whose connection is already established.
+async fn connected_pair() -> ConnectedPair {
+    let h1 = TrackHnd::new();
+    let hnd1 = TxImpHnd::new(h1.clone());
+    let imp1 = super::MemTransport::create(hnd1.clone()).await;
+    let t1 = DefaultTransport::create(&hnd1, imp1.clone());
+    let s1 = TrackHnd::new();
+    t1.register_space_handler(TEST_SPACE_ID, s1.clone());
+
+    let h2 = TrackHnd::new();
+    let t2 = gen_tx(h2.clone()).await;
+    t2.register_space_handler(TEST_SPACE_ID, h2.clone());
+    let u1 = h1.url();
+    let u2 = h2.url();
+
+    t1.send_space_notify(
+        u2.clone(),
+        TEST_SPACE_ID,
+        bytes::Bytes::from_static(b"hello"),
+    )
+    .await
+    .unwrap();
+    h2.check_connect(&u1).unwrap();
+
+    ConnectedPair {
+        h1,
+        imp1,
+        t1,
+        s1,
+        _t2: t2,
+        u2,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transport_close_waits_for_connections_to_drop() {
+    let ConnectedPair {
+        h1,
+        imp1,
+        t1,
+        s1,
+        _t2,
+        u2,
+    } = connected_pair().await;
+
+    // Neither of two concurrent closes may return before the connection has
+    // been dropped and the local space handler has heard about it.
+    let close_and_check = || async {
+        imp1.close().await;
+        assert!(
+            has_disconnect(&s1, &u2),
+            "space handler must see the disconnect before close returns: {s1:?}"
+        );
+    };
+    tokio::join!(close_and_check(), close_and_check());
+
+    // A close after a completed close is a no-op that returns promptly.
+    tokio::time::timeout(std::time::Duration::from_secs(1), imp1.close())
+        .await
+        .expect("repeated close must return promptly");
+
+    // Once the transport is closed too, nothing references our handlers,
+    // even though `t1` itself is still alive.
+    t1.close().await;
+    kitsune2_test_utils::retry_fn_until_timeout(
+        || async { Arc::strong_count(&h1) == 1 && Arc::strong_count(&s1) == 1 },
+        Some(5000),
+        Some(50),
+    )
+    .await
+    .expect("handlers must be released after close");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transport_close_after_cancelled_close_finishes_the_close() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let ConnectedPair {
+        imp1, s1, _t2, u2, ..
+    } = connected_pair().await;
+
+    // A task that blocks its thread cannot be aborted until it yields, so
+    // the first close is still shutting it down when it gets cancelled. The
+    // task blocks until the test releases it after that cancelled close.
+    let (started_send, started_recv) = tokio::sync::oneshot::channel();
+    let (release_send, release_recv) = std::sync::mpsc::channel::<()>();
+    let finished = Arc::new(AtomicBool::new(false));
+    imp1.task_list.lock().expect("poison").spawn({
+        let finished = finished.clone();
+        async move {
+            started_send.send(()).unwrap();
+            release_recv.recv().expect("release sender dropped");
+            finished.store(true, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+        }
+    });
+    started_recv.await.unwrap();
+
+    tokio::time::timeout(std::time::Duration::from_millis(50), imp1.close())
+        .await
+        .expect_err("the first close must be cancelled mid shutdown");
+
+    release_send.send(()).unwrap();
+    imp1.close().await;
+    assert!(
+        finished.load(Ordering::SeqCst),
+        "close must wait for the task the cancelled close was shutting down"
+    );
+    assert!(
+        has_disconnect(&s1, &u2),
+        "space handler must see the disconnect once close returns: {s1:?}"
+    );
+    assert!(
+        imp1.task_list.lock().expect("poison").is_empty(),
+        "no task may survive the close"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transport_close_notifies_space_handlers_of_disconnects() {
+    let ConnectedPair {
+        t1, s1, _t2, u2, ..
+    } = connected_pair().await;
+
+    // Closing the transport, not just the imp, must still tell local space
+    // handlers about the connections it drops.
+    t1.close().await;
+    assert!(
+        has_disconnect(&s1, &u2),
+        "space handler must see the disconnect before close returns: {s1:?}"
+    );
+}
+
+/// Whether `handler` recorded a disconnect from `peer`, for any reason.
+fn has_disconnect(handler: &TrackHnd, peer: &Url) -> bool {
+    handler
+        .track
+        .lock()
+        .expect("poison")
+        .iter()
+        .any(|t| matches!(t, Track::Disconnect(u, _) if u == peer))
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn transport_preflight_happy() {
     use std::sync::atomic::*;

@@ -53,6 +53,7 @@ struct MemTransport {
     task_list: Arc<Mutex<tokio::task::JoinSet<()>>>,
     cmd_send: CmdSend,
     net_stats: Arc<Mutex<TransportStats>>,
+    close_once: CloseOnce,
 }
 
 impl Drop for MemTransport {
@@ -64,7 +65,7 @@ impl Drop for MemTransport {
 }
 
 impl MemTransport {
-    pub async fn create(handler: Arc<TxImpHnd>) -> DynTxImp {
+    pub async fn create(handler: Arc<TxImpHnd>) -> Arc<Self> {
         let mut listener = get_transport_instances().listen();
         let this_url = listener.url();
         handler.new_listening_address(this_url.clone(), None).await;
@@ -109,14 +110,13 @@ impl MemTransport {
             net_stats.clone(),
         ));
 
-        let out: DynTxImp = Arc::new(Self {
+        Arc::new(Self {
             this_url,
             task_list,
             cmd_send,
             net_stats,
-        });
-
-        out
+            close_once: CloseOnce::new(),
+        })
     }
 }
 
@@ -168,6 +168,27 @@ impl TxImp for MemTransport {
 
     fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
         Box::pin(async move { Ok(self.net_stats.lock().unwrap().clone()) })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(self.close_once.run(async {
+            // `abort_all` only requests cancellation, so the tasks are then
+            // awaited until the set is empty. Their connections are dropped,
+            // firing `peer_disconnect`, before close returns. The tasks stay
+            // in the set while they shut down, so a close that follows a
+            // cancelled close still waits for them, and a task spawned in the
+            // meantime is aborted by the next iteration.
+            loop {
+                self.task_list.lock().expect("poison").abort_all();
+                let next = std::future::poll_fn(|cx| {
+                    self.task_list.lock().expect("poison").poll_join_next(cx)
+                })
+                .await;
+                if next.is_none() {
+                    break;
+                }
+            }
+        }))
     }
 }
 
