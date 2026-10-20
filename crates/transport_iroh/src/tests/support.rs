@@ -18,8 +18,8 @@ use crate::{IrohTransport, IrohTransportConfig};
 use bytes::Bytes;
 use iroh::{EndpointAddr, EndpointId};
 use kitsune2_api::{
-    BoxFut, CloseOnce, DefaultTransport, K2Error, K2Result, TransportStats,
-    TxImp, TxImpHnd, Url,
+    BoxFut, CloseOnce, DefaultTransport, DynTxSpaceHandler, K2Error, K2Result,
+    TransportStats, TxImp, TxImpHnd, Url,
 };
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use n0_watcher::Disconnected;
@@ -304,6 +304,18 @@ pub(super) fn build_handler_with_space(
     let handler = TxImpHnd::new(mock.clone());
     let transport = DefaultTransport::create(&handler, Arc::new(StubTxImp));
     transport.register_space_handler(TEST_SPACE_ID, mock);
+    handler
+}
+
+/// Test fixture: builds a `TxImpHnd` wrapped in a `DefaultTransport` with
+/// a default `MockTxHandler` as the transport handler and `space` registered
+/// as the space handler.
+pub(super) fn build_handler_for_space(
+    space: DynTxSpaceHandler,
+) -> Arc<TxImpHnd> {
+    let handler = TxImpHnd::new(Arc::new(MockTxHandler::default()));
+    let transport = DefaultTransport::create(&handler, Arc::new(StubTxImp));
+    transport.register_space_handler(TEST_SPACE_ID, space);
     handler
 }
 
