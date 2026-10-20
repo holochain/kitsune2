@@ -328,6 +328,25 @@ impl TxSpaceHandler for TxHandlerTranslator {
         })
     }
 
+    fn is_unresponsive(
+        &self,
+        peer: Url,
+        since: Timestamp,
+    ) -> BoxFut<'_, K2Result<bool>> {
+        Box::pin(async move {
+            let core_space = self
+                .1
+                .upgrade()
+                .ok_or(K2Error::other("CoreSpace has been dropped."))?;
+
+            core_space
+                .peer_meta_store
+                .get_unresponsive(peer)
+                .await
+                .map(|when| when.is_some_and(|when| when >= since))
+        })
+    }
+
     fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool> {
         let core_space = self
             .1

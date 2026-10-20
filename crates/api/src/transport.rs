@@ -316,6 +316,50 @@ impl TxImpHnd {
         })
     }
 
+    /// Check whether a peer was marked unresponsive at or after `since` in
+    /// any registered space.
+    ///
+    /// Every registered space handler is asked, and `Ok(true)` is returned as
+    /// soon as one of them reports such a mark, even if other spaces failed.
+    /// A space handler error does not stop the remaining spaces from being
+    /// asked; each one is logged at `debug` together with the space id.
+    ///
+    /// # Errors
+    ///
+    /// Returns the last space handler error, annotated with its space id, if
+    /// no space reported the peer and at least one space handler failed.
+    pub fn is_unresponsive(
+        &self,
+        peer: Url,
+        since: Timestamp,
+    ) -> BoxFut<'_, K2Result<bool>> {
+        let space_map = self.space_map.lock().expect("poison").clone();
+        Box::pin(async move {
+            let mut last_err = None;
+            for (space_id, space_handler) in space_map.iter() {
+                match space_handler.is_unresponsive(peer.clone(), since).await {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => {}
+                    Err(e) => {
+                        tracing::debug!(
+                            %peer,
+                            %space_id,
+                            ?e,
+                            "Failed to check whether peer is unresponsive in space"
+                        );
+                        last_err = Some(K2Error::other_src(
+                            format!(
+                                "Failed to check whether peer {peer} is unresponsive in space {space_id}"
+                            ),
+                            e,
+                        ));
+                    }
+                }
+            }
+            last_err.map_or(Ok(false), Err)
+        })
+    }
+
     /// Check whether a message is permitted for a given peer and space
     ///
     /// If any agent associated with the given peer and space id is blocked
@@ -1091,6 +1135,26 @@ pub trait TxSpaceHandler: TxBaseHandler {
         Box::pin(async move { Ok(()) })
     }
 
+    /// Check whether a peer was marked unresponsive in the space's peer meta
+    /// store at or after `since`.
+    ///
+    /// [`TxImpHnd::is_unresponsive`] calls this on behalf of the transport
+    /// before it dials a peer, passing the time the send started, so that once
+    /// one connection attempt has failed and marked the peer, sends queued
+    /// behind it do not each repeat a full connection timeout. A mark older
+    /// than `since` is ignored, so a later send still dials a peer that may
+    /// have recovered.
+    ///
+    /// The default implementation reports every peer as responsive.
+    fn is_unresponsive(
+        &self,
+        peer: Url,
+        since: Timestamp,
+    ) -> BoxFut<'_, K2Result<bool>> {
+        drop((peer, since));
+        Box::pin(async move { Ok(false) })
+    }
+
     /// Return `true` if any agent using the passed peer [`Url`] is blocked.
     fn is_any_agent_at_url_blocked(&self, peer_url: &Url) -> K2Result<bool>;
     /// Check if this space has any local agents joined.
@@ -1473,5 +1537,100 @@ mod test {
         tx.close().await;
 
         assert_eq!(close_calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// A space handler whose `is_unresponsive` answer is fixed by the test.
+    #[derive(Debug)]
+    struct SpaceHnd(K2Result<bool>);
+
+    impl TxBaseHandler for SpaceHnd {}
+
+    impl TxSpaceHandler for SpaceHnd {
+        fn is_any_agent_at_url_blocked(
+            &self,
+            _peer_url: &Url,
+        ) -> K2Result<bool> {
+            Ok(false)
+        }
+
+        fn is_unresponsive(
+            &self,
+            _peer: Url,
+            _since: Timestamp,
+        ) -> BoxFut<'_, K2Result<bool>> {
+            let out = match &self.0 {
+                Ok(v) => Ok(*v),
+                Err(e) => Err(K2Error::other(e.to_string())),
+            };
+            Box::pin(async move { out })
+        }
+    }
+
+    fn peer() -> Url {
+        Url::from_str("ws://peer.example:80/alice").unwrap()
+    }
+
+    fn handler_with_spaces(spaces: Vec<SpaceHnd>) -> Arc<TxImpHnd> {
+        let hnd = TxImpHnd::new(Arc::new(NoopHandler));
+        {
+            let mut space_map = hnd.space_map.lock().expect("poison");
+            for (i, s) in spaces.into_iter().enumerate() {
+                let space_id: SpaceId =
+                    Bytes::from(format!("space-{i}").into_bytes()).into();
+                space_map.insert(space_id, Arc::new(s));
+            }
+        }
+        hnd
+    }
+
+    #[tokio::test]
+    async fn is_unresponsive_combines_space_answers() {
+        let boom = || SpaceHnd(Err(K2Error::other("boom")));
+        let cases = [
+            ("no spaces", Vec::new(), Some(false)),
+            (
+                "all spaces responsive",
+                vec![SpaceHnd(Ok(false)), SpaceHnd(Ok(false))],
+                Some(false),
+            ),
+            (
+                "one space reports it",
+                vec![SpaceHnd(Ok(false)), SpaceHnd(Ok(true))],
+                Some(true),
+            ),
+            ("only an error", vec![boom()], None),
+            (
+                "error and a responsive space",
+                vec![boom(), SpaceHnd(Ok(false))],
+                None,
+            ),
+            (
+                "error and a report",
+                vec![boom(), SpaceHnd(Ok(true))],
+                Some(true),
+            ),
+        ];
+
+        // `None` means an error is expected.
+        for (name, spaces, expected) in cases {
+            let hnd = handler_with_spaces(spaces);
+            let result = hnd.is_unresponsive(peer(), Timestamp::now()).await;
+            match (result, expected) {
+                (Ok(got), Some(want)) => {
+                    assert_eq!(got, want, "case: {name}");
+                }
+                (Err(e), None) => {
+                    assert!(
+                        e.to_string().contains("boom"),
+                        "case: {name}: {e}"
+                    );
+                }
+                (result, expected) => {
+                    panic!(
+                        "case: {name}: got {result:?}, expected {expected:?}"
+                    )
+                }
+            }
+        }
     }
 }

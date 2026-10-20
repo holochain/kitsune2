@@ -433,20 +433,18 @@ async fn broadcast_new_agent_info_on_resign() {
     assert_eq!(bob.agent(), &broadcast.0.agent);
 }
 
-/// The per-space transport hook exists so a space can name a relay of its own.
-/// Calling it for a space that overrides nothing hands the transport the global
-/// config and presents the defaults as that space's own - which the transport
-/// cannot tell apart, and the iroh transport acts on by reconfiguring the relay
-/// it is already connected to.
-mod configure_for_space_only_when_overridden {
+/// Transport, kitsune and space handler stubs shared by the tests that build
+/// a kitsune instance only to observe what reaches the transport.
+mod tx_fixtures {
     use super::*;
 
-    type Configured = Arc<Mutex<Vec<SpaceId>>>;
+    pub(super) type Configured = Arc<Mutex<Vec<SpaceId>>>;
+    pub(super) type CapturedTxHnd = Arc<Mutex<Option<Arc<TxImpHnd>>>>;
 
-    /// Records the per-space hook and does nothing else; this test only creates
-    /// spaces, it never moves data.
+    /// Records the per-space hook and does nothing else; these tests only
+    /// create spaces, they never move data.
     #[derive(Debug)]
-    struct RecordingTx {
+    pub(super) struct RecordingTx {
         configured: Configured,
     }
 
@@ -499,9 +497,12 @@ mod configure_for_space_only_when_overridden {
         }
     }
 
+    /// Builds a [`RecordingTx`] and, when `captured` is set, hands out the
+    /// `TxImpHnd` it wraps so a test can reach the registered space handlers.
     #[derive(Debug)]
-    struct RecordingTxFactory {
-        configured: Configured,
+    pub(super) struct RecordingTxFactory {
+        pub(super) configured: Configured,
+        pub(super) captured: Option<CapturedTxHnd>,
     }
 
     impl TransportFactory for RecordingTxFactory {
@@ -519,8 +520,12 @@ mod configure_for_space_only_when_overridden {
             handler: DynTxHandler,
         ) -> BoxFut<'static, K2Result<DynTransport>> {
             let configured = self.configured.clone();
+            let captured = self.captured.clone();
             Box::pin(async move {
                 let handler = TxImpHnd::new(handler);
+                if let Some(captured) = captured {
+                    *captured.lock().expect("poison") = Some(handler.clone());
+                }
                 let imp: DynTxImp = Arc::new(RecordingTx { configured });
                 Ok(DefaultTransport::create(&handler, imp))
             })
@@ -528,11 +533,11 @@ mod configure_for_space_only_when_overridden {
     }
 
     #[derive(Debug)]
-    struct S;
+    pub(super) struct S;
     impl SpaceHandler for S {}
 
     #[derive(Debug)]
-    struct K;
+    pub(super) struct K;
     impl KitsuneHandler for K {
         fn create_space(
             &self,
@@ -545,6 +550,16 @@ mod configure_for_space_only_when_overridden {
             })
         }
     }
+}
+
+/// The per-space transport hook exists so a space can name a relay of its own.
+/// Calling it for a space that overrides nothing hands the transport the global
+/// config and presents the defaults as that space's own - which the transport
+/// cannot tell apart, and the iroh transport acts on by reconfiguring the relay
+/// it is already connected to.
+mod configure_for_space_only_when_overridden {
+    use super::tx_fixtures::*;
+    use super::*;
 
     async fn configured_spaces_for(
         config_override: Option<Config>,
@@ -554,6 +569,7 @@ mod configure_for_space_only_when_overridden {
             verifier: Arc::new(TestVerifier),
             transport: Arc::new(RecordingTxFactory {
                 configured: configured.clone(),
+                captured: None,
             }),
             ..crate::default_test_builder()
         }
@@ -773,5 +789,130 @@ mod bootstrap_auth_material_is_not_carried_to_another_server {
             material_seen_by_space(None).await,
             Some(b"global-credential".to_vec()),
         );
+    }
+}
+
+/// `TxHandlerTranslator::is_unresponsive` is the space-side getter the
+/// transport uses to decide whether to dial. It must mirror the
+/// `unresponsive` mark in the space's peer meta store, counting only marks
+/// made at or after the time the caller passes.
+mod tx_handler_translator_is_unresponsive {
+    use super::tx_fixtures::*;
+    use super::*;
+    use std::sync::Weak;
+    use std::time::Duration;
+
+    /// Builds a kitsune instance with one space and returns that space with
+    /// the `TxImpHnd` the space's translator is registered against.
+    async fn space_and_tx_hnd() -> (DynSpace, Arc<TxImpHnd>) {
+        let captured: CapturedTxHnd = Arc::new(Mutex::new(None));
+        let kitsune = Builder {
+            verifier: Arc::new(TestVerifier),
+            transport: Arc::new(RecordingTxFactory {
+                configured: Arc::new(Mutex::new(Vec::new())),
+                captured: Some(captured.clone()),
+            }),
+            ..crate::default_test_builder()
+        }
+        .with_default_config()
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+        kitsune
+            .register_handler(Arc::new(K) as DynKitsuneHandler)
+            .await
+            .unwrap();
+        let space = kitsune.space(TEST_SPACE_ID, None).await.unwrap();
+        let hnd = captured
+            .lock()
+            .expect("poison")
+            .clone()
+            .expect("transport factory must have run");
+        (space, hnd)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn translator_reports_unresponsive_mark_from_peer_meta_store() {
+        let (space, hnd) = space_and_tx_hnd().await;
+
+        let marked = Url::from_str("ws://marked.example:80/alice").unwrap();
+        let other = Url::from_str("ws://other.example:80/bob").unwrap();
+        let before_mark = Timestamp::now();
+
+        assert!(
+            !hnd.is_unresponsive(marked.clone(), before_mark)
+                .await
+                .unwrap()
+        );
+
+        let agent = Arc::new(TestLocalAgent::default()) as DynLocalAgent;
+        let agent_info = AgentBuilder {
+            url: Some(Some(marked.clone())),
+            ..Default::default()
+        }
+        .build(agent);
+        space.peer_store().insert(vec![agent_info]).await.unwrap();
+
+        let when = Timestamp::now();
+        hnd.set_unresponsive(marked.clone(), when).await.unwrap();
+        hnd.set_unresponsive(other.clone(), when).await.unwrap();
+
+        assert!(
+            hnd.is_unresponsive(marked.clone(), before_mark)
+                .await
+                .unwrap()
+        );
+        assert!(hnd.is_unresponsive(marked.clone(), when).await.unwrap());
+        assert!(
+            !hnd.is_unresponsive(marked, when + Duration::from_secs(1))
+                .await
+                .unwrap(),
+            "a mark older than `since` must not count"
+        );
+        assert!(!hnd.is_unresponsive(other, before_mark).await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn translator_errors_when_core_space_is_dropped() {
+        let translator =
+            super::super::TxHandlerTranslator(Arc::new(S), Weak::new());
+        let peer = Url::from_str("ws://peer.example:80/alice").unwrap();
+
+        let err = translator
+            .is_unresponsive(peer, Timestamp::now())
+            .await
+            .expect_err("a dropped space must report an error");
+        assert!(
+            err.to_string().contains("CoreSpace has been dropped"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn corrupt_unresponsive_mark_is_reported_as_error() {
+        let (space, hnd) = space_and_tx_hnd().await;
+        let peer = Url::from_str("ws://corrupt.example:80/alice").unwrap();
+        space
+            .peer_meta_store()
+            .put(
+                peer.clone(),
+                format!("{KEY_PREFIX_ROOT}:{META_KEY_UNRESPONSIVE}"),
+                bytes::Bytes::from_static(b"not a timestamp"),
+                None,
+            )
+            .await
+            .unwrap();
+        space
+            .peer_meta_store()
+            .get_unresponsive(peer.clone())
+            .await
+            .expect_err("the stored value must fail to deserialize");
+
+        // The caller decides how to treat the error; the iroh transport
+        // falls back to dialing.
+        hnd.is_unresponsive(peer, Timestamp::from_micros(0))
+            .await
+            .expect_err("an unreadable mark must be reported as an error");
     }
 }
