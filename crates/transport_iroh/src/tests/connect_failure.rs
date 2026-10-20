@@ -5,15 +5,20 @@
 //! that are difficult to trigger reproducibly via the real iroh stack.
 
 use super::support::{
-    PendingWatcher, build_handler_with_space, build_transport,
+    PendingWatcher, build_handler_for_space, build_handler_with_space,
+    build_transport,
 };
 use crate::connection::DynConnection;
 use crate::endpoint::{DynIrohEndpoint, Endpoint, EndpointAddrWatcher};
+use crate::test_utils::MockTxHandler;
 use crate::url::endpoint_from_url;
 use crate::{IrohTransport, IrohTransportConfig};
 use bytes::Bytes;
 use iroh::{EndpointAddr, RelayConfig, RelayUrl};
-use kitsune2_api::{BoxFut, K2Error, K2Result, TxImp, TxImpHnd, Url};
+use kitsune2_api::{
+    BoxFut, K2Error, K2Result, Timestamp, TxBaseHandler, TxImp, TxImpHnd,
+    TxSpaceHandler, Url,
+};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -630,6 +635,444 @@ async fn marks_unresponsive_when_outer_connect_timeout_fires() {
         "set_unresponsive should be called exactly once"
     );
     assert_eq!(recorded[0].0, remote_url);
+}
+
+/// A fake `Endpoint` whose first `connect()` parks until `release` fires and
+/// then fails; every later `connect()` fails immediately. `attempts` counts
+/// every call.
+struct GatedFailingEndpoint {
+    attempts: Arc<AtomicUsize>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+impl std::fmt::Debug for GatedFailingEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatedFailingEndpoint").finish()
+    }
+}
+
+impl Endpoint for GatedFailingEndpoint {
+    fn watch_addr(&self) -> Box<dyn EndpointAddrWatcher> {
+        Box::new(PendingWatcher)
+    }
+
+    fn accept(&self) -> BoxFut<'_, Option<K2Result<DynConnection>>> {
+        Box::pin(std::future::pending())
+    }
+
+    fn connect(
+        &self,
+        _endpoint_addr: EndpointAddr,
+        _alpn: &[u8],
+    ) -> BoxFut<'_, K2Result<DynConnection>> {
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+        let release = self.release.clone();
+        Box::pin(async move {
+            if attempt == 0 {
+                release.notified().await;
+            }
+            Err(K2Error::other("timed out"))
+        })
+    }
+
+    fn close(&self) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn insert_relay(
+        &self,
+        _url: RelayUrl,
+        _config: Arc<RelayConfig>,
+    ) -> BoxFut<'_, ()> {
+        Box::pin(async {})
+    }
+
+    fn remove_relay(
+        &self,
+        _url: &RelayUrl,
+    ) -> BoxFut<'_, Option<Arc<RelayConfig>>> {
+        Box::pin(async { None })
+    }
+
+    fn id_bytes(&self) -> [u8; 32] {
+        [0u8; 32]
+    }
+
+    fn is_home_relay_known_down(&self) -> bool {
+        false
+    }
+}
+
+/// Space handler that keeps the unresponsive mark of every peer in one slot.
+///
+/// `set_unresponsive` records the mark time and counts the calls, and
+/// `is_unresponsive` compares the mark against `since`, mimicking the peer
+/// meta store round trip through the spaces. It stays local to these tests so
+/// the public `MockTxHandler` does not grow a field.
+#[derive(Debug)]
+struct MarkingSpaceHandler {
+    set_calls: Arc<AtomicUsize>,
+    marked: Mutex<Option<Timestamp>>,
+}
+
+impl TxBaseHandler for MarkingSpaceHandler {}
+
+impl TxSpaceHandler for MarkingSpaceHandler {
+    fn set_unresponsive(
+        &self,
+        _peer: Url,
+        when: Timestamp,
+    ) -> BoxFut<'_, K2Result<()>> {
+        self.set_calls.fetch_add(1, Ordering::SeqCst);
+        *self.marked.lock().expect("poison") = Some(when);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn is_unresponsive(
+        &self,
+        _peer: Url,
+        since: Timestamp,
+    ) -> BoxFut<'_, K2Result<bool>> {
+        let marked = self
+            .marked
+            .lock()
+            .expect("poison")
+            .is_some_and(|m| m >= since);
+        Box::pin(async move { Ok(marked) })
+    }
+
+    fn is_any_agent_at_url_blocked(&self, _peer_url: &Url) -> K2Result<bool> {
+        Ok(false)
+    }
+}
+
+/// Handler whose space records unresponsive marks, see
+/// [`MarkingSpaceHandler`]. `initial_mark` seeds an earlier mark.
+fn build_marking_handler(
+    set_calls: Arc<AtomicUsize>,
+    initial_mark: Option<Timestamp>,
+) -> Arc<TxImpHnd> {
+    build_handler_for_space(Arc::new(MarkingSpaceHandler {
+        set_calls,
+        marked: Mutex::new(initial_mark),
+    }))
+}
+
+/// Regression test for issue #658: two sends to one unreachable peer queue
+/// on the per-peer lock. After the first dial fails and marks the peer, the
+/// second waiter must see the mark once it holds the lock and must not
+/// start its own full-timeout dial.
+#[tokio::test]
+async fn second_waiter_skips_dial_after_first_marks_peer_unresponsive() {
+    let set_calls = Arc::new(AtomicUsize::new(0));
+    let handler = build_marking_handler(set_calls.clone(), None);
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let release = Arc::new(tokio::sync::Notify::new());
+    let fake_endpoint: DynIrohEndpoint = Arc::new(GatedFailingEndpoint {
+        attempts: attempts.clone(),
+        release: release.clone(),
+    });
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let transport = Arc::new(build_transport(
+        fake_endpoint,
+        handler,
+        connections,
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    ));
+
+    let spawn_send = |transport: Arc<IrohTransport>, remote_url: Url| {
+        tokio::spawn(async move {
+            transport
+                .send(remote_url, Bytes::from_static(b"hello"))
+                .await
+        })
+    };
+    let first = spawn_send(transport.clone(), remote_url.clone());
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while attempts.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("first send must dial");
+    let second = spawn_send(transport.clone(), remote_url.clone());
+    // The lock map, the first send and the queued second send each hold a
+    // reference to the peer lock. The count reaches 3 when the second send
+    // clones the lock, slightly before it captures its start time. This test
+    // runs on the current-thread runtime and `send` has no yield point
+    // between the clone and the lock await, so by the time this task sees
+    // the count the second send has already captured its start time and is
+    // parked on the lock.
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let queued = transport
+                .connection_locks
+                .lock()
+                .expect("poison")
+                .get(&remote_url)
+                .is_some_and(|lock| Arc::strong_count(lock) == 3);
+            if queued {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("second send must queue on the peer lock");
+    assert_eq!(attempts.load(Ordering::SeqCst), 1, "first send must dial");
+    release.notify_one();
+
+    let first_err = tokio::time::timeout(Duration::from_secs(1), first)
+        .await
+        .expect("first send must finish")
+        .unwrap()
+        .expect_err("first send must fail on the dial error");
+    assert!(
+        first_err.to_string().contains("iroh connect error"),
+        "unexpected first error: {first_err}"
+    );
+
+    let second_err = tokio::time::timeout(Duration::from_secs(1), second)
+        .await
+        .expect("second send must finish without its own dial timeout")
+        .unwrap()
+        .expect_err("second send must fail without dialing");
+    assert!(
+        second_err
+            .to_string()
+            .contains(crate::PEER_UNRESPONSIVE_SKIP_ERR),
+        "unexpected second error: {second_err}"
+    );
+
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        1,
+        "the second waiter must not dial an already-marked peer"
+    );
+    assert_eq!(
+        set_calls.load(Ordering::SeqCst),
+        1,
+        "skipping the dial must not re-mark the peer"
+    );
+}
+
+/// A mark left by a dial that finished before this send started must not
+/// stop the send from dialing: the peer may have recovered since (#658).
+#[tokio::test]
+async fn fresh_send_dials_peer_marked_before_it_started() {
+    let set_calls = Arc::new(AtomicUsize::new(0));
+    let earlier = (Timestamp::now() - Duration::from_secs(60))
+        .expect("one minute ago must be a valid timestamp");
+    let handler = build_marking_handler(set_calls.clone(), Some(earlier));
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new({
+            let attempts = attempts.clone();
+            move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                K2Error::other("still down")
+            }
+        }),
+    });
+    let remote_url = fake_remote_url();
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        crate::Connections::new(),
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    );
+
+    let err = transport
+        .send(remote_url, Bytes::from_static(b"hello"))
+        .await
+        .expect_err("the dial must fail");
+    assert!(
+        err.to_string().contains("iroh connect error"),
+        "the send must dial instead of skipping: {err}"
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(set_calls.load(Ordering::SeqCst), 1);
+}
+
+/// Space handler whose unresponsive check always fails.
+#[derive(Debug)]
+struct FailingCheckSpaceHandler;
+
+impl TxBaseHandler for FailingCheckSpaceHandler {}
+
+impl TxSpaceHandler for FailingCheckSpaceHandler {
+    fn is_unresponsive(
+        &self,
+        _peer: Url,
+        _since: Timestamp,
+    ) -> BoxFut<'_, K2Result<bool>> {
+        Box::pin(async { Err(K2Error::other("peer meta store unavailable")) })
+    }
+
+    fn is_any_agent_at_url_blocked(&self, _peer_url: &Url) -> K2Result<bool> {
+        Ok(false)
+    }
+}
+
+/// A failing unresponsive check must not block the send: the check is only
+/// an optimization, so the transport falls back to dialing.
+#[tokio::test]
+async fn send_dials_when_unresponsive_check_fails() {
+    let handler = build_handler_for_space(Arc::new(FailingCheckSpaceHandler));
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new({
+            let attempts = attempts.clone();
+            move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                K2Error::other("still down")
+            }
+        }),
+    });
+    let remote_url = fake_remote_url();
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        crate::Connections::new(),
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    );
+
+    let err = transport
+        .send(remote_url, Bytes::from_static(b"hello"))
+        .await
+        .expect_err("the dial must fail");
+    assert!(
+        err.to_string().contains("iroh connect error"),
+        "the send must dial instead of failing on the check: {err}"
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+}
+
+/// A peer that is marked unresponsive but already has an active connection
+/// (for example it dialed us after being marked) must still receive the
+/// frame on that connection.
+#[tokio::test]
+async fn sends_on_existing_connection_when_peer_is_marked() {
+    // A mark in the future is newer than the send's start, so the space
+    // reports the peer as unresponsive for the whole test.
+    let later = Timestamp::now() + Duration::from_secs(3600);
+    let handler =
+        build_marking_handler(Arc::new(AtomicUsize::new(0)), Some(later));
+
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let (active, writes) =
+        build_sendable_context(handler.clone(), connections.clone());
+    assert!(connections.register_candidate(&remote_url, &active));
+    assert!(connections.activate(&remote_url, &active));
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new({
+            let attempts = attempts.clone();
+            move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                K2Error::other("unexpected dial")
+            }
+        }),
+    });
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        connections,
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    );
+
+    transport
+        .send(remote_url, Bytes::from_static(b"hello"))
+        .await
+        .expect("send must use the live connection");
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+    assert_eq!(writes.get_written_data().len(), 1);
+}
+
+/// Space handler that lets an incoming connection win the race: while the
+/// unresponsive check is awaited it registers an active connection, as the
+/// accept task does without taking the peer lock, and reports the peer as
+/// unresponsive.
+struct InboundDuringCheckSpaceHandler {
+    connections: crate::Connections,
+    inbound: Arc<crate::connection_context::ConnectionContext>,
+    remote_url: Url,
+}
+
+impl std::fmt::Debug for InboundDuringCheckSpaceHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InboundDuringCheckSpaceHandler").finish()
+    }
+}
+
+impl TxBaseHandler for InboundDuringCheckSpaceHandler {}
+
+impl TxSpaceHandler for InboundDuringCheckSpaceHandler {
+    fn is_unresponsive(
+        &self,
+        _peer: Url,
+        _since: Timestamp,
+    ) -> BoxFut<'_, K2Result<bool>> {
+        assert!(
+            self.connections
+                .register_candidate(&self.remote_url, &self.inbound)
+        );
+        assert!(self.connections.activate(&self.remote_url, &self.inbound));
+        Box::pin(async { Ok(true) })
+    }
+
+    fn is_any_agent_at_url_blocked(&self, _peer_url: &Url) -> K2Result<bool> {
+        Ok(false)
+    }
+}
+
+/// An incoming connection established while the unresponsive check is
+/// awaited must be used instead of skipping the send or dialing.
+#[tokio::test]
+async fn sends_on_connection_established_during_unresponsive_check() {
+    let connections = crate::Connections::new();
+    let remote_url = fake_remote_url();
+    let transport_handler = TxImpHnd::new(Arc::new(MockTxHandler::default()));
+    let (inbound, writes) =
+        build_sendable_context(transport_handler, connections.clone());
+    let handler =
+        build_handler_for_space(Arc::new(InboundDuringCheckSpaceHandler {
+            connections: connections.clone(),
+            inbound,
+            remote_url: remote_url.clone(),
+        }));
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new({
+            let attempts = attempts.clone();
+            move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                K2Error::other("unexpected dial")
+            }
+        }),
+    });
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        connections,
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    );
+
+    transport
+        .send(remote_url, Bytes::from_static(b"hello"))
+        .await
+        .expect("send must use the connection that appeared during the check");
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+    assert_eq!(writes.get_written_data().len(), 1);
 }
 
 /// An `Endpoint` whose `connect()` succeeds with a preconfigured connection.
