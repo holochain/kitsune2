@@ -255,6 +255,13 @@ pub const TRANSPORT_CLOSED_REASON: &str = "Transport closed";
 #[cfg(not(any(test, feature = "test-utils")))]
 pub(crate) const TRANSPORT_CLOSED_REASON: &str = "Transport closed";
 
+/// Error message returned when a send is skipped because no live connection
+/// exists and the peer was marked unresponsive at or after the send started,
+/// for example by a dial the send queued behind on the per-peer lock, or by a
+/// connection that dropped meanwhile. Queued sends fail with it instead of
+/// each repeating the full `connect_timeout_s` dial.
+const PEER_UNRESPONSIVE_SKIP_ERR: &str =
+    "iroh send skipped: peer is marked unresponsive";
 /// Error message returned when a connection attempt is skipped because the
 /// home relay is not connected.  Exported so integration tests can match it
 /// without depending on a free-form string literal.
@@ -1299,18 +1306,52 @@ impl TxImp for IrohTransport {
                     .clone()
             };
 
+            let send_started = Timestamp::now();
             let mut ctx = {
                 let _lock_guard = peer_lock.lock().await;
                 let existing = connections.get(&remote_url);
                 if let Some(ctx) = existing {
                     ctx
                 } else {
-                    info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
-                    self.create_connection_and_context(
-                        remote,
-                        remote_url.clone(),
-                    )
-                    .await?
+                    // Skip the dial when the peer was marked unresponsive
+                    // at or after this send started, for example by a dial
+                    // this send queued behind on the peer lock or by a
+                    // connection that dropped meanwhile, so queued sends do
+                    // not each repeat the full `connect_timeout_s` timeout
+                    // (#658). An older mark is ignored, so the peer is dialed
+                    // again in case it has recovered. The check is only an
+                    // optimization, so a failed lookup falls back to dialing.
+                    let is_unresponsive = self
+                        .handler
+                        .is_unresponsive(remote_url.clone(), send_started)
+                        .await
+                        .unwrap_or_else(|err| {
+                            warn!(
+                                ?err,
+                                remote = ?remote_url.peer_id(),
+                                "Failed to check whether peer is unresponsive, dialing anyway"
+                            );
+                            false
+                        });
+                    // Incoming connections are registered without taking the
+                    // peer lock, so one may have landed while the check was
+                    // awaited. Prefer it over skipping or dialing.
+                    if let Some(ctx) = connections.get(&remote_url) {
+                        ctx
+                    } else if is_unresponsive {
+                        debug!(
+                            remote = ?remote_url.peer_id(),
+                            "Peer is marked unresponsive, skipping connection attempt"
+                        );
+                        return Err(K2Error::other(PEER_UNRESPONSIVE_SKIP_ERR));
+                    } else {
+                        info!(remote = ?remote_url.peer_id(), "Establishing connection to remote");
+                        self.create_connection_and_context(
+                            remote,
+                            remote_url.clone(),
+                        )
+                        .await?
+                    }
                 }
             };
             let send_deadline = tokio::time::Instant::now() + PREFLIGHT_TIMEOUT;
