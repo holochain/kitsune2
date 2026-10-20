@@ -14,8 +14,8 @@ use crate::url::endpoint_from_url;
 use bytes::Bytes;
 use iroh::EndpointId;
 use kitsune2_api::{
-    BoxFut, DefaultTransport, K2Error, K2Result, TransportStats, TxImp,
-    TxImpHnd, Url,
+    BoxFut, DefaultTransport, DynTxSpaceHandler, K2Error, K2Result,
+    TransportStats, TxImp, TxImpHnd, Url,
 };
 use kitsune2_test_utils::space::TEST_SPACE_ID;
 use std::collections::HashMap;
@@ -267,4 +267,16 @@ pub(super) fn build_parked_context_with_remote_close(
         space_relays: Arc::new(RwLock::new(HashMap::new())),
         max_frame_bytes: 64 * 1024,
     })
+}
+
+/// Test fixture: builds a `TxImpHnd` wrapped in a `DefaultTransport` with
+/// a default `MockTxHandler` as the transport handler and `space` registered
+/// as the space handler.
+pub(super) fn build_handler_for_space(
+    space: DynTxSpaceHandler,
+) -> Arc<TxImpHnd> {
+    let handler = TxImpHnd::new(Arc::new(MockTxHandler::default()));
+    let transport = DefaultTransport::create(&handler, Arc::new(StubTxImp));
+    transport.register_space_handler(TEST_SPACE_ID, space);
+    handler
 }
