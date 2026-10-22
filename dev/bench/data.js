@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792134537431,
+  "lastUpdate": 1792669999548,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -2965,6 +2965,53 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41999560,
             "range": "± 12684",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hra@holochain.org",
+            "name": "Holochain Repository Automation"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "42f3032cddc631362a97529f93ca025c61a0ed6a",
+          "message": "chore: update the AI_POLICY.md with shared content",
+          "timestamp": "2026-10-22T13:48:51+02:00",
+          "tree_id": "1177af58095f12793fd93ade1ddc642bf953ee7f",
+          "url": "https://github.com/holochain/kitsune2/commit/42f3032cddc631362a97529f93ca025c61a0ed6a"
+        },
+        "date": 1792669998815,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 78749,
+            "range": "± 6308",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 85657,
+            "range": "± 5101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 98950,
+            "range": "± 5686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41870166,
+            "range": "± 99913",
             "unit": "ns/iter"
           }
         ]
