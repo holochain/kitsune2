@@ -203,11 +203,15 @@ async fn graceful_disconnect_informs_remote_end_to_end() {
     let transport_a = harness.build_transport(handler_a).await;
     transport_a.register_space_handler(TEST_SPACE_ID, mock_a.clone());
 
-    // Wait until B has a real listening address (new_listening_address
-    // updates MockTxHandler::current_url).
+    // Wait until both peers have a real listening address
+    // (new_listening_address updates MockTxHandler::current_url). A must have
+    // one too, otherwise its first send is rejected.
     let initial_url = crate::test_utils::dummy_url();
     retry_fn_until_timeout(
-        || async { *mock_b.current_url.lock().unwrap() != initial_url },
+        || async {
+            *mock_a.current_url.lock().unwrap() != initial_url
+                && *mock_b.current_url.lock().unwrap() != initial_url
+        },
         Some(30_000),
         Some(10),
     )

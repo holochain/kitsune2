@@ -4,19 +4,16 @@
 //! exercise error paths in [`IrohTransport::create_connection_and_context`]
 //! that are difficult to trigger reproducibly via the real iroh stack.
 
+use super::support::{
+    PendingWatcher, build_handler_with_space, build_transport,
+};
 use crate::connection::DynConnection;
 use crate::endpoint::{DynIrohEndpoint, Endpoint, EndpointAddrWatcher};
-use crate::test_utils::MockTxHandler;
 use crate::url::endpoint_from_url;
 use crate::{IrohTransport, IrohTransportConfig};
 use bytes::Bytes;
 use iroh::{EndpointAddr, RelayConfig, RelayUrl};
-use kitsune2_api::{
-    BoxFut, DefaultTransport, K2Error, K2Result, TransportStats, TxImp,
-    TxImpHnd, Url,
-};
-use kitsune2_test_utils::space::TEST_SPACE_ID;
-use n0_watcher::Disconnected;
+use kitsune2_api::{BoxFut, K2Error, K2Result, TxImp, TxImpHnd, Url};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -82,106 +79,12 @@ impl Endpoint for FakeEndpoint {
     }
 }
 
-/// An `EndpointAddrWatcher` whose `updated()` future never resolves.
-struct PendingWatcher;
-
-impl EndpointAddrWatcher for PendingWatcher {
-    fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
-        Box::pin(std::future::pending())
-    }
-}
-
-/// Minimal `TxImp` stub used only to construct a `DefaultTransport` so that
-/// we can register a space handler against the shared `TxImpHnd`. None of
-/// these methods are exercised by the tests in this module.
-#[derive(Debug)]
-struct StubTxImp;
-
-impl TxImp for StubTxImp {
-    fn url(&self) -> Option<Url> {
-        None
-    }
-
-    fn disconnect(
-        &self,
-        _peer: Url,
-        _payload: Option<(String, Bytes)>,
-    ) -> BoxFut<'_, ()> {
-        Box::pin(async {})
-    }
-
-    fn send(&self, _peer: Url, _data: Bytes) -> BoxFut<'_, K2Result<()>> {
-        Box::pin(async { unreachable!("StubTxImp::send should not be called") })
-    }
-
-    fn get_connected_peers(&self) -> BoxFut<'_, K2Result<Vec<Url>>> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
-
-    fn dump_network_stats(&self) -> BoxFut<'_, K2Result<TransportStats>> {
-        Box::pin(async {
-            Ok(TransportStats {
-                backend: String::new(),
-                peer_urls: Vec::new(),
-                connections: Vec::new(),
-            })
-        })
-    }
-}
-
-/// Test fixture: builds a `TxImpHnd` wrapped in a `DefaultTransport` with a
-/// space handler registered, returning everything the test needs to assert
-/// against `set_unresponsive` calls.
-fn build_handler_with_space(
-    set_unresponsive_calls: Arc<Mutex<Vec<(Url, kitsune2_api::Timestamp)>>>,
-) -> Arc<TxImpHnd> {
-    let calls = set_unresponsive_calls.clone();
-    let mock = Arc::new(MockTxHandler {
-        set_unresponsive: Arc::new(move |peer, ts| {
-            calls.lock().unwrap().push((peer, ts));
-            Ok(())
-        }),
-        ..Default::default()
-    });
-    let handler = TxImpHnd::new(mock.clone());
-    let transport = DefaultTransport::create(&handler, Arc::new(StubTxImp));
-    transport.register_space_handler(TEST_SPACE_ID, mock);
-    handler
-}
-
 fn fake_remote_url() -> Url {
     // 64 hex characters → valid iroh EndpointId encoding.
     Url::from_str(
         "https://relay.example.com:443/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
     .unwrap()
-}
-
-/// Build an `IrohTransport` directly from its component pieces, bypassing the
-/// async `create()` constructor so unit tests can inject a fake `Endpoint`
-/// and observe `connections` / `local_url` after the test runs. The
-/// background tasks held by the struct are stubbed out with no-op spawns.
-fn build_transport(
-    endpoint: DynIrohEndpoint,
-    handler: Arc<TxImpHnd>,
-    connections: crate::Connections,
-    local_url: Arc<RwLock<Option<Url>>>,
-    config: IrohTransportConfig,
-) -> IrohTransport {
-    let noop_handle = || tokio::spawn(async {}).abort_handle();
-    IrohTransport {
-        endpoint,
-        handler,
-        local_url,
-        connections,
-        connection_locks: Arc::new(Mutex::new(HashMap::new())),
-        watch_addr_task: noop_handle(),
-        accept_task: noop_handle(),
-        relay_keepalive_task: None,
-        space_relay_keepalives: Arc::new(Mutex::new(HashMap::new())),
-        config,
-        space_relays: Arc::new(RwLock::new(HashMap::new())),
-    }
 }
 
 fn config() -> IrohTransportConfig {
@@ -594,6 +497,40 @@ async fn marks_unresponsive_when_iroh_connect_returns_error() {
 
     // The connections map must not have been mutated for a failed connect.
     assert!(connections.get(&remote_url).is_none());
+}
+
+/// A dial that fails because the transport is closing is our own shutdown, not
+/// the peer's fault, so the peer must not be marked unresponsive.
+#[tokio::test]
+async fn does_not_mark_unresponsive_when_connect_fails_while_closing() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let handler = build_handler_with_space(calls.clone());
+
+    let fake_endpoint: DynIrohEndpoint = Arc::new(FakeEndpoint {
+        connect_error_factory: Arc::new(|| K2Error::other("endpoint closed")),
+    });
+
+    let remote_url = fake_remote_url();
+    let target = endpoint_from_url(&remote_url).unwrap();
+
+    let transport = build_transport(
+        fake_endpoint,
+        handler,
+        crate::Connections::new(),
+        Arc::new(RwLock::new(Some(remote_url.clone()))),
+        config(),
+    );
+    transport.closed.store(true, Ordering::SeqCst);
+
+    let result = transport
+        .create_connection_and_context(target, remote_url)
+        .await;
+
+    result.expect_err("connect should fail");
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "set_unresponsive must not be called while the transport is closing"
+    );
 }
 
 /// When the *outer* `tokio::time::timeout` wrapper fires (i.e. iroh's connect
