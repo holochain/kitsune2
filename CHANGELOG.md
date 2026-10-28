@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.6.0-dev.3](https://github.com/holochain/kitsune2/compare/v0.6.0-dev.2...v0.6.0-dev.3)\] - 2026-10-28
+
+### Features
+
+- \[**BREAKING**\] Make Kitsune and Transport closeable by @veeso in [#679](https://github.com/holochain/kitsune2/pull/679)
+  - Add a required async close method to Kitsune, Transport and TxImp. Closing a CoreKitsune drops all spaces, closes the transport and releases the handler, so an embedder can shut a node down without relying on Drop. The iroh transport aborts its tasks and relay keepalives, closes every connection gracefully and awaits the endpoint close. The default transport rejects sends and per-space configuration after close.
+  - **Breaking Change**: Kitsune, Transport and TxImp implementors must implement close.
+
+### Bug Fixes
+
+- Fixup! fix: attribute a gossip message from the wrong peer to that peer by @StateofIntent in [#639](https://github.com/holochain/kitsune2/pull/639)
+- Attribute a gossip message from the wrong peer to that peer by @StateofIntent
+  - `GossipRoundState`'s validators reject a message whose sender is not the peer the round was initiated with. Eight of the nine such checks built the error with `K2Error::other`, so `handle_gossip_message` fell through to its generic arm and called `incr_local_errors` — charging the receiving node for a message it did not send. `ring_sector_details_diff.rs` was the exception and already used `K2GossipError::peer_behavior`.
+  - The `session_id` mismatch check that immediately follows each of these uses `peer_behavior` in all eight files, so within nearly every one of these functions two consecutive checks on the same message disagreed about whose fault it is.
+  - This makes the eight match the ninth, which also makes each function internally consistent. No test changes: the two tests asserting on this text, in `agents.rs` and `busy.rs`, match with `contains`, and `PeerBehaviorError` keeps the message in `ctx`.
+- *(transport_iroh)* Preserve sends during simultaneous open by @veeso in [#662](https://github.com/holochain/kitsune2/pull/662)
+  - Coordinate simultaneous-open connection ownership before sending, transfer pending sends to the winning connection, and bound replacement retries with a send deadline.
+  - Add connection-registry, disconnect/reconnect, preflight-failure, and simultaneous-open regression coverage. Backport PR #628 from release-0.5.
+
+### Miscellaneous Tasks
+
+- Update the AI_POLICY.md with shared content in [#678](https://github.com/holochain/kitsune2/pull/678)
+
+### Build System
+
+- Bump iroh dependencies to 1.4.1 by @mattyg in [#685](https://github.com/holochain/kitsune2/pull/685)
+
+### CI
+
+- Clear stale criterion data before running benchmarks by @veeso in [#677](https://github.com/holochain/kitsune2/pull/677)
+  - Rust-cache can restore the criterion directory tree without its files, so criterion fails on a missing base/sample.json. Remove target/criterion before the benchmarks run.
+
+### Automated Changes
+
+- *(deps)* Bump opentelemetry_sdk from 0.32.1 to 0.33.0 by @dependabot[bot] in [#666](https://github.com/holochain/kitsune2/pull/666)
+- *(deps)* Bump rust-toolchain from 1.98.1 to 1.99.0 by @dependabot[bot] in [#671](https://github.com/holochain/kitsune2/pull/671)
+- *(deps)* Bump the nix group with 3 updates by @dependabot[bot] in [#670](https://github.com/holochain/kitsune2/pull/670)
+- *(deps)* Bump jsonschema from 0.55.1 to 0.58.2 by @dependabot[bot] in [#668](https://github.com/holochain/kitsune2/pull/668)
+- *(deps)* Bump the cargo-minor-patch group with 10 updates by @dependabot[bot] in [#665](https://github.com/holochain/kitsune2/pull/665)
+
+### Other Changes
+
+- *(transport_iroh)* Revert PR #641 by @mattyg in [#659](https://github.com/holochain/kitsune2/pull/659)
+
+### First-time Contributors
+
+- @StateofIntent made their first contribution in [#639](https://github.com/holochain/kitsune2/pull/639)
+
 ## \[[0.6.0-dev.2](https://github.com/holochain/kitsune2/compare/v0.6.0-dev.1...v0.6.0-dev.2)\] - 2026-09-22
 
 ### Features
