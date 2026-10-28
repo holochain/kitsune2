@@ -2294,7 +2294,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "bytes",
  "jsonschema",
@@ -2312,7 +2312,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_api"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_bootstrap_client"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "axum",
  "axum-server",
@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_bootstrap_srv"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "async-channel",
  "axum",
@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_core"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -2412,7 +2412,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_dht"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "bytes",
  "kitsune2_api",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_gossip"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_showcase"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "bytes",
  "chrono",
@@ -2470,7 +2470,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_test_utils"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "axum",
  "bytes",
@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "kitsune2_transport_iroh"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -5053,7 +5053,7 @@ checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "tool_proto_build"
-version = "0.6.0-dev.2"
+version = "0.6.0-dev.3"
 dependencies = [
  "prost-build",
 ]
