@@ -1008,15 +1008,16 @@ impl IrohTransport {
         target: EndpointAddr,
         remote_url: Url,
     ) -> K2Result<Arc<ConnectionContext>> {
-        // Guard: if the relay has explicitly failed (Disconnected state), skip
-        // the attempt entirely. A 60-second QUIC timeout while the relay is
-        // recovering would falsely mark the peer as unresponsive (e.g. after
-        // Android doze mode kills the network).
+        // Guard: if the relay has failed and has not connected again since,
+        // skip the attempt entirely. A 60-second QUIC timeout while the relay
+        // is recovering would falsely mark the peer as unresponsive (e.g.
+        // after Android doze mode kills the network).
         //
-        // We check for Disconnected specifically — not Connecting — because
-        // Connecting at startup is normal and we must not block those attempts.
-        // Disconnected means iroh detected an actual failure and has recorded
-        // a last_error; Connecting means iroh is still dialling.
+        // The first `Connecting` phase at startup is normal and must not block
+        // attempts, so the relay only counts as down after a failure was
+        // observed. From then on it stays down through the redials, which
+        // iroh reports as `Connecting`, until it is `Connected` again. See
+        // `Endpoint::is_home_relay_known_down`.
         if self.endpoint.is_home_relay_known_down() {
             debug!(
                 ?remote_url,
