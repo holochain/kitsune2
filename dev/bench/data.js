@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793183554152,
+  "lastUpdate": 1793186129388,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3060,6 +3060,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 42001715,
             "range": "± 13010",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "c6f2995091b027e5619bbd672786ae0e3567da82",
+          "message": "feat!: make Kitsune and Transport closeable\n\nAdd a required async close method to Kitsune, Transport and TxImp.\nClosing a CoreKitsune drops all spaces, closes the transport and\nreleases the handler, so an embedder can shut a node down without\nrelying on Drop. The iroh transport aborts its tasks and relay\nkeepalives, closes every connection gracefully and awaits the endpoint\nclose. The default transport rejects sends and per-space configuration\nafter close.\n\nBREAKING CHANGE: Kitsune, Transport and TxImp implementors must implement close.\n\ncloses #664",
+          "timestamp": "2026-10-28T12:06:18+01:00",
+          "tree_id": "7f5301e30ed668f76a30af5320da33df54a9bbb1",
+          "url": "https://github.com/holochain/kitsune2/commit/c6f2995091b027e5619bbd672786ae0e3567da82"
+        },
+        "date": 1793186128567,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 42762,
+            "range": "± 3476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 44597,
+            "range": "± 5226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 54524,
+            "range": "± 6554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41432082,
+            "range": "± 156394",
             "unit": "ns/iter"
           }
         ]
