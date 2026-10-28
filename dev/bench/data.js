@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792669999548,
+  "lastUpdate": 1793183554152,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3012,6 +3012,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41870166,
             "range": "± 99913",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "matt@buildyourweb.app",
+            "name": "Matt",
+            "username": "mattyg"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "7e2a3175c67d453202eecadf304ee3ffa0515f90",
+          "message": "build: bump iroh dependencies to 1.4.1",
+          "timestamp": "2026-10-28T11:22:48+01:00",
+          "tree_id": "437dba1a72840035d9fe67fd92ef5d1e0fb3292f",
+          "url": "https://github.com/holochain/kitsune2/commit/7e2a3175c67d453202eecadf304ee3ffa0515f90"
+        },
+        "date": 1793183553760,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 80162,
+            "range": "± 4936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 78371,
+            "range": "± 4438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 99955,
+            "range": "± 5658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 42001715,
+            "range": "± 13010",
             "unit": "ns/iter"
           }
         ]
