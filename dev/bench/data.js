@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793186129388,
+  "lastUpdate": 1793198627544,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3108,6 +3108,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41432082,
             "range": "± 156394",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "27995909+veeso@users.noreply.github.com",
+            "name": "veeso",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "a256825b65c348ff496a227066cc26d3a36cb3b9",
+          "message": "chore: Prepare next release",
+          "timestamp": "2026-10-28T15:39:14+01:00",
+          "tree_id": "b88d65c79c0c300813160ced86e44531eba2db71",
+          "url": "https://github.com/holochain/kitsune2/commit/a256825b65c348ff496a227066cc26d3a36cb3b9"
+        },
+        "date": 1793198626774,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 36038,
+            "range": "± 1041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 37921,
+            "range": "± 774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 43287,
+            "range": "± 1350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41000045,
+            "range": "± 15235",
             "unit": "ns/iter"
           }
         ]
