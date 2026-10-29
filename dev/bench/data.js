@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793249878159,
+  "lastUpdate": 1793267810460,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3204,6 +3204,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41828218,
             "range": "± 113285",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "committer": {
+            "email": "christian.visintin@veeso.dev",
+            "name": "Christian Visintin",
+            "username": "veeso"
+          },
+          "distinct": true,
+          "id": "d07dbe34433624bf6ad122a9605463592e1d67fb",
+          "message": "fix(transport_iroh): skip dialing peers already marked unresponsive\n\nConcurrent sends to one peer URL queue on a per-URL mutex. When the first\ndial failed, every queued sender still ran its own full connect_timeout_s\ndial, so one unreachable endpoint cost N serialized timeouts across spaces.\n\nTxSpaceHandler and TxImpHnd gain an is_unresponsive getter, backed in core\nby the space peer meta store. IrohTransport::send checks it once it holds\nthe peer lock and no live connection exists, returning an error instead of\ndialing again. The skip does not re-mark the peer.\n\nWhile a peer stays marked, sends to it with no open connection are refused.\nGossip, fetch and publish already skip marked peers in the same way.\n\ncloses #658",
+          "timestamp": "2026-10-29T10:53:17+01:00",
+          "tree_id": "049e1d9b0af5cd52001ac82be2b190cafc87362f",
+          "url": "https://github.com/holochain/kitsune2/commit/d07dbe34433624bf6ad122a9605463592e1d67fb"
+        },
+        "date": 1793267810061,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 65904,
+            "range": "± 3565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 69937,
+            "range": "± 3239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 95851,
+            "range": "± 4062",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41603232,
+            "range": "± 58833",
             "unit": "ns/iter"
           }
         ]
