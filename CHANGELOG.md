@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.5.3](https://github.com/holochain/kitsune2/compare/v0.5.2...v0.5.3)\] - 2026-10-29
+
+### Build System
+
+- Bump iroh dependencies to 1.4.1
+
 ## \[[0.5.2](https://github.com/holochain/kitsune2/compare/v0.5.1...v0.5.2)\] - 2026-09-24
 
 ### Bug Fixes
