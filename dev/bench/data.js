@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793198627544,
+  "lastUpdate": 1793249878159,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3156,6 +3156,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41000045,
             "range": "± 15235",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "matt@buildyourweb.app",
+            "name": "mattyg",
+            "username": "mattyg"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "4ff40b7293e45f145da858ede33498108866dc59",
+          "message": "chore: clearer wording of goal",
+          "timestamp": "2026-10-29T05:53:20+01:00",
+          "tree_id": "812cac3722219c820fbae320cbde41ed5b4c74a9",
+          "url": "https://github.com/holochain/kitsune2/commit/4ff40b7293e45f145da858ede33498108866dc59"
+        },
+        "date": 1793249877419,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 68191,
+            "range": "± 4376",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 71092,
+            "range": "± 3719",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 100663,
+            "range": "± 3701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41828218,
+            "range": "± 113285",
             "unit": "ns/iter"
           }
         ]
