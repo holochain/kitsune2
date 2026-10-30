@@ -321,9 +321,14 @@ impl CoreFetch {
         peer_meta_store: DynPeerMetaStore,
         transport: WeakDynTransport,
     ) {
-        while let Some((op_id, peer_url)) =
-            outgoing_request_rx.lock().await.recv().await
-        {
+        loop {
+            // The receiver lock is only held while receiving, so that the
+            // configured parallel workers can send requests concurrently.
+            let Some((op_id, peer_url)) =
+                outgoing_request_rx.lock().await.recv().await
+            else {
+                break;
+            };
             tracing::debug!(?op_id, ?peer_url, "processing outgoing request");
             let Some(transport) = transport.upgrade() else {
                 tracing::info!(
