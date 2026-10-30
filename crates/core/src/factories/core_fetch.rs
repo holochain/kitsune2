@@ -171,39 +171,34 @@ impl Fetch for CoreFetch {
             let new_op_ids =
                 self.op_store.filter_out_existing_ops(op_ids).await?;
 
-            // Add requests to state.
-            // These need to be added up front, before sending them to the outgoing
-            // request queue, otherwise the queue processes them faster than they're
-            // being added to state and the request logic fails.
-            // Add metadata if there isn't any but never overwrite existing metadata.
-            {
-                let mut lock = self.state.lock().expect("poisoned");
-                for op_id in &new_op_ids {
-                    let meta = metadata_map.remove(op_id).flatten();
-                    let key = (op_id.clone(), source.clone());
-                    let entry = lock.requests.entry(key).or_default();
-                    if entry.is_none() {
-                        *entry = meta;
-                    }
-                }
-            }
-
-            // Insert requests into fetch queue.
             for op_id in new_op_ids {
-                if let Err(err) = self
-                    .outgoing_request_tx
-                    .send((op_id.clone(), source.clone()))
-                    .await
-                {
-                    tracing::error!(
-                        ?err,
-                        "could not insert fetch request into fetch queue"
-                    );
-                    // Remove request from state.
-                    let mut lock = self.state.lock().unwrap();
-                    lock.requests.remove(&(op_id, source.clone()));
-                    Self::notify_listeners_if_queue_drained(lock);
+                // Reserve space in the fetch queue before adding the request
+                // to state. If this future is dropped while waiting for space,
+                // no request is left in state that will never be sent.
+                let permit = match self.outgoing_request_tx.reserve().await {
+                    Ok(permit) => permit,
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            "could not insert fetch request into fetch queue"
+                        );
+                        continue;
+                    }
+                };
+
+                // Add the request to state before queueing it, otherwise the
+                // queue could process it before it is in state.
+                // Add metadata if there isn't any but never overwrite existing metadata.
+                let meta = metadata_map.remove(&op_id).flatten();
+                let key = (op_id.clone(), source.clone());
+                let mut lock = self.state.lock().expect("poison");
+                let entry = lock.requests.entry(key).or_default();
+                if entry.is_none() {
+                    *entry = meta;
                 }
+                drop(lock);
+
+                permit.send((op_id, source.clone()));
             }
 
             Ok(())
