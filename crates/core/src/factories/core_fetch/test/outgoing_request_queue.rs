@@ -698,3 +698,95 @@ async fn fetch_queue_notify_when_all_peers_unresponsive() {
         .expect("Timed out")
         .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelled_request_while_queue_full_is_not_added_to_state() {
+    let builder =
+        Arc::new(default_test_builder().with_default_config().unwrap());
+    let op_store = builder
+        .op_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+    let peer_meta_store = builder
+        .peer_meta_store
+        .create(builder.clone(), TEST_SPACE_ID)
+        .await
+        .unwrap();
+
+    // Sends never complete, so the workers stop taking requests off the
+    // queue and it fills up.
+    let mut mock_transport = MockTransport::new();
+    mock_transport
+        .expect_send_module()
+        .returning(|_, _, _, _| Box::pin(futures::future::pending()));
+    mock_transport
+        .expect_register_module_handler()
+        .returning(|_, _, _| ());
+    let mock_transport = Arc::new(mock_transport);
+    let report = builder
+        .report
+        .create(builder.clone(), mock_transport.clone())
+        .await
+        .unwrap();
+
+    let fetch = CoreFetch::new(
+        CoreFetchConfig::default(),
+        TEST_SPACE_ID,
+        report,
+        op_store,
+        peer_meta_store,
+        mock_transport.clone(),
+    );
+
+    let peer_url = random_peer_url();
+    let request = |op_id: OpId| {
+        fetch.request_ops(
+            vec![PublishOp {
+                op_id,
+                metadata: None,
+            }],
+            peer_url.clone(),
+        )
+    };
+
+    // Fill the queue up to its capacity.
+    fetch
+        .request_ops(
+            create_op_id_list(16_384)
+                .into_iter()
+                .map(|op_id| PublishOp {
+                    op_id,
+                    metadata: None,
+                })
+                .collect(),
+            peer_url.clone(),
+        )
+        .await
+        .unwrap();
+
+    // Request more ops until one can't be queued, and cancel that request.
+    let cancelled_op_id = loop {
+        let op_id = random_op_id();
+        let queued = tokio::time::timeout(
+            Duration::from_millis(100),
+            request(op_id.clone()),
+        )
+        .await
+        .is_ok();
+        if !queued {
+            break op_id;
+        }
+    };
+
+    // The cancelled request must not be left in state, where it would never
+    // be sent and would keep the fetch queue from draining.
+    assert!(
+        !fetch
+            .state
+            .lock()
+            .expect("poison")
+            .requests
+            .contains_key(&(cancelled_op_id, peer_url.clone()))
+    );
+}
