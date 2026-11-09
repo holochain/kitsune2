@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794245124642,
+  "lastUpdate": 1794246631262,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3396,6 +3396,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41480809,
             "range": "± 158561",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "5487736dbbadc08513528b6871cecb2aeafedac8",
+          "message": "build(deps): bump the cargo-minor-patch group with 9 updates\n\nBumps the cargo-minor-patch group with 9 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [n0-watcher](https://github.com/n0-computer/n0-watcher) | `1.0.0` | `1.0.1` |\n| [serde_json](https://github.com/serde-rs/json) | `1.0.151` | `1.0.154` |\n| [tokio](https://github.com/tokio-rs/tokio) | `1.53.1` | `1.54.1` |\n| [ureq](https://github.com/algesten/ureq) | `3.4.2` | `3.5.0` |\n| [schemars](https://github.com/GREsau/schemars) | `1.2.2` | `1.2.3` |\n| [opentelemetry](https://github.com/open-telemetry/opentelemetry-rust) | `0.33.0` | `0.33.1` |\n| [opentelemetry_sdk](https://github.com/open-telemetry/opentelemetry-rust) | `0.33.0` | `0.33.1` |\n| [opentelemetry-otlp](https://github.com/open-telemetry/opentelemetry-rust) | `0.33.0` | `0.33.1` |\n| [sha2](https://github.com/RustCrypto/hashes) | `0.11.0` | `0.11.1` |\n\n\nUpdates `n0-watcher` from 1.0.0 to 1.0.1\n- [Release notes](https://github.com/n0-computer/n0-watcher/releases)\n- [Changelog](https://github.com/n0-computer/n0-watcher/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/n0-computer/n0-watcher/compare/v1.0.0...v1.0.1)\n\nUpdates `serde_json` from 1.0.151 to 1.0.154\n- [Release notes](https://github.com/serde-rs/json/releases)\n- [Commits](https://github.com/serde-rs/json/compare/v1.0.151...v1.0.154)\n\nUpdates `tokio` from 1.53.1 to 1.54.1\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.53.1...tokio-1.54.1)\n\nUpdates `ureq` from 3.4.2 to 3.5.0\n- [Changelog](https://github.com/algesten/ureq/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/algesten/ureq/compare/3.4.2...3.5.0)\n\nUpdates `schemars` from 1.2.2 to 1.2.3\n- [Release notes](https://github.com/GREsau/schemars/releases)\n- [Changelog](https://github.com/GREsau/schemars/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/GREsau/schemars/compare/v1.2.2...v1.2.3)\n\nUpdates `opentelemetry` from 0.33.0 to 0.33.1\n- [Release notes](https://github.com/open-telemetry/opentelemetry-rust/releases)\n- [Changelog](https://github.com/open-telemetry/opentelemetry-rust/blob/main/docs/release_0.32.md)\n- [Commits](https://github.com/open-telemetry/opentelemetry-rust/compare/opentelemetry-0.33.0...opentelemetry-0.33.1)\n\nUpdates `opentelemetry_sdk` from 0.33.0 to 0.33.1\n- [Release notes](https://github.com/open-telemetry/opentelemetry-rust/releases)\n- [Changelog](https://github.com/open-telemetry/opentelemetry-rust/blob/main/docs/release_0.32.md)\n- [Commits](https://github.com/open-telemetry/opentelemetry-rust/compare/opentelemetry_sdk-0.33.0...opentelemetry_sdk-0.33.1)\n\nUpdates `opentelemetry-otlp` from 0.33.0 to 0.33.1\n- [Release notes](https://github.com/open-telemetry/opentelemetry-rust/releases)\n- [Changelog](https://github.com/open-telemetry/opentelemetry-rust/blob/main/docs/release_0.32.md)\n- [Commits](https://github.com/open-telemetry/opentelemetry-rust/compare/opentelemetry-otlp-0.33.0...opentelemetry-otlp-0.33.1)\n\nUpdates `sha2` from 0.11.0 to 0.11.1\n- [Commits](https://github.com/RustCrypto/hashes/compare/sha2-v0.11.0...sha2-v0.11.1)\n\n---\nupdated-dependencies:\n- dependency-name: n0-watcher\n  dependency-version: 1.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: serde_json\n  dependency-version: 1.0.154\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: tokio\n  dependency-version: 1.54.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: cargo-minor-patch\n- dependency-name: ureq\n  dependency-version: 3.5.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: cargo-minor-patch\n- dependency-name: schemars\n  dependency-version: 1.2.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: opentelemetry\n  dependency-version: 0.33.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: opentelemetry_sdk\n  dependency-version: 0.33.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: opentelemetry-otlp\n  dependency-version: 0.33.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n- dependency-name: sha2\n  dependency-version: 0.11.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: cargo-minor-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-09T18:44:54+01:00",
+          "tree_id": "464029b7e0e42aff8d86c7412e75df9d9d0d36c3",
+          "url": "https://github.com/holochain/kitsune2/commit/5487736dbbadc08513528b6871cecb2aeafedac8"
+        },
+        "date": 1794246630310,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 40706,
+            "range": "± 1514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 45443,
+            "range": "± 1722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 58595,
+            "range": "± 668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41138391,
+            "range": "± 117330",
             "unit": "ns/iter"
           }
         ]
