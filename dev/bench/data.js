@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794242772013,
+  "lastUpdate": 1794244150652,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3300,6 +3300,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41659088,
             "range": "± 91222",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "6bd726fccb09f9a7a16560fb0a1f3fb7f9ceb584",
+          "message": "build(deps): bump the nix group across 1 directory with 3 updates\n\nBumps the nix group with 3 updates in the / directory: [crane](https://github.com/ipetkov/crane), [flake-parts](https://github.com/hercules-ci/flake-parts) and [nixpkgs](https://github.com/nixos/nixpkgs).\n\n\nUpdates `crane` from `73b9805` to `79fd635`\n- [Release notes](https://github.com/ipetkov/crane/releases)\n- [Commits](https://github.com/ipetkov/crane/compare/73b980519cefc727a5f6cc8e5c0947a2f9be6edd...79fd63528501446749c09f08cad486a58c7d173e)\n\nUpdates `flake-parts` from `31729ca` to `ea2630b`\n- [Commits](https://github.com/hercules-ci/flake-parts/compare/31729ca8cbdb4fa927b34e5f4353e6a83f39e993...ea2630b7470978622c7689a1ff75d2b389175399)\n\nUpdates `nixpkgs` from `cf5e765` to `c56a87d`\n- [Commits](https://github.com/nixos/nixpkgs/compare/cf5e76507c6e23b59f7e0ffcc7baa2a39ddd8442...c56a87d8e41ce69bd2af57eb35dcc117a9dfca33)\n\n---\nupdated-dependencies:\n- dependency-name: crane\n  dependency-version: 79fd63528501446749c09f08cad486a58c7d173e\n  dependency-type: direct:production\n  dependency-group: nix\n- dependency-name: flake-parts\n  dependency-version: ea2630b7470978622c7689a1ff75d2b389175399\n  dependency-type: direct:production\n  dependency-group: nix\n- dependency-name: nixpkgs\n  dependency-version: c56a87d8e41ce69bd2af57eb35dcc117a9dfca33\n  dependency-type: direct:production\n  dependency-group: nix\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-09T18:05:14+01:00",
+          "tree_id": "5a278b437aaf26a775182a40cebec568bb2123fd",
+          "url": "https://github.com/holochain/kitsune2/commit/6bd726fccb09f9a7a16560fb0a1f3fb7f9ceb584"
+        },
+        "date": 1794244149652,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 34977,
+            "range": "± 855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 36898,
+            "range": "± 686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 41991,
+            "range": "± 1764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41001663,
+            "range": "± 51492",
             "unit": "ns/iter"
           }
         ]
