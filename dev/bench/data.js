@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794253841037,
+  "lastUpdate": 1794254673025,
   "repoUrl": "https://github.com/holochain/kitsune2",
   "entries": {
     "Kitsune2 Benchmarks": [
@@ -3492,6 +3492,54 @@ window.BENCHMARK_DATA = {
             "name": "local_relay/roundtrip/1KiB/localhost",
             "value": 41826838,
             "range": "± 120557",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "28270981+jost-s@users.noreply.github.com",
+            "name": "Jost",
+            "username": "jost-s"
+          },
+          "distinct": true,
+          "id": "1d26e00bab5514b83ff1f4a7719fc99df48ade8b",
+          "message": "build(deps): bump jsonschema from 0.58.4 to 0.60.2\n\nBumps [jsonschema](https://github.com/Stranger6667/jsonschema) from 0.58.4 to 0.60.2.\n- [Release notes](https://github.com/Stranger6667/jsonschema/releases)\n- [Changelog](https://github.com/Stranger6667/jsonschema/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/Stranger6667/jsonschema/compare/cli-v0.58.4...ruby-v0.60.2)\n\n---\nupdated-dependencies:\n- dependency-name: jsonschema\n  dependency-version: 0.60.2\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-09T20:54:23+01:00",
+          "tree_id": "4e2c3c5dbb49995da02d92a9054bc1cb66834680",
+          "url": "https://github.com/holochain/kitsune2/commit/1d26e00bab5514b83ff1f4a7719fc99df48ade8b"
+        },
+        "date": 1794254672321,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "local_relay/throughput/payload/1KiB",
+            "value": 65313,
+            "range": "± 3084",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/8KiB",
+            "value": 70902,
+            "range": "± 2649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/throughput/payload/32KiB",
+            "value": 91892,
+            "range": "± 2468",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "local_relay/roundtrip/1KiB/localhost",
+            "value": 41596814,
+            "range": "± 83441",
             "unit": "ns/iter"
           }
         ]
