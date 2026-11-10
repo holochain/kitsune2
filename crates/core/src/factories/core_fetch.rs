@@ -520,6 +520,7 @@ impl CoreFetch {
                     lock.requests.retain(|(op_id, _), _| {
                         !processed_op_ids.contains(op_id)
                     });
+                    Self::notify_listeners_if_queue_drained(lock);
                 }
             }
         }
