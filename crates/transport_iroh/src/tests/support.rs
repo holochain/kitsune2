@@ -1,28 +1,23 @@
-//! Shared helpers for the iroh transport unit tests.
+//! Shared helpers for connection-reader exit-cleanup tests.
 //!
 //! Used by the `simultaneous_open` and `close` test modules to drive a
 //! [`ConnectionContext`] reader into its exit cleanup with a configurable
-//! remote close, and to record the resulting handler calls. Also used by the
-//! `connect_failure` and `transport_close` test modules to build an
-//! [`IrohTransport`](crate::IrohTransport) around a fake endpoint.
+//! remote close, and to record the resulting handler calls.
 
 use crate::Connections;
 use crate::close_code::CloseCode;
 use crate::connection::{Connection, DynConnection};
 use crate::connection_context::{ConnectionContext, ConnectionContextParams};
-use crate::endpoint::{DynIrohEndpoint, EndpointAddrWatcher};
 use crate::stream::{DynIrohRecvStream, DynIrohSendStream};
 use crate::test_utils::MockTxHandler;
 use crate::url::endpoint_from_url;
-use crate::{IrohTransport, IrohTransportConfig};
 use bytes::Bytes;
-use iroh::{EndpointAddr, EndpointId};
+use iroh::EndpointId;
 use kitsune2_api::{
-    BoxFut, CloseOnce, DefaultTransport, DynTxSpaceHandler, K2Error, K2Result,
+    BoxFut, DefaultTransport, DynTxSpaceHandler, K2Error, K2Result,
     TransportStats, TxImp, TxImpHnd, Url,
 };
 use kitsune2_test_utils::space::TEST_SPACE_ID;
-use n0_watcher::Disconnected;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -95,10 +90,6 @@ impl TxImp for StubTxImp {
         _peer: Url,
         _payload: Option<(String, Bytes)>,
     ) -> BoxFut<'_, ()> {
-        Box::pin(async {})
-    }
-
-    fn close(&self) -> BoxFut<'_, ()> {
         Box::pin(async {})
     }
 
@@ -278,35 +269,6 @@ pub(super) fn build_parked_context_with_remote_close(
     })
 }
 
-/// An `EndpointAddrWatcher` whose `updated()` future never resolves.
-pub(super) struct PendingWatcher;
-
-impl EndpointAddrWatcher for PendingWatcher {
-    fn updated(&mut self) -> BoxFut<'_, Result<EndpointAddr, Disconnected>> {
-        Box::pin(std::future::pending())
-    }
-}
-
-/// Test fixture: builds a `TxImpHnd` wrapped in a `DefaultTransport` with a
-/// space handler registered, returning the `TxImpHnd`. Each
-/// `set_unresponsive` call is recorded into `set_unresponsive_calls`.
-pub(super) fn build_handler_with_space(
-    set_unresponsive_calls: Arc<Mutex<Vec<(Url, kitsune2_api::Timestamp)>>>,
-) -> Arc<TxImpHnd> {
-    let calls = set_unresponsive_calls.clone();
-    let mock = Arc::new(MockTxHandler {
-        set_unresponsive: Arc::new(move |peer, ts| {
-            calls.lock().expect("poison").push((peer, ts));
-            Ok(())
-        }),
-        ..Default::default()
-    });
-    let handler = TxImpHnd::new(mock.clone());
-    let transport = DefaultTransport::create(&handler, Arc::new(StubTxImp));
-    transport.register_space_handler(TEST_SPACE_ID, mock);
-    handler
-}
-
 /// Test fixture: builds a `TxImpHnd` wrapped in a `DefaultTransport` with
 /// a default `MockTxHandler` as the transport handler and `space` registered
 /// as the space handler.
@@ -317,34 +279,4 @@ pub(super) fn build_handler_for_space(
     let transport = DefaultTransport::create(&handler, Arc::new(StubTxImp));
     transport.register_space_handler(TEST_SPACE_ID, space);
     handler
-}
-
-/// Build an `IrohTransport` directly from its component pieces, bypassing the
-/// async `create()` constructor so unit tests can inject a fake `Endpoint`
-/// and observe `connections` / `local_url` after the test runs. The
-/// background tasks held by the struct are stubbed out with no-op spawns.
-pub(super) fn build_transport(
-    endpoint: DynIrohEndpoint,
-    handler: Arc<TxImpHnd>,
-    connections: crate::Connections,
-    local_url: Arc<RwLock<Option<Url>>>,
-    config: IrohTransportConfig,
-) -> IrohTransport {
-    let noop_handle = || tokio::spawn(async {}).abort_handle();
-    IrohTransport {
-        endpoint,
-        handler,
-        local_url,
-        connections,
-        connection_locks: Arc::new(Mutex::new(HashMap::new())),
-        watch_addr_task: noop_handle(),
-        accept_task: noop_handle(),
-        relay_keepalive_task: None,
-        space_relay_keepalives: Arc::new(Mutex::new(HashMap::new())),
-        config,
-        space_relays: Arc::new(RwLock::new(HashMap::new())),
-        relay_insert_tasks: Arc::new(Mutex::new(Vec::new())),
-        closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        close_once: CloseOnce::new(),
-    }
 }

@@ -11,7 +11,6 @@ mod relay_qad;
 mod simultaneous_open;
 mod stream;
 mod support;
-mod transport_close;
 mod url;
 
 #[test]

@@ -491,10 +491,6 @@ mod tx_fixtures {
             self.configured.lock().expect("poison").push(space_id);
             Box::pin(async { Ok(()) })
         }
-
-        fn close(&self) -> BoxFut<'_, ()> {
-            Box::pin(async {})
-        }
     }
 
     /// Builds a [`RecordingTx`] and, when `captured` is set, hands out the

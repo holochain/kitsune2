@@ -53,9 +53,6 @@ pub use bootstrap::*;
 mod builder;
 pub use builder::*;
 
-mod close;
-pub use close::*;
-
 mod config;
 pub use config::*;
 
