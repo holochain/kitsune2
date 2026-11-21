@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## \[[0.6.0](https://github.com/holochain/kitsune2/compare/v0.5.3...v0.6.0)\] - 2026-11-21
+
+### Features
+
+- \[**BREAKING**\] Make Kitsune and Transport closeable
+  - Add a required async close method to Kitsune, Transport and TxImp. Closing a CoreKitsune drops all spaces, closes the transport and releases the handler, so an embedder can shut a node down without relying on Drop. The iroh transport aborts its tasks and relay keepalives, closes every connection gracefully and awaits the endpoint close. The default transport rejects sends and per-space configuration after close.
+  - **Breaking Change**: Kitsune, Transport and TxImp implementors must implement close.
+
+### Bug Fixes
+
+- *(transport_iroh)* Skip dialing peers already marked unresponsive
+  - Concurrent sends to one peer URL queue on a per-URL mutex. When the first dial failed, every queued sender still ran its own full connect_timeout_s dial, so one unreachable endpoint cost N serialized timeouts across spaces.
+  - TxSpaceHandler and TxImpHnd gain an is_unresponsive getter, backed in core by the space peer meta store. IrohTransport::send checks it once it holds the peer lock and no live connection exists, returning an error instead of dialing again. The skip does not re-mark the peer.
+  - While a peer stays marked, sends to it with no open connection are refused. Gossip, fetch and publish already skip marked peers in the same way.
+
 ## \[[0.5.3](https://github.com/holochain/kitsune2/compare/v0.5.2...v0.5.3)\] - 2026-10-29
 
 ### Build System
